@@ -333,11 +333,28 @@ async function logout() {
 // ===== ログイン後の初期化 =====
 async function ensureProfile(user) {
   // プロフィールがなければ自動作成（表示名は仮でメールの@より前を使う）
-  var check = await window.supabaseClient.from('profiles').select('id').eq('id', user.id).maybeSingle();
-  if (!check.data) {
-    var displayName = (user.email || 'ゲスト').split('@')[0];
-    await window.supabaseClient.from('profiles').insert({ id: user.id, display_name: displayName });
+  // v0.1.1: ここで失敗してもログイン表示自体は止めない（try-catchで隔離）
+  try {
+    var check = await window.supabaseClient.from('profiles').select('id').eq('id', user.id).maybeSingle();
+    if (!check.data) {
+      var displayName = (user.email || 'ゲスト').split('@')[0];
+      await window.supabaseClient.from('profiles').insert({ id: user.id, display_name: displayName });
+    }
+  } catch (e) {
+    showDebugBanner('プロフィール作成でエラー: ' + (e && e.message || e));
   }
+}
+
+// v0.1.1: スマホでConsoleが見れないため、画面上に一時的にエラーを表示する仕組み
+function showDebugBanner(msg) {
+  var el = document.getElementById('debugBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'debugBanner';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c0392b;color:#fff;font-size:0.75em;padding:8px 12px;z-index:99999;white-space:pre-wrap;';
+    document.body.appendChild(el);
+  }
+  el.textContent = '⚠️ ' + msg;
 }
 
 async function loadCalendars() {
@@ -428,24 +445,33 @@ function showLoggedOutUI() {
 
 // ===== 起動時・認証状態監視 =====
 async function initAuth() {
-  var r = await window.supabaseClient.auth.getUser();
-  if (r.data && r.data.user) {
-    window._currentUser = r.data.user;
-    await ensureProfile(r.data.user);
-    showLoggedInUI();
-  } else {
+  try {
+    var r = await window.supabaseClient.auth.getUser();
+    if (r.data && r.data.user) {
+      window._currentUser = r.data.user;
+      await ensureProfile(r.data.user);
+      showLoggedInUI();
+    } else {
+      showLoggedOutUI();
+    }
+  } catch (e) {
+    showDebugBanner('起動時エラー: ' + (e && e.message || e));
     showLoggedOutUI();
   }
 }
 
 window.supabaseClient.auth.onAuthStateChange(async function(event, session) {
-  if (event === 'SIGNED_IN' && session) {
-    window._currentUser = session.user;
-    await ensureProfile(session.user);
-    showLoggedInUI();
-  } else if (event === 'SIGNED_OUT') {
-    window._currentUser = null;
-    showLoggedOutUI();
+  try {
+    if (event === 'SIGNED_IN' && session) {
+      window._currentUser = session.user;
+      await ensureProfile(session.user);
+      showLoggedInUI();
+    } else if (event === 'SIGNED_OUT') {
+      window._currentUser = null;
+      showLoggedOutUI();
+    }
+  } catch (e) {
+    showDebugBanner('認証状態エラー: ' + (e && e.message || e));
   }
 });
 
