@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>こよみる</title>
-<!-- ★ APP_VERSION: v0.1.0 ★ -->
+<!-- ★ APP_VERSION: v0.2.0 ★ -->
 <style>
   :root {
     --bg: #F7F4EC;        /* 生成り */
@@ -188,6 +188,35 @@
   .calendar-card .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .calendar-card .name { font-size: 1em; font-weight: 600; }
   .calendar-card .role { font-size: 0.75em; color: var(--ink-faint); margin-top: 2px; }
+  .calendar-card { cursor: pointer; }
+
+  .btn-back {
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 0.9em;
+    cursor: pointer;
+    padding: 0;
+  }
+  .event-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 13px 15px;
+    margin-bottom: 9px;
+  }
+  .event-card .title { font-size: 0.98em; font-weight: 600; }
+  .event-card .time { font-size: 0.78em; color: var(--ink-faint); margin-top: 3px; }
+  .event-day-label {
+    font-size: 0.72em;
+    color: var(--ink-faint);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin: 16px 0 8px;
+  }
+  .event-day-label:first-child { margin-top: 0; }
 
   .fab {
     position: fixed;
@@ -226,8 +255,15 @@
 
     <!-- カレンダービュー -->
     <div id="viewCalendar" style="display:none;">
-      <div class="section-title">カレンダー</div>
-      <div id="calendarListArea"></div>
+      <div id="calendarListView">
+        <div class="section-title">カレンダー</div>
+        <div id="calendarListArea"></div>
+      </div>
+      <div id="calendarDetailView" style="display:none;">
+        <button class="btn-back" onclick="closeCalendarDetail()">← カレンダー一覧へ</button>
+        <div id="calendarDetailTitle" class="section-title" style="margin-top:14px;"></div>
+        <div id="eventListArea"></div>
+      </div>
     </div>
 
     <!-- 今日の暦ビュー -->
@@ -391,7 +427,7 @@ async function loadCalendars() {
   r.data.forEach(function(row) {
     var cal = row.calendars;
     if (!cal) return;
-    html += '<div class="calendar-card">'
+    html += '<div class="calendar-card" onclick="openCalendarDetail(\'' + cal.id + '\', ' + JSON.stringify(cal.name) + ', ' + JSON.stringify(row.role) + ')">'
       + '<div class="dot" style="background:' + (cal.color_theme || '#4A6741') + ';"></div>'
       + '<div><div class="name">' + escapeHtml(cal.name) + '</div>'
       + '<div class="role">' + roleLabel(row.role) + '</div></div>'
@@ -415,13 +451,6 @@ function escapeHtml(s) {
 async function createCalendarPrompt() {
   var name = prompt('カレンダーの名前を入力してください（例：我が家の予定）');
   if (!name || !name.trim()) return;
-  // v0.1.2: 実際のセッション状態を画面上に表示して確認（RLSエラー切り分け用）
-  var sessionCheck = await window.supabaseClient.auth.getSession();
-  showDebugBanner(
-    'currentUser.id=' + (window._currentUser ? window._currentUser.id : 'なし') +
-    ' / session.user.id=' + (sessionCheck.data && sessionCheck.data.session ? sessionCheck.data.session.user.id : 'セッションなし') +
-    ' / accessToken有無=' + (sessionCheck.data && sessionCheck.data.session && sessionCheck.data.session.access_token ? 'あり' : 'なし')
-  );
   var r = await window.supabaseClient.from('calendars').insert({
     name: name.trim(),
     owner_id: window._currentUser.id
@@ -439,6 +468,104 @@ async function createCalendarPrompt() {
   loadCalendars();
 }
 
+// ===== カレンダー詳細（予定一覧）=====
+window._currentCalendarId = null;
+window._currentCalendarRole = null;
+
+function openCalendarDetail(calId, calName, role) {
+  window._currentCalendarId = calId;
+  window._currentCalendarRole = role;
+  document.getElementById('calendarListView').style.display = 'none';
+  document.getElementById('calendarDetailView').style.display = 'block';
+  document.getElementById('calendarDetailTitle').textContent = calName;
+  updateFabForCalendarView();
+  loadEvents(calId);
+}
+
+function closeCalendarDetail() {
+  window._currentCalendarId = null;
+  window._currentCalendarRole = null;
+  document.getElementById('calendarDetailView').style.display = 'none';
+  document.getElementById('calendarListView').style.display = 'block';
+  updateFabForCalendarView();
+}
+
+// FABボタンの役割を状況に応じて切り替える（一覧中=カレンダー追加／詳細中=予定追加）
+function updateFabForCalendarView() {
+  var fab = document.getElementById('fabAddCalendar');
+  if (!fab) return;
+  if (window._currentCalendarId) {
+    // 閲覧のみ権限の人には予定追加ボタンを出さない
+    fab.style.display = (window._currentCalendarRole === 'viewer') ? 'none' : 'block';
+    fab.setAttribute('onclick', 'addEventPrompt()');
+  } else {
+    fab.style.display = 'block';
+    fab.setAttribute('onclick', 'createCalendarPrompt()');
+  }
+}
+
+async function loadEvents(calId) {
+  var area = document.getElementById('eventListArea');
+  if (!area) return;
+  area.innerHTML = '';
+  var r = await window.supabaseClient
+    .from('events')
+    .select('id, title, start_at, end_at, memo')
+    .eq('calendar_id', calId)
+    .order('start_at', { ascending: true });
+  if (r.error || !r.data || r.data.length === 0) {
+    area.innerHTML = '<div class="empty-state"><div class="icon">🗓️</div><p>まだ予定がありません。<br>右下の＋から追加してみましょう。</p></div>';
+    return;
+  }
+  var html = '';
+  var lastDay = '';
+  r.data.forEach(function(ev) {
+    var d = new Date(ev.start_at);
+    var dayKey = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate();
+    if (dayKey !== lastDay) {
+      html += '<div class="event-day-label">' + dayKey + '</div>';
+      lastDay = dayKey;
+    }
+    var timeStr = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    html += '<div class="event-card">'
+      + '<div class="title">' + escapeHtml(ev.title) + '</div>'
+      + '<div class="time">' + timeStr + (ev.memo ? ' ・ ' + escapeHtml(ev.memo) : '') + '</div>'
+      + '</div>';
+  });
+  area.innerHTML = html;
+}
+
+async function addEventPrompt() {
+  if (!window._currentCalendarId) return;
+  var title = prompt('予定のタイトルを入力してください（例：買い物）');
+  if (!title || !title.trim()) return;
+  var dateStr = prompt('日付を入力してください（例：2026-07-10）', getTodayStr());
+  if (!dateStr) return;
+  var timeStr = prompt('時刻を入力してください（例：14:00）', '09:00');
+  if (!timeStr) return;
+  var startAt = new Date(dateStr + 'T' + timeStr + ':00');
+  if (isNaN(startAt.getTime())) {
+    alert('日付・時刻の形式が正しくありません');
+    return;
+  }
+  var r = await window.supabaseClient.from('events').insert({
+    calendar_id: window._currentCalendarId,
+    created_by: window._currentUser.id,
+    title: title.trim(),
+    start_at: startAt.toISOString()
+  });
+  if (r.error) {
+    alert('予定の作成に失敗しました: ' + r.error.message);
+    return;
+  }
+  loadEvents(window._currentCalendarId);
+}
+
+function getTodayStr() {
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
 // ===== タブ切り替え =====
 function switchTab(tab) {
   window._currentTab = tab;
@@ -450,8 +577,17 @@ function switchTab(tab) {
     btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
   });
   var fab = document.getElementById('fabAddCalendar');
-  if (fab) fab.style.display = (tab === 'calendar') ? 'block' : 'none';
-  if (tab === 'calendar') loadCalendars();
+  if (tab === 'calendar') {
+    // カレンダータブに入る時は常に一覧から始める（詳細を開いたままにしない）
+    window._currentCalendarId = null;
+    window._currentCalendarRole = null;
+    document.getElementById('calendarDetailView').style.display = 'none';
+    document.getElementById('calendarListView').style.display = 'block';
+    loadCalendars();
+    updateFabForCalendarView();
+  } else {
+    if (fab) fab.style.display = 'none';
+  }
 }
 
 // ===== 画面全体の切り替え（ログイン前後） =====
