@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1296 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1297 ★ -->
 
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1296';
+    const APP_VERSION = 'v0.45.1297';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -21530,7 +21530,33 @@ function reviveBlueprint(id) {
       );
     });
 
-    // ===== video必須フィールド補完マイグレーション =====
+    // ===== ID完全一致重複除去マイグレーション（v0.45.1297〜）=====
+    // 第50条⑥準拠：addMigration() 経由
+    // 背景：SPAG·A1（新設ガーディアン）が実データ調査で発見。
+    //   kind='task'の7組・計14件が「全く同じID」で重複していた。
+    //   全てtext=オブジェクト（本来は文字列であるべき）・date/section欠落・
+    //   createdAt=2026-04-16で揃っており、過去の未特定のバグで
+    //   同一レコードが誤って二重pushされたものと推定される。
+    // 修復：mig_dedup_all_kinds_v1は内容キーでの重複検出でkind='task'を対象外としていたため、
+    //   本マイグレーションはID完全一致という、より単純で確実な基準で全kind横断的に検出する。
+    //   同一IDが複数存在する場合、配列内で最初に出現した1件のみを残す。
+    addMigration('mig_dedup_exact_id_v1', function() {
+      var _seenIds = new Set();
+      var _dedupDropped = 0;
+      var _before = allTasks.length;
+      allTasks = allTasks.filter(function(t) {
+        if (!t.id) return true; // idなしレコードは対象外（別問題として扱う）
+        if (_seenIds.has(t.id)) { _dedupDropped++; return false; }
+        _seenIds.add(t.id);
+        return true;
+      });
+      if (_dedupDropped > 0) {
+        saveAllTasks();
+        window._dbgLog && window._dbgLog(
+          'mig_dedup_exact_id_v1: ID完全一致重複を除去 ' + _dedupDropped + '件削除（' + _before + '→' + allTasks.length + '件）'
+        );
+      }
+    });
     // 第30条の精神・第11条・第12条：既存videoレコードにtext/displayScope/section/calendarIdを追加
     addMigration('mig_video_required_fields_v1', function() {
       var _migCalId = (allSettings && allSettings.calendar && allSettings.calendar.mainId)
@@ -23475,7 +23501,7 @@ function reviveBlueprint(id) {
       'mig_category_to_calendar_v170', 'mig_death_ghost_flags_v0_24_59',
       'mig_gant_enabled_default_v0_32', 'mig_journals_to_alltasks_v1', 'mig_kingdom_mode_default_v1', 'mig_kingdom_mode_default_v2',
       'mig_gdp_to_oku_v1', 'mig_orphan_taskids_v1', 'mig_done_completed_sync_v1',
-      'mig_dedup_tasks_v1', 'mig_dedup_tasks_v2', 'mig_calid_to_settings_v1',
+      'mig_dedup_tasks_v1', 'mig_dedup_tasks_v2', 'mig_dedup_exact_id_v1', 'mig_calid_to_settings_v1',
       'mig_toku_retroactive_v1', 'mig_journal_ids_to_uuid_v7',
       'mig_matrix_intro_v1', 'mig_matrix_intro_v2',
       // 縮退UUID自動修復（v0.45.638〜）
