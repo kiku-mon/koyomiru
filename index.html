@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1294 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1296 ★ -->
 
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1294';
+    const APP_VERSION = 'v0.45.1296';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -45082,9 +45082,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
 
        // A1: ID重複がないこと
        var _spagIds = allTasks.map(function(t){ return t.id; });
-       var _spagIdSet = new Set(_spagIds);
-       var _spagDupCount = _spagIds.length - _spagIdSet.size;
+       var _spagIdCounts = {};
+       _spagIds.forEach(function(id){ _spagIdCounts[id] = (_spagIdCounts[id]||0) + 1; });
+       var _spagDupIds = Object.keys(_spagIdCounts).filter(function(id){ return _spagIdCounts[id] > 1; });
+       var _spagDupCount = _spagIds.length - Object.keys(_spagIdCounts).length;
        _grf('SPAG·A1', _spagDupCount === 0, 'ID重複なし確認（' + allTasks.length + '件中重複' + _spagDupCount + '件）');
+       if (_spagDupIds.length > 0) {
+         _spagDupIds.forEach(function(dupId){
+           var _dupTasks = allTasks.filter(function(t){ return t.id === dupId; });
+           var _dupInfo = _dupTasks.map(function(t){
+             return '[kind=' + t.kind + ' text=' + String(t.text||'').slice(0,15) + ' date=' + (t.date||'') + ']';
+           }).join(' / ');
+           ok('SPAG·A1詳細: id=' + dupId + ' (' + _dupTasks.length + '件) ' + _dupInfo);
+         });
+       }
 
        // A2: kind='task'の必須フィールド確認（text/date/section/displayScope/calendarId）
        var _spagTasks = allTasks.filter(function(t){ return t.kind === 'task'; });
@@ -45092,6 +45103,34 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          return t.text === undefined || !t.date || !t.section || !t.displayScope || !t.calendarId;
        });
        _grf('SPAG·A2', _spagBroken.length === 0, 'kind=task必須フィールド確認（' + _spagTasks.length + '件中欠落' + _spagBroken.length + '件）');
+       if (_spagBroken.length > 0) {
+         // 欠落フィールドの内訳集計
+         var _spagMissingBreakdown = { text:0, date:0, section:0, displayScope:0, calendarId:0 };
+         _spagBroken.forEach(function(t){
+           if (t.text === undefined) _spagMissingBreakdown.text++;
+           if (!t.date) _spagMissingBreakdown.date++;
+           if (!t.section) _spagMissingBreakdown.section++;
+           if (!t.displayScope) _spagMissingBreakdown.displayScope++;
+           if (!t.calendarId) _spagMissingBreakdown.calendarId++;
+         });
+         ok('SPAG·A2内訳: text欠落=' + _spagMissingBreakdown.text +
+            ' date欠落=' + _spagMissingBreakdown.date +
+            ' section欠落=' + _spagMissingBreakdown.section +
+            ' displayScope欠落=' + _spagMissingBreakdown.displayScope +
+            ' calendarId欠落=' + _spagMissingBreakdown.calendarId);
+         // 個別サンプル（最大10件）
+         _spagBroken.slice(0, 10).forEach(function(t){
+           var _missing = [];
+           if (t.text === undefined) _missing.push('text');
+           if (!t.date) _missing.push('date');
+           if (!t.section) _missing.push('section');
+           if (!t.displayScope) _missing.push('displayScope');
+           if (!t.calendarId) _missing.push('calendarId');
+           ok('SPAG·A2詳細: id=' + String(t.id||'').slice(0,12) + ' text=' + String(t.text||'(なし)').slice(0,15) +
+              ' date=' + (t.date||'(なし)') + ' createdAt=' + String(t.createdAt||'(なし)').slice(0,10) +
+              ' 欠落=[' + _missing.join(',') + ']');
+         });
+       }
 
        // A3: kindが全て既知（'task'またはKNOWN_NON_TASK_KINDS登録済み）
        // 注：_KNOWN_NON_TASK_KINDSは関数内constで外部から参照不可のため、
