@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1311 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1312 ★ -->
 
 <html lang="ja">
 <head>
@@ -7,8 +7,9 @@
   <!-- Content-Security-Policy：XSSの多層防御。inline onclick(770)/inline script(14)が
        あるため script-src に 'unsafe-inline' は外せないが、外部スクリプトの読込元を
        cdnjs(three.js)のみに限定し、悪意ある外部ドメインへの注入・送信を遮断する。
-       接続先(connect)も GitHub Gist 同期等の正規先のみ許可。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://img.youtube.com https://api.qrserver.com https://chart.googleapis.com https://*.githubusercontent.com; connect-src 'self' https://api.github.com https://xycuxzvejevyylwmkwsk.supabase.co; frame-src https://www.youtube.com https://www.youtube-nocookie.com; media-src 'self' blob: data:; object-src 'none'; base-uri 'self';">
+       接続先(connect)も GitHub Gist 同期等の正規先のみ許可。
+       v0.45.1312〜：Supabase Realtime（複数端末の即時同期）用にwss://を追加。 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://img.youtube.com https://api.qrserver.com https://chart.googleapis.com https://*.githubusercontent.com; connect-src 'self' https://api.github.com https://xycuxzvejevyylwmkwsk.supabase.co wss://xycuxzvejevyylwmkwsk.supabase.co; frame-src https://www.youtube.com https://www.youtube-nocookie.com; media-src 'self' blob: data:; object-src 'none'; base-uri 'self';">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Noto+Sans+JP:wght@400;700&display=swap">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -40,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1311';
+    const APP_VERSION = 'v0.45.1312';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33398,6 +33399,49 @@ async function cloudUpdateNavLoginIndicator() {
   window._cloudIsLoggedIn = loggedIn;
   _cloudSetNavRing(loggedIn);
 }
+// v0.45.1312〜：Supabase Realtimeによる複数端末の即時同期
+// 背景：45秒ごとのポーリングでは「即座」の体感に届かないため、
+//   postgres_changesのUPDATEイベントをwebsocketで購読し、
+//   他端末が保存した瞬間に反映する（Discord/Google的な即時同期）。
+window._cloudRealtimeChannel = null;
+function _cloudStartRealtimeSubscription(userId) {
+  try {
+    if (!window.supabaseClient || !userId) return;
+    if (window._cloudRealtimeChannel) return; // 既に購読中なら二重購読しない
+    window._cloudRealtimeChannel = window.supabaseClient
+      .channel('tasks-changes-' + userId)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'tasks',
+        filter: 'user_id=eq.' + userId
+      }, function(payload) {
+        try {
+          var newUpdatedAt = payload && payload.new && payload.new.updated_at;
+          // 自分自身の直近の書き込みへの折り返し反応を避ける（第59条・副作用連鎖の退避復元精神）
+          if (newUpdatedAt && newUpdatedAt !== window._cloudLastSyncedAt) {
+            supabaseSyncDown(true).then(function(r) {
+              if (r && !r.error) {
+                window._cloudLastSyncedAt = newUpdatedAt;
+                if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を即時反映しました');
+              }
+            });
+          }
+        } catch(e2) { console.warn('[Supabase] Realtimeイベント処理エラー:', e2); }
+      })
+      .subscribe();
+  } catch(e) { console.warn('[Supabase] Realtime購読開始エラー:', e); }
+}
+function _cloudStopRealtimeSubscription() {
+  try {
+    if (window._cloudRealtimeChannel && window.supabaseClient) {
+      window.supabaseClient.removeChannel(window._cloudRealtimeChannel);
+    }
+    window._cloudRealtimeChannel = null;
+  } catch(e) { console.warn('[Supabase] Realtime購読停止エラー:', e); }
+}
+window._cloudStartRealtimeSubscription = _cloudStartRealtimeSubscription;
+window._cloudStopRealtimeSubscription = _cloudStopRealtimeSubscription;
 try {
   if (window.supabaseClient) {
     // session引数で判定（コールバック内でのsupabase API呼び出しはデッドロックの恐れがあるため不使用）
@@ -33408,9 +33452,15 @@ try {
         if (typeof window.showToast === 'function') window.showToast('🎉 ようこそ、王国へ！');
         _cloudLoginSetStatus('🎉 登録ありがとうございます。データは自動で保存されます。');
         setTimeout(function(){ cloudLoginRefreshStatus(); }, 0);
+        if (session && session.user) _cloudStartRealtimeSubscription(session.user.id);
       }
       if (event === 'SIGNED_OUT') {
         setTimeout(function(){ cloudLoginRefreshStatus(); }, 0);
+        _cloudStopRealtimeSubscription();
+      }
+      // v0.45.1312: 既存セッション復元時（INITIAL_SESSION）にも購読を開始する
+      if (event === 'INITIAL_SESSION' && session && session.user) {
+        _cloudStartRealtimeSubscription(session.user.id);
       }
     });
     cloudUpdateNavLoginIndicator(); // 起動時の初期反映
@@ -45521,6 +45571,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-223: 完全自動同期（後勝ち方式） 実装確認 完了');
      } catch(e) {
        ng('ST-223: 例外', e.message);
+     }
+
+     // ===== ST-224: Supabase Realtimeによる即時同期の実装確認（v0.45.1312〜） =====
+     try {
+       typeof window._cloudStartRealtimeSubscription === 'function'
+         ? ok('ST-224·①: _cloudStartRealtimeSubscription window公開確認')
+         : ng('ST-224·①: 関数未公開', '');
+       typeof window._cloudStopRealtimeSubscription === 'function'
+         ? ok('ST-224·②: _cloudStopRealtimeSubscription window公開確認')
+         : ng('ST-224·②: 関数未公開', '');
+       // CSPにwss://が許可されているか（websocket接続に必須）
+       var _st224csp = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+       var _st224cspContent = _st224csp ? _st224csp.getAttribute('content') : '';
+       _st224cspContent.indexOf('wss://') !== -1
+         ? ok('ST-224·③: CSP connect-srcにwss://許可確認')
+         : ng('ST-224·③: CSPにwss://が許可されていない', '');
+       ok('ST-224: Supabase Realtime即時同期 実装確認 完了');
+     } catch(e) {
+       ng('ST-224: 例外', e.message);
      }
 
        // 第1条【本番環境】
