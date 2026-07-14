@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1304 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1306 ★ -->
 
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1304';
+    const APP_VERSION = 'v0.45.1306';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33200,6 +33200,8 @@ async function supabaseSyncUp() {
     // v0.45.1258: 最終保存時刻を記録（モーダルの安心表示用）
     window._cloudLastSavedAt = new Date();
     if (typeof window.cloudRefreshLastSavedLabel === 'function') window.cloudRefreshLastSavedLabel();
+    // v0.45.1306: 自分自身の書き込みへの不要な折り返しpullを避けるため記録
+    window._cloudLastSyncedAt = r.data[0].updated_at;
   }
   return r;
 }
@@ -33233,6 +33235,45 @@ async function supabaseSyncDown(apply) {
 window.supabaseSyncUp = supabaseSyncUp;
 window.supabaseSyncDown = supabaseSyncDown;
 // ===== END v0.45.1233 手動同期関数 =====
+
+// ===== v0.45.1306: 定期自動同期（後勝ち方式・ユーザー指示による完全自動化） =====
+// 背景：ログイン時の自動取得だけでは、同じ端末にログインしたまま他端末で更新した場合に
+//   反映されない。タブがアクティブな間、軽量なupdated_at確認を定期実行し、
+//   クラウド側が新しければ自動でsupabaseSyncDown(true)する。
+// 設計：allTasks全体ではなくupdated_atのみを問い合わせる軽量チェックのため、
+//   頻繁に呼んでもコストが小さい。
+window._cloudLastSyncedAt = window._cloudLastSyncedAt || null;
+async function _cloudCheckAndPullIfNewer() {
+  try {
+    if (!window._cloudIsLoggedIn || !window.supabaseClient) return;
+    var u = await window.supabaseClient.auth.getUser();
+    if (!u.data || !u.data.user) return;
+    var r = await window.supabaseClient.from('tasks')
+      .select('updated_at')
+      .eq('user_id', u.data.user.id)
+      .maybeSingle();
+    if (r.error || !r.data || !r.data.updated_at) return;
+    var cloudUpdatedAt = r.data.updated_at;
+    if (!window._cloudLastSyncedAt || new Date(cloudUpdatedAt) > new Date(window._cloudLastSyncedAt)) {
+      var down = await supabaseSyncDown(true);
+      if (down && !down.error) {
+        window._cloudLastSyncedAt = cloudUpdatedAt;
+        if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を自動反映しました');
+      }
+    }
+  } catch(e) { console.warn('[Supabase] 定期確認エラー:', e); }
+}
+window._cloudCheckAndPullIfNewer = _cloudCheckAndPullIfNewer;
+// タブがアクティブに戻った時、および45秒ごとにチェック（アクティブな時のみ）
+try {
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') _cloudCheckAndPullIfNewer();
+  });
+  setInterval(function() {
+    if (document.visibilityState === 'visible') _cloudCheckAndPullIfNewer();
+  }, 45000);
+} catch(e) { console.warn('[Supabase] 定期同期の初期化エラー:', e); }
+// ===== END v0.45.1306 定期自動同期 =====
 
 // ===== v0.45.1234: クラウド同期ログインモーダル制御（第2条nullチェック・第55条2クリック確認） =====
 function _cloudLoginSetStatus(msg) {
@@ -33306,12 +33347,36 @@ async function cloudLogoutFromModal() {
   _cloudLoginSetStatus('ログアウトしました。');
   cloudLoginRefreshStatus();
 }
+// v0.45.1305: クラウドのデータをこの端末に取得するボタンの実処理
+// 背景：cloudFirstLoginAutoMigrate()はクラウドにデータがある場合、
+//   ステータステキストを表示するだけで実際に取得する手段がなかった
+//   （「⬇️取得」ボタンへ誘導する設計コメントはあったが未実装だった）。
+//   複数端末間でタスクが反映されない不具合の直接原因だったため実装。
+async function cloudFetchFromModal() {
+  var btn = document.getElementById('cloudLoginFetchBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '取得中…'; }
+  _cloudLoginSetStatus('クラウドのデータを確認しています…');
+  var r = await supabaseSyncDown(true);
+  if (btn) { btn.disabled = false; btn.textContent = '⬇️ クラウドのデータを取得'; }
+  if (r && r.error) {
+    _cloudLoginSetStatus('⚠️ 取得に失敗しました: ' + r.error.message);
+    return;
+  }
+  if (!r || !r.data || !r.data.data || !Array.isArray(r.data.data.allTasks)) {
+    _cloudLoginSetStatus('クラウドにまだデータがありません。');
+    return;
+  }
+  if (btn) btn.style.display = 'none';
+  _cloudLoginSetStatus('✅ クラウドのデータ（' + r.data.data.allTasks.length + '件）を取得しました。');
+  if (typeof window.showToast === 'function') window.showToast('✅ クラウドのデータを取得しました');
+}
 // 第3条: window公開
 window.openCloudLoginModal = openCloudLoginModal;
 window.closeCloudLoginModal = closeCloudLoginModal;
 window.cloudLoginSendLink = cloudLoginSendLink;
 window.cloudLoginRefreshStatus = cloudLoginRefreshStatus;
 window.cloudLogoutFromModal = cloudLogoutFromModal;
+window.cloudFetchFromModal = cloudFetchFromModal;
 // ===== END v0.45.1234 ログインモーダル制御 =====
 
 // ===== v0.45.1236: ログイン状態インジケーター＆ようこそ演出 =====
@@ -33379,7 +33444,17 @@ async function cloudFirstLoginAutoMigrate() {
         _cloudLoginSetStatus('🎉 登録ありがとうございます！データ（' + allTasks.length + '件）を自動で保存しました。端末が変わってもデータは失われません。');
       }
     } else if (cloudHas) {
-      _cloudLoginSetStatus('保存済みのデータ（' + cloudTasks.length + '件）があります。');
+      // v0.45.1306〜：完全自動同期（後勝ち方式）。ユーザー指示によりボタン確認なしで自動取得する。
+      var down = await supabaseSyncDown(true);
+      if (down && !down.error) {
+        _cloudLoginSetStatus('☁️ クラウドのデータ（' + cloudTasks.length + '件）を自動で取得しました。');
+        if (typeof window.showToast === 'function') window.showToast('☁️ 別端末のデータを自動で反映しました（' + cloudTasks.length + '件）');
+        window._cloudLastSyncedAt = (r.data && r.data.updated_at) || new Date().toISOString();
+      } else {
+        _cloudLoginSetStatus('⚠️ 自動取得に失敗しました。手動で取得してください。');
+        var fetchBtn = document.getElementById('cloudLoginFetchBtn');
+        if (fetchBtn) fetchBtn.style.display = 'block';
+      }
     }
   } catch(e) { console.warn('[Supabase] 自動移行エラー:', e); }
 }
@@ -45394,6 +45469,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-221: 例外', e.message);
      }
 
+     // ===== ST-222: クラウドデータ取得ボタンの実装確認（v0.45.1305〜） =====
+     // 背景：複数端末間の同期テストで、クラウドにデータがあっても
+     //   取得する手段が存在しない不具合が発見された（テキスト表示のみで実装なし）。
+     try {
+       var _st222Btn = document.getElementById('cloudLoginFetchBtn');
+       _st222Btn ? ok('ST-222·①: cloudLoginFetchBtn DOM存在確認') : ng('ST-222·①: ボタンDOM欠落', '');
+       typeof window.cloudFetchFromModal === 'function' ? ok('ST-222·②: cloudFetchFromModal window公開確認') : ng('ST-222·②: 関数未公開', '');
+       var _st222src = typeof cloudFirstLoginAutoMigrate === 'function' ? cloudFirstLoginAutoMigrate.toString() : '';
+       _st222src.indexOf('cloudLoginFetchBtn') !== -1 ? ok('ST-222·③: cloudHas時にボタン表示ロジック確認') : ng('ST-222·③: ボタン表示ロジックなし', '');
+       ok('ST-222: クラウドデータ取得ボタン実装確認 完了');
+     } catch(e) {
+       ng('ST-222: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -54837,8 +54926,9 @@ window.addMigration = addMigration;
     </div>
     <div id="cloudLoginUserArea" style="display:none;">
       <div id="cloudLoginUserLabel" style="font-size:0.95em;margin-bottom:8px;"></div>
-      <div style="font-size:0.85em;color:#5b8c5a;background:#f0f6ef;border-radius:8px;padding:10px 12px;margin-bottom:8px;">登録済みです。データは自動で保存されます。</div>
+      <div style="font-size:0.85em;color:#5b8c5a;background:#f0f6ef;border-radius:8px;padding:10px 12px;margin-bottom:8px;">登録済みです。データは自動で保存・同期されます（他端末の変更も自動で反映）。</div>
       <div id="cloudLastSavedLabel" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;"></div>
+      <button id="cloudLoginFetchBtn" onclick="cloudFetchFromModal()" style="display:none;width:100%;padding:11px;border:none;border-radius:8px;background:#4facfe;color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;margin-bottom:10px;">⬇️ クラウドのデータを取得</button>
       <button onclick="cloudLogoutFromModal()" style="width:100%;padding:9px;border:none;border-radius:8px;background:transparent;color:#a89a88;font-size:0.85em;cursor:pointer;">ログアウト</button>
     </div>
     <div id="cloudLoginStatus" style="font-size:0.85em;color:#7a6a54;margin-top:10px;min-height:1.2em;"></div>
