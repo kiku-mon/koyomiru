@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1331 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1332 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1331';
+    const APP_VERSION = 'v0.45.1332';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33319,12 +33319,28 @@ async function supabaseSyncDown(apply) {
         console.log('[Supabase] 削除記録を統合: ' + _beforeUnionSize + '件 → ' + _localDeletedSet.size + '件');
       }
     } catch(e) { console.warn('[Supabase] 削除記録の統合エラー:', e); }
+    // v0.45.1332: マージ前後で内容が実質同一かを判定するための指紋（id+updatedAtの集合）を先に取る。
+    // 【権威】2026-07-16、マージ結果がローカルと完全に同じ内容でも無条件でsaveAllTasks()を
+    // 呼んでいたため、「ダウンロード→保存→3秒後に再アップロード→Realtime受信→定期チェック→
+    // ダウンロード」という無限ループが発生した。中身が変わった時だけ保存するよう修正する。
+    var _fingerprint = function(arr) {
+      return (arr || []).map(function(t){ return (t && t.id) + ':' + ((t && (t.updatedAt || t.createdAt)) || ''); }).sort().join('|');
+    };
+    var _beforeMergeCount = allTasks.length;
+    var _beforeFingerprint = _fingerprint(allTasks);
     // v0.45.1330: 配列まるごと上書きから、タスク単位マージへ変更。
     // 別端末でほぼ同時に別々のタスクを作成した場合でも、両方残るようにする。
-    var _beforeMergeCount = allTasks.length;
-    allTasks = _mergeTasksArrays(allTasks, cloudTasks);
+    var _mergedTasks = _mergeTasksArrays(allTasks, cloudTasks);
+    var _afterFingerprint = _fingerprint(_mergedTasks);
+    var _mergeActuallyChanged = (_beforeFingerprint !== _afterFingerprint);
+    allTasks = _mergedTasks;
     if (allTasks.length !== cloudTasks.length || allTasks.length !== _beforeMergeCount) {
       console.log('[Supabase] マージ結果: ローカル' + _beforeMergeCount + '件 + クラウド' + cloudTasks.length + '件 → 統合後' + allTasks.length + '件');
+    }
+    if (!_mergeActuallyChanged) {
+      if (typeof _syncLog === 'function') _syncLog('マージ結果はローカルと実質同一 → 保存・再アップロードをスキップ（無限ループ防止）');
+      window._cloudLastSyncedAt = r.data.updated_at;
+      return r;
     }
     saveAllTasks();
     renderAllSections();
@@ -45871,6 +45887,29 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-229: 墓石（deletedTaskIds）機構 確認 完了');
      } catch(e) {
        ng('ST-229: 例外', e.message);
+     }
+
+     // ===== ST-230: 同期の無限ループ防止確認（v0.45.1332〜） =====
+     // 背景：2026-07-16、マージ結果がローカルと完全に同一でも無条件にsaveAllTasks()を
+     //   呼んでいたため、「ダウンロード→保存→3秒後に再アップロード→Realtime受信→
+     //   定期チェック→ダウンロード」という無限ループが実際に発生した。
+     try {
+       var _st230scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st230downIdx = _st230scriptTexts.indexOf('async function supabaseSyncDown');
+       var _st230downSrc = _st230downIdx !== -1 ? _st230scriptTexts.slice(_st230downIdx, _st230downIdx + 2000) : '';
+       // ① マージ前後の指紋比較ロジックが存在するか
+       _st230downSrc.indexOf('_mergeActuallyChanged') !== -1
+         ? ok('ST-230·①: マージ前後の変化検出ロジック確認')
+         : ng('ST-230·①: 変化検出ロジックなし', '');
+       // ② 変化なし時にsaveAllTasks()より前でreturnしているか
+       var _st230noChangeIdx = _st230downSrc.indexOf('!_mergeActuallyChanged');
+       var _st230saveIdx = _st230downSrc.indexOf('saveAllTasks();');
+       (_st230noChangeIdx !== -1 && _st230saveIdx !== -1 && _st230noChangeIdx < _st230saveIdx)
+         ? ok('ST-230·②: 変化なし判定がsaveAllTasks()より前に配置確認')
+         : ng('ST-230·②: 配置順序が不正', '');
+       ok('ST-230: 同期の無限ループ防止 確認 完了');
+     } catch(e) {
+       ng('ST-230: 例外', e.message);
      }
 
        // 第1条【本番環境】
