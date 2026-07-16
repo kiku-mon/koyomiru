@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1326 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1329 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1326';
+    const APP_VERSION = 'v0.45.1329';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2653,7 +2653,7 @@
       .nav-tabs, #dailyInnerTabBar, #navFocusBadge, #mobileNavFocusBadge, #scratchView, #timelineView,
       #weeklyView, #yearlyView, #notebookView,
       #settingsView, #setupOverlay, #tutorialHelpBtn,
-      #escapeMessage, #modal-root, #lpModal,
+      #escapeMessage, #modal-root,
       .custom-modal, .escape-message,
       #craftEraLabel, #dbEraLabel, #settingsEraLabel, #gantEraLabel,
       #dailyEraLabel, #weeklyEraLabel, #monthlyEraLabel, #yearlyEraLabel,
@@ -30484,7 +30484,7 @@ window.addEventListener('beforeprint', function() {
   const hideIds = ['dailyInnerTabBar','scratchView','timelineView','weeklyView',
     'monthlyView','yearlyView','notebookView',
     'settingsView','dashboardView','setupOverlay','tutorialHelpBtn',
-    'escapeMessage','modal-root','lpModal'];
+    'escapeMessage','modal-root'];
   hideIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.dataset.printHidden = el.style.display;
@@ -30512,7 +30512,7 @@ window.addEventListener('afterprint', function() {
   const hideIds = ['dailyInnerTabBar','scratchView','timelineView','weeklyView',
     'monthlyView','yearlyView','notebookView',
     'settingsView','dashboardView','setupOverlay','tutorialHelpBtn',
-    'escapeMessage','modal-root','lpModal'];
+    'escapeMessage','modal-root'];
   hideIds.forEach(id => {
     const el = document.getElementById(id);
     if (el && el.dataset.printHidden !== undefined) {
@@ -33209,6 +33209,24 @@ async function supabaseSyncUp() {
   return r;
 }
 // 引数なし＝確認のみ（ローカルには一切触らない）。supabaseSyncDown(true)＝クラウドの内容でローカルを上書き。
+// v0.45.1328: クラウド同期後、現在表示中のビューを正しく再描画するディスパッチャー。
+// renderAllSections()は日次（マトリクス）ビュー専用のため、それ以外のビューを
+// 見ている最中に同期が来ても画面に反映されない問題を解消する。
+function _refreshCurrentViewForSync() {
+  try {
+    var view = localStorage.getItem('currentView') || 'daily';
+    if (view === 'weekly' && typeof renderWeeklyView === 'function') renderWeeklyView();
+    else if (view === 'monthly' && typeof renderMonthlyView === 'function') renderMonthlyView();
+    else if (view === 'yearly' && typeof renderYearlyView === 'function') renderYearlyView();
+    else if (view === 'gant' && typeof renderGantView === 'function') renderGantView();
+    else if (view === 'journal' && typeof renderJournalView === 'function') renderJournalView();
+    else if (view === 'photo' && typeof renderPhotoLogView === 'function') renderPhotoLogView();
+    else if (view === 'notebook' && typeof renderScratchView === 'function') renderScratchView();
+    else if (view === 'dashboard' && typeof renderDashboardView === 'function') renderDashboardView();
+    // 'daily'・'settings'・'legal'はrenderAllSections()または再描画不要のため対象外
+  } catch(e) { console.warn('[Supabase] ビュー再描画エラー:', e); }
+}
+window._refreshCurrentViewForSync = _refreshCurrentViewForSync;
 async function supabaseSyncDown(apply) {
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
@@ -33228,6 +33246,12 @@ async function supabaseSyncDown(apply) {
     allTasks = cloudTasks;
     saveAllTasks();
     renderAllSections();
+    // v0.45.1328: renderAllSections()は日次（マトリクス）ビューしか再描画しないため、
+    // 週間・月間・年間・造営・日誌・写真・雑記帳・ダッシュボードを見ている最中に
+    // クラウド同期が来ても画面に反映されない事故があった。
+    // 【権威】2026-07-16、PCでタスク作成→スマホで週間ビューを開いていたが、
+    // 同期成功トーストは出たのに画面に表示されないという報告から発覚した。
+    _refreshCurrentViewForSync();
     console.log('[Supabase] ローカルをクラウドの内容で上書きしました（' + cloudTasks.length + '件）');
   } else {
     console.log('[Supabase] 確認のみ（上書きする場合は supabaseSyncDown(true)）');
@@ -33442,7 +33466,16 @@ function _cloudStartRealtimeSubscription(userId) {
           }
         } catch(e2) { console.warn('[Supabase] Realtimeイベント処理エラー:', e2); }
       })
-      .subscribe();
+      .subscribe(function(status, err) {
+        // v0.45.1329: 購読状態をコンソールで確認できるようにする（動作確認・トラブルシュート用）
+        if (status === 'SUBSCRIBED') {
+          console.log('[Supabase] ✅ Realtime購読成功: koyomiru_tasksの変更を即時監視中');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.error('[Supabase] ❌ Realtime購読失敗: status=' + status, err || '');
+        } else {
+          console.log('[Supabase] Realtime購読状態: ' + status);
+        }
+      });
   } catch(e) { console.warn('[Supabase] Realtime購読開始エラー:', e); }
 }
 function _cloudStopRealtimeSubscription() {
@@ -34482,7 +34515,7 @@ function showDebugLog(_initOnly) {
      // ST-104はこのスナップショットではなく、直接DOM/関数の存在を確認する。
      // スナップショットはST-104の「差分表示」用の参考情報として残す。
      var _autoSnap = (function() {
-       var _ds = ['lpModal','lpModalFrame','taskEditModal','customModal','searchModal','scratchView','timelineView','weeklyView','monthlyView','gantView','journalView','settingsView','dashboardView','gantDayStartH','gantDayEndH','navDaily','navWeekly','navSettings'];
+       var _ds = ['taskEditModal','customModal','searchModal','scratchView','timelineView','weeklyView','monthlyView','gantView','journalView','settingsView','dashboardView','gantDayStartH','gantDayEndH','navDaily','navWeekly','navSettings'];
        var _fs = ['saveGantDayRange','renderTimelineView','switchView','saveAllSettings','saveAllTasks'];
        var snap = { timestamp: new Date().toISOString(), version: (typeof APP_VERSION!=='undefined')?APP_VERSION:'unknown', doms: _ds.filter(function(id){ return !!document.getElementById(id); }), fns: _fs.filter(function(fn){ return typeof window[fn]==='function'; }), domTotal: _ds.length, fnTotal: _fs.length };
        try { localStorage.setItem('_dev_snapshot', JSON.stringify(snap)); } catch(e) {}
@@ -34856,7 +34889,7 @@ function showDebugLog(_initOnly) {
      //       消えたものをNG。ベースラインは機能追加時に意図的に更新すること。
      try {
        var _st105BaseDoms = [
-         'lpModal','lpModalFrame','modal-root','setupOverlay',
+         'modal-root','setupOverlay',
          'taskEditModal','customModal','searchModal','sdfModal',
          'quizModal','deckBuilderModal','familyShareModal',
          'tutorialOverlay','restoreModal','restoreList','hodokusuModal',
@@ -39910,7 +39943,7 @@ function showDebugLog(_initOnly) {
        // ① 重要DOM存在確認（消失 = 即NG）
        var _domChecks104 = [
          // モーダル系
-         'lpModal','lpModalFrame','modal-root','setupOverlay',
+         'modal-root','setupOverlay',
          'taskEditModal','customModal','searchModal','sdfModal',
          'quizModal','deckBuilderModal','familyShareModal',
          'tutorialOverlay','restoreModal','restoreList',
@@ -40003,7 +40036,7 @@ function showDebugLog(_initOnly) {
        var _daily104 = document.getElementById('scratchView');
        if (!_daily104 || !_daily104.closest('body')) _structErrors104.push('scratchView:body外');
        var _lpM104 = document.getElementById('lpModal');
-       if (!_lpM104 || !_lpM104.querySelector('iframe')) _structErrors104.push('lpModal:iframe消失');
+       if (_lpM104) _structErrors104.push('lpModal:削除したはずのDOMが残存');
        var _gantt104 = document.getElementById('gantChartArea');
        if (!_gantt104) _structErrors104.push('gantChartArea:消失');
        _structErrors104.length === 0
@@ -45633,6 +45666,32 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-226: 例外', e.message);
      }
 
+     // ===== ST-227: 同期後の全ビュー再描画ディスパッチャー確認（v0.45.1328〜） =====
+     // 背景：2026-07-16、PCでタスク作成→スマホの週間ビューで確認したところ、
+     //   同期成功トーストは出たのに画面に反映されなかった。
+     //   renderAllSections()が日次ビューしか再描画していなかったのが原因。
+     try {
+       typeof window._refreshCurrentViewForSync === 'function'
+         ? ok('ST-227·①: _refreshCurrentViewForSync window公開確認')
+         : ng('ST-227·①: 関数未公開', '');
+       var _st227src = typeof window._refreshCurrentViewForSync === 'function' ? window._refreshCurrentViewForSync.toString() : '';
+       var _st227views = ['weekly','monthly','yearly','gant','journal','photo','notebook','dashboard'];
+       var _st227missing = _st227views.filter(function(v){ return _st227src.indexOf("'" + v + "'") === -1; });
+       _st227missing.length === 0
+         ? ok('ST-227·②: 全8ビュー（' + _st227views.join(',') + '）が分岐に含まれる確認')
+         : ng('ST-227·②: ビュー分岐が不足', _st227missing.join(','));
+       // ③ supabaseSyncDownが_refreshCurrentViewForSyncを呼んでいるか
+       var _st227scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st227downIdx = _st227scriptTexts.indexOf('async function supabaseSyncDown');
+       var _st227downSrc = _st227downIdx !== -1 ? _st227scriptTexts.slice(_st227downIdx, _st227downIdx + 1200) : '';
+       _st227downSrc.indexOf('_refreshCurrentViewForSync()') !== -1
+         ? ok('ST-227·③: supabaseSyncDownが再描画ディスパッチャーを呼ぶ確認')
+         : ng('ST-227·③: supabaseSyncDownから呼ばれていない', '');
+       ok('ST-227: 同期後の全ビュー再描画ディスパッチャー 確認 完了');
+     } catch(e) {
+       ng('ST-227: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -46009,7 +46068,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 作業後に ST-104 が RED になった場合、その変更はデプロイしてはならない。
        // 原因を特定し修正したうえで、ST-104 が GREEN になってから初めてデプロイできる。
        var _r19domChecks = [
-         'lpModal','lpModalFrame','taskEditModal','searchModal','sdfModal',
+         'taskEditModal','searchModal','sdfModal',
          'scratchView','timelineView','weeklyView','gantView','settingsView',
          'gantDayStartH','gantDayEndH','weeklyStartHSelect','weeklyEndHSelect',
          'navDaily','navWeekly','navSettings',
@@ -46388,13 +46447,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _checkResult('第57条', _r59ok, '_autoFillOnJournalOpen存在確認（退避復元パターンはST-221で実挙動検証済み）');
 
        // 第58条【パターン検索型チェックは自分の説明文を巻き込む（自己参照検知バグ）】
-       // 確認方法：第47条・第55条の除外境界が強い終端記号（バックスラッシュ+閉じ波括弧+
-       // バックスラッシュ+閉じ角括弧）を使っているか（弱い終端記号のみに頼っていないか）
+       // 確認方法：第47条・第55条の除外境界が、_RULES_DATA直後に必ず続く実コードまで
+       // 含む確実な終端になっているか。正規表現リテラル内ではドットがエスケープされる
+       // （バックスラッシュ+ドット）性質を利用し、生コードの文字列とは区別して検出する。
        var _r58scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _r58needle = String.fromCharCode(92) + '}' + String.fromCharCode(92) + ']';
+       var _r58dot = String.fromCharCode(92) + '.';
+       var _r58needle = 'document' + _r58dot + 'createElement';
        var _r58count = _r58scriptTexts.split(_r58needle).length - 1;
-       var _r58ok = _r58count >= 2; // 第47条・第55条の2箇所で使われているはず
-       _checkResult('第58条', _r58ok, '除外境界に強い終端記号使用確認（' + _r58count + '箇所）');
+       var _r58ok = _r58count >= 2; // 第47条・第55条の2箇所の正規表現リテラルに使われているはず
+       _checkResult('第58条', _r58ok, '除外境界に確実な終端（実コード直結・エスケープ形）使用確認（' + _r58count + '箇所）');
 
        // 第59条【関数内で宣言された関数・定数は外部scriptから参照できない】
        // 確認方法：第40条・第49条が.toString()方式ではなく生ソーステキスト検索方式になっているか
