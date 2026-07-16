@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1324 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1326 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1324';
+    const APP_VERSION = 'v0.45.1326';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33190,7 +33190,12 @@ async function supabaseSyncUp() {
   var r = await window.supabaseClient.from('koyomiru_tasks')
     .upsert(payload, { onConflict: 'user_id' })
     .select('user_id, updated_at');
-  if (r.error) { console.error('[Supabase] アップロード失敗:', r.error.message); }
+  if (r.error) {
+    console.error('[Supabase] アップロード失敗:', r.error.message);
+    // v0.45.1325: プッシュ失敗を記録。これがtrueの間は自動ダウンロード上書きを禁止する
+    // （ローカルの未保存変更が、古いクラウドデータで上書きされて消える事故を防ぐ）
+    window._cloudPushFailed = true;
+  }
   else {
     console.log('[Supabase] アップロードOK: allTasks ' + allTasks.length + '件 → クラウド（updated_at=' + r.data[0].updated_at + '）');
     // v0.45.1258: 最終保存時刻を記録（モーダルの安心表示用）
@@ -33198,6 +33203,8 @@ async function supabaseSyncUp() {
     if (typeof window.cloudRefreshLastSavedLabel === 'function') window.cloudRefreshLastSavedLabel();
     // v0.45.1306: 自分自身の書き込みへの不要な折り返しpullを避けるため記録
     window._cloudLastSyncedAt = r.data[0].updated_at;
+    // v0.45.1325: プッシュ成功したのでフラグ解除
+    window._cloudPushFailed = false;
   }
   return r;
 }
@@ -33239,9 +33246,20 @@ window.supabaseSyncDown = supabaseSyncDown;
 // 設計：allTasks全体ではなくupdated_atのみを問い合わせる軽量チェックのため、
 //   頻繁に呼んでもコストが小さい。
 window._cloudLastSyncedAt = window._cloudLastSyncedAt || null;
+window._cloudPushFailed = window._cloudPushFailed || false;
 async function _cloudCheckAndPullIfNewer() {
   try {
     if (!window._cloudIsLoggedIn || !window.supabaseClient) return;
+    // v0.45.1325: ローカルの未保存変更（プッシュ失敗中）があれば、
+    // 絶対に自動ダウンロード上書きをしない。まずプッシュの再試行を優先する。
+    // 【権威】2026-07-16、この保険がなかったためスマホの新規タスクが
+    // 古いクラウドデータで上書きされ消失した。二度と起こしてはならない。
+    if (window._cloudPushFailed) {
+      console.warn('[Supabase] プッシュ失敗中のため自動ダウンロードを中止。再送を試みます。');
+      var retry = await supabaseSyncUp();
+      if (!retry || retry.error) return; // 再送も失敗 → 今回はダウンロードしない
+      // 再送成功後は_cloudPushFailedがfalseになっているので、以降の判定へ進む
+    }
     var u = await window.supabaseClient.auth.getUser();
     if (!u.data || !u.data.user) return;
     var r = await window.supabaseClient.from('koyomiru_tasks')
@@ -33482,6 +33500,18 @@ async function cloudFirstLoginAutoMigrate() {
     var cloudTasks = (r.data && r.data.data && Array.isArray(r.data.data.allTasks)) ? r.data.data.allTasks : null;
     var cloudHas = !!(cloudTasks && cloudTasks.length > 0);
     var localHas = (typeof allTasks !== 'undefined') && Array.isArray(allTasks) && allTasks.length > 0;
+    // v0.45.1325: プッシュ失敗中（ローカルに未保存の変更がある可能性）なら、
+    // クラウドの内容で無条件に上書きしない。まず再送を試みる。
+    if (window._cloudPushFailed && localHas) {
+      console.warn('[Supabase] プッシュ失敗中のため自動ダウンロード上書きを保留。再送を試みます。');
+      var retryLogin = await supabaseSyncUp();
+      if (retryLogin && !retryLogin.error) {
+        _cloudLoginSetStatus('🎉 保留していたデータの保存に成功しました。');
+        return;
+      }
+      _cloudLoginSetStatus('⚠️ データの保存に失敗しています。ネットワークをご確認の上、後ほど再度お試しください。');
+      return;
+    }
     if (!cloudHas && localHas) {
       var up = await supabaseSyncUp();
       if (up && !up.error) {
@@ -34453,7 +34483,7 @@ function showDebugLog(_initOnly) {
      // スナップショットはST-104の「差分表示」用の参考情報として残す。
      var _autoSnap = (function() {
        var _ds = ['lpModal','lpModalFrame','taskEditModal','customModal','searchModal','scratchView','timelineView','weeklyView','monthlyView','gantView','journalView','settingsView','dashboardView','gantDayStartH','gantDayEndH','navDaily','navWeekly','navSettings'];
-       var _fs = ['openLpModal','closeLpModal','saveGantDayRange','renderTimelineView','switchView','saveAllSettings','saveAllTasks'];
+       var _fs = ['saveGantDayRange','renderTimelineView','switchView','saveAllSettings','saveAllTasks'];
        var snap = { timestamp: new Date().toISOString(), version: (typeof APP_VERSION!=='undefined')?APP_VERSION:'unknown', doms: _ds.filter(function(id){ return !!document.getElementById(id); }), fns: _fs.filter(function(fn){ return typeof window[fn]==='function'; }), domTotal: _ds.length, fnTotal: _fs.length };
        try { localStorage.setItem('_dev_snapshot', JSON.stringify(snap)); } catch(e) {}
        return snap;
@@ -34506,7 +34536,7 @@ function showDebugLog(_initOnly) {
        // モーダル開閉
        'openAiPlanModal','openBlueprintEditor','openGanttEditor','openGanttQuickTask',
        'openGrandVisionEditor','openDayInfoModal','openDeckBuilder','openDeckQRScanner',
-       'openJournalDetail','openNewJournal','openLpModal','openQRScanner','openSearchModal',
+       'openJournalDetail','openNewJournal','openQRScanner','openSearchModal',
        'openGuildMode',
        'closeBlueprintEditor','closeGanttEditor','closeCreateModal','closeDeckBuilder',
        'closeDeckQR','closeGuildMode','closeModal',
@@ -34847,7 +34877,6 @@ function showDebugLog(_initOnly) {
          'gantChartArea','gantBlueprintArea',
        ];
        var _st105BaseFns = [
-         'openLpModal','closeLpModal',
          'saveGantDayRange','saveWeeklyTimeRange',
          'selectKingdomMode','updateKingdomModeButtons',
          'openTaskEditModal','closeTaskEditModal','saveTaskEdit',
@@ -39915,7 +39944,6 @@ function showDebugLog(_initOnly) {
 
        // ② window公開確認（HTML onclick参照関数が未公開 = 即NG）
        var _fnChecks104 = [
-         'openLpModal','closeLpModal',
          'saveGantDayRange','saveWeeklyTimeRange',
          'selectKingdomMode','updateKingdomModeButtons',
          'openTaskEditModal','closeTaskEditModal','saveTaskEdit',
@@ -45572,6 +45600,39 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-225: 例外', e.message);
      }
 
+     // ===== ST-226: プッシュ失敗時の自動上書き防止ガード確認（v0.45.1325〜） =====
+     // 背景：2026-07-16、プッシュ（アップロード）だけが失敗しプルは成功する状態で、
+     //   ローカルの未保存タスクが古いクラウドデータで上書きされ消失する事故が発生した。
+     //   再発防止のため、_cloudPushFailedフラグによる自動ダウンロード停止機構を実装した。
+     try {
+       var _st226scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       // ① _cloudPushFailedが初期化されているか
+       _st226scriptTexts.indexOf('window._cloudPushFailed = window._cloudPushFailed || false') !== -1
+         ? ok('ST-226·①: _cloudPushFailed初期化確認')
+         : ng('ST-226·①: 初期化コードなし', '');
+       // ② supabaseSyncUpが失敗時にフラグを立て、成功時に解除しているか
+       var _st226upIdx = _st226scriptTexts.indexOf('async function supabaseSyncUp');
+       var _st226upSrc = _st226upIdx !== -1 ? _st226scriptTexts.slice(_st226upIdx, _st226upIdx + 1500) : '';
+       (_st226upSrc.indexOf('_cloudPushFailed = true') !== -1 && _st226upSrc.indexOf('_cloudPushFailed = false') !== -1)
+         ? ok('ST-226·②: supabaseSyncUpのフラグ管理確認')
+         : ng('ST-226·②: フラグ管理が不完全', '');
+       // ③ 定期チェック（_cloudCheckAndPullIfNewer）がフラグを見てから自動上書きするか
+       var _st226chkIdx = _st226scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
+       var _st226chkSrc = _st226chkIdx !== -1 ? _st226scriptTexts.slice(_st226chkIdx, _st226chkIdx + 700) : '';
+       _st226chkSrc.indexOf('_cloudPushFailed') !== -1
+         ? ok('ST-226·③: 定期チェックのプッシュ失敗ガード確認')
+         : ng('ST-226·③: 定期チェックにガードなし', '');
+       // ④ ログイン時自動取得（cloudFirstLoginAutoMigrate）にも同じガードがあるか
+       var _st226migIdx = _st226scriptTexts.indexOf('async function cloudFirstLoginAutoMigrate');
+       var _st226migSrc = _st226migIdx !== -1 ? _st226scriptTexts.slice(_st226migIdx, _st226migIdx + 900) : '';
+       _st226migSrc.indexOf('_cloudPushFailed') !== -1
+         ? ok('ST-226·④: ログイン時自動取得のプッシュ失敗ガード確認')
+         : ng('ST-226·④: ログイン時自動取得にガードなし', '');
+       ok('ST-226: プッシュ失敗時の自動上書き防止ガード 確認 完了');
+     } catch(e) {
+       ng('ST-226: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -45954,7 +46015,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          'navDaily','navWeekly','navSettings',
        ];
        var _r19missing = _r19domChecks.filter(function(id){ return !document.getElementById(id); });
-       var _r19fnChecks = ['openLpModal','closeLpModal','saveGantDayRange','renderTimelineView','switchView','saveAllSettings'];
+       var _r19fnChecks = ['saveGantDayRange','renderTimelineView','switchView','saveAllSettings'];
        var _r19missingFn = _r19fnChecks.filter(function(fn){ return typeof window[fn] !== 'function'; });
        var _r19ok = _r19missing.length === 0 && _r19missingFn.length === 0;
        _checkResult('第18条', _r19ok, '差分安全確認: DOM消失' + _r19missing.length + '件 window未公開' + _r19missingFn.length + '件');
@@ -46263,7 +46324,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 記載されている）を除外しないと自己参照的に誤検知するため、JSON全体を除外する（第33条①誤検知防止）。
        var _r49scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _r49hasDynamicRef = _r49scriptTexts.indexOf('_RULES_DATA.length') !== -1;
-       var _r49withoutRulesData = _r49scriptTexts.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\}\];/, '');
+       var _r49withoutRulesData = _r49scriptTexts.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\];\s*\n\s*var btnRules = document\.createElement/, '');
        var _r49hasHardcodedBtn = /読む[（(]\s*\d+\s*条[）)]/.test(_r49withoutRulesData);
        _checkResult('第47条', _r49hasDynamicRef && !_r49hasHardcodedBtn, '条文数はRULES_DATA.length動的参照確認（ハードコード不在）');
 
@@ -46313,7 +46374,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 注：境界検出には確実な終端パターン}];を使う（];だけだと自分自身の
        // 正規表現リテラル内の];と誤って早期マッチする恐れがある・第33条①誤検知防止）。
        var _r57html = document.documentElement.outerHTML;
-       var _r57withoutRulesData = _r57html.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\}\];/, '');
+       var _r57withoutRulesData = _r57html.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\];\s*\n\s*var btnRules = document\.createElement/, '');
        var _r57bad = /[^.\w](confirm|alert|prompt)\s*\(/.test(_r57withoutRulesData);
        _checkResult('第55条', !_r57bad, 'confirm/alert/prompt不使用確認（2クリック確認方式に統一）');
 
