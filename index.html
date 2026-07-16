@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1330 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1331 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1330';
+    const APP_VERSION = 'v0.45.1331';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9839,9 +9839,11 @@ function renderTodoList() {
       // アプリ内の全操作（タスク追加・編集・並び替え等）が自動でクラウド同期される。
       if (window._cloudIsLoggedIn && typeof window.supabaseSyncUp === 'function') {
         if (window._cloudAutoSaveTimer) clearTimeout(window._cloudAutoSaveTimer);
+        if (typeof _syncLog === 'function') _syncLog('自動アップロード予約（3秒後）', 'allTasks ' + allTasks.length + '件・トリガー元: saveAllTasks');
         window._cloudAutoSaveTimer = setTimeout(function() {
           window._cloudAutoSaveTimer = null;
-          window.supabaseSyncUp().catch(function(e){ console.warn('[Supabase] 自動同期失敗:', e); });
+          if (typeof _syncLog === 'function') _syncLog('自動アップロード実行（予約から3秒経過）');
+          window.supabaseSyncUp().catch(function(e){ if (typeof _syncWarn === 'function') _syncWarn('自動同期失敗', e); else console.warn('[Supabase] 自動同期失敗:', e); });
         }, 3000);
       }
     }
@@ -18224,6 +18226,15 @@ function reviveBlueprint(id) {
         console.warn('[deleteTaskById] kind:stamp は設定UIから削除してください');
         return;
       }
+      // v0.45.1331: 墓石（deletedTaskIds）に記録。Supabase同期のタスク単位マージが
+      // 削除済みタスクをクラウドの古いコピーから復活させてしまう事故を防ぐ。
+      // 【権威】2026-07-16、タスク単位マージ導入直後、削除したはずのタスクが
+      // 他端末との同期で復活し重複する事故が実際に発生した。
+      try {
+        var _delIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'));
+        _delIds.add(taskId);
+        localStorage.setItem('deletedTaskIds', JSON.stringify([..._delIds]));
+      } catch(e) { console.warn('[deleteTaskById] 墓石記録エラー:', e); }
       // 造営工程のtaskIdsから削除 → 再計算
       const _affectedGids = [];
       allTasks.forEach(t => {
@@ -33178,13 +33189,31 @@ window.supabaseSignOut = supabaseSignOut;
 // ===== v0.45.1233: Supabase接続 ステップ④ 手動同期関数 =====
 // SSoTは今まで通りメモリ上のallTasks（第4条）。Supabaseは「クラウド側の永続化層」。
 // 1ユーザー=1行方式：tasksテーブルのdataカラムにallTasks丸ごとをjsonbで保存。
+// v0.45.1331: デバッグ速度向上のため、同期関連ログに端末識別タグと意図を付与する。
+// 【権威】2026-07-16、「どの端末が何の意図で動いたか」がログから分からず、
+// 同期不具合の原因切り分けに時間がかかった反省から追加。
+function _syncDeviceTag() {
+  try {
+    var did = getOrCreateDeviceId();
+    return '[端末:' + did.slice(-6) + ']';
+  } catch(e) { return '[端末:不明]'; }
+}
+function _syncLog(intent, detail) {
+  console.log('%c[Sync]' + _syncDeviceTag() + ' ' + intent, 'color:#4facfe;font-weight:bold;', detail !== undefined ? detail : '');
+}
+function _syncWarn(intent, detail) {
+  console.warn('[Sync]' + _syncDeviceTag() + ' ⚠️ ' + intent, detail !== undefined ? detail : '');
+}
 async function supabaseSyncUp() {
+  if (typeof _syncLog === 'function') _syncLog('アップロード開始', '意図: ローカルの変更をクラウドへ反映');
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
   if (!u.data || !u.data.user) { console.warn('[Supabase] 未ログインのため同期不可'); return null; }
+  var _upDeletedIds = [];
+  try { _upDeletedIds = JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'); } catch(e) {}
   var payload = {
     user_id: u.data.user.id,
-    data: { allTasks: allTasks, appVersion: APP_VERSION, savedAt: new Date().toISOString() },
+    data: { allTasks: allTasks, deletedTaskIds: _upDeletedIds, appVersion: APP_VERSION, savedAt: new Date().toISOString() },
     updated_at: new Date().toISOString()
   };
   var r = await window.supabaseClient.from('koyomiru_tasks')
@@ -33234,10 +33263,16 @@ window._refreshCurrentViewForSync = _refreshCurrentViewForSync;
 // updatedAt（なければcreatedAt）が新しい方を採用する。
 function _mergeTasksArrays(localArr, cloudArr) {
   try {
+    var deletedIds;
+    try { deletedIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
+    catch(e) { deletedIds = new Set(); }
     var map = {};
     (localArr || []).forEach(function(t){ if (t && t.id) map[t.id] = t; });
     (cloudArr || []).forEach(function(ct){
       if (!ct || !ct.id) return;
+      // v0.45.1331: 自分（この端末）が過去に削除したと記録しているタスクは、
+      // クラウドの古いコピーに残っていても復活させない。
+      if (deletedIds.has(ct.id) && !map[ct.id]) return;
       var lt = map[ct.id];
       if (!lt) {
         map[ct.id] = ct; // ローカルにない → クラウド側を採用（他端末の新規追加）
@@ -33256,6 +33291,7 @@ function _mergeTasksArrays(localArr, cloudArr) {
 }
 window._mergeTasksArrays = _mergeTasksArrays;
 async function supabaseSyncDown(apply) {
+  if (typeof _syncLog === 'function') _syncLog('ダウンロード開始', '意図: ' + (apply === true ? 'クラウドの内容を取得しマージ適用する' : '確認のみ・ローカルには触れない'));
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
   if (!u.data || !u.data.user) { console.warn('[Supabase] 未ログインのため同期不可'); return null; }
@@ -33271,6 +33307,18 @@ async function supabaseSyncDown(apply) {
   var cloudTasks = r.data.data.allTasks;
   console.log('[Supabase] クラウド: ' + cloudTasks.length + '件（updated_at=' + r.data.updated_at + '） / ローカル: ' + allTasks.length + '件');
   if (apply === true) {
+    // v0.45.1331: クラウド側の削除記録（deletedTaskIds）をローカルと統合。
+    // 他端末が削除したタスクを、この端末が知らずに復活させることを防ぐ。
+    try {
+      var _cloudDeletedIds = Array.isArray(r.data.data.deletedTaskIds) ? r.data.data.deletedTaskIds : [];
+      var _localDeletedSet = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'));
+      var _beforeUnionSize = _localDeletedSet.size;
+      _cloudDeletedIds.forEach(function(id){ _localDeletedSet.add(id); });
+      localStorage.setItem('deletedTaskIds', JSON.stringify([..._localDeletedSet]));
+      if (_localDeletedSet.size !== _beforeUnionSize) {
+        console.log('[Supabase] 削除記録を統合: ' + _beforeUnionSize + '件 → ' + _localDeletedSet.size + '件');
+      }
+    } catch(e) { console.warn('[Supabase] 削除記録の統合エラー:', e); }
     // v0.45.1330: 配列まるごと上書きから、タスク単位マージへ変更。
     // 別端末でほぼ同時に別々のタスクを作成した場合でも、両方残るようにする。
     var _beforeMergeCount = allTasks.length;
@@ -33308,6 +33356,7 @@ window._cloudPushFailed = window._cloudPushFailed || false;
 async function _cloudCheckAndPullIfNewer() {
   try {
     if (!window._cloudIsLoggedIn || !window.supabaseClient) return;
+    if (typeof _syncLog === 'function') _syncLog('定期チェック実行（45秒ごと or タブ復帰）', '意図: クラウドが自分より新しいか確認');
     // v0.45.1325: ローカルの未保存変更（プッシュ失敗中）があれば、
     // 絶対に自動ダウンロード上書きをしない。まずプッシュの再試行を優先する。
     // 【権威】2026-07-16、この保険がなかったためスマホの新規タスクが
@@ -33489,14 +33538,18 @@ function _cloudStartRealtimeSubscription(userId) {
       }, function(payload) {
         try {
           var newUpdatedAt = payload && payload.new && payload.new.updated_at;
+          if (typeof _syncLog === 'function') _syncLog('Realtimeイベント受信', 'updated_at=' + newUpdatedAt + ' 自分の最終同期=' + window._cloudLastSyncedAt);
           // 自分自身の直近の書き込みへの折り返し反応を避ける（第59条・副作用連鎖の退避復元精神）
           if (newUpdatedAt && newUpdatedAt !== window._cloudLastSyncedAt) {
+            if (typeof _syncLog === 'function') _syncLog('意図: 他端末の更新と判定 → 即時ダウンロード開始');
             supabaseSyncDown(true).then(function(r) {
               if (r && !r.error) {
                 window._cloudLastSyncedAt = newUpdatedAt;
                 if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を即時反映しました');
               }
             });
+          } else {
+            if (typeof _syncLog === 'function') _syncLog('意図: 自分自身の書き込みと判定 → 無視（折り返し防止）');
           }
         } catch(e2) { console.warn('[Supabase] Realtimeイベント処理エラー:', e2); }
       })
@@ -45766,9 +45819,58 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-228·④: supabaseSyncDownがマージ関数を使用確認')
          : ng('ST-228·④: 配列まるごと上書きのまま', '');
 
-       ok('ST-228: タスク単位マージ 確認 完了（既知の限界：削除の伝播は未対応）');
+       ok('ST-228: タスク単位マージ 確認 完了（v0.45.1331で削除の伝播＝墓石機構を追加済み）');
      } catch(e) {
        ng('ST-228: 例外', e.message);
+     }
+
+     // ===== ST-229: 墓石（deletedTaskIds）機構の確認（v0.45.1331〜） =====
+     // 背景：2026-07-16、タスク単位マージ導入直後、実際に削除したタスクが
+     //   クラウドの古いコピーから復活し重複する事故が発生した。
+     //   deleteTaskById()が削除時にdeletedTaskIdsへ記録し、_mergeTasksArraysが
+     //   それを見て復活を防ぐ、既存のGist同期用の仕組みを流用して対応した。
+     try {
+       // ① deleteTaskByIdが墓石を記録するか（実際に呼んで確認）
+       var _st229id = generateTaskId();
+       allTasks.push({ id: _st229id, kind: 'task', text: 'ST-229墓石テスト', date: getLocalDateStr(new Date()), section: 1, displayScope: 'daily_only', calendarId: allSettings.calendar.mainCalendarId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+       var _st229prevSave = window.saveAllTasks; window.saveAllTasks = function(){};
+       var _st229prevRenderGant = window.renderGantView; window.renderGantView = function(){};
+       deleteTaskById(_st229id);
+       window.saveAllTasks = _st229prevSave;
+       window.renderGantView = _st229prevRenderGant;
+       var _st229deletedIds = JSON.parse(localStorage.getItem('deletedTaskIds') || '[]');
+       _st229deletedIds.indexOf(_st229id) !== -1
+         ? ok('ST-229·①: deleteTaskByIdが墓石を記録する確認')
+         : ng('ST-229·①: 墓石が記録されなかった', '');
+       // クリーンアップ（テスト用の墓石を除去）
+       var _st229cleanIds = _st229deletedIds.filter(function(id){ return id !== _st229id; });
+       localStorage.setItem('deletedTaskIds', JSON.stringify(_st229cleanIds));
+
+       // ② _mergeTasksArraysが墓石を見て復活を防ぐか
+       var _st229local2 = []; // ローカルには既にない（削除済み）
+       var _st229cloud2 = [{ id: 'st229-ghost', text: '復活してはいけないタスク', updatedAt: '2026-01-01T00:00:00Z' }];
+       var _st229savedDeleted = localStorage.getItem('deletedTaskIds');
+       localStorage.setItem('deletedTaskIds', JSON.stringify(['st229-ghost']));
+       var _st229merged = window._mergeTasksArrays(_st229local2, _st229cloud2);
+       localStorage.setItem('deletedTaskIds', _st229savedDeleted || '[]');
+       var _st229resurrected = _st229merged.some(function(t){ return t.id === 'st229-ghost'; });
+       !_st229resurrected
+         ? ok('ST-229·②: 墓石記録があるタスクは復活しない確認')
+         : ng('ST-229·②: 削除済みタスクが復活してしまった', '');
+
+       // ③ アップロード・ダウンロードでdeletedTaskIdsが伝播する経路があるか
+       var _st229scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st229upIdx = _st229scriptTexts.indexOf('async function supabaseSyncUp');
+       var _st229upSrc = _st229upIdx !== -1 ? _st229scriptTexts.slice(_st229upIdx, _st229upIdx + 800) : '';
+       var _st229downIdx = _st229scriptTexts.indexOf('async function supabaseSyncDown');
+       var _st229downSrc = _st229downIdx !== -1 ? _st229scriptTexts.slice(_st229downIdx, _st229downIdx + 1000) : '';
+       (_st229upSrc.indexOf('deletedTaskIds') !== -1 && _st229downSrc.indexOf('deletedTaskIds') !== -1)
+         ? ok('ST-229·③: アップロード・ダウンロード両方でdeletedTaskIdsが伝播する確認')
+         : ng('ST-229·③: 削除記録の伝播経路が不足', '');
+
+       ok('ST-229: 墓石（deletedTaskIds）機構 確認 完了');
+     } catch(e) {
+       ng('ST-229: 例外', e.message);
      }
 
        // 第1条【本番環境】
