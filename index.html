@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1329 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1330 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1329';
+    const APP_VERSION = 'v0.45.1330';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33227,6 +33227,34 @@ function _refreshCurrentViewForSync() {
   } catch(e) { console.warn('[Supabase] ビュー再描画エラー:', e); }
 }
 window._refreshCurrentViewForSync = _refreshCurrentViewForSync;
+// v0.45.1330: タスク単位マージ（配列まるごと上書き方式からの脱却）
+// 背景：配列全体を後勝ちで上書きする方式は、別々のタスクを別端末でほぼ同時に
+// 作成した場合、片方が問答無用で消える構造的リスクを持っていた。
+// idごとに比較し、片方にしかないタスクは両方残す。両方にある場合のみ
+// updatedAt（なければcreatedAt）が新しい方を採用する。
+function _mergeTasksArrays(localArr, cloudArr) {
+  try {
+    var map = {};
+    (localArr || []).forEach(function(t){ if (t && t.id) map[t.id] = t; });
+    (cloudArr || []).forEach(function(ct){
+      if (!ct || !ct.id) return;
+      var lt = map[ct.id];
+      if (!lt) {
+        map[ct.id] = ct; // ローカルにない → クラウド側を採用（他端末の新規追加）
+        return;
+      }
+      var lu = lt.updatedAt || lt.createdAt || '';
+      var cu = ct.updatedAt || ct.createdAt || '';
+      if (cu > lu) map[ct.id] = ct; // クラウドの方が新しい場合のみ差し替え
+      // 同じ・ローカルの方が新しい・比較不能 の場合はローカルを維持（安全側に倒す）
+    });
+    return Object.keys(map).map(function(k){ return map[k]; });
+  } catch(e) {
+    console.warn('[Supabase] マージ処理エラー、クラウド内容をそのまま採用:', e);
+    return cloudArr;
+  }
+}
+window._mergeTasksArrays = _mergeTasksArrays;
 async function supabaseSyncDown(apply) {
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
@@ -33243,7 +33271,13 @@ async function supabaseSyncDown(apply) {
   var cloudTasks = r.data.data.allTasks;
   console.log('[Supabase] クラウド: ' + cloudTasks.length + '件（updated_at=' + r.data.updated_at + '） / ローカル: ' + allTasks.length + '件');
   if (apply === true) {
-    allTasks = cloudTasks;
+    // v0.45.1330: 配列まるごと上書きから、タスク単位マージへ変更。
+    // 別端末でほぼ同時に別々のタスクを作成した場合でも、両方残るようにする。
+    var _beforeMergeCount = allTasks.length;
+    allTasks = _mergeTasksArrays(allTasks, cloudTasks);
+    if (allTasks.length !== cloudTasks.length || allTasks.length !== _beforeMergeCount) {
+      console.log('[Supabase] マージ結果: ローカル' + _beforeMergeCount + '件 + クラウド' + cloudTasks.length + '件 → 統合後' + allTasks.length + '件');
+    }
     saveAllTasks();
     renderAllSections();
     // v0.45.1328: renderAllSections()は日次（マトリクス）ビューしか再描画しないため、
@@ -45690,6 +45724,51 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-227: 同期後の全ビュー再描画ディスパッチャー 確認 完了');
      } catch(e) {
        ng('ST-227: 例外', e.message);
+     }
+
+     // ===== ST-228: タスク単位マージ関数の実挙動確認（v0.45.1330〜） =====
+     // 背景：配列まるごと上書き方式は、別端末でほぼ同時に別々のタスクを
+     //   作成すると片方が消える構造的リスクを持っていた（2026-07-16の事故）。
+     //   idごとに比較し、片方にしかないタスクは両方残すマージ方式に変更した。
+     try {
+       typeof window._mergeTasksArrays === 'function'
+         ? ok('ST-228·①: _mergeTasksArrays window公開確認')
+         : ng('ST-228·①: 関数未公開', '');
+
+       // ② ローカル限定タスク・クラウド限定タスクが両方とも生き残ること
+       var _st228local = [
+         { id: 'st228-local-only', text: 'ローカルのみ', updatedAt: '2026-01-01T00:00:00Z' }
+       ];
+       var _st228cloud = [
+         { id: 'st228-cloud-only', text: 'クラウドのみ', updatedAt: '2026-01-01T00:00:00Z' }
+       ];
+       var _st228merged1 = window._mergeTasksArrays(_st228local, _st228cloud);
+       var _st228hasLocal = _st228merged1.some(function(t){ return t.id === 'st228-local-only'; });
+       var _st228hasCloud = _st228merged1.some(function(t){ return t.id === 'st228-cloud-only'; });
+       (_st228hasLocal && _st228hasCloud)
+         ? ok('ST-228·②: 別々のタスクは両方とも生き残る確認（' + _st228merged1.length + '件）')
+         : ng('ST-228·②: 片方が消失', 'local=' + _st228hasLocal + ' cloud=' + _st228hasCloud);
+
+       // ③ 同一idの場合、updatedAtが新しい方が採用されること
+       var _st228localSame = [{ id: 'st228-same', text: '古い内容', updatedAt: '2026-01-01T00:00:00Z' }];
+       var _st228cloudSame = [{ id: 'st228-same', text: '新しい内容', updatedAt: '2026-06-01T00:00:00Z' }];
+       var _st228merged2 = window._mergeTasksArrays(_st228localSame, _st228cloudSame);
+       var _st228winner = _st228merged2.find(function(t){ return t.id === 'st228-same'; });
+       (_st228winner && _st228winner.text === '新しい内容')
+         ? ok('ST-228·③: 同一idはupdatedAtが新しい方を採用確認')
+         : ng('ST-228·③: 新しい方が採用されなかった', _st228winner ? _st228winner.text : 'なし');
+
+       // ④ supabaseSyncDownがマージ関数を実際に呼んでいるか
+       var _st228scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st228downIdx = _st228scriptTexts.indexOf('async function supabaseSyncDown');
+       var _st228downSrc = _st228downIdx !== -1 ? _st228scriptTexts.slice(_st228downIdx, _st228downIdx + 1200) : '';
+       _st228downSrc.indexOf('_mergeTasksArrays(') !== -1
+         ? ok('ST-228·④: supabaseSyncDownがマージ関数を使用確認')
+         : ng('ST-228·④: 配列まるごと上書きのまま', '');
+
+       ok('ST-228: タスク単位マージ 確認 完了（既知の限界：削除の伝播は未対応）');
+     } catch(e) {
+       ng('ST-228: 例外', e.message);
      }
 
        // 第1条【本番環境】
