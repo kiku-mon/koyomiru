@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1333 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1335 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1333';
+    const APP_VERSION = 'v0.45.1335';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33376,6 +33376,15 @@ window.supabaseSyncDown = supabaseSyncDown;
 window._cloudLastSyncedAt = window._cloudLastSyncedAt || null;
 window._cloudPushFailed = window._cloudPushFailed || false;
 async function _cloudCheckAndPullIfNewer() {
+  // v0.45.1334: 多重実行防止・短時間スロットリング。
+  // 【権威】2026-07-16、DevTools使用中などにvisibilitychangeが想定以上に頻発し、
+  // 「定期チェック実行」が数秒間隔で何度も走ってしまう現象が確認された。
+  // 同時実行中なら無視し、直近の実行から10秒未満なら間引く。
+  if (window._cloudCheckRunning) return;
+  var _nowTs = Date.now();
+  if (window._cloudCheckLastRunAt && (_nowTs - window._cloudCheckLastRunAt) < 10000) return;
+  window._cloudCheckRunning = true;
+  window._cloudCheckLastRunAt = _nowTs;
   try {
     if (!window._cloudIsLoggedIn || !window.supabaseClient) return;
     if (typeof _syncLog === 'function') _syncLog('定期チェック実行（45秒ごと or タブ復帰）', '意図: クラウドが自分より新しいか確認');
@@ -33405,6 +33414,7 @@ async function _cloudCheckAndPullIfNewer() {
       }
     }
   } catch(e) { console.warn('[Supabase] 定期確認エラー:', e); }
+  finally { window._cloudCheckRunning = false; }
 }
 window._cloudCheckAndPullIfNewer = _cloudCheckAndPullIfNewer;
 // タブがアクティブに戻った時、および45秒ごとにチェック（アクティブな時のみ）
@@ -33561,6 +33571,12 @@ function _cloudStartRealtimeSubscription(userId) {
         try {
           var newUpdatedAt = payload && payload.new && payload.new.updated_at;
           if (typeof _syncLog === 'function') _syncLog('Realtimeイベント受信', 'updated_at=' + newUpdatedAt + ' 自分の最終同期=' + window._cloudLastSyncedAt);
+          // v0.45.1335: コンソールが開けない端末でも「受信できているか」が分かるよう、画面にも反映する。
+          var _elStatus2 = document.getElementById('cloudRealtimeStatus');
+          if (_elStatus2) {
+            var _nowLabel = new Date().toLocaleTimeString('ja-JP');
+            _elStatus2.textContent = '🟢 Realtime接続中（最終受信: ' + _nowLabel + '）';
+          }
           // 自分自身の直近の書き込みへの折り返し反応を避ける（第59条・副作用連鎖の退避復元精神）
           if (newUpdatedAt && newUpdatedAt !== window._cloudLastSyncedAt) {
             if (typeof _syncLog === 'function') _syncLog('意図: 他端末の更新と判定 → 即時ダウンロード開始');
@@ -33577,12 +33593,17 @@ function _cloudStartRealtimeSubscription(userId) {
       })
       .subscribe(function(status, err) {
         // v0.45.1329: 購読状態をコンソールで確認できるようにする（動作確認・トラブルシュート用）
+        // v0.45.1335: コンソールが開けない端末（スマホ等）でも確認できるよう、画面表示も更新する。
+        var _elStatus = document.getElementById('cloudRealtimeStatus');
         if (status === 'SUBSCRIBED') {
           console.log('[Supabase] ✅ Realtime購読成功: koyomiru_tasksの変更を即時監視中');
+          if (_elStatus) { _elStatus.textContent = '🟢 Realtime接続中（即時同期 有効）'; _elStatus.style.color = '#5b8c5a'; }
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           console.error('[Supabase] ❌ Realtime購読失敗: status=' + status, err || '');
+          if (_elStatus) { _elStatus.textContent = '🔴 Realtime接続失敗（' + status + '）· 45秒ごとの確認のみ動作'; _elStatus.style.color = '#c0392b'; }
         } else {
           console.log('[Supabase] Realtime購読状態: ' + status);
+          if (_elStatus) { _elStatus.textContent = '🟡 Realtime接続中… (' + status + ')'; _elStatus.style.color = '#a67c00'; }
         }
       });
   } catch(e) { console.warn('[Supabase] Realtime購読開始エラー:', e); }
@@ -45925,6 +45946,63 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-230: 例外', e.message);
      }
 
+     // ===== ST-231: 定期チェックの多重実行防止・スロットリング確認（v0.45.1334〜） =====
+     // 背景：2026-07-16、DevTools使用中などにvisibilitychangeが想定以上に頻発し、
+     //   45秒間隔のはずの定期チェックが数秒間隔で何度も走ってしまう現象が確認された。
+     try {
+       var _st231scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st231chkIdx = _st231scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
+       var _st231chkSrc = _st231chkIdx !== -1 ? _st231scriptTexts.slice(_st231chkIdx, _st231chkIdx + 900) : '';
+       // ① 多重実行防止ガードがあるか
+       _st231chkSrc.indexOf('_cloudCheckRunning') !== -1
+         ? ok('ST-231·①: 多重実行防止ガード（_cloudCheckRunning）確認')
+         : ng('ST-231·①: 多重実行防止ガードなし', '');
+       // ② 短時間スロットリングがあるか
+       _st231chkSrc.indexOf('_cloudCheckLastRunAt') !== -1
+         ? ok('ST-231·②: 短時間スロットリング（_cloudCheckLastRunAt）確認')
+         : ng('ST-231·②: スロットリングなし', '');
+       // ③ finallyで確実にフラグ解除しているか（早期returnでも漏れない設計）
+       _st231scriptTexts.slice(_st231chkIdx, _st231chkIdx + 2000).indexOf('finally') !== -1
+         ? ok('ST-231·③: finallyによる確実なフラグ解除確認')
+         : ng('ST-231·③: finallyがない（早期returnでフラグが残る恐れ）', '');
+       // ④ 実際に呼んでも例外を投げないこと（多重実行防止の安全確認）
+       try {
+         if (typeof window._cloudCheckAndPullIfNewer === 'function') {
+           window._cloudCheckAndPullIfNewer();
+           window._cloudCheckAndPullIfNewer(); // 直後にもう一度 → 2回目は即returnするはず
+         }
+         ok('ST-231·④: 連続呼び出しでも同期的例外なし確認');
+       } catch(e2) {
+         ng('ST-231·④: 実行時に例外', e2.message);
+       }
+       ok('ST-231: 定期チェックの多重実行防止・スロットリング 確認 完了');
+     } catch(e) {
+       ng('ST-231: 例外', e.message);
+     }
+
+     // ===== ST-232: 画面表示型Realtimeステータス確認（v0.45.1335〜） =====
+     // 背景：コンソールを開けない端末（スマホ等）でRealtimeの動作確認ができないため、
+     //   画面上（アカウントモーダル）にも接続状況・最終受信時刻を表示するようにした。
+     try {
+       var _st232el = document.getElementById('cloudRealtimeStatus');
+       _st232el
+         ? ok('ST-232·①: cloudRealtimeStatus DOM存在確認')
+         : ng('ST-232·①: DOM未存在', '');
+       var _st232scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st232scriptTexts.indexOf("getElementById('cloudRealtimeStatus')") !== -1
+         ? ok('ST-232·②: JS側でcloudRealtimeStatusを更新する処理確認')
+         : ng('ST-232·②: 更新処理が見つからない', '');
+       // ③ SUBSCRIBED時に緑、失敗時に赤の表示分岐があるか
+       var _st232subIdx = _st232scriptTexts.indexOf(".subscribe(function(status, err)");
+       var _st232subSrc = _st232subIdx !== -1 ? _st232scriptTexts.slice(_st232subIdx, _st232subIdx + 1200) : '';
+       (_st232subSrc.indexOf('🟢') !== -1 && _st232subSrc.indexOf('🔴') !== -1)
+         ? ok('ST-232·③: 成功/失敗で色分け表示する分岐確認')
+         : ng('ST-232·③: 色分け表示の分岐が見つからない', '');
+       ok('ST-232: 画面表示型Realtimeステータス 確認 完了');
+     } catch(e) {
+       ng('ST-232: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -55384,6 +55462,7 @@ window.addMigration = addMigration;
       <div id="cloudLoginUserLabel" style="font-size:0.95em;margin-bottom:8px;"></div>
       <div style="font-size:0.85em;color:#5b8c5a;background:#f0f6ef;border-radius:8px;padding:10px 12px;margin-bottom:8px;">登録済みです。データは自動で保存・同期されます（他端末の変更も自動で反映）。</div>
       <div id="cloudLastSavedLabel" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;"></div>
+      <div id="cloudRealtimeStatus" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;padding:8px 10px;background:#f9f7f2;border-radius:8px;">⏳ Realtime接続状況を確認中…</div>
       <button id="cloudLoginFetchBtn" onclick="cloudFetchFromModal()" style="display:none;width:100%;padding:11px;border:none;border-radius:8px;background:#4facfe;color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;margin-bottom:10px;">⬇️ クラウドのデータを取得</button>
       <button onclick="cloudLogoutFromModal()" style="width:100%;padding:9px;border:none;border-radius:8px;background:transparent;color:#a89a88;font-size:0.85em;cursor:pointer;">ログアウト</button>
     </div>
