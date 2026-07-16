@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1332 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1333 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1332';
+    const APP_VERSION = 'v0.45.1333';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9826,7 +9826,7 @@ function renderTodoList() {
         });
     }
     // マスターデータ保存
-    function saveAllTasks() {
+    function saveAllTasks(skipCloudSync) {
       try {
         localStorage.setItem('allTasks', JSON.stringify(allTasks));
         // taskIdCounter: UUID移行済みのため書き込み不要
@@ -9837,7 +9837,13 @@ function renderTodoList() {
       // v0.45.1258: ログイン中は自動でクラウドにも同期（デバウンス3秒）
       // saveAllTasksは第4条のSSoT唯一の書き込み口のため、ここに置くだけで
       // アプリ内の全操作（タスク追加・編集・並び替え等）が自動でクラウド同期される。
-      if (window._cloudIsLoggedIn && typeof window.supabaseSyncUp === 'function') {
+      // v0.45.1333: skipCloudSync=trueの場合は再アップロードを予約しない。
+      // 【権威】2026-07-16、「ダウンロード→保存→自動で再アップロード→Realtime受信→
+      // 定期チェック→ダウンロード」という無限ループが発生した。ダウンロード経由の保存は
+      // 元々クラウドから取得した内容なので、そのまま追いかけて再アップロードする必要はない。
+      if (skipCloudSync) {
+        if (typeof _syncLog === 'function') _syncLog('ローカル保存のみ（クラウド由来のデータのため再アップロード予約なし）');
+      } else if (window._cloudIsLoggedIn && typeof window.supabaseSyncUp === 'function') {
         if (window._cloudAutoSaveTimer) clearTimeout(window._cloudAutoSaveTimer);
         if (typeof _syncLog === 'function') _syncLog('自動アップロード予約（3秒後）', 'allTasks ' + allTasks.length + '件・トリガー元: saveAllTasks');
         window._cloudAutoSaveTimer = setTimeout(function() {
@@ -33342,7 +33348,7 @@ async function supabaseSyncDown(apply) {
       window._cloudLastSyncedAt = r.data.updated_at;
       return r;
     }
-    saveAllTasks();
+    saveAllTasks(true); // v0.45.1333: 第2引数trueでクラウド由来の保存を明示、再アップロード予約を抑制
     renderAllSections();
     // v0.45.1328: renderAllSections()は日次（マトリクス）ビューしか再描画しないため、
     // 週間・月間・年間・造営・日誌・写真・雑記帳・ダッシュボードを見ている最中に
@@ -45889,24 +45895,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-229: 例外', e.message);
      }
 
-     // ===== ST-230: 同期の無限ループ防止確認（v0.45.1332〜） =====
-     // 背景：2026-07-16、マージ結果がローカルと完全に同一でも無条件にsaveAllTasks()を
-     //   呼んでいたため、「ダウンロード→保存→3秒後に再アップロード→Realtime受信→
-     //   定期チェック→ダウンロード」という無限ループが実際に発生した。
+     // ===== ST-230: 同期の無限ループ防止確認（v0.45.1333〜） =====
+     // 背景：2026-07-16、ダウンロード経由のsaveAllTasks()呼び出しが無条件で
+     //   クラウドへの再アップロードを予約していたため、「ダウンロード→保存→
+     //   再アップロード→Realtime受信→定期チェック→ダウンロード」という無限ループが
+     //   実際に発生した。指紋比較による抑制だけでは不十分だったため、
+     //   saveAllTasksにskipCloudSyncフラグを追加し、ダウンロード経由の保存は
+     //   根本的に再アップロードを予約しない設計に変更した。
      try {
        var _st230scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       // ① saveAllTasksがskipCloudSync引数を持つか
+       var _st230saveFnIdx = _st230scriptTexts.indexOf('function saveAllTasks(skipCloudSync)');
+       _st230saveFnIdx !== -1
+         ? ok('ST-230·①: saveAllTasksにskipCloudSync引数確認')
+         : ng('ST-230·①: skipCloudSync引数なし', '');
+       // ② supabaseSyncDownがsaveAllTasks(true)を呼んでいるか（再アップロード予約なし）
        var _st230downIdx = _st230scriptTexts.indexOf('async function supabaseSyncDown');
-       var _st230downSrc = _st230downIdx !== -1 ? _st230scriptTexts.slice(_st230downIdx, _st230downIdx + 2000) : '';
-       // ① マージ前後の指紋比較ロジックが存在するか
-       _st230downSrc.indexOf('_mergeActuallyChanged') !== -1
-         ? ok('ST-230·①: マージ前後の変化検出ロジック確認')
-         : ng('ST-230·①: 変化検出ロジックなし', '');
-       // ② 変化なし時にsaveAllTasks()より前でreturnしているか
-       var _st230noChangeIdx = _st230downSrc.indexOf('!_mergeActuallyChanged');
-       var _st230saveIdx = _st230downSrc.indexOf('saveAllTasks();');
-       (_st230noChangeIdx !== -1 && _st230saveIdx !== -1 && _st230noChangeIdx < _st230saveIdx)
-         ? ok('ST-230·②: 変化なし判定がsaveAllTasks()より前に配置確認')
-         : ng('ST-230·②: 配置順序が不正', '');
+       var _st230downSrc = _st230downIdx !== -1 ? _st230scriptTexts.slice(_st230downIdx, _st230downIdx + 3500) : '';
+       _st230downSrc.indexOf('saveAllTasks(true)') !== -1
+         ? ok('ST-230·②: supabaseSyncDownがsaveAllTasks(true)を使用確認')
+         : ng('ST-230·②: 無条件のsaveAllTasks()のまま', '');
+       // ③ saveAllTasks内でskipCloudSyncがタイマー予約の条件分岐に使われているか（ソース検証・書き込みなし）
+       var _st230saveFnSrc = _st230saveFnIdx !== -1 ? _st230scriptTexts.slice(_st230saveFnIdx, _st230saveFnIdx + 1500) : '';
+       (_st230saveFnSrc.indexOf('if (skipCloudSync)') !== -1 && _st230saveFnSrc.indexOf('else if (window._cloudIsLoggedIn') !== -1)
+         ? ok('ST-230·③: skipCloudSyncがタイマー予約を条件分岐で回避する構造確認')
+         : ng('ST-230·③: 条件分岐構造が確認できない', '');
        ok('ST-230: 同期の無限ループ防止 確認 完了');
      } catch(e) {
        ng('ST-230: 例外', e.message);
