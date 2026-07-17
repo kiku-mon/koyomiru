@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1339 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1340 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1339';
+    const APP_VERSION = 'v0.45.1340';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33224,6 +33224,10 @@ function _syncWarn(intent, detail) {
   console.warn('[Sync]' + _syncDeviceTag() + ' ⚠️ ' + intent, detail !== undefined ? detail : '');
 }
 async function supabaseSyncUp() {
+  // v0.45.1340: スモークテスト実行中は絶対にクラウドへアップロードしない。
+  // 【権威】2026-07-16、テスト実行中の一時的なallTasksの状態が実際にクラウドへ
+  // 送信され、本物のタスクが巻き込まれて消失する重大事故が発生した。TPAGが検出。
+  if (window._isTesting) return null;
   if (typeof _syncLog === 'function') _syncLog('アップロード開始', '意図: ローカルの変更をクラウドへ反映');
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
@@ -33326,6 +33330,8 @@ function _mergeTasksArrays(localArr, cloudArr) {
 }
 window._mergeTasksArrays = _mergeTasksArrays;
 async function supabaseSyncDown(apply) {
+  // v0.45.1340: スモークテスト実行中は絶対にクラウドと通信しない（上書き事故防止）。
+  if (window._isTesting) return null;
   if (typeof _syncLog === 'function') _syncLog('ダウンロード開始', '意図: ' + (apply === true ? 'クラウドの内容を取得しマージ適用する' : '確認のみ・ローカルには触れない'));
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
@@ -33430,6 +33436,8 @@ function _checkIdleTimeoutAndSignOutIfNeeded() {
 }
 window._checkIdleTimeoutAndSignOutIfNeeded = _checkIdleTimeoutAndSignOutIfNeeded;
 async function _cloudCheckAndPullIfNewer() {
+  // v0.45.1340: スモークテスト実行中は定期チェック自体を行わない。
+  if (window._isTesting) return;
   // v0.45.1334: 多重実行防止・短時間スロットリング。
   // 【権威】2026-07-16、DevTools使用中などにvisibilitychangeが想定以上に頻発し、
   // 「定期チェック実行」が数秒間隔で何度も走ってしまう現象が確認された。
@@ -33594,7 +33602,7 @@ async function cloudLogoutFromModal() {
 //   （「⬇️取得」ボタンへ誘導する設計コメントはあったが未実装だった）。
 //   複数端末間でタスクが反映されない不具合の直接原因だったため実装。
 // v0.45.1339: Devise風「他端末一斉ログアウト」のモーダル用ラッパー。
-// 第55条：confirm()禁止のため、既存のshowChoiceModalで確認を取る。
+// 第55条：confirmダイアログ禁止のため、既存のshowChoiceModalで確認を取る。
 function signOutOtherDevicesFromModal() {
   showChoiceModal({
     title: '他端末を全てログアウトさせますか？',
@@ -33702,6 +33710,8 @@ function _cloudStartRealtimeSubscription(userId) {
         filter: 'user_id=eq.' + userId
       }, function(payload) {
         try {
+          // v0.45.1340: スモークテスト実行中はRealtimeイベントを処理しない。
+          if (window._isTesting) return;
           console.log('%c[RT] 🔔 postgres_changesイベントを受信しました', 'color:#e67e22;font-weight:bold;');
           console.log('[RT] 受信時刻: ' + new Date().toISOString());
           console.log('[RT] イベント種別: ' + (payload && payload.eventType));
@@ -45937,13 +45947,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-226·①: 初期化コードなし', '');
        // ② supabaseSyncUpが失敗時にフラグを立て、成功時に解除しているか
        var _st226upIdx = _st226scriptTexts.indexOf('async function supabaseSyncUp');
-       var _st226upSrc = _st226upIdx !== -1 ? _st226scriptTexts.slice(_st226upIdx, _st226upIdx + 1500) : '';
+       var _st226upSrc = _st226upIdx !== -1 ? _st226scriptTexts.slice(_st226upIdx, _st226upIdx + 2000) : '';
        (_st226upSrc.indexOf('_cloudPushFailed = true') !== -1 && _st226upSrc.indexOf('_cloudPushFailed = false') !== -1)
          ? ok('ST-226·②: supabaseSyncUpのフラグ管理確認')
          : ng('ST-226·②: フラグ管理が不完全', '');
        // ③ 定期チェック（_cloudCheckAndPullIfNewer）がフラグを見てから自動上書きするか
        var _st226chkIdx = _st226scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
-       var _st226chkSrc = _st226chkIdx !== -1 ? _st226scriptTexts.slice(_st226chkIdx, _st226chkIdx + 700) : '';
+       var _st226chkSrc = _st226chkIdx !== -1 ? _st226scriptTexts.slice(_st226chkIdx, _st226chkIdx + 1200) : '';
        _st226chkSrc.indexOf('_cloudPushFailed') !== -1
          ? ok('ST-226·③: 定期チェックのプッシュ失敗ガード確認')
          : ng('ST-226·③: 定期チェックにガードなし', '');
@@ -45975,7 +45985,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ③ supabaseSyncDownが_refreshCurrentViewForSyncを呼んでいるか
        var _st227scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st227downIdx = _st227scriptTexts.indexOf('async function supabaseSyncDown');
-       var _st227downSrc = _st227downIdx !== -1 ? _st227scriptTexts.slice(_st227downIdx, _st227downIdx + 1200) : '';
+       var _st227downSrc = _st227downIdx !== -1 ? _st227scriptTexts.slice(_st227downIdx, _st227downIdx + 4000) : '';
        _st227downSrc.indexOf('_refreshCurrentViewForSync()') !== -1
          ? ok('ST-227·③: supabaseSyncDownが再描画ディスパッチャーを呼ぶ確認')
          : ng('ST-227·③: supabaseSyncDownから呼ばれていない', '');
@@ -46019,7 +46029,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ④ supabaseSyncDownがマージ関数を実際に呼んでいるか
        var _st228scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st228downIdx = _st228scriptTexts.indexOf('async function supabaseSyncDown');
-       var _st228downSrc = _st228downIdx !== -1 ? _st228scriptTexts.slice(_st228downIdx, _st228downIdx + 1200) : '';
+       var _st228downSrc = _st228downIdx !== -1 ? _st228scriptTexts.slice(_st228downIdx, _st228downIdx + 3000) : '';
        _st228downSrc.indexOf('_mergeTasksArrays(') !== -1
          ? ok('ST-228·④: supabaseSyncDownがマージ関数を使用確認')
          : ng('ST-228·④: 配列まるごと上書きのまま', '');
@@ -46068,7 +46078,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st229upIdx = _st229scriptTexts.indexOf('async function supabaseSyncUp');
        var _st229upSrc = _st229upIdx !== -1 ? _st229scriptTexts.slice(_st229upIdx, _st229upIdx + 800) : '';
        var _st229downIdx = _st229scriptTexts.indexOf('async function supabaseSyncDown');
-       var _st229downSrc = _st229downIdx !== -1 ? _st229scriptTexts.slice(_st229downIdx, _st229downIdx + 1000) : '';
+       var _st229downSrc = _st229downIdx !== -1 ? _st229scriptTexts.slice(_st229downIdx, _st229downIdx + 1500) : '';
        (_st229upSrc.indexOf('deletedTaskIds') !== -1 && _st229downSrc.indexOf('deletedTaskIds') !== -1)
          ? ok('ST-229·③: アップロード・ダウンロード両方でdeletedTaskIdsが伝播する確認')
          : ng('ST-229·③: 削除記録の伝播経路が不足', '');
@@ -46243,6 +46253,38 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-235: Devise風追加機能 確認 完了');
      } catch(e) {
        ng('ST-235: 例外', e.message);
+     }
+
+     // ===== ST-236: 同期系関数の_isTestingガード確認（v0.45.1340〜） =====
+     // 背景：2026-07-16、スモークテスト実行中にsupabaseSyncUp/Down・定期チェック・
+     //   Realtimeイベントハンドラが_isTestingでガードされていなかったため、
+     //   テスト中の一時的なallTasksの状態が実際にクラウドと同期され、
+     //   本物のタスクが5件消失する重大事故が発生した（TPAGが検出）。
+     try {
+       var _st236scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st236upIdx = _st236scriptTexts.indexOf('async function supabaseSyncUp');
+       var _st236upSrc = _st236upIdx !== -1 ? _st236scriptTexts.slice(_st236upIdx, _st236upIdx + 300) : '';
+       _st236upSrc.indexOf('if (window._isTesting) return null;') !== -1
+         ? ok('ST-236·①: supabaseSyncUpの_isTestingガード確認')
+         : ng('ST-236·①: ガードなし（重大：テスト中に実クラウド送信の恐れ）', '');
+       var _st236downIdx = _st236scriptTexts.indexOf('async function supabaseSyncDown');
+       var _st236downSrc = _st236downIdx !== -1 ? _st236scriptTexts.slice(_st236downIdx, _st236downIdx + 300) : '';
+       _st236downSrc.indexOf('if (window._isTesting) return null;') !== -1
+         ? ok('ST-236·②: supabaseSyncDownの_isTestingガード確認')
+         : ng('ST-236·②: ガードなし（重大：テスト中に実データ上書きの恐れ）', '');
+       var _st236chkIdx = _st236scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
+       var _st236chkSrc = _st236chkIdx !== -1 ? _st236scriptTexts.slice(_st236chkIdx, _st236chkIdx + 200) : '';
+       _st236chkSrc.indexOf('if (window._isTesting) return;') !== -1
+         ? ok('ST-236·③: _cloudCheckAndPullIfNewerの_isTestingガード確認')
+         : ng('ST-236·③: ガードなし', '');
+       var _st236rtIdx = _st236scriptTexts.indexOf("}, function(payload) {");
+       var _st236rtSrc = _st236rtIdx !== -1 ? _st236scriptTexts.slice(_st236rtIdx, _st236rtIdx + 200) : '';
+       _st236rtSrc.indexOf('if (window._isTesting) return;') !== -1
+         ? ok('ST-236·④: Realtimeイベントハンドラの_isTestingガード確認')
+         : ng('ST-236·④: ガードなし', '');
+       ok('ST-236: 同期系関数の_isTestingガード 確認 完了');
+     } catch(e) {
+       ng('ST-236: 例外', e.message);
      }
 
        // 第1条【本番環境】
@@ -46549,10 +46591,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _r17msgs.push('deletePhoto未定義');
        }
 
-       // saveAllTasks() → 0引数であること（引数を要求する形に変わっていないか）
-       if (typeof saveAllTasks === 'function' && saveAllTasks.length !== 0) {
+       // saveAllTasks(skipCloudSync) → 1引数（オプショナル）であること
+       // v0.45.1333でskipCloudSyncを意図的に追加した。0だと古いチェックのまま。
+       if (typeof saveAllTasks === 'function' && saveAllTasks.length !== 1) {
          _r17ok = false;
-         _r17msgs.push('saveAllTasks引数数異常(' + saveAllTasks.length + '≠0)');
+         _r17msgs.push('saveAllTasks引数数異常(' + saveAllTasks.length + '≠1)');
        }
 
        // deletePhoto(null, pid) の挙動確認：テストレコードを削除して件数が1減ること
