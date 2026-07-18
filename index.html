@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1335 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1344 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1335';
+    const APP_VERSION = 'v0.45.1344';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -121,6 +121,26 @@
           }, 800);
         } catch(e) {}
       })();
+  // v0.45.1343: POPOPO方式の招待リンク（?join=CODE）を開いた時、
+  // 自動で共有カレンダーモーダルを開き、参加コードを入力済みの状態にする。
+  (function() {
+    try {
+      var params2 = new URLSearchParams(window.location.search);
+      var joinCode = params2.get('join');
+      if (!joinCode) return;
+      window.history.replaceState({}, '', window.location.pathname); // パラメータをクリア（履歴汚染防止）
+      setTimeout(function() {
+        if (typeof window.openSharedCalendarModal === 'function') {
+          window.openSharedCalendarModal();
+          var joinInput = document.getElementById('sharedCalendarJoinCode');
+          if (joinInput) joinInput.value = joinCode;
+          if (typeof window._sharedCalSetStatus === 'function') {
+            window._sharedCalSetStatus('招待リンクから開きました。「参加する」を押してください。');
+          }
+        }
+      }, 800); // アプリ初期化・ログイン状態確認を待つ
+    } catch(e) { console.warn('[SharedCal] 招待リンク処理エラー:', e); }
+  })();
   // ===== データマイグレーション =====
   (function migrateData() {
     var version = parseInt(localStorage.getItem('dataVersion') || '0');
@@ -9157,6 +9177,7 @@
         done:         done,
         displayScope: displayScope,
         calendarId:   calendarId,
+        cloudCalendarId: (opts && opts.cloudCalendarId) || window._personalCalendarId || null, // v0.45.1344: 統一同期エンジンの所属先
         instinct:     instinct,   // 本能マトリクス（null|survival|renewal|sleep|recognition）
         owner:        allSettings.profile.name || null,
         ownerId:      getOrCreateDeviceId(),
@@ -9829,6 +9850,8 @@ function renderTodoList() {
     function saveAllTasks(skipCloudSync) {
       try {
         localStorage.setItem('allTasks', JSON.stringify(allTasks));
+        // v0.45.1338: 無操作タイムアウト（Devise timeout_in相当）用に最終活動時刻を記録。
+        localStorage.setItem('lastActivityAt', String(Date.now()));
         // taskIdCounter: UUID移行済みのため書き込み不要
       } catch(e) {
         console.error('[saveAllTasks] save失敗', e);
@@ -9843,14 +9866,16 @@ function renderTodoList() {
       // 元々クラウドから取得した内容なので、そのまま追いかけて再アップロードする必要はない。
       if (skipCloudSync) {
         if (typeof _syncLog === 'function') _syncLog('ローカル保存のみ（クラウド由来のデータのため再アップロード予約なし）');
-      } else if (window._cloudIsLoggedIn && typeof window.supabaseSyncUp === 'function') {
+      } else if (window._cloudIsLoggedIn && typeof window.unifiedPushTasks === 'function') {
         if (window._cloudAutoSaveTimer) clearTimeout(window._cloudAutoSaveTimer);
-        if (typeof _syncLog === 'function') _syncLog('自動アップロード予約（3秒後）', 'allTasks ' + allTasks.length + '件・トリガー元: saveAllTasks');
+        if (typeof _syncLog === 'function') _syncLog('自動アップロード予約（1.2秒後・統一エンジン）', 'allTasks ' + allTasks.length + '件・トリガー元: saveAllTasks');
         window._cloudAutoSaveTimer = setTimeout(function() {
           window._cloudAutoSaveTimer = null;
-          if (typeof _syncLog === 'function') _syncLog('自動アップロード実行（予約から3秒経過）');
-          window.supabaseSyncUp().catch(function(e){ if (typeof _syncWarn === 'function') _syncWarn('自動同期失敗', e); else console.warn('[Supabase] 自動同期失敗:', e); });
-        }, 3000);
+          if (typeof _syncLog === 'function') _syncLog('自動アップロード実行（予約から1.2秒経過・統一エンジン）');
+          // v0.45.1344: 旧supabaseSyncUp（koyomiru_tasksブロブ方式）から
+          // unifiedPushTasks（koyomiru_shared_tasks・1タスク1行方式）へ切り替え。
+          window.unifiedPushTasks().catch(function(e){ if (typeof _syncWarn === 'function') _syncWarn('自動同期失敗', e); else console.warn('[Unified] 自動同期失敗:', e); });
+        }, 1200);
       }
     }
 
@@ -18241,6 +18266,15 @@ function reviveBlueprint(id) {
         _delIds.add(taskId);
         localStorage.setItem('deletedTaskIds', JSON.stringify([..._delIds]));
       } catch(e) { console.warn('[deleteTaskById] 墓石記録エラー:', e); }
+      // v0.45.1344: 統一同期エンジン側のテーブルにも削除（deleted_at）を伝える。
+      // ログイン中・テスト実行中でなければ、非同期で実行（fire-and-forget）。
+      if (window._cloudIsLoggedIn && !window._isTesting && window.supabaseClient) {
+        window.supabaseClient.from('koyomiru_shared_tasks')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', taskId)
+          .then(function(r){ if (r && r.error) console.warn('[Unified] 削除の伝播エラー:', r.error.message); })
+          .catch(function(e){ console.warn('[Unified] 削除の伝播エラー:', e); });
+      }
       // 造営工程のtaskIdsから削除 → 再計算
       const _affectedGids = [];
       allTasks.forEach(t => {
@@ -33186,11 +33220,309 @@ async function supabaseSignOut() {
   else { console.log('[Supabase] ログアウトしました'); }
   return r;
 }
+// v0.45.1339: Devise風「他端末一斉ログアウト」機能。
+// この端末はログインしたまま、それ以外の全端末（他のブラウザ・スマホ等）のセッションだけを終了する。
+// スマホを紛失した時などに、PC側からこのボタンで他端末のアクセスを断てる。
+async function supabaseSignOutOtherDevices() {
+  if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
+  var r = await window.supabaseClient.auth.signOut({ scope: 'others' });
+  if (r.error) { console.error('[Supabase] 他端末ログアウト失敗:', r.error.message); }
+  else { console.log('[Supabase] 他端末を全てログアウトさせました（この端末は継続）'); }
+  return r;
+}
 // 第3条: window公開
 window.supabaseSendMagicLink = supabaseSendMagicLink;
 window.supabaseWhoAmI = supabaseWhoAmI;
 window.supabaseSignOut = supabaseSignOut;
+window.supabaseSignOutOtherDevices = supabaseSignOutOtherDevices;
 // ===== END v0.45.1232 認証関数 =====
+
+// ===== v0.45.1342: 共有カレンダー（フェーズ1・招待/参加の入り口） =====
+// 【権威】2026-07-17、TimeTreeの技術構成（Rails+MySQL正規化テーブル）を参考に、
+// Supabase上でも「1タスク1行」の共有テーブルとRLSで同じ思想を実現する設計を採用。
+// 落とし穴①（未メンバーが招待コードを確認できない矛盾）対策として、
+// SECURITY DEFINER関数（koyomiru_lookup_invite・koyomiru_join_by_invite）経由で操作する。
+
+// 新しい共有カレンダーを作る
+async function createSharedCalendar(name) {
+  if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
+  var u = await window.supabaseClient.auth.getUser();
+  if (!u.data || !u.data.user) { console.warn('[SharedCal] 未ログインのため作成不可'); return null; }
+  var r = await window.supabaseClient.from('koyomiru_shared_calendars')
+    .insert({ name: name, owner_id: u.data.user.id })
+    .select('id, name, invite_code, invite_code_expires_at')
+    .single();
+  if (r.error) { console.error('[SharedCal] 作成失敗:', r.error.message); }
+  else { console.log('[SharedCal] 作成OK:', r.data); }
+  return r;
+}
+
+// 招待コードの有効性・カレンダー名を確認（まだメンバーでなくても呼べる）
+async function lookupInviteCode(code) {
+  if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
+  var r = await window.supabaseClient.rpc('koyomiru_lookup_invite', { code: code });
+  if (r.error) { console.error('[SharedCal] コード確認失敗:', r.error.message); }
+  return r;
+}
+
+// 招待コードで参加する
+async function joinSharedCalendarByCode(code) {
+  if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
+  var r = await window.supabaseClient.rpc('koyomiru_join_by_invite', { code: code });
+  if (r.error) { console.error('[SharedCal] 参加失敗:', r.error.message); }
+  else { console.log('[SharedCal] 参加OK。calendar_id=' + r.data); }
+  return r;
+}
+
+// 自分が参加している共有カレンダー一覧（RLSにより自動的にメンバーの分だけ返る）
+async function listMySharedCalendars() {
+  if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
+  var r = await window.supabaseClient.from('koyomiru_shared_calendars')
+    .select('id, name, invite_code, invite_code_expires_at, owner_id')
+    .order('created_at', { ascending: true });
+  if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); }
+  return r;
+}
+// 第3条: window公開
+window.createSharedCalendar = createSharedCalendar;
+window.lookupInviteCode = lookupInviteCode;
+window.joinSharedCalendarByCode = joinSharedCalendarByCode;
+window.listMySharedCalendars = listMySharedCalendars;
+// ===== END v0.45.1342 共有カレンダー =====
+
+// ===== v0.45.1344: 統一同期エンジン（個人＝メンバー1人のカレンダーとして扱う） =====
+// 【権威】2026-07-17、「個人用（blob）」と「共有用（1行1タスク）」の2つの仕組みを
+// 並立させる設計をやめ、個人用カレンダーも「メンバーが自分1人だけの共有カレンダー」
+// として統一した。TimeTree等、正規化テーブル設計のSaaSに倣う。
+// 注意：既存の task.calendarId は「仕事/学校/プライベート」等のローカル分類タグとして
+// 既に使われているため、クラウド同期用の所属カレンダーIDは cloudCalendarId という
+// 別名で区別する（名前衝突を避けるための意図的な設計）。
+window._myCalendarIds = window._myCalendarIds || [];
+window._personalCalendarId = window._personalCalendarId || null;
+
+async function unifiedRefreshMyCalendarIds() {
+  if (!window.supabaseClient) return [];
+  var u = await window.supabaseClient.auth.getUser();
+  if (!u.data || !u.data.user) return [];
+  var r = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+    .select('calendar_id, koyomiru_shared_calendars!inner(is_personal)')
+    .eq('user_id', u.data.user.id);
+  if (r.error) { console.error('[Unified] カレンダー一覧取得失敗:', r.error.message); return []; }
+  window._myCalendarIds = r.data.map(function(row){ return row.calendar_id; });
+  var personal = r.data.find(function(row){ return row.koyomiru_shared_calendars && row.koyomiru_shared_calendars.is_personal; });
+  if (personal) window._personalCalendarId = personal.calendar_id;
+  return window._myCalendarIds;
+}
+
+// 初回ログイン時：個人用カレンダーを保証し、旧koyomiru_tasksデータを移行する（1回だけ）
+async function unifiedEnsurePersonalCalendarAndMigrate() {
+  if (!window.supabaseClient) return;
+  var already = localStorage.getItem('unifiedMigrationDone');
+  var r1 = await window.supabaseClient.rpc('koyomiru_ensure_personal_calendar');
+  if (r1.error) { console.error('[Unified] 個人カレンダー保証失敗:', r1.error.message); return; }
+  window._personalCalendarId = r1.data;
+  if (!already) {
+    var r2 = await window.supabaseClient.rpc('koyomiru_migrate_personal_tasks');
+    if (r2.error) { console.error('[Unified] 旧データ移行失敗:', r2.error.message); }
+    else {
+      console.log('[Unified] 旧データ移行完了: ' + r2.data + '件');
+      localStorage.setItem('unifiedMigrationDone', '1');
+    }
+  }
+  await unifiedRefreshMyCalendarIds();
+}
+
+// プッシュ：ローカルの全タスクを、それぞれの所属カレンダーへupsert
+async function unifiedPushTasks() {
+  if (window._isTesting) return null; // v0.45.1340の教訓：テスト中は絶対に実送信しない
+  if (!window.supabaseClient || !window._personalCalendarId) return null;
+  var toPush = allTasks.filter(function(t){ return t && t.id; }).map(function(t) {
+    return {
+      id: t.id,
+      calendar_id: t.cloudCalendarId || window._personalCalendarId,
+      data: t,
+      created_by: t.ownerId || null,
+      updated_at: t.updatedAt || t.createdAt || new Date().toISOString()
+    };
+  });
+  if (toPush.length === 0) return null;
+  var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
+  if (r.error) { console.error('[Unified] プッシュ失敗:', r.error.message); window._cloudPushFailed = true; }
+  else { window._cloudPushFailed = false; if (typeof _syncLog === 'function') _syncLog('統一同期：プッシュ完了', toPush.length + '件'); }
+  return r;
+}
+
+// プル：自分の全カレンダー（個人＋共有）の最新タスクを取得し、id単位でマージ
+async function unifiedPullTasks() {
+  if (window._isTesting) return null; // v0.45.1340の教訓
+  if (!window.supabaseClient) return null;
+  if (window._myCalendarIds.length === 0) await unifiedRefreshMyCalendarIds();
+  if (window._myCalendarIds.length === 0) return null;
+  var r = await window.supabaseClient.from('koyomiru_shared_tasks')
+    .select('id, calendar_id, data, updated_at, deleted_at')
+    .in('calendar_id', window._myCalendarIds);
+  if (r.error) { console.error('[Unified] プル失敗:', r.error.message); return r; }
+
+  // v0.45.1331の教訓：墓石（deletedTaskIds）で削除済みタスクの復活を防ぐ
+  var deletedIds;
+  try { deletedIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
+  catch(e) { deletedIds = new Set(); }
+
+  var localMap = {};
+  allTasks.forEach(function(t){ if (t && t.id) localMap[t.id] = t; });
+
+  var changed = false;
+  r.data.forEach(function(row) {
+    if (row.deleted_at) {
+      deletedIds.add(row.id);
+      if (localMap[row.id]) { delete localMap[row.id]; changed = true; }
+      return;
+    }
+    if (deletedIds.has(row.id)) return;
+    var incoming = row.data;
+    incoming.cloudCalendarId = row.calendar_id;
+    var local = localMap[row.id];
+    if (!local) { localMap[row.id] = incoming; changed = true; return; }
+    var lu = local.updatedAt || local.createdAt || '';
+    var cu = row.updated_at || '';
+    if (cu > lu) { localMap[row.id] = incoming; changed = true; } // 同時刻・ローカルが新しい場合はローカル優先（安全側）
+  });
+  try { localStorage.setItem('deletedTaskIds', JSON.stringify([...deletedIds])); } catch(e) {}
+
+  if (changed) {
+    allTasks = Object.keys(localMap).map(function(k){ return localMap[k]; });
+    saveAllTasks(true); // v0.45.1333の教訓：ダウンロード経由の保存は再アップロード予約なし
+    renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
+    if (typeof _refreshCurrentViewForSync === 'function') _refreshCurrentViewForSync(); // v0.45.1328/1336の教訓
+    if (typeof _syncLog === 'function') _syncLog('統一同期：プル→反映完了');
+    if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を自動反映しました');
+  }
+  return r;
+}
+window.unifiedRefreshMyCalendarIds = unifiedRefreshMyCalendarIds;
+window.unifiedEnsurePersonalCalendarAndMigrate = unifiedEnsurePersonalCalendarAndMigrate;
+window.unifiedPushTasks = unifiedPushTasks;
+window.unifiedPullTasks = unifiedPullTasks;
+// ===== END v0.45.1344 統一同期エンジン =====
+
+// ===== v0.45.1342: 共有カレンダーモーダル制御 =====
+function openSharedCalendarModal() {
+  var ov = document.getElementById('sharedCalendarOverlay');
+  if (!ov) return;
+  ov.style.display = 'flex';
+  refreshSharedCalendarList();
+}
+function closeSharedCalendarModal() {
+  var ov = document.getElementById('sharedCalendarOverlay');
+  if (ov) ov.style.display = 'none';
+}
+function _sharedCalSetStatus(msg) {
+  var el = document.getElementById('sharedCalendarStatus');
+  if (el) el.textContent = msg;
+}
+window._sharedCalSetStatus = _sharedCalSetStatus;
+async function refreshSharedCalendarList() {
+  var listEl = document.getElementById('sharedCalendarMyList');
+  if (!listEl) return;
+  listEl.textContent = '読み込み中…';
+  var r = await listMySharedCalendars();
+  if (!r || r.error) {
+    listEl.innerHTML = '<div style="font-size:0.78em;color:#c0392b;">一覧の取得に失敗しました。テーブルがまだ作られていない可能性があります。</div>';
+    return;
+  }
+  if (!r.data || r.data.length === 0) {
+    listEl.innerHTML = '<div style="font-size:0.78em;color:#999;">まだ参加している共有カレンダーはありません。</div>';
+    return;
+  }
+  // v0.45.1343: POPOPO方式（招待リンク＋QRコード＋OS標準共有シート＋コピー）に刷新。
+  // 【権威】2026-07-17、TimeTree・POPOPOの招待UXを調査した結果、
+  // 「コードを手入力させる」方式は一段劣ると判断し、リンクを開くだけで
+  // 参加できる方式に変更した。
+  listEl.innerHTML = r.data.map(function(c) {
+    var inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(c.invite_code);
+    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(inviteUrl);
+    var safeId = 'sc_' + c.id.replace(/-/g, '');
+    return '<div style="background:#f9f7f2;border-radius:12px;padding:14px;margin-bottom:10px;">' +
+      '<div style="font-size:0.9em;font-weight:600;margin-bottom:8px;">' + (c.name || '(無題)') + '</div>' +
+      '<div style="display:flex;gap:12px;align-items:flex-start;">' +
+        '<img src="' + qrUrl + '" width="90" height="90" style="border-radius:8px;background:#fff;flex-shrink:0;" alt="招待QRコード">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:0.68em;color:#999;margin-bottom:6px;">' + new Date(c.invite_code_expires_at).toLocaleDateString('ja-JP') + 'まで有効</div>' +
+          '<button onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:7px;background:#fff;color:#555;font-size:0.72em;cursor:pointer;margin-bottom:6px;">🔗 招待リンクをコピー</button>' +
+          '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + (c.name || '共有カレンダー').replace(/'/g,'') + '\')" style="width:100%;padding:7px;border:none;border-radius:7px;background:#4a7856;color:#fff;font-size:0.72em;cursor:pointer;">📤 シェアする</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+// 招待リンクをクリップボードにコピー
+function copySharedCalendarInvite(url) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function() {
+      _sharedCalSetStatus('✅ 招待リンクをコピーしました');
+    }).catch(function() { _sharedCalSetStatus('⚠️ コピーに失敗しました'); });
+  } else {
+    _sharedCalSetStatus('⚠️ このブラウザはコピー機能に対応していません');
+  }
+}
+// OS標準の共有シート（LINE・メッセージ等）で招待リンクを送る
+function shareSharedCalendarInvite(url, calendarName) {
+  if (navigator.share) {
+    navigator.share({
+      title: 'こよみる 共有カレンダーへの招待',
+      text: '「' + calendarName + '」に招待します。季節と生きる、こよみる。',
+      url: url
+    }).catch(function(e) { console.log('[SharedCal] 共有キャンセルまたは失敗:', e); });
+  } else {
+    copySharedCalendarInvite(url);
+    _sharedCalSetStatus('この端末は直接共有に対応していないため、リンクをコピーしました。LINE等に貼り付けてください。');
+  }
+}
+window.copySharedCalendarInvite = copySharedCalendarInvite;
+window.shareSharedCalendarInvite = shareSharedCalendarInvite;
+async function createSharedCalendarFromModal() {
+  var input = document.getElementById('sharedCalendarNewName');
+  var name = input ? input.value.trim() : '';
+  if (!name) { _sharedCalSetStatus('カレンダー名を入力してください。'); return; }
+  _sharedCalSetStatus('作成中…');
+  var r = await createSharedCalendar(name);
+  if (!r || r.error) {
+    _sharedCalSetStatus('⚠️ 作成に失敗しました: ' + (r && r.error ? r.error.message : '不明なエラー'));
+    return;
+  }
+  _sharedCalSetStatus('✅ 「' + name + '」を作成しました。招待コード: ' + r.data.invite_code);
+  if (input) input.value = '';
+  refreshSharedCalendarList();
+}
+async function joinSharedCalendarFromModal() {
+  var input = document.getElementById('sharedCalendarJoinCode');
+  var code = input ? input.value.trim() : '';
+  if (!code) { _sharedCalSetStatus('招待コードを入力してください。'); return; }
+  _sharedCalSetStatus('確認中…');
+  var lookup = await lookupInviteCode(code);
+  if (!lookup || lookup.error || !lookup.data || lookup.data.length === 0) {
+    _sharedCalSetStatus('⚠️ そのコードは見つかりませんでした。');
+    return;
+  }
+  if (!lookup.data[0].is_valid) {
+    _sharedCalSetStatus('⚠️ このコードは有効期限が切れています。');
+    return;
+  }
+  var r = await joinSharedCalendarByCode(code);
+  if (!r || r.error) {
+    _sharedCalSetStatus('⚠️ 参加に失敗しました: ' + (r && r.error ? r.error.message : '不明なエラー'));
+    return;
+  }
+  _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！');
+  if (input) input.value = '';
+  refreshSharedCalendarList();
+}
+window.openSharedCalendarModal = openSharedCalendarModal;
+window.closeSharedCalendarModal = closeSharedCalendarModal;
+window.refreshSharedCalendarList = refreshSharedCalendarList;
+window.createSharedCalendarFromModal = createSharedCalendarFromModal;
+window.joinSharedCalendarFromModal = joinSharedCalendarFromModal;
+// ===== END v0.45.1342 共有カレンダーモーダル制御 =====
 
 // ===== v0.45.1233: Supabase接続 ステップ④ 手動同期関数 =====
 // SSoTは今まで通りメモリ上のallTasks（第4条）。Supabaseは「クラウド側の永続化層」。
@@ -33211,6 +33543,10 @@ function _syncWarn(intent, detail) {
   console.warn('[Sync]' + _syncDeviceTag() + ' ⚠️ ' + intent, detail !== undefined ? detail : '');
 }
 async function supabaseSyncUp() {
+  // v0.45.1340: スモークテスト実行中は絶対にクラウドへアップロードしない。
+  // 【権威】2026-07-16、テスト実行中の一時的なallTasksの状態が実際にクラウドへ
+  // 送信され、本物のタスクが巻き込まれて消失する重大事故が発生した。TPAGが検出。
+  if (window._isTesting) return null;
   if (typeof _syncLog === 'function') _syncLog('アップロード開始', '意図: ローカルの変更をクラウドへ反映');
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
@@ -33258,7 +33594,23 @@ function _refreshCurrentViewForSync() {
     else if (view === 'photo' && typeof renderPhotoLogView === 'function') renderPhotoLogView();
     else if (view === 'notebook' && typeof renderScratchView === 'function') renderScratchView();
     else if (view === 'dashboard' && typeof renderDashboardView === 'function') renderDashboardView();
-    // 'daily'・'settings'・'legal'はrenderAllSections()または再描画不要のため対象外
+    // v0.45.1336: 「日次」内のサブタブ（マトリクス/タイムライン/雑記帳）はswitchDailyTab()が
+    // localStorageに記録していないため、currentViewだけでは判定できない。
+    // DOM表示状態（style.display）を直接見て判定する、より確実な方式で補う。
+    // 【権威】2026-07-16、「受信はできているが描画されない」という報告を受け、
+    // 日次→タイムライン等のサブタブを見ている時に同期しても更新されない穴を発見した。
+    if (view === 'daily') {
+      var _timelineEl = document.getElementById('timelineView');
+      if (_timelineEl && _timelineEl.style.display !== 'none' && typeof renderTimelineView === 'function') {
+        renderTimelineView();
+      }
+      var _scratchEl = document.getElementById('scratchView');
+      if (_scratchEl && _scratchEl.style.display !== 'none' && typeof renderScratchView === 'function') {
+        renderScratchView();
+      }
+      // マトリクス（quadView）はrenderAllSections()が既にカバーしている
+    }
+    // 'settings'・'legal'は再描画不要のため対象外
   } catch(e) { console.warn('[Supabase] ビュー再描画エラー:', e); }
 }
 window._refreshCurrentViewForSync = _refreshCurrentViewForSync;
@@ -33297,6 +33649,8 @@ function _mergeTasksArrays(localArr, cloudArr) {
 }
 window._mergeTasksArrays = _mergeTasksArrays;
 async function supabaseSyncDown(apply) {
+  // v0.45.1340: スモークテスト実行中は絶対にクラウドと通信しない（上書き事故防止）。
+  if (window._isTesting) return null;
   if (typeof _syncLog === 'function') _syncLog('ダウンロード開始', '意図: ' + (apply === true ? 'クラウドの内容を取得しマージ適用する' : '確認のみ・ローカルには触れない'));
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
@@ -33349,7 +33703,9 @@ async function supabaseSyncDown(apply) {
       return r;
     }
     saveAllTasks(true); // v0.45.1333: 第2引数trueでクラウド由来の保存を明示、再アップロード予約を抑制
-    renderAllSections();
+    // v0.45.1336: 引数なしだと常に「今日」を描画してしまうため、表示中の日付（前日/翌日を
+    // 見ている場合も含む）を明示的に渡す。
+    renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null);
     // v0.45.1328: renderAllSections()は日次（マトリクス）ビューしか再描画しないため、
     // 週間・月間・年間・造営・日誌・写真・雑記帳・ダッシュボードを見ている最中に
     // クラウド同期が来ても画面に反映されない事故があった。
@@ -33375,7 +33731,32 @@ window.supabaseSyncDown = supabaseSyncDown;
 //   頻繁に呼んでもコストが小さい。
 window._cloudLastSyncedAt = window._cloudLastSyncedAt || null;
 window._cloudPushFailed = window._cloudPushFailed || false;
+// v0.45.1338: 無操作タイムアウト（Railsのdeviseにおけるtimeout_in相当）。
+// 36時間、保存操作（＝実質的な利用）がなければ自動的にログアウトする。
+// 「毎回N時間で強制ログアウト」ではなく「最後の活動からN時間」という判定にすることで、
+// 使い続けている限りログイン状態が切れない設計にしている。
+var IDLE_TIMEOUT_MS = 36 * 60 * 60 * 1000; // 36時間
+function _checkIdleTimeoutAndSignOutIfNeeded() {
+  try {
+    if (!window._cloudIsLoggedIn) return;
+    var last = parseInt(localStorage.getItem('lastActivityAt') || '0', 10);
+    if (!last) return; // 記録がまだない場合は判定しない
+    var idleMs = Date.now() - last;
+    if (idleMs > IDLE_TIMEOUT_MS) {
+      console.log('[Auth] 無操作タイムアウト検知（約' + Math.round(idleMs / 3600000) + '時間操作なし）→ 自動ログアウトします');
+      if (typeof supabaseSignOut === 'function') {
+        supabaseSignOut().then(function(){
+          if (typeof window.showToast === 'function') window.showToast('⏰ 長時間操作がなかったため、自動的にログアウトしました。');
+          if (typeof cloudLoginRefreshStatus === 'function') cloudLoginRefreshStatus();
+        });
+      }
+    }
+  } catch(e) { console.warn('[Auth] 無操作タイムアウト確認エラー:', e); }
+}
+window._checkIdleTimeoutAndSignOutIfNeeded = _checkIdleTimeoutAndSignOutIfNeeded;
 async function _cloudCheckAndPullIfNewer() {
+  // v0.45.1340: スモークテスト実行中は定期チェック自体を行わない。
+  if (window._isTesting) return;
   // v0.45.1334: 多重実行防止・短時間スロットリング。
   // 【権威】2026-07-16、DevTools使用中などにvisibilitychangeが想定以上に頻発し、
   // 「定期チェック実行」が数秒間隔で何度も走ってしまう現象が確認された。
@@ -33387,44 +33768,48 @@ async function _cloudCheckAndPullIfNewer() {
   window._cloudCheckLastRunAt = _nowTs;
   try {
     if (!window._cloudIsLoggedIn || !window.supabaseClient) return;
-    if (typeof _syncLog === 'function') _syncLog('定期チェック実行（45秒ごと or タブ復帰）', '意図: クラウドが自分より新しいか確認');
-    // v0.45.1325: ローカルの未保存変更（プッシュ失敗中）があれば、
-    // 絶対に自動ダウンロード上書きをしない。まずプッシュの再試行を優先する。
-    // 【権威】2026-07-16、この保険がなかったためスマホの新規タスクが
-    // 古いクラウドデータで上書きされ消失した。二度と起こしてはならない。
+    if (typeof _syncLog === 'function') _syncLog('定期チェック実行（45秒ごと or タブ復帰・統一エンジン）', '意図: 自分の全カレンダーの最新を確認');
+    // v0.45.1325の教訓：プッシュ失敗中は先に再送を試みる（無条件の上書き禁止）
     if (window._cloudPushFailed) {
-      console.warn('[Supabase] プッシュ失敗中のため自動ダウンロードを中止。再送を試みます。');
-      var retry = await supabaseSyncUp();
-      if (!retry || retry.error) return; // 再送も失敗 → 今回はダウンロードしない
-      // 再送成功後は_cloudPushFailedがfalseになっているので、以降の判定へ進む
+      console.warn('[Unified] プッシュ失敗中のため自動ダウンロードを中止。再送を試みます。');
+      var retry = await unifiedPushTasks();
+      if (!retry || retry.error) return;
     }
-    var u = await window.supabaseClient.auth.getUser();
-    if (!u.data || !u.data.user) return;
-    var r = await window.supabaseClient.from('koyomiru_tasks')
-      .select('updated_at')
-      .eq('user_id', u.data.user.id)
-      .maybeSingle();
-    if (r.error || !r.data || !r.data.updated_at) return;
-    var cloudUpdatedAt = r.data.updated_at;
-    if (!window._cloudLastSyncedAt || new Date(cloudUpdatedAt) > new Date(window._cloudLastSyncedAt)) {
-      var down = await supabaseSyncDown(true);
-      if (down && !down.error) {
-        window._cloudLastSyncedAt = cloudUpdatedAt;
-        if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を自動反映しました');
-      }
-    }
-  } catch(e) { console.warn('[Supabase] 定期確認エラー:', e); }
+    // v0.45.1344: unifiedPullTasks自体がタスク単位でupdated_atを比較し、
+    // 変化があった時だけ保存・再描画するので、ここでの事前チェックは不要（簡素化）。
+    await unifiedPullTasks();
+  } catch(e) { console.warn('[Unified] 定期確認エラー:', e); }
   finally { window._cloudCheckRunning = false; }
 }
 window._cloudCheckAndPullIfNewer = _cloudCheckAndPullIfNewer;
 // タブがアクティブに戻った時、および45秒ごとにチェック（アクティブな時のみ）
 try {
+  _checkIdleTimeoutAndSignOutIfNeeded(); // v0.45.1338: 起動時にも確認
   document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible') _cloudCheckAndPullIfNewer();
+    if (document.visibilityState === 'visible') {
+      _checkIdleTimeoutAndSignOutIfNeeded(); // v0.45.1338: タブ復帰時に確認（36時間放置後の想定シナリオ）
+      _cloudCheckAndPullIfNewer();
+    }
   });
   setInterval(function() {
-    if (document.visibilityState === 'visible') _cloudCheckAndPullIfNewer();
+    if (document.visibilityState === 'visible') {
+      _checkIdleTimeoutAndSignOutIfNeeded();
+      _cloudCheckAndPullIfNewer();
+    }
   }, 45000);
+  // v0.45.1337: WebSocketの生存確認ハートビートログ（60秒ごと）。
+  // 長時間放置していても、コンソールを後から見返せば接続状態の推移が分かるようにする。
+  setInterval(function() {
+    if (!window._cloudIsLoggedIn) return;
+    var _rtChannel = window._cloudRealtimeChannel;
+    var _rtState = '(チャンネル未確立)';
+    try {
+      if (_rtChannel && window.supabaseClient && window.supabaseClient.realtime) {
+        _rtState = window.supabaseClient.realtime.connectionState ? window.supabaseClient.realtime.connectionState() : '(取得不可)';
+      }
+    } catch(e) { _rtState = '(取得エラー: ' + e.message + ')'; }
+    console.log('[RT] 💓 生存確認 ' + new Date().toLocaleTimeString('ja-JP') + ' WebSocket状態=' + _rtState + ' チャンネル=' + (_rtChannel ? (_rtChannel.state || '不明') : 'なし'));
+  }, 60000);
 } catch(e) { console.warn('[Supabase] 定期同期の初期化エラー:', e); }
 // ===== END v0.45.1306 定期自動同期 =====
 
@@ -33464,6 +33849,20 @@ async function cloudLoginRefreshStatus() {
     userArea.style.display = 'block';
     if (userLabel) userLabel.textContent = 'ログイン中: ' + (user.email || user.id);
     if (typeof cloudRefreshLastSavedLabel === 'function') cloudRefreshLastSavedLabel();
+    // v0.45.1339: ログイン履歴（この端末での回数・最終ログイン日時）を表示
+    var _historyEl = document.getElementById('cloudLoginHistoryLabel');
+    if (_historyEl) {
+      try {
+        var _lc = localStorage.getItem('loginCount');
+        var _ll = localStorage.getItem('lastLoginAt');
+        if (_lc && _ll) {
+          var _llDate = new Date(_ll).toLocaleString('ja-JP');
+          _historyEl.textContent = 'この端末でのログイン: ' + _lc + '回目・最終: ' + _llDate;
+        } else {
+          _historyEl.textContent = '';
+        }
+      } catch(e) { _historyEl.textContent = ''; }
+    }
   } else {
     guestArea.style.display = 'block';
     userArea.style.display = 'none';
@@ -33505,6 +33904,27 @@ async function cloudLogoutFromModal() {
 //   ステータステキストを表示するだけで実際に取得する手段がなかった
 //   （「⬇️取得」ボタンへ誘導する設計コメントはあったが未実装だった）。
 //   複数端末間でタスクが反映されない不具合の直接原因だったため実装。
+// v0.45.1339: Devise風「他端末一斉ログアウト」のモーダル用ラッパー。
+// 第55条：confirmダイアログ禁止のため、既存のshowChoiceModalで確認を取る。
+function signOutOtherDevicesFromModal() {
+  showChoiceModal({
+    title: '他端末を全てログアウトさせますか？',
+    desc: 'この端末はログインしたまま、それ以外の全ての端末（他のブラウザ・スマホ等）だけがログアウトされます。',
+    buttons: [
+      { label: 'ログアウトさせる', style: 'danger', onClick: function() {
+        supabaseSignOutOtherDevices().then(function(r) {
+          if (r && r.error) {
+            if (typeof window.showToast === 'function') window.showToast('⚠️ 失敗しました: ' + r.error.message);
+          } else {
+            if (typeof window.showToast === 'function') window.showToast('📵 他端末を全てログアウトさせました');
+          }
+        });
+      }},
+      { label: 'キャンセル', style: 'cancel' },
+    ],
+  });
+}
+window.signOutOtherDevicesFromModal = signOutOtherDevicesFromModal;
 async function cloudFetchFromModal() {
   var btn = document.getElementById('cloudLoginFetchBtn');
   if (btn) { btn.disabled = true; btn.textContent = '取得中…'; }
@@ -33558,10 +33978,34 @@ async function cloudUpdateNavLoginIndicator() {
 window._cloudRealtimeChannel = null;
 function _cloudStartRealtimeSubscription(userId) {
   try {
-    if (!window.supabaseClient || !userId) return;
-    if (window._cloudRealtimeChannel) return; // 既に購読中なら二重購読しない
+    if (!window.supabaseClient || !userId) {
+      console.warn('[RT] ❌ 購読開始できず: supabaseClient=' + (!!window.supabaseClient) + ' userId=' + userId);
+      return;
+    }
+    if (window._cloudRealtimeChannel) {
+      console.log('[RT] ⏭️ 既に購読中のためスキップ。既存チャンネル名: ' + (window._cloudRealtimeChannel.topic || '(不明)'));
+      return;
+    }
+    // v0.45.1337: 接続確立の全過程を網羅的にログ出力（トラブルシュート用）
+    var _rtChannelName = 'tasks-changes-' + userId;
+    var _rtStartedAt = new Date().toISOString();
+    console.log('%c[RT] === Realtime購読を開始します ===', 'color:#4facfe;font-weight:bold;');
+    console.log('[RT] 開始時刻: ' + _rtStartedAt);
+    console.log('[RT] 端末タグ: ' + (typeof _syncDeviceTag === 'function' ? _syncDeviceTag() : '(不明)'));
+    console.log('[RT] userId: ' + userId);
+    console.log('[RT] チャンネル名: ' + _rtChannelName);
+    console.log('[RT] 監視テーブル: koyomiru_tasks（public スキーマ）');
+    console.log('[RT] 監視イベント: UPDATE');
+    console.log('[RT] フィルタ: user_id=eq.' + userId);
+    console.log('[RT] Supabaseプロジェクト: ' + (window.supabaseClient.supabaseUrl || '(取得不可)'));
+    console.log('[RT] supabase-js認識: ' + (window.supabaseClient.realtime ? 'realtimeオブジェクトあり' : 'realtimeオブジェクトなし（異常の可能性）'));
+    if (window.supabaseClient.realtime) {
+      try {
+        console.log('[RT] WebSocket接続状態（接続開始前）: ' + (window.supabaseClient.realtime.connectionState ? window.supabaseClient.realtime.connectionState() : '(取得不可)'));
+      } catch(e0) { console.log('[RT] WebSocket接続状態の取得エラー:', e0); }
+    }
     window._cloudRealtimeChannel = window.supabaseClient
-      .channel('tasks-changes-' + userId)
+      .channel(_rtChannelName)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
@@ -33569,7 +34013,16 @@ function _cloudStartRealtimeSubscription(userId) {
         filter: 'user_id=eq.' + userId
       }, function(payload) {
         try {
+          // v0.45.1340: スモークテスト実行中はRealtimeイベントを処理しない。
+          if (window._isTesting) return;
+          console.log('%c[RT] 🔔 postgres_changesイベントを受信しました', 'color:#e67e22;font-weight:bold;');
+          console.log('[RT] 受信時刻: ' + new Date().toISOString());
+          console.log('[RT] イベント種別: ' + (payload && payload.eventType));
+          console.log('[RT] スキーマ/テーブル: ' + (payload && payload.schema) + '.' + (payload && payload.table));
+          console.log('[RT] payload全体:', payload);
           var newUpdatedAt = payload && payload.new && payload.new.updated_at;
+          console.log('[RT] new.updated_at: ' + newUpdatedAt);
+          console.log('[RT] new.allTasks件数: ' + (payload && payload.new && payload.new.data && Array.isArray(payload.new.data.allTasks) ? payload.new.data.allTasks.length : '(取得不可・payloadにdataが含まれない設定の可能性)'));
           if (typeof _syncLog === 'function') _syncLog('Realtimeイベント受信', 'updated_at=' + newUpdatedAt + ' 自分の最終同期=' + window._cloudLastSyncedAt);
           // v0.45.1335: コンソールが開けない端末でも「受信できているか」が分かるよう、画面にも反映する。
           var _elStatus2 = document.getElementById('cloudRealtimeStatus');
@@ -33579,30 +34032,43 @@ function _cloudStartRealtimeSubscription(userId) {
           }
           // 自分自身の直近の書き込みへの折り返し反応を避ける（第59条・副作用連鎖の退避復元精神）
           if (newUpdatedAt && newUpdatedAt !== window._cloudLastSyncedAt) {
+            console.log('[RT] 判定: 他端末の更新 → ダウンロードを開始します');
             if (typeof _syncLog === 'function') _syncLog('意図: 他端末の更新と判定 → 即時ダウンロード開始');
             supabaseSyncDown(true).then(function(r) {
+              console.log('[RT] ダウンロード結果:', r && r.error ? ('失敗: ' + r.error.message) : '成功');
               if (r && !r.error) {
                 window._cloudLastSyncedAt = newUpdatedAt;
                 if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を即時反映しました');
               }
             });
           } else {
+            console.log('[RT] 判定: 自分自身の書き込み → 無視します（折り返し防止）');
             if (typeof _syncLog === 'function') _syncLog('意図: 自分自身の書き込みと判定 → 無視（折り返し防止）');
           }
-        } catch(e2) { console.warn('[Supabase] Realtimeイベント処理エラー:', e2); }
+        } catch(e2) { console.warn('[RT] ❌ イベント処理エラー:', e2); }
       })
       .subscribe(function(status, err) {
         // v0.45.1329: 購読状態をコンソールで確認できるようにする（動作確認・トラブルシュート用）
         // v0.45.1335: コンソールが開けない端末（スマホ等）でも確認できるよう、画面表示も更新する。
+        // v0.45.1337: ステータス変化の詳細を網羅的にログ出力する。
+        console.log('%c[RT] 購読ステータス変化: ' + status, 'color:#8e44ad;font-weight:bold;', err ? err : '(エラーなし)');
         var _elStatus = document.getElementById('cloudRealtimeStatus');
         if (status === 'SUBSCRIBED') {
           console.log('[Supabase] ✅ Realtime購読成功: koyomiru_tasksの変更を即時監視中');
+          console.log('[RT] チャンネルtopic: ' + (window._cloudRealtimeChannel && window._cloudRealtimeChannel.topic));
+          console.log('[RT] 購読確立までの所要時間: ' + (Date.now() - new Date(_rtStartedAt).getTime()) + 'ms');
           if (_elStatus) { _elStatus.textContent = '🟢 Realtime接続中（即時同期 有効）'; _elStatus.style.color = '#5b8c5a'; }
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           console.error('[Supabase] ❌ Realtime購読失敗: status=' + status, err || '');
+          console.error('[RT] エラー詳細メッセージ: ' + (err && err.message));
+          console.error('[RT] エラーオブジェクト全体:', err);
+          console.error('[RT] 失敗までの経過時間: ' + (Date.now() - new Date(_rtStartedAt).getTime()) + 'ms');
+          console.error('[RT] 確認してほしい点: ①Supabase側でkoyomiru_tasksがsupabase_realtime publicationに' +
+            '登録されているか ②RLSポリシーがSELECTを許可しているか ③CSPのwss://許可設定 ④ネットワーク（ファイアウォール等）');
           if (_elStatus) { _elStatus.textContent = '🔴 Realtime接続失敗（' + status + '）· 45秒ごとの確認のみ動作'; _elStatus.style.color = '#c0392b'; }
         } else {
           console.log('[Supabase] Realtime購読状態: ' + status);
+          console.log('[RT] （中間状態。SUBSCRIBEDになるまで待機中）');
           if (_elStatus) { _elStatus.textContent = '🟡 Realtime接続中… (' + status + ')'; _elStatus.style.color = '#a67c00'; }
         }
       });
@@ -33616,6 +34082,40 @@ function _cloudStopRealtimeSubscription() {
     window._cloudRealtimeChannel = null;
   } catch(e) { console.warn('[Supabase] Realtime購読停止エラー:', e); }
 }
+// v0.45.1344: 統一同期エンジン用のRealtime購読。koyomiru_shared_tasksテーブル全体を
+// 監視し、payload側で「自分が所属するカレンダーか」をclient側で判定する
+// （フィルタ文字列でcalendar_idの動的な複数一致を組むのが煩雑なため、単純さを優先）。
+window._unifiedRealtimeChannel = window._unifiedRealtimeChannel || null;
+function _unifiedStartRealtimeSubscription(userId) {
+  try {
+    if (!window.supabaseClient || !userId) return;
+    if (window._unifiedRealtimeChannel) return;
+    window._unifiedRealtimeChannel = window.supabaseClient
+      .channel('unified-tasks-' + userId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'koyomiru_shared_tasks' }, function(payload) {
+        try {
+          if (window._isTesting) return; // v0.45.1340の教訓
+          var calId = (payload.new && payload.new.calendar_id) || (payload.old && payload.old.calendar_id);
+          if (!calId || window._myCalendarIds.indexOf(calId) === -1) return; // 自分のカレンダーでなければ無視
+          if (typeof _syncLog === 'function') _syncLog('統一同期：Realtimeイベント受信', 'calendar_id=' + calId);
+          unifiedPullTasks();
+        } catch(e2) { console.warn('[Unified] Realtimeイベント処理エラー:', e2); }
+      })
+      .subscribe(function(status) {
+        console.log('[Unified] Realtime購読状態: ' + status);
+      });
+  } catch(e) { console.warn('[Unified] Realtime購読開始エラー:', e); }
+}
+function _unifiedStopRealtimeSubscription() {
+  try {
+    if (window._unifiedRealtimeChannel && window.supabaseClient) {
+      window.supabaseClient.removeChannel(window._unifiedRealtimeChannel);
+    }
+    window._unifiedRealtimeChannel = null;
+  } catch(e) { console.warn('[Unified] Realtime購読停止エラー:', e); }
+}
+window._unifiedStartRealtimeSubscription = _unifiedStartRealtimeSubscription;
+window._unifiedStopRealtimeSubscription = _unifiedStopRealtimeSubscription;
 window._cloudStartRealtimeSubscription = _cloudStartRealtimeSubscription;
 window._cloudStopRealtimeSubscription = _cloudStopRealtimeSubscription;
 try {
@@ -33627,16 +34127,38 @@ try {
       if (event === 'SIGNED_IN') {
         if (typeof window.showToast === 'function') window.showToast('🎉 ようこそ、王国へ！');
         _cloudLoginSetStatus('🎉 登録ありがとうございます。データは自動で保存されます。');
+        try { localStorage.setItem('lastActivityAt', String(Date.now())); } catch(e) {} // v0.45.1338
+        // v0.45.1339: Devise風「ログイン履歴（Trackable）」。この端末でのログイン回数・
+        // 最終ログイン日時を記録する。※あくまでこの端末単位の記録であり、
+        // 全端末を横断したサーバー側の真の総ログイン回数ではないことに留意。
+        try {
+          var _loginCount = parseInt(localStorage.getItem('loginCount') || '0', 10) + 1;
+          localStorage.setItem('loginCount', String(_loginCount));
+          localStorage.setItem('lastLoginAt', new Date().toISOString());
+        } catch(e) {}
         setTimeout(function(){ cloudLoginRefreshStatus(); }, 0);
-        if (session && session.user) _cloudStartRealtimeSubscription(session.user.id);
+        if (session && session.user) {
+          _cloudStartRealtimeSubscription(session.user.id);
+          // v0.45.1344: 統一同期エンジンの初期化（個人用カレンダー保証・旧データ移行・Realtime購読）
+          unifiedEnsurePersonalCalendarAndMigrate().then(function() {
+            _unifiedStartRealtimeSubscription(session.user.id);
+            unifiedPullTasks();
+          });
+        }
       }
       if (event === 'SIGNED_OUT') {
         setTimeout(function(){ cloudLoginRefreshStatus(); }, 0);
         _cloudStopRealtimeSubscription();
+        _unifiedStopRealtimeSubscription(); // v0.45.1344
       }
       // v0.45.1312: 既存セッション復元時（INITIAL_SESSION）にも購読を開始する
       if (event === 'INITIAL_SESSION' && session && session.user) {
         _cloudStartRealtimeSubscription(session.user.id);
+        // v0.45.1344: 既存セッション復元時も統一エンジンを初期化する
+        unifiedEnsurePersonalCalendarAndMigrate().then(function() {
+          _unifiedStartRealtimeSubscription(session.user.id);
+          unifiedPullTasks();
+        });
       }
     });
     cloudUpdateNavLoginIndicator(); // 起動時の初期反映
@@ -45775,13 +46297,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-226·①: 初期化コードなし', '');
        // ② supabaseSyncUpが失敗時にフラグを立て、成功時に解除しているか
        var _st226upIdx = _st226scriptTexts.indexOf('async function supabaseSyncUp');
-       var _st226upSrc = _st226upIdx !== -1 ? _st226scriptTexts.slice(_st226upIdx, _st226upIdx + 1500) : '';
+       var _st226upSrc = _st226upIdx !== -1 ? _st226scriptTexts.slice(_st226upIdx, _st226upIdx + 2000) : '';
        (_st226upSrc.indexOf('_cloudPushFailed = true') !== -1 && _st226upSrc.indexOf('_cloudPushFailed = false') !== -1)
          ? ok('ST-226·②: supabaseSyncUpのフラグ管理確認')
          : ng('ST-226·②: フラグ管理が不完全', '');
        // ③ 定期チェック（_cloudCheckAndPullIfNewer）がフラグを見てから自動上書きするか
        var _st226chkIdx = _st226scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
-       var _st226chkSrc = _st226chkIdx !== -1 ? _st226scriptTexts.slice(_st226chkIdx, _st226chkIdx + 700) : '';
+       var _st226chkSrc = _st226chkIdx !== -1 ? _st226scriptTexts.slice(_st226chkIdx, _st226chkIdx + 1200) : '';
        _st226chkSrc.indexOf('_cloudPushFailed') !== -1
          ? ok('ST-226·③: 定期チェックのプッシュ失敗ガード確認')
          : ng('ST-226·③: 定期チェックにガードなし', '');
@@ -45813,7 +46335,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ③ supabaseSyncDownが_refreshCurrentViewForSyncを呼んでいるか
        var _st227scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st227downIdx = _st227scriptTexts.indexOf('async function supabaseSyncDown');
-       var _st227downSrc = _st227downIdx !== -1 ? _st227scriptTexts.slice(_st227downIdx, _st227downIdx + 1200) : '';
+       var _st227downSrc = _st227downIdx !== -1 ? _st227scriptTexts.slice(_st227downIdx, _st227downIdx + 4000) : '';
        _st227downSrc.indexOf('_refreshCurrentViewForSync()') !== -1
          ? ok('ST-227·③: supabaseSyncDownが再描画ディスパッチャーを呼ぶ確認')
          : ng('ST-227·③: supabaseSyncDownから呼ばれていない', '');
@@ -45857,7 +46379,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ④ supabaseSyncDownがマージ関数を実際に呼んでいるか
        var _st228scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st228downIdx = _st228scriptTexts.indexOf('async function supabaseSyncDown');
-       var _st228downSrc = _st228downIdx !== -1 ? _st228scriptTexts.slice(_st228downIdx, _st228downIdx + 1200) : '';
+       var _st228downSrc = _st228downIdx !== -1 ? _st228scriptTexts.slice(_st228downIdx, _st228downIdx + 3000) : '';
        _st228downSrc.indexOf('_mergeTasksArrays(') !== -1
          ? ok('ST-228·④: supabaseSyncDownがマージ関数を使用確認')
          : ng('ST-228·④: 配列まるごと上書きのまま', '');
@@ -45906,7 +46428,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st229upIdx = _st229scriptTexts.indexOf('async function supabaseSyncUp');
        var _st229upSrc = _st229upIdx !== -1 ? _st229scriptTexts.slice(_st229upIdx, _st229upIdx + 800) : '';
        var _st229downIdx = _st229scriptTexts.indexOf('async function supabaseSyncDown');
-       var _st229downSrc = _st229downIdx !== -1 ? _st229scriptTexts.slice(_st229downIdx, _st229downIdx + 1000) : '';
+       var _st229downSrc = _st229downIdx !== -1 ? _st229scriptTexts.slice(_st229downIdx, _st229downIdx + 1500) : '';
        (_st229upSrc.indexOf('deletedTaskIds') !== -1 && _st229downSrc.indexOf('deletedTaskIds') !== -1)
          ? ok('ST-229·③: アップロード・ダウンロード両方でdeletedTaskIdsが伝播する確認')
          : ng('ST-229·③: 削除記録の伝播経路が不足', '');
@@ -46001,6 +46523,211 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-232: 画面表示型Realtimeステータス 確認 完了');
      } catch(e) {
        ng('ST-232: 例外', e.message);
+     }
+
+     // ===== ST-233: 日次サブタブ・表示中日付の同期反映確認（v0.45.1336〜） =====
+     // 背景：日次内サブタブ（タイムライン・雑記帳）はswitchDailyTab()がlocalStorageに
+     //   記録していないため、currentViewだけでは判定できず、そこを見ている最中の
+     //   同期が反映されない穴があった。また、renderAllSections()を引数なしで呼ぶと
+     //   常に「今日」を描画するため、前日/翌日を見ている場合も同様の穴があった。
+     try {
+       var _st233scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st233refreshIdx = _st233scriptTexts.indexOf('function _refreshCurrentViewForSync');
+       var _st233refreshSrc = _st233refreshIdx !== -1 ? _st233scriptTexts.slice(_st233refreshIdx, _st233refreshIdx + 1600) : '';
+       // ① タイムライン・雑記帳のDOM表示判定があるか
+       (_st233refreshSrc.indexOf("getElementById('timelineView')") !== -1 && _st233refreshSrc.indexOf("getElementById('scratchView')") !== -1)
+         ? ok('ST-233·①: 日次サブタブのDOM表示状態判定確認')
+         : ng('ST-233·①: サブタブ判定が見つからない', '');
+       // ② supabaseSyncDownがcurrentDailyDateを渡しているか
+       var _st233downIdx = _st233scriptTexts.indexOf('async function supabaseSyncDown');
+       var _st233downSrc = _st233downIdx !== -1 ? _st233scriptTexts.slice(_st233downIdx, _st233downIdx + 3500) : '';
+       _st233downSrc.indexOf('renderAllSections((typeof currentDailyDate') !== -1
+         ? ok('ST-233·②: renderAllSectionsに表示中日付を渡す確認')
+         : ng('ST-233·②: 常に今日を描画する実装のまま', '');
+       ok('ST-233: 日次サブタブ・表示中日付の同期反映 確認 完了');
+     } catch(e) {
+       ng('ST-233: 例外', e.message);
+     }
+
+     // ===== ST-234: 無操作タイムアウト（Devise timeout_in相当・36時間）確認（v0.45.1338〜） =====
+     try {
+       typeof window._checkIdleTimeoutAndSignOutIfNeeded === 'function'
+         ? ok('ST-234·①: _checkIdleTimeoutAndSignOutIfNeeded window公開確認')
+         : ng('ST-234·①: 関数未公開', '');
+       typeof IDLE_TIMEOUT_MS !== 'undefined' && IDLE_TIMEOUT_MS === 36 * 60 * 60 * 1000
+         ? ok('ST-234·②: IDLE_TIMEOUT_MSが36時間に設定確認')
+         : ng('ST-234·②: タイムアウト値が不正', typeof IDLE_TIMEOUT_MS !== 'undefined' ? IDLE_TIMEOUT_MS : '未定義');
+       // ③ 実際に37時間前を記録して呼ぶとサインアウトが試みられるか（副作用モック）
+       var _st234prevSignOut = window.supabaseSignOut;
+       var _st234signOutCalled = false;
+       var _st234prevLoggedIn = window._cloudIsLoggedIn;
+       var _st234prevActivity = localStorage.getItem('lastActivityAt');
+       try {
+         window.supabaseSignOut = function() { _st234signOutCalled = true; return Promise.resolve({}); };
+         window._cloudIsLoggedIn = true;
+         localStorage.setItem('lastActivityAt', String(Date.now() - 37 * 60 * 60 * 1000)); // 37時間前
+         window._checkIdleTimeoutAndSignOutIfNeeded();
+       } finally {
+         window.supabaseSignOut = _st234prevSignOut;
+         window._cloudIsLoggedIn = _st234prevLoggedIn;
+         if (_st234prevActivity !== null) localStorage.setItem('lastActivityAt', _st234prevActivity);
+         else localStorage.removeItem('lastActivityAt');
+       }
+       _st234signOutCalled
+         ? ok('ST-234·③: 37時間無操作でサインアウトが呼ばれる実挙動確認')
+         : ng('ST-234·③: タイムアウトしてもサインアウトが呼ばれない', '');
+       ok('ST-234: 無操作タイムアウト（36時間） 確認 完了');
+     } catch(e) {
+       ng('ST-234: 例外', e.message);
+     }
+
+     // ===== ST-235: Devise風追加機能（他端末ログアウト・ログイン履歴）確認（v0.45.1339〜） =====
+     try {
+       typeof window.supabaseSignOutOtherDevices === 'function'
+         ? ok('ST-235·①: supabaseSignOutOtherDevices window公開確認')
+         : ng('ST-235·①: 関数未公開', '');
+       var _st235src = typeof window.supabaseSignOutOtherDevices === 'function' ? window.supabaseSignOutOtherDevices.toString() : '';
+       _st235src.indexOf("scope: 'others'") !== -1
+         ? ok('ST-235·②: scope:othersを使用確認（他端末のみ・自分は維持）')
+         : ng('ST-235·②: scope指定が見つからない', '');
+       typeof window.signOutOtherDevicesFromModal === 'function'
+         ? ok('ST-235·③: signOutOtherDevicesFromModal window公開確認')
+         : ng('ST-235·③: モーダル用関数未公開', '');
+       var _st235modalSrc = typeof window.signOutOtherDevicesFromModal === 'function' ? window.signOutOtherDevicesFromModal.toString() : '';
+       (_st235modalSrc.indexOf('showChoiceModal') !== -1 && !/[^.\w](confirm|alert|prompt)\s*\(/.test(_st235modalSrc))
+         ? ok('ST-235·④: showChoiceModalで確認・confirm等不使用確認（第55条準拠）')
+         : ng('ST-235·④: 第55条違反の恐れ', '');
+       document.getElementById('cloudLoginHistoryLabel')
+         ? ok('ST-235·⑤: cloudLoginHistoryLabel DOM存在確認')
+         : ng('ST-235·⑤: ログイン履歴表示DOM未存在', '');
+       ok('ST-235: Devise風追加機能 確認 完了');
+     } catch(e) {
+       ng('ST-235: 例外', e.message);
+     }
+
+     // ===== ST-236: 同期系関数の_isTestingガード確認（v0.45.1340〜） =====
+     // 背景：2026-07-16、スモークテスト実行中にsupabaseSyncUp/Down・定期チェック・
+     //   Realtimeイベントハンドラが_isTestingでガードされていなかったため、
+     //   テスト中の一時的なallTasksの状態が実際にクラウドと同期され、
+     //   本物のタスクが5件消失する重大事故が発生した（TPAGが検出）。
+     try {
+       var _st236scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st236upIdx = _st236scriptTexts.indexOf('async function supabaseSyncUp');
+       var _st236upSrc = _st236upIdx !== -1 ? _st236scriptTexts.slice(_st236upIdx, _st236upIdx + 300) : '';
+       _st236upSrc.indexOf('if (window._isTesting) return null;') !== -1
+         ? ok('ST-236·①: supabaseSyncUpの_isTestingガード確認')
+         : ng('ST-236·①: ガードなし（重大：テスト中に実クラウド送信の恐れ）', '');
+       var _st236downIdx = _st236scriptTexts.indexOf('async function supabaseSyncDown');
+       var _st236downSrc = _st236downIdx !== -1 ? _st236scriptTexts.slice(_st236downIdx, _st236downIdx + 300) : '';
+       _st236downSrc.indexOf('if (window._isTesting) return null;') !== -1
+         ? ok('ST-236·②: supabaseSyncDownの_isTestingガード確認')
+         : ng('ST-236·②: ガードなし（重大：テスト中に実データ上書きの恐れ）', '');
+       var _st236chkIdx = _st236scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
+       var _st236chkSrc = _st236chkIdx !== -1 ? _st236scriptTexts.slice(_st236chkIdx, _st236chkIdx + 200) : '';
+       _st236chkSrc.indexOf('if (window._isTesting) return;') !== -1
+         ? ok('ST-236·③: _cloudCheckAndPullIfNewerの_isTestingガード確認')
+         : ng('ST-236·③: ガードなし', '');
+       var _st236rtIdx = _st236scriptTexts.indexOf("}, function(payload) {");
+       var _st236rtSrc = _st236rtIdx !== -1 ? _st236scriptTexts.slice(_st236rtIdx, _st236rtIdx + 200) : '';
+       _st236rtSrc.indexOf('if (window._isTesting) return;') !== -1
+         ? ok('ST-236·④: Realtimeイベントハンドラの_isTestingガード確認')
+         : ng('ST-236·④: ガードなし', '');
+       ok('ST-236: 同期系関数の_isTestingガード 確認 完了');
+     } catch(e) {
+       ng('ST-236: 例外', e.message);
+     }
+
+     // ===== ST-237: 共有カレンダー（フェーズ1）クライアント実装確認（v0.45.1342〜） =====
+     // 背景：TimeTree等の正規化テーブル設計を参考に、招待コードでの参加を
+     //   SECURITY DEFINER関数経由で行う設計。DBのテーブル自体はまだ未作成の
+     //   可能性があるため、ここでは実際にSupabaseへ接続する挙動は検証せず、
+     //   関数の存在・DOM配線のみを確認する。
+     try {
+       ['createSharedCalendar','lookupInviteCode','joinSharedCalendarByCode','listMySharedCalendars',
+        'openSharedCalendarModal','closeSharedCalendarModal','createSharedCalendarFromModal','joinSharedCalendarFromModal']
+         .forEach(function(fn) {
+           typeof window[fn] === 'function'
+             ? ok('ST-237·' + fn + ': window公開確認')
+             : ng('ST-237·' + fn + ': 未公開', '');
+         });
+       document.getElementById('sharedCalendarOverlay')
+         ? ok('ST-237·DOM: sharedCalendarOverlay 存在確認')
+         : ng('ST-237·DOM: モーダルDOM未存在', '');
+       document.getElementById('sharedCalendarMyList') && document.getElementById('sharedCalendarNewName') && document.getElementById('sharedCalendarJoinCode')
+         ? ok('ST-237·DOM: 一覧・作成・参加の各要素存在確認')
+         : ng('ST-237·DOM: 一部要素が欠落', '');
+       ok('ST-237: 共有カレンダー（フェーズ1） 確認 完了');
+     } catch(e) {
+       ng('ST-237: 例外', e.message);
+     }
+
+     // ===== ST-238: POPOPO方式招待（リンク・QR・共有）確認（v0.45.1343〜） =====
+     // 背景：POPOPO・TimeTreeの招待UX調査の結果、「コード手入力」より
+     //   「リンクを開くだけ」の方が優れていると判断し、招待リンク＋QRコード＋
+     //   OS標準共有シート方式に刷新した。
+     try {
+       ['copySharedCalendarInvite','shareSharedCalendarInvite'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-238·' + fn + ': window公開確認')
+           : ng('ST-238·' + fn + ': 未公開', '');
+       });
+       var _st238scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st238listIdx = _st238scriptTexts.indexOf('async function refreshSharedCalendarList');
+       var _st238listSrc = _st238listIdx !== -1 ? _st238scriptTexts.slice(_st238listIdx, _st238listIdx + 2000) : '';
+       (_st238listSrc.indexOf('qrserver.com') !== -1 && _st238listSrc.indexOf('?join=') !== -1)
+         ? ok('ST-238·①: 招待リンクにQRコード生成確認')
+         : ng('ST-238·①: QRコード生成が見つからない', '');
+       _st238listSrc.indexOf('navigator.share') !== -1 || _st238scriptTexts.indexOf('navigator.share') !== -1
+         ? ok('ST-238·②: OS標準共有シート（navigator.share）対応確認')
+         : ng('ST-238·②: 共有シート対応なし', '');
+       // ③ ?join=パラメータのハンドラが存在するか
+       _st238scriptTexts.indexOf("params2.get('join')") !== -1
+         ? ok('ST-238·③: ?join=パラメータハンドラ確認')
+         : ng('ST-238·③: 招待リンククリック時の自動処理なし', '');
+       ok('ST-238: POPOPO方式招待 確認 完了');
+     } catch(e) {
+       ng('ST-238: 例外', e.message);
+     }
+
+     // ===== ST-239: 統一同期エンジンの配線確認（v0.45.1344〜） =====
+     // 背景：「個人用（blob）」「共有用（1行1タスク）」の2系統を、個人用カレンダーも
+     // 「メンバー1人の共有カレンダー」として扱う1系統に統一した（TimeTree等に倣う）。
+     try {
+       ['unifiedRefreshMyCalendarIds','unifiedEnsurePersonalCalendarAndMigrate','unifiedPushTasks','unifiedPullTasks',
+        '_unifiedStartRealtimeSubscription','_unifiedStopRealtimeSubscription']
+         .forEach(function(fn) {
+           typeof window[fn] === 'function'
+             ? ok('ST-239·' + fn + ': window公開確認')
+             : ng('ST-239·' + fn + ': 未公開', '');
+         });
+       // ① unifiedPush/PullTasksも_isTestingガードを持つこと（v0.45.1340の教訓を踏襲）
+       var _st239src1 = window.unifiedPushTasks ? window.unifiedPushTasks.toString() : '';
+       var _st239src2 = window.unifiedPullTasks ? window.unifiedPullTasks.toString() : '';
+       (_st239src1.indexOf('_isTesting') !== -1 && _st239src2.indexOf('_isTesting') !== -1)
+         ? ok('ST-239·①: 統一エンジンpush/pullも_isTestingガード確認')
+         : ng('ST-239·①: _isTestingガードが一部欠落', '');
+       // ② saveAllTasksの自動同期がunifiedPushTasksを使うよう切り替わっているか
+       var _st239scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st239saveIdx = _st239scriptTexts.indexOf('function saveAllTasks(skipCloudSync)');
+       var _st239saveSrc = _st239saveIdx !== -1 ? _st239scriptTexts.slice(_st239saveIdx, _st239saveIdx + 1200) : '';
+       _st239saveSrc.indexOf('window.unifiedPushTasks') !== -1
+         ? ok('ST-239·②: saveAllTasksが統一エンジンを使用確認')
+         : ng('ST-239·②: 旧エンジンのまま', '');
+       // ③ createTaskがcloudCalendarIdを設定するか
+       var _st239createIdx = _st239scriptTexts.indexOf('function createTask(opts)');
+       var _st239createSrc = _st239createIdx !== -1 ? _st239scriptTexts.slice(_st239createIdx, _st239createIdx + 3500) : '';
+       _st239createSrc.indexOf('cloudCalendarId:') !== -1
+         ? ok('ST-239·③: createTaskがcloudCalendarIdを設定確認')
+         : ng('ST-239·③: cloudCalendarId未設定', '');
+       // ④ deleteTaskByIdがリモート墓石（deleted_at）を伝播するか
+       var _st239delIdx = _st239scriptTexts.indexOf('function deleteTaskById(taskId)');
+       var _st239delSrc = _st239delIdx !== -1 ? _st239scriptTexts.slice(_st239delIdx, _st239delIdx + 1500) : '';
+       _st239delSrc.indexOf('koyomiru_shared_tasks') !== -1 && _st239delSrc.indexOf('deleted_at') !== -1
+         ? ok('ST-239·④: deleteTaskByIdがリモート墓石を伝播確認')
+         : ng('ST-239·④: リモート削除伝播なし', '');
+       ok('ST-239: 統一同期エンジンの配線 確認 完了（実DB接続はSQL未実行のため未検証）');
+     } catch(e) {
+       ng('ST-239: 例外', e.message);
      }
 
        // 第1条【本番環境】
@@ -46307,10 +47034,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _r17msgs.push('deletePhoto未定義');
        }
 
-       // saveAllTasks() → 0引数であること（引数を要求する形に変わっていないか）
-       if (typeof saveAllTasks === 'function' && saveAllTasks.length !== 0) {
+       // saveAllTasks(skipCloudSync) → 1引数（オプショナル）であること
+       // v0.45.1333でskipCloudSyncを意図的に追加した。0だと古いチェックのまま。
+       if (typeof saveAllTasks === 'function' && saveAllTasks.length !== 1) {
          _r17ok = false;
-         _r17msgs.push('saveAllTasks引数数異常(' + saveAllTasks.length + '≠0)');
+         _r17msgs.push('saveAllTasks引数数異常(' + saveAllTasks.length + '≠1)');
        }
 
        // deletePhoto(null, pid) の挙動確認：テストレコードを削除して件数が1減ること
@@ -55463,6 +56191,9 @@ window.addMigration = addMigration;
       <div style="font-size:0.85em;color:#5b8c5a;background:#f0f6ef;border-radius:8px;padding:10px 12px;margin-bottom:8px;">登録済みです。データは自動で保存・同期されます（他端末の変更も自動で反映）。</div>
       <div id="cloudLastSavedLabel" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;"></div>
       <div id="cloudRealtimeStatus" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;padding:8px 10px;background:#f9f7f2;border-radius:8px;">⏳ Realtime接続状況を確認中…</div>
+      <div id="cloudLoginHistoryLabel" style="font-size:0.68em;color:#a89a88;margin-bottom:14px;"></div>
+      <button onclick="openSharedCalendarModal()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">👨‍👩‍👧 共有カレンダー（フェーズ1・準備中）</button>
+      <button onclick="signOutOtherDevicesFromModal()" style="width:100%;padding:9px;border:1px solid #e0cba0;border-radius:8px;background:transparent;color:#a67c00;font-size:0.8em;cursor:pointer;margin-bottom:10px;">📵 他端末を全てログアウトさせる</button>
       <button id="cloudLoginFetchBtn" onclick="cloudFetchFromModal()" style="display:none;width:100%;padding:11px;border:none;border-radius:8px;background:#4facfe;color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;margin-bottom:10px;">⬇️ クラウドのデータを取得</button>
       <button onclick="cloudLogoutFromModal()" style="width:100%;padding:9px;border:none;border-radius:8px;background:transparent;color:#a89a88;font-size:0.85em;cursor:pointer;">ログアウト</button>
     </div>
@@ -55470,5 +56201,31 @@ window.addMigration = addMigration;
   </div>
 </div>
 <!-- ===== END v0.45.1234 ログインモーダル ===== -->
+
+<!-- ===== v0.45.1342: 共有カレンダーモーダル（フェーズ1） ===== -->
+<div id="sharedCalendarOverlay" style="display:none;position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;padding:16px;box-sizing:border-box;">
+  <div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:400px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.18);position:relative;">
+    <button onclick="closeSharedCalendarModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:1.3em;color:#999;cursor:pointer;">✕</button>
+    <div style="font-size:1.1em;font-weight:700;margin-bottom:4px;">👨‍👩‍👧 共有カレンダー</div>
+    <div style="font-size:0.75em;color:#999;margin-bottom:18px;">フェーズ1：招待・参加の入り口のみ（タスクの共有同期は今後実装予定）</div>
+
+    <div id="sharedCalendarMyList" style="margin-bottom:18px;"></div>
+
+    <div style="border-top:1px solid #eee;padding-top:16px;margin-bottom:16px;">
+      <div style="font-size:0.85em;font-weight:600;margin-bottom:8px;">新しい共有カレンダーを作る</div>
+      <input id="sharedCalendarNewName" type="text" placeholder="例：Mao&きくモン暦" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
+      <button onclick="createSharedCalendarFromModal()" style="width:100%;padding:10px;border:none;border-radius:8px;background:#4a7856;color:#fff;font-size:0.85em;font-weight:600;cursor:pointer;">作成する</button>
+    </div>
+
+    <div style="border-top:1px solid #eee;padding-top:16px;">
+      <div style="font-size:0.85em;font-weight:600;margin-bottom:8px;">招待コードで参加する</div>
+      <input id="sharedCalendarJoinCode" type="text" placeholder="8桁のコード" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
+      <button onclick="joinSharedCalendarFromModal()" style="width:100%;padding:10px;border:1px solid #4a7856;border-radius:8px;background:transparent;color:#4a7856;font-size:0.85em;font-weight:600;cursor:pointer;">参加する</button>
+    </div>
+
+    <div id="sharedCalendarStatus" style="font-size:0.78em;color:#7a6a54;margin-top:14px;min-height:1.2em;"></div>
+  </div>
+</div>
+<!-- ===== END v0.45.1342 共有カレンダーモーダル ===== -->
 </body>
 </html
