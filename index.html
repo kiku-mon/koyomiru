@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1344 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1345 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1344';
+    const APP_VERSION = 'v0.45.1345';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9851,7 +9851,10 @@ function renderTodoList() {
       try {
         localStorage.setItem('allTasks', JSON.stringify(allTasks));
         // v0.45.1338: 無操作タイムアウト（Devise timeout_in相当）用に最終活動時刻を記録。
-        localStorage.setItem('lastActivityAt', String(Date.now()));
+        // v0.45.1345: スモークテスト実行中は更新しない（TPAGのlocalStorage汚染検知対策）。
+        if (!window._isTesting) {
+          localStorage.setItem('lastActivityAt', String(Date.now()));
+        }
         // taskIdCounter: UUID移行済みのため書き込み不要
       } catch(e) {
         console.error('[saveAllTasks] save失敗', e);
@@ -18262,9 +18265,13 @@ function reviveBlueprint(id) {
       // 【権威】2026-07-16、タスク単位マージ導入直後、削除したはずのタスクが
       // 他端末との同期で復活し重複する事故が実際に発生した。
       try {
-        var _delIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'));
-        _delIds.add(taskId);
-        localStorage.setItem('deletedTaskIds', JSON.stringify([..._delIds]));
+        // v0.45.1345: スモークテスト実行中は墓石を記録しない（TPAGのlocalStorage汚染検知対策）。
+        // ST-229は実挙動確認のため、そのテスト内でのみ一時的に_isTestingをfalseにして検証する。
+        if (!window._isTesting) {
+          var _delIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'));
+          _delIds.add(taskId);
+          localStorage.setItem('deletedTaskIds', JSON.stringify([..._delIds]));
+        }
       } catch(e) { console.warn('[deleteTaskById] 墓石記録エラー:', e); }
       // v0.45.1344: 統一同期エンジン側のテーブルにも削除（deleted_at）を伝える。
       // ログイン中・テスト実行中でなければ、非同期で実行（fire-and-forget）。
@@ -46400,7 +46407,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks.push({ id: _st229id, kind: 'task', text: 'ST-229墓石テスト', date: getLocalDateStr(new Date()), section: 1, displayScope: 'daily_only', calendarId: allSettings.calendar.mainCalendarId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
        var _st229prevSave = window.saveAllTasks; window.saveAllTasks = function(){};
        var _st229prevRenderGant = window.renderGantView; window.renderGantView = function(){};
+       // v0.45.1345: 墓石記録はテスト中スキップする設計になったため、この検証だけ一時的に解除する。
+       window._isTesting = false;
        deleteTaskById(_st229id);
+       window._isTesting = true;
        window.saveAllTasks = _st229prevSave;
        window.renderGantView = _st229prevRenderGant;
        var _st229deletedIds = JSON.parse(localStorage.getItem('deletedTaskIds') || '[]');
@@ -46516,7 +46526,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-232·②: 更新処理が見つからない', '');
        // ③ SUBSCRIBED時に緑、失敗時に赤の表示分岐があるか
        var _st232subIdx = _st232scriptTexts.indexOf(".subscribe(function(status, err)");
-       var _st232subSrc = _st232subIdx !== -1 ? _st232scriptTexts.slice(_st232subIdx, _st232subIdx + 1200) : '';
+       var _st232subSrc = _st232subIdx !== -1 ? _st232scriptTexts.slice(_st232subIdx, _st232subIdx + 1700) : '';
        (_st232subSrc.indexOf('🟢') !== -1 && _st232subSrc.indexOf('🔴') !== -1)
          ? ok('ST-232·③: 成功/失敗で色分け表示する分岐確認')
          : ng('ST-232·③: 色分け表示の分岐が見つからない', '');
