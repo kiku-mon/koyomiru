@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1347 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1349 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1347';
+    const APP_VERSION = 'v0.45.1349';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9852,7 +9852,9 @@ function renderTodoList() {
         localStorage.setItem('allTasks', JSON.stringify(allTasks));
         // v0.45.1338: 無操作タイムアウト（Devise timeout_in相当）用に最終活動時刻を記録。
         // v0.45.1345: スモークテスト実行中は更新しない（TPAGのlocalStorage汚染検知対策）。
-        if (!window._isTesting) {
+        // v0.45.1348: _isTesting単独ではST-75等の一時解除で漏れるため、
+        // 一時解除の影響を受けない_smokeTestRunningも併せて確認する。
+        if (!window._isTesting && !window._smokeTestRunning) {
           localStorage.setItem('lastActivityAt', String(Date.now()));
         }
         // taskIdCounter: UUID移行済みのため書き込み不要
@@ -33326,13 +33328,22 @@ async function unifiedEnsurePersonalCalendarAndMigrate() {
   if (!window.supabaseClient) return;
   var already = localStorage.getItem('unifiedMigrationDone');
   var r1 = await window.supabaseClient.rpc('koyomiru_ensure_personal_calendar');
-  if (r1.error) { console.error('[Unified] 個人カレンダー保証失敗:', r1.error.message); return; }
+  if (r1.error) {
+    console.error('[Unified] 個人カレンダー保証失敗:', r1.error.message);
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 個人カレンダー保証失敗: ' + r1.error.message);
+    return;
+  }
   window._personalCalendarId = r1.data;
+  if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 個人カレンダー確認OK: ' + r1.data);
   if (!already) {
     var r2 = await window.supabaseClient.rpc('koyomiru_migrate_personal_tasks');
-    if (r2.error) { console.error('[Unified] 旧データ移行失敗:', r2.error.message); }
+    if (r2.error) {
+      console.error('[Unified] 旧データ移行失敗:', r2.error.message);
+      if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 旧データ移行失敗: ' + r2.error.message);
+    }
     else {
       console.log('[Unified] 旧データ移行完了: ' + r2.data + '件');
+      if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 旧データ移行完了: ' + r2.data + '件');
       localStorage.setItem('unifiedMigrationDone', '1');
     }
   }
@@ -33363,8 +33374,18 @@ async function unifiedPushTasks() {
   });
   if (toPush.length === 0) return null;
   var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
-  if (r.error) { console.error('[Unified] プッシュ失敗:', r.error.message); window._cloudPushFailed = true; }
-  else { window._cloudPushFailed = false; if (typeof _syncLog === 'function') _syncLog('統一同期：プッシュ完了', toPush.length + '件'); }
+  if (r.error) {
+    console.error('[Unified] プッシュ失敗:', r.error.message);
+    window._cloudPushFailed = true;
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プッシュ失敗: ' + r.error.message);
+  }
+  else {
+    window._cloudPushFailed = false;
+    if (typeof _syncLog === 'function') _syncLog('統一同期：プッシュ完了', toPush.length + '件');
+    // v0.45.1348: デバッグパネル（_dbg_log）にも記録。console.logはスマホのDevToolsが
+    // なければ確認できないため、デバッグパネルで直接見える形にする。
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プッシュ完了: ' + toPush.length + '件 → calendar=' + (window._personalCalendarId || '?'));
+  }
   return r;
 }
 
@@ -33377,7 +33398,12 @@ async function unifiedPullTasks() {
   var r = await window.supabaseClient.from('koyomiru_shared_tasks')
     .select('id, calendar_id, data, updated_at, deleted_at')
     .in('calendar_id', window._myCalendarIds);
-  if (r.error) { console.error('[Unified] プル失敗:', r.error.message); return r; }
+  if (r.error) {
+    console.error('[Unified] プル失敗:', r.error.message);
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル失敗: ' + r.error.message);
+    return r;
+  }
+  if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル取得: ' + r.data.length + '件（対象カレンダー' + window._myCalendarIds.length + '件）');
 
   // v0.45.1331の教訓：墓石（deletedTaskIds）で削除済みタスクの復活を防ぐ
   var deletedIds;
@@ -33411,6 +33437,7 @@ async function unifiedPullTasks() {
     renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
     if (typeof _refreshCurrentViewForSync === 'function') _refreshCurrentViewForSync(); // v0.45.1328/1336の教訓
     if (typeof _syncLog === 'function') _syncLog('統一同期：プル→反映完了');
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル反映完了: allTasks=' + allTasks.length + '件に変化あり');
     if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を自動反映しました');
   }
   return r;
@@ -33805,12 +33832,21 @@ try {
     if (document.visibilityState === 'visible') {
       _checkIdleTimeoutAndSignOutIfNeeded(); // v0.45.1338: タブ復帰時に確認（36時間放置後の想定シナリオ）
       _cloudCheckAndPullIfNewer();
+      // v0.45.1349: 旧エンジンのみ呼ばれ統一エンジン（unifiedPullTasks）が
+      // 呼ばれていなかったため、タブ復帰時に他端末の変更が反映されなかった。
+      if (window._cloudIsLoggedIn && typeof window.unifiedPullTasks === 'function') {
+        if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] タブ復帰→プル実行');
+        window.unifiedPullTasks();
+      }
     }
   });
   setInterval(function() {
     if (document.visibilityState === 'visible') {
       _checkIdleTimeoutAndSignOutIfNeeded();
       _cloudCheckAndPullIfNewer();
+      if (window._cloudIsLoggedIn && typeof window.unifiedPullTasks === 'function') {
+        window.unifiedPullTasks();
+      }
     }
   }, 45000);
   // v0.45.1337: WebSocketの生存確認ハートビートログ（60秒ごと）。
@@ -34106,12 +34142,14 @@ function _unifiedStartRealtimeSubscription(userId) {
   try {
     if (!window.supabaseClient || !userId) return;
     if (window._unifiedRealtimeChannel) return;
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] Realtime購読開始要求: user=' + userId.slice(0, 8));
     window._unifiedRealtimeChannel = window.supabaseClient
       .channel('unified-tasks-' + userId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'koyomiru_shared_tasks' }, function(payload) {
         try {
           if (window._isTesting) return; // v0.45.1340の教訓
           var calId = (payload.new && payload.new.calendar_id) || (payload.old && payload.old.calendar_id);
+          if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RTイベント受信: ' + (payload && payload.eventType) + ' cal=' + (calId ? calId.slice(0, 8) : '?') + (calId && window._myCalendarIds.indexOf(calId) === -1 ? '（自分のカレンダーでないため無視）' : ''));
           if (!calId || window._myCalendarIds.indexOf(calId) === -1) return; // 自分のカレンダーでなければ無視
           if (typeof _syncLog === 'function') _syncLog('統一同期：Realtimeイベント受信', 'calendar_id=' + calId);
           unifiedPullTasks();
@@ -34119,6 +34157,22 @@ function _unifiedStartRealtimeSubscription(userId) {
       })
       .subscribe(function(status) {
         console.log('[Unified] Realtime購読状態: ' + status);
+        if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RT購読状態: ' + status);
+        // v0.45.1349: 接続断（エラー・タイムアウト・クローズ）時は自動再接続を予約する。
+        // 【権威】2026-07-21、PCを開いたままスマホでタスクを作っても自動反映されず、
+        // リロードで初めて出てくる（＝Realtime配信が届いていない）事象が実際に発生。
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          try {
+            _unifiedStopRealtimeSubscription();
+            if (!window._unifiedRtReconnectTimer) {
+              window._unifiedRtReconnectTimer = setTimeout(function() {
+                window._unifiedRtReconnectTimer = null;
+                if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RT自動再接続を試行');
+                _unifiedStartRealtimeSubscription(userId);
+              }, 5000);
+            }
+          } catch(e3) { console.warn('[Unified] RT再接続予約エラー:', e3); }
+        }
       });
   } catch(e) { console.warn('[Unified] Realtime購読開始エラー:', e); }
 }
@@ -34145,7 +34199,9 @@ try {
         _cloudLoginSetStatus('🎉 登録ありがとうございます。データは自動で保存されます。');
         // v0.45.1345: スモークテスト実行中（Supabase認証イベントが偶発的に発火した場合）は
         // localStorageへの書き込みを行わない（TPAGのlocalStorage汚染検知対策）。
-        if (!window._isTesting) {
+        // v0.45.1348: _isTesting単独ではST-75等の一時解除で漏れるため、
+        // 一時解除の影響を受けない_smokeTestRunningも併せて確認する。
+        if (!window._isTesting && !window._smokeTestRunning) {
           try { localStorage.setItem('lastActivityAt', String(Date.now())); } catch(e) {} // v0.45.1338
           // v0.45.1339: Devise風「ログイン履歴（Trackable）」。この端末でのログイン回数・
           // 最終ログイン日時を記録する。※あくまでこの端末単位の記録であり、
@@ -35152,6 +35208,11 @@ function showDebugLog(_initOnly) {
      function ok(name)            { _trackTaskCount(name); results.push('✅ ' + name); pass++; }
      function ng(name, reason)    { _trackTaskCount(name); results.push('❌ ' + name + (reason ? ': ' + reason : '')); fail++; }
      window._isTesting = true;
+     // v0.45.1348: ST-75等がvalidateCalendarIds()の実挙動確認のため一時的に
+     // _isTestingをfalseに戻すが、その隙にsaveAllTasks等のlastActivityAtガードも
+     // 無効化されTPAG汚染の原因になっていた。_isTestingの一時解除に影響されない
+     // 永続フラグを別途用意し、真にスモークテスト実行中かどうかを示す。
+     window._smokeTestRunning = true;
 
      // 季節の風・自動補完の誤発火防止（第37条：副作用のある関数の抑制）
      // renderJournalView()はdeleteJournal等から間接的に呼ばれることがあり、
@@ -46768,6 +46829,47 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-240: 例外', e.message);
      }
 
+     // ===== ST-241: lastActivityAt二重ガード（_smokeTestRunning）確認（v0.45.1348〜） =====
+     // 背景：2026-07-20、ST-75等がvalidateCalendarIds()の実挙動確認のため
+     // _isTestingを一時的にfalseへ戻す設計があり、その隙にsaveAllTasks内の
+     // lastActivityAtガードも同時に無効化され、TPAGが繰り返しREDになった。
+     try {
+       var _st241scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       typeof window._smokeTestRunning !== 'undefined'
+         ? ok('ST-241·①: _smokeTestRunningフラグ存在確認')
+         : ng('ST-241·①: フラグが見つからない', '');
+       var _st241saveIdx = _st241scriptTexts.indexOf('function saveAllTasks(skipCloudSync)');
+       var _st241saveSrc = _st241saveIdx !== -1 ? _st241scriptTexts.slice(_st241saveIdx, _st241saveIdx + 1200) : '';
+       _st241saveSrc.indexOf('!window._isTesting && !window._smokeTestRunning') !== -1
+         ? ok('ST-241·②: saveAllTasksのlastActivityAtが二重ガード確認')
+         : ng('ST-241·②: 二重ガードが見つからない', '');
+       ok('ST-241: lastActivityAt二重ガード 確認 完了');
+     } catch(e) {
+       ng('ST-241: 例外', e.message);
+     }
+
+     // ===== ST-242: Realtime自動再接続・タブ復帰時の統一エンジンプル確認（v0.45.1349〜） =====
+     // 背景：2026-07-21、PCを開いたままスマホでタスクを作成しても自動反映されず、
+     // リロードして初めて出てくる事象が実際に発生した。原因は
+     // ①visibilitychange/45秒intervalがunifiedPullTasksを呼んでいなかった
+     // ②Realtime接続が切れた場合の自動再接続がなかった、の2点。
+     try {
+       var _st242scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st242subIdx = _st242scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
+       var _st242subSrc = _st242subIdx !== -1 ? _st242scriptTexts.slice(_st242subIdx, _st242subIdx + 2200) : '';
+       _st242subSrc.indexOf("CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'") !== -1
+         ? ok('ST-242·①: Realtime切断時の自動再接続コード確認')
+         : ng('ST-242·①: 自動再接続コードが見つからない', '');
+       var _st242vcIdx = _st242scriptTexts.indexOf('タブ復帰時に確認（36時間放置後の想定シナリオ）');
+       var _st242vcSrc = _st242vcIdx !== -1 ? _st242scriptTexts.slice(_st242vcIdx, _st242vcIdx + 500) : '';
+       _st242vcSrc.indexOf('window.unifiedPullTasks()') !== -1
+         ? ok('ST-242·②: タブ復帰時に統一エンジンのプルを呼ぶ確認')
+         : ng('ST-242·②: タブ復帰時のプル呼び出しが見つからない', '');
+       ok('ST-242: Realtime強化・タブ復帰プル 確認 完了');
+     } catch(e) {
+       ng('ST-242: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -47713,6 +47815,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) { ng('APAG FINAL', e.message); }
 
      window._isTesting = false; // ST終了
+     window._smokeTestRunning = false; // v0.45.1348
 var resultDiv = document.createElement('div');
     resultDiv.style.cssText = 'margin-top:10px;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;font-size:0.72em;line-height:1.9;';
     var allGreen = fail === 0;
