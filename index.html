@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1358 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1360 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1358';
+    const APP_VERSION = 'v0.45.1360';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33608,43 +33608,6 @@ function _syncLog(intent, detail) {
 function _syncWarn(intent, detail) {
   console.warn('[Sync]' + _syncDeviceTag() + ' ⚠️ ' + intent, detail !== undefined ? detail : '');
 }
-async function supabaseSyncUp() {
-  // v0.45.1340: スモークテスト実行中は絶対にクラウドへアップロードしない。
-  // 【権威】2026-07-16、テスト実行中の一時的なallTasksの状態が実際にクラウドへ
-  // 送信され、本物のタスクが巻き込まれて消失する重大事故が発生した。TPAGが検出。
-  if (window._isTesting) return null;
-  if (typeof _syncLog === 'function') _syncLog('アップロード開始', '意図: ローカルの変更をクラウドへ反映');
-  if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
-  var u = await window.supabaseClient.auth.getUser();
-  if (!u.data || !u.data.user) { console.warn('[Supabase] 未ログインのため同期不可'); return null; }
-  var _upDeletedIds = [];
-  try { _upDeletedIds = JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'); } catch(e) {}
-  var payload = {
-    user_id: u.data.user.id,
-    data: { allTasks: allTasks, deletedTaskIds: _upDeletedIds, appVersion: APP_VERSION, savedAt: new Date().toISOString() },
-    updated_at: new Date().toISOString()
-  };
-  var r = await window.supabaseClient.from('koyomiru_tasks')
-    .upsert(payload, { onConflict: 'user_id' })
-    .select('user_id, updated_at');
-  if (r.error) {
-    console.error('[Supabase] アップロード失敗:', r.error.message);
-    // v0.45.1325: プッシュ失敗を記録。これがtrueの間は自動ダウンロード上書きを禁止する
-    // （ローカルの未保存変更が、古いクラウドデータで上書きされて消える事故を防ぐ）
-    window._cloudPushFailed = true;
-  }
-  else {
-    console.log('[Supabase] アップロードOK: allTasks ' + allTasks.length + '件 → クラウド（updated_at=' + r.data[0].updated_at + '）');
-    // v0.45.1258: 最終保存時刻を記録（モーダルの安心表示用）
-    window._cloudLastSavedAt = new Date();
-    if (typeof window.cloudRefreshLastSavedLabel === 'function') window.cloudRefreshLastSavedLabel();
-    // v0.45.1306: 自分自身の書き込みへの不要な折り返しpullを避けるため記録
-    window._cloudLastSyncedAt = r.data[0].updated_at;
-    // v0.45.1325: プッシュ成功したのでフラグ解除
-    window._cloudPushFailed = false;
-  }
-  return r;
-}
 // 引数なし＝確認のみ（ローカルには一切触らない）。supabaseSyncDown(true)＝クラウドの内容でローカルを上書き。
 // v0.45.1328: クラウド同期後、現在表示中のビューを正しく再描画するディスパッチャー。
 // renderAllSections()は日次（マトリクス）ビュー専用のため、それ以外のビューを
@@ -33674,7 +33637,22 @@ function _refreshCurrentViewForSync() {
       if (_scratchEl && _scratchEl.style.display !== 'none' && typeof renderScratchView === 'function') {
         renderScratchView();
       }
-      // マトリクス（quadView）はrenderAllSections()が既にカバーしている
+      // v0.45.1359: 【権威】2026-07-21、マトリクス（魚の目）ビューを見ている最中に
+      // 他端末からタスクが同期されても、画面に一切反映されない（トーストは出るが
+      // 描画されない）という報告があった。原因はrenderAllSections()がsection1〜4
+      // （通常の日次リスト）しか更新しておらず、マトリクスビュー専用の描画関数
+      // renderQuadView()が同期完了時の再描画ディスパッチャーから完全に漏れていた
+      // ことだった（「renderAllSections()が既にカバーしている」という古いコメントは
+      // 誤りだった）。quadViewの表示状態を見て、表示中ならrenderQuadView()も呼ぶ。
+      var _quadEl = document.getElementById('quadView');
+      if (_quadEl && _quadEl.style.display !== 'none' && typeof renderQuadView === 'function') {
+        renderQuadView();
+      }
+      // v0.45.1359: 同じ理由で発願（prayer）ビューも漏れていた。
+      var _prayerEl = document.getElementById('prayerView');
+      if (_prayerEl && _prayerEl.style.display !== 'none' && typeof renderHotsuganList === 'function') {
+        renderHotsuganList();
+      }
     }
     // 'settings'・'legal'は再描画不要のため対象外
   } catch(e) { console.warn('[Supabase] ビュー再描画エラー:', e); }
@@ -34301,7 +34279,29 @@ function _unifiedStartRealtimeSubscription(userId) {
     // 古い（既に張り替え済みの）チャンネルからの遅延コールバックが、後から
     // 確立した新しいチャンネルを誤って巻き込んで壊してしまう。
     var myChannel = window.supabaseClient
-      .channel('unified-tasks-' + userId)
+      .channel('unified-tasks-' + userId, {
+        // v0.45.1360: 【ベストプラクティス調査】Supabase公式が2026年4月に追加した
+        // heartbeatCallback。「見た目は繋がっているが実際には受信できない」ゾンビ接続を、
+        // SDK標準の3回失敗待ち（数十秒）より早く検知できる。今までは3分ごとの
+        // 強制張り直しだけに頼っていたが、これで数秒〜十数秒での早期復旧が期待できる。
+        // 未対応バージョンでも単に無視されるだけで実害はない。
+        config: {
+          heartbeatCallback: function(hbStatus) {
+            if (hbStatus === 'timeout' || hbStatus === 'error') {
+              if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] heartbeat異常検知(' + hbStatus + ')→再接続');
+              if (window._unifiedRealtimeChannel === myChannel && !window._unifiedRtStopping) {
+                _unifiedStopRealtimeSubscription();
+                if (!window._unifiedRtReconnectTimer) {
+                  window._unifiedRtReconnectTimer = setTimeout(function() {
+                    window._unifiedRtReconnectTimer = null;
+                    _unifiedStartRealtimeSubscription(userId);
+                  }, 1000);
+                }
+              }
+            }
+          }
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'koyomiru_shared_tasks' }, function(payload) {
         try {
           if (window._isTesting) return; // v0.45.1340の教訓
@@ -34340,6 +34340,15 @@ function _unifiedStartRealtimeSubscription(userId) {
               joinedAt: new Date().toISOString()
             });
           } catch(e5) { console.warn('[Unified] Presence track失敗:', e5); }
+          // v0.45.1360: 【ベストプラクティス調査】Supabase Realtimeの標準的な定石として、
+          // SUBSCRIBED（接続成立・再接続成功含む）の瞬間に「接続が切れていた間に
+          // 見逃した変更」を必ず取得しにいくべきとされている（"sync missed messages
+          // immediately after successful reconnection"）。今までは初回ログイン時にしか
+          // 明示的なpullを行っておらず、一瞬の瞬断からの再接続時にこの取りこぼしを
+          // 埋める処理が欠けていた。45秒の定期チェックだけに頼らず、SUBSCRIBEDの
+          // 瞬間に即座にcatch-upする。
+          if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] SUBSCRIBED→見逃し分の取得（catch-up）');
+          if (typeof unifiedPullTasks === 'function') unifiedPullTasks();
         }
         // v0.45.1349: 接続断（エラー・タイムアウト・クローズ）時は自動再接続を予約する。
         // 【権威】2026-07-21、PCを開いたままスマホでタスクを作っても自動反映されず、
@@ -47391,6 +47400,55 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-251: 旧エンジン自動起動経路の無効化 確認 完了');
      } catch(e) {
        ng('ST-251: 例外', e.message);
+     }
+
+     // ===== ST-252: quadView・prayerViewの同期時再描画 確認（v0.45.1359〜） =====
+     // 背景：ユーザー報告「トーストは出るが画面に反映されない」を徹底調査した結果、
+     // _refreshCurrentViewForSync()がswitchView()レベルの8ビューはカバーしていたが、
+     // switchDailyTab()レベルのサブビューのうち quad（魚の目/マトリクス象限）と
+     // prayer（発願）の2つが完全に漏れていた（古いコメント「renderAllSections()が
+     // 既にカバーしている」は誤りだった）。scratch/timelineは既に対応済みだった。
+     try {
+       var _st252scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st252idx = _st252scriptTexts.indexOf('function _refreshCurrentViewForSync');
+       var _st252src = _st252idx !== -1 ? _st252scriptTexts.slice(_st252idx, _st252idx + 3000) : '';
+       _st252src.indexOf("document.getElementById('quadView')") !== -1 && _st252src.indexOf('renderQuadView()') !== -1
+         ? ok('ST-252·①: quadView再描画の追加確認')
+         : ng('ST-252·①: quadView再描画が見つからない', '');
+       _st252src.indexOf("document.getElementById('prayerView')") !== -1 && _st252src.indexOf('renderHotsuganList()') !== -1
+         ? ok('ST-252·②: prayerView再描画の追加確認')
+         : ng('ST-252·②: prayerView再描画が見つからない', '');
+       // ③ switchDailyTabの全モード（scratch/timeline/quad/prayer）が
+       //    _refreshCurrentViewForSyncのdaily分岐に揃っていること
+       (_st252src.indexOf("document.getElementById('timelineView')") !== -1 &&
+        _st252src.indexOf("document.getElementById('scratchView')") !== -1 &&
+        _st252src.indexOf("document.getElementById('quadView')") !== -1 &&
+        _st252src.indexOf("document.getElementById('prayerView')") !== -1)
+         ? ok('ST-252·③: 日次サブタブ4種すべての再描画網羅確認')
+         : ng('ST-252·③: 網羅漏れがある', '');
+       ok('ST-252: quadView・prayerView同期時再描画 確認 完了');
+     } catch(e) {
+       ng('ST-252: 例外', e.message);
+     }
+
+     // ===== ST-253: ベストプラクティス調査に基づく改善 確認（v0.45.1360〜） =====
+     // 背景：Supabase Realtimeの標準的なベストプラクティスを調査し、自前実装との
+     // 差分を確認した。①SUBSCRIBED（再接続成功含む）の瞬間に見逃した変更を
+     // 取得しにいく定石が欠けていた。②2026年4月追加のheartbeatCallbackで、
+     // 「見た目は繋がっているが受信できない」ゾンビ接続をSDKレベルで早期検知できる。
+     try {
+       var _st253scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st253idx = _st253scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
+       var _st253src = _st253idx !== -1 ? _st253scriptTexts.slice(_st253idx, _st253idx + 5500) : '';
+       _st253src.indexOf('SUBSCRIBED→見逃し分の取得（catch-up）') !== -1
+         ? ok('ST-253·①: SUBSCRIBED時のcatch-up処理確認')
+         : ng('ST-253·①: catch-up処理が見つからない', '');
+       _st253src.indexOf('heartbeatCallback:') !== -1
+         ? ok('ST-253·②: heartbeatCallback設定確認')
+         : ng('ST-253·②: heartbeatCallbackが見つからない', '');
+       ok('ST-253: ベストプラクティス調査に基づく改善 確認 完了');
+     } catch(e) {
+       ng('ST-253: 例外', e.message);
      }
 
        // 第1条【本番環境】
