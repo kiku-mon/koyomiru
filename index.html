@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1357 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1358 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1357';
+    const APP_VERSION = 'v0.45.1358';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -34455,7 +34455,12 @@ try {
         }
         setTimeout(function(){ cloudLoginRefreshStatus(); }, 0);
         if (session && session.user) {
-          _cloudStartRealtimeSubscription(session.user.id);
+          // v0.45.1358: 旧エンジン（koyomiru_tasksブロブ・supabaseSyncDown/Up）と
+          // 統一エンジン（koyomiru_shared_tasks）が並行稼働しており、旧エンジンが
+          // 古いスナップショットでallTasksを上書きしてしまう競合が実際に発生した
+          // （ログで「クラウド197件・ローカル194件→マージ後194件」を確認）。
+          // 旧Realtime購読は起動しない（統一エンジンのRealtimeのみで足りる）。
+          // _cloudStartRealtimeSubscription(session.user.id); // v0.45.1358で無効化
           // v0.45.1344: 統一同期エンジンの初期化（個人用カレンダー保証・旧データ移行・Realtime購読）
           unifiedEnsurePersonalCalendarAndMigrate().then(function() {
             _unifiedStartRealtimeSubscription(session.user.id);
@@ -34486,7 +34491,7 @@ try {
       }
       // v0.45.1312: 既存セッション復元時（INITIAL_SESSION）にも購読を開始する
       if (event === 'INITIAL_SESSION' && session && session.user) {
-        _cloudStartRealtimeSubscription(session.user.id);
+        // _cloudStartRealtimeSubscription(session.user.id); // v0.45.1358で無効化（旧エンジン競合対策）
         // v0.45.1344: 既存セッション復元時も統一エンジンを初期化する
         unifiedEnsurePersonalCalendarAndMigrate().then(function() {
           _unifiedStartRealtimeSubscription(session.user.id);
@@ -34552,11 +34557,15 @@ async function cloudFirstLoginAutoMigrate() {
   } catch(e) { console.warn('[Supabase] 自動移行エラー:', e); }
 }
 // SIGNED_IN時に発火させる（onAuthStateChange内での直接await回避のためsetTimeout経由）
+// v0.45.1358: 統一エンジン（unifiedEnsurePersonalCalendarAndMigrate）が同じ役割を
+// 既に担っており、この旧処理（koyomiru_tasksブロブテーブル対象・supabaseSyncDown呼出）が
+// 並行して動くことで、統一エンジンが正しく取得したデータを古いスナップショットで
+// 上書きしてしまう競合が実際に発生した。無効化する。
 try {
   if (window.supabaseClient) {
     window.supabaseClient.auth.onAuthStateChange(function(event, session) {
       if (event === 'SIGNED_IN' && session) {
-        setTimeout(function(){ cloudFirstLoginAutoMigrate(); }, 100);
+        // setTimeout(function(){ cloudFirstLoginAutoMigrate(); }, 100); // v0.45.1358で無効化
       }
     });
   }
@@ -47351,6 +47360,37 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-250: チャンネルリーク・多重生成防止 確認 完了');
      } catch(e) {
        ng('ST-250: 例外', e.message);
+     }
+
+     // ===== ST-251: 旧エンジンの自動起動経路 無効化確認（v0.45.1358〜） =====
+     // 背景：onAuthStateChangeが2箇所に独立登録されており、旧エンジン
+     // （koyomiru_tasksブロブ・supabaseSyncDown/_cloudStartRealtimeSubscription）と
+     // 統一エンジン（koyomiru_shared_tasks）が並行稼働していた。旧エンジンが
+     // 古いスナップショットで統一エンジンの正しい結果を上書きする競合が
+     // 実際に発生した（ログで「クラウド197件・ローカル194件→マージ後194件」を確認）。
+     try {
+       var _st251scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       // ① SIGNED_IN内の_cloudStartRealtimeSubscription呼び出しが無効化されている
+       var _st251signedInIdx = _st251scriptTexts.indexOf("if (event === 'SIGNED_IN') {");
+       var _st251signedInSrc = _st251signedInIdx !== -1 ? _st251scriptTexts.slice(_st251signedInIdx, _st251signedInIdx + 1500) : '';
+       (_st251signedInSrc.indexOf('// _cloudStartRealtimeSubscription(session.user.id); // v0.45.1358で無効化') !== -1)
+         ? ok('ST-251·①: SIGNED_IN内の旧Realtime起動が無効化確認')
+         : ng('ST-251·①: 旧Realtime起動がまだ有効', '');
+       // ② INITIAL_SESSION内も同様
+       _st251scriptTexts.indexOf('// _cloudStartRealtimeSubscription(session.user.id); // v0.45.1358で無効化（旧エンジン競合対策）') !== -1
+         ? ok('ST-251·②: INITIAL_SESSION内の旧Realtime起動が無効化確認')
+         : ng('ST-251·②: 旧Realtime起動がまだ有効', '');
+       // ③ 旧自動移行処理（cloudFirstLoginAutoMigrate呼び出し）が無効化されている
+       _st251scriptTexts.indexOf('// setTimeout(function(){ cloudFirstLoginAutoMigrate(); }, 100); // v0.45.1358で無効化') !== -1
+         ? ok('ST-251·③: 旧自動移行処理の呼び出しが無効化確認')
+         : ng('ST-251·③: 旧自動移行処理がまだ有効', '');
+       // ④ 統一エンジンの初期化は引き続き有効であること（無効化しすぎていないか）
+       _st251scriptTexts.indexOf('unifiedEnsurePersonalCalendarAndMigrate().then(function()') !== -1
+         ? ok('ST-251·④: 統一エンジンの初期化は引き続き有効確認')
+         : ng('ST-251·④: 統一エンジンまで無効化されてしまっている', '');
+       ok('ST-251: 旧エンジン自動起動経路の無効化 確認 完了');
+     } catch(e) {
+       ng('ST-251: 例外', e.message);
      }
 
        // 第1条【本番環境】
