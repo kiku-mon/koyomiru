@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1355 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1356 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1355';
+    const APP_VERSION = 'v0.45.1356';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33371,7 +33371,10 @@ async function unifiedPushTasks() {
       id: t.id,
       calendar_id: t.cloudCalendarId || window._personalCalendarId,
       data: t,
-      created_by: t.ownerId || null,
+      // v0.45.1356: t.ownerIdは端末ID（getOrCreateDeviceId）であり、
+      // created_byカラムはauth.users(id)への外部キーのため、これを渡すと
+      // 409 Conflict（foreign key violation）で常にPushが失敗していた。
+      created_by: window._cloudUserId || null,
       updated_at: t.updatedAt || t.createdAt || new Date().toISOString()
     };
   });
@@ -33428,6 +33431,14 @@ async function unifiedPullTasks() {
     incoming.cloudCalendarId = row.calendar_id;
     var local = localMap[row.id];
     if (!local) { localMap[row.id] = incoming; changed = true; return; }
+    // v0.45.1356: updated_atの文字列比較だけに頼ると、自分自身の書き込みが
+    // Realtime経由で自分に返ってきた際の判定が曖昧になりうる。ownerId
+    // （端末ID）で「自分の端末からの書き込みで、ローカルも同じ端末発」と
+    // 明示的に確認できる場合は、無駄な上書き・再描画を避ける。
+    var myDeviceId = (typeof getOrCreateDeviceId === 'function') ? getOrCreateDeviceId() : null;
+    if (myDeviceId && incoming.ownerId === myDeviceId && local.ownerId === myDeviceId && local.id === incoming.id) {
+      return; // 自分自身の書き込みの折り返し・ローカルは既に最新
+    }
     var lu = local.updatedAt || local.createdAt || '';
     var cu = row.updated_at || '';
     if (cu > lu) { localMap[row.id] = incoming; changed = true; } // 同時刻・ローカルが新しい場合はローカル優先（安全側）
@@ -34325,7 +34336,16 @@ function _unifiedStartRealtimeSubscription(userId) {
         // リロードで初めて出てくる（＝Realtime配信が届いていない）事象が実際に発生。
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           try {
-            _unifiedStopRealtimeSubscription();
+            // v0.45.1356: CLOSEDの時にremoveChannel()を呼ぶと、その内部処理が
+            // 再度CLOSEDステータスを発火させ、_unifiedStopRealtimeSubscription()を
+            // 再帰的に呼び続ける「RangeError: Maximum call stack size exceeded」が
+            // 実際に発生した（数百回のCLOSEDログで確認）。CLOSEDは既に閉じている
+            // 状態を意味するため、removeChannelを呼ばず変数のクリアのみ行う。
+            if (status === 'CLOSED') {
+              window._unifiedRealtimeChannel = null;
+            } else {
+              _unifiedStopRealtimeSubscription();
+            }
             if (!window._unifiedRtReconnectTimer) {
               window._unifiedRtReconnectTimer = setTimeout(function() {
                 window._unifiedRtReconnectTimer = null;
@@ -34339,6 +34359,10 @@ function _unifiedStartRealtimeSubscription(userId) {
   } catch(e) { console.warn('[Unified] Realtime購読開始エラー:', e); }
 }
 function _unifiedStopRealtimeSubscription() {
+  // v0.45.1356: removeChannel()が内部でCLOSEDを発火させ、それが再度この関数を
+  // 呼び出す再帰を起こしうるため、実行中フラグで多重実行を防ぐ（二重の安全策）。
+  if (window._unifiedRtStopping) return;
+  window._unifiedRtStopping = true;
   try {
     if (window._unifiedRealtimeChannel && window.supabaseClient) {
       window.supabaseClient.removeChannel(window._unifiedRealtimeChannel);
@@ -34348,6 +34372,9 @@ function _unifiedStopRealtimeSubscription() {
     window._unifiedPresenceState = {};
     if (typeof window._renderPresenceIndicator === 'function') window._renderPresenceIndicator();
   } catch(e) { console.warn('[Unified] Realtime購読停止エラー:', e); }
+  finally {
+    window._unifiedRtStopping = false;
+  }
 }
 window._unifiedStartRealtimeSubscription = _unifiedStartRealtimeSubscription;
 window._unifiedStopRealtimeSubscription = _unifiedStopRealtimeSubscription;
@@ -34387,6 +34414,11 @@ try {
     // session引数で判定（コールバック内でのsupabase API呼び出しはデッドロックの恐れがあるため不使用）
     window.supabaseClient.auth.onAuthStateChange(function(event, session) {
       window._cloudIsLoggedIn = !!session;
+      // v0.45.1356: unifiedPushTasksのcreated_byに、Supabase認証ユーザーID
+      // （auth.users.id）ではなく端末ID（getOrCreateDeviceId）を誤って使っており、
+      // 外部キー制約違反（409 Conflict）でPushが常に失敗する重大バグがあった。
+      // 全認証イベント共通でここに正しいユーザーIDを保持し、Push時に参照する。
+      window._cloudUserId = (session && session.user && session.user.id) || null;
       _cloudSetNavRing(!!session);
       if (event === 'SIGNED_IN') {
         if (typeof window.showToast === 'function') window.showToast('🎉 ようこそ、王国へ！');
@@ -47239,6 +47271,44 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-248: パスワード後付け登録機能 確認 完了');
      } catch(e) {
        ng('ST-248: 例外', e.message);
+     }
+
+     // ===== ST-249: Realtime無限再帰・created_by外部キー・自分自身判定 修正確認（v0.45.1356〜） =====
+     // 背景：ユーザーからの詳細な解析報告により3件の重大バグが判明した。
+     // ①CLOSED時にremoveChannel()を呼び続けRangeError（無限再帰）が発生
+     // ②created_byに端末IDを渡しており外部キー制約違反でPushが常に失敗
+     // ③自分自身の書き込みかどうかがupdated_at比較だけに頼っていた
+     try {
+       var _st249scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       // ①
+       var _st249subIdx = _st249scriptTexts.indexOf('removeChannelを呼ばず変数のクリアのみ行う');
+       var _st249subSrc = _st249subIdx !== -1 ? _st249scriptTexts.slice(_st249subIdx, _st249subIdx + 400) : '';
+       _st249subSrc.indexOf('window._unifiedRealtimeChannel = null;') !== -1
+         ? ok('ST-249·①a: CLOSED時はremoveChannelを呼ばない確認')
+         : ng('ST-249·①a: CLOSED時の分岐が見つからない', '');
+       var _st249stopIdx = _st249scriptTexts.indexOf('function _unifiedStopRealtimeSubscription()');
+       var _st249stopSrc = _st249stopIdx !== -1 ? _st249scriptTexts.slice(_st249stopIdx, _st249stopIdx + 300) : '';
+       _st249stopSrc.indexOf('_unifiedRtStopping') !== -1
+         ? ok('ST-249·①b: 停止関数の再入防止ガード確認')
+         : ng('ST-249·①b: 再入防止ガードが見つからない', '');
+       // ②
+       var _st249pushIdx = _st249scriptTexts.indexOf('async function unifiedPushTasks()');
+       var _st249pushSrc = _st249pushIdx !== -1 ? _st249scriptTexts.slice(_st249pushIdx, _st249pushIdx + 1200) : '';
+       (_st249pushSrc.indexOf('created_by: window._cloudUserId') !== -1 && _st249pushSrc.indexOf('t.ownerId || null') === -1)
+         ? ok('ST-249·②: created_byが正しいユーザーID参照に修正確認')
+         : ng('ST-249·②: created_byの修正が見つからない', '');
+       _st249scriptTexts.indexOf('window._cloudUserId = (session && session.user') !== -1
+         ? ok('ST-249·②b: 認証イベントでのユーザーID保持確認')
+         : ng('ST-249·②b: ユーザーID保持コードが見つからない', '');
+       // ③
+       var _st249pullIdx = _st249scriptTexts.indexOf('async function unifiedPullTasks()');
+       var _st249pullSrc = _st249pullIdx !== -1 ? _st249scriptTexts.slice(_st249pullIdx, _st249pullIdx + 2600) : '';
+       _st249pullSrc.indexOf('incoming.ownerId === myDeviceId && local.ownerId === myDeviceId') !== -1
+         ? ok('ST-249·③: ownerIdベースの自分自身判定確認')
+         : ng('ST-249·③: 自分自身判定の強化が見つからない', '');
+       ok('ST-249: Realtime重大バグ3件 修正確認 完了');
+     } catch(e) {
+       ng('ST-249: 例外', e.message);
      }
 
        // 第1条【本番環境】
