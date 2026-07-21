@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1349 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1350 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1349';
+    const APP_VERSION = 'v0.45.1350';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33838,6 +33838,33 @@ try {
         if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] タブ復帰→プル実行');
         window.unifiedPullTasks();
       }
+      // v0.45.1350: タブ復帰時、Realtimeチャンネルが（statusコールバックが
+      // 発火せず沈黙したまま）死んでいる場合の自己修復。channelがnullなのに
+      // ログイン中なら、再接続予約を待たずその場で再開する。
+      if (window._cloudIsLoggedIn && !window._unifiedRealtimeChannel && window.supabaseClient) {
+        window.supabaseClient.auth.getUser().then(function(u) {
+          if (u.data && u.data.user && typeof window._unifiedStartRealtimeSubscription === 'function') {
+            if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] タブ復帰時チャンネル不在→再接続');
+            window._unifiedStartRealtimeSubscription(u.data.user.id);
+          }
+        });
+      }
+    }
+  });
+  // v0.45.1350: Wi-Fi切替・機内モード解除等のネットワーク復帰時、
+  // Realtimeの自動再接続を待たずに即座に再接続・最新データ取得を行う。
+  window.addEventListener('online', function() {
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] ネットワーク復帰検知');
+    if (window._cloudIsLoggedIn && window.supabaseClient) {
+      if (!window._unifiedRealtimeChannel) {
+        window.supabaseClient.auth.getUser().then(function(u) {
+          if (u.data && u.data.user && typeof window._unifiedStartRealtimeSubscription === 'function') {
+            window._unifiedStartRealtimeSubscription(u.data.user.id);
+          }
+        });
+      }
+      if (typeof window.unifiedPullTasks === 'function') window.unifiedPullTasks();
+      if (typeof window.unifiedPushTasks === 'function') window.unifiedPushTasks();
     }
   });
   setInterval(function() {
@@ -33846,6 +33873,15 @@ try {
       _cloudCheckAndPullIfNewer();
       if (window._cloudIsLoggedIn && typeof window.unifiedPullTasks === 'function') {
         window.unifiedPullTasks();
+      }
+      // v0.45.1350: 45秒ごとの定期チェックでもチャンネル生存を確認し、
+      // 死んでいれば再接続する（visibilitychangeが発火しないケースの保険）。
+      if (window._cloudIsLoggedIn && !window._unifiedRealtimeChannel && window.supabaseClient) {
+        window.supabaseClient.auth.getUser().then(function(u) {
+          if (u.data && u.data.user && typeof window._unifiedStartRealtimeSubscription === 'function') {
+            window._unifiedStartRealtimeSubscription(u.data.user.id);
+          }
+        });
       }
     }
   }, 45000);
@@ -46868,6 +46904,33 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-242: Realtime強化・タブ復帰プル 確認 完了');
      } catch(e) {
        ng('ST-242: 例外', e.message);
+     }
+
+     // ===== ST-243: ネットワーク復帰時の再接続・チャンネル自己修復確認（v0.45.1350〜） =====
+     // 背景：Wi-Fi切替・機内モード解除・laptop sleepからの復帰等でRealtime接続が
+     // 沈黙したまま気づかれないケースへの保険として、online イベント・タブ復帰・
+     // 45秒定期チェックの3箇所すべてでチャンネル生存確認→自己修復するようにした。
+     try {
+       var _st243scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st243scriptTexts.indexOf("addEventListener('online', function()") !== -1
+         ? ok('ST-243·①: onlineイベントハンドラ存在確認')
+         : ng('ST-243·①: onlineイベントハンドラが見つからない', '');
+       var _st243onlineIdx = _st243scriptTexts.indexOf('ネットワーク復帰検知');
+       var _st243onlineSrc = _st243onlineIdx !== -1 ? _st243scriptTexts.slice(_st243onlineIdx, _st243onlineIdx + 800) : '';
+       (_st243onlineSrc.indexOf('_unifiedStartRealtimeSubscription') !== -1 && _st243onlineSrc.indexOf('unifiedPullTasks') !== -1)
+         ? ok('ST-243·②: online復帰時に再接続・プル両方を行う確認')
+         : ng('ST-243·②: online復帰時の処理が不完全', '');
+       var _st243tabIdx = _st243scriptTexts.indexOf('タブ復帰時チャンネル不在→再接続');
+       _st243tabIdx !== -1
+         ? ok('ST-243·③: タブ復帰時のチャンネル自己修復確認')
+         : ng('ST-243·③: タブ復帰時の自己修復が見つからない', '');
+       var _st243intIdx = _st243scriptTexts.indexOf('45秒ごとの定期チェックでもチャンネル生存を確認');
+       _st243intIdx !== -1
+         ? ok('ST-243·④: 定期チェック内のチャンネル自己修復確認')
+         : ng('ST-243·④: 定期チェック内の自己修復が見つからない', '');
+       ok('ST-243: ネットワーク復帰・チャンネル自己修復 確認 完了');
+     } catch(e) {
+       ng('ST-243: 例外', e.message);
      }
 
        // 第1条【本番環境】
