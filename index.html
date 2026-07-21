@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1353 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1355 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1353';
+    const APP_VERSION = 'v0.45.1355';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -34011,6 +34011,83 @@ async function cloudLoginSendLink() {
     _cloudLoginSetStatus('⚠️ 送信に失敗しました: ' + (r && r.error ? r.error.message : '不明なエラー'));
   }
 }
+// v0.45.1354: メール＋パスワードでの新規登録。Discord OAuthのページ丸ごと遷移が
+// 会社ネットワーク等でブロックされる場合の代替手段（通常のAPI通信のみで完結する）。
+async function cloudSignUpWithPassword() {
+  var emailInput = document.getElementById('cloudLoginEmail');
+  var pwInput = document.getElementById('cloudLoginPassword');
+  var btn = document.getElementById('cloudLoginPwSignUpBtn');
+  if (!emailInput || !pwInput || !window.supabaseClient) return;
+  var email = (emailInput.value || '').trim();
+  var password = pwInput.value || '';
+  if (!email || email.indexOf('@') === -1) { _cloudLoginSetStatus('⚠️ メールアドレスを入力してください'); return; }
+  if (password.length < 8) { _cloudLoginSetStatus('⚠️ パスワードは8文字以上にしてください'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '登録中…'; }
+  try {
+    var r = await window.supabaseClient.auth.signUp({ email: email, password: password });
+    if (r.error) {
+      _cloudLoginSetStatus('⚠️ 登録に失敗しました: ' + r.error.message);
+    } else if (r.data && r.data.user && !r.data.session) {
+      // メール確認が必要な設定の場合
+      _cloudLoginSetStatus('📬 確認メールを送りました。メール内のリンクを開いて登録を完了してください。');
+    } else {
+      _cloudLoginSetStatus('🎉 登録・ログインしました。');
+      cloudLoginRefreshStatus();
+    }
+  } catch(e) {
+    _cloudLoginSetStatus('⚠️ 登録に失敗しました: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '新規登録'; }
+}
+// v0.45.1354: メール＋パスワードでのログイン。
+async function cloudLoginWithPassword() {
+  var emailInput = document.getElementById('cloudLoginEmail');
+  var pwInput = document.getElementById('cloudLoginPassword');
+  var btn = document.getElementById('cloudLoginPwSignInBtn');
+  if (!emailInput || !pwInput || !window.supabaseClient) return;
+  var email = (emailInput.value || '').trim();
+  var password = pwInput.value || '';
+  if (!email || !password) { _cloudLoginSetStatus('⚠️ メールアドレスとパスワードを入力してください'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'ログイン中…'; }
+  try {
+    var r = await window.supabaseClient.auth.signInWithPassword({ email: email, password: password });
+    if (r.error) {
+      _cloudLoginSetStatus('⚠️ ログインに失敗しました: ' + r.error.message);
+    } else {
+      _cloudLoginSetStatus('🎉 ログインしました。');
+      cloudLoginRefreshStatus();
+    }
+  } catch(e) {
+    _cloudLoginSetStatus('⚠️ ログインに失敗しました: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'ログイン'; }
+}
+window.cloudSignUpWithPassword = cloudSignUpWithPassword;
+window.cloudLoginWithPassword = cloudLoginWithPassword;
+// v0.45.1355: 今ログイン中のアカウント（Discord等）にパスワードを後付け登録する。
+// これにより「新しい別アカウント」を作らずに、同じアカウント・同じデータへ
+// 会社PC等からもパスワードでログインできるようになる。
+async function cloudSetPasswordForCurrentAccount() {
+  var pwInput = document.getElementById('cloudSetPasswordInput');
+  var btn = document.getElementById('cloudSetPasswordBtn');
+  if (!pwInput || !window.supabaseClient) return;
+  var password = pwInput.value || '';
+  if (password.length < 8) { _cloudLoginSetStatus('⚠️ パスワードは8文字以上にしてください'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '設定中…'; }
+  try {
+    var r = await window.supabaseClient.auth.updateUser({ password: password });
+    if (r.error) {
+      _cloudLoginSetStatus('⚠️ 設定に失敗しました: ' + r.error.message);
+    } else {
+      _cloudLoginSetStatus('🎉 パスワードを設定しました。会社PC等では、アカウントモーダルの「メール＋パスワード」欄から同じメールアドレスでログインできます。');
+      if (pwInput) pwInput.value = '';
+    }
+  } catch(e) {
+    _cloudLoginSetStatus('⚠️ 設定に失敗しました: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'このアカウントにパスワードを設定'; }
+}
+window.cloudSetPasswordForCurrentAccount = cloudSetPasswordForCurrentAccount;
 async function cloudLogoutFromModal() {
   await supabaseSignOut();
   _cloudLoginSetStatus('ログアウトしました。');
@@ -47106,6 +47183,64 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-246: 例外', e.message);
      }
 
+     // ===== ST-247: メール＋パスワード認証 確認（v0.45.1354〜） =====
+     // 背景：会社ネットワーク等でDiscord OAuthのページ丸ごとリダイレクト通信が
+     // ファイアウォールに阻まれ（ERR_CONNECTION_CLOSED）ログインできない事象が
+     // 実際に発生した。通常のAPI通信のみで完結するパスワード認証を代替手段として追加。
+     try {
+       ['cloudSignUpWithPassword', 'cloudLoginWithPassword'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-247·' + fn + ': window公開確認')
+           : ng('ST-247·' + fn + ': 未公開', '');
+       });
+       document.getElementById('cloudLoginPassword') && document.getElementById('cloudLoginPwSignInBtn') && document.getElementById('cloudLoginPwSignUpBtn')
+         ? ok('ST-247·①: パスワード入力欄・ログイン/新規登録ボタンDOM確認')
+         : ng('ST-247·①: DOM要素が見つからない', '');
+       var _st247scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st247idx = _st247scriptTexts.indexOf('async function cloudSignUpWithPassword');
+       var _st247src = _st247idx !== -1 ? _st247scriptTexts.slice(_st247idx, _st247idx + 800) : '';
+       _st247src.indexOf('signUp(') !== -1
+         ? ok('ST-247·②: signUp呼び出し確認')
+         : ng('ST-247·②: signUp呼び出しが見つからない', '');
+       var _st247idx2 = _st247scriptTexts.indexOf('async function cloudLoginWithPassword');
+       var _st247src2 = _st247idx2 !== -1 ? _st247scriptTexts.slice(_st247idx2, _st247idx2 + 800) : '';
+       _st247src2.indexOf('signInWithPassword(') !== -1
+         ? ok('ST-247·③: signInWithPassword呼び出し確認')
+         : ng('ST-247·③: signInWithPassword呼び出しが見つからない', '');
+       // ④ パスワード8文字未満のガード確認
+       _st247src.indexOf('password.length < 8') !== -1
+         ? ok('ST-247·④: パスワード最小文字数ガード確認')
+         : ng('ST-247·④: パスワードガードが見つからない', '');
+       ok('ST-247: メール＋パスワード認証 確認 完了');
+     } catch(e) {
+       ng('ST-247: 例外', e.message);
+     }
+
+     // ===== ST-248: パスワード後付け登録機能 確認（v0.45.1355〜） =====
+     // 背景：Discord等でログイン中のアカウントに、新しい別アカウントを
+     // 作らせるのではなく、同じアカウントへパスワードを後付けし、
+     // 会社PC等からも同じデータへログインできるようにする。
+     try {
+       typeof window.cloudSetPasswordForCurrentAccount === 'function'
+         ? ok('ST-248·①: cloudSetPasswordForCurrentAccount window公開確認')
+         : ng('ST-248·①: 関数が見つからない', '');
+       document.getElementById('cloudSetPasswordInput') && document.getElementById('cloudSetPasswordBtn')
+         ? ok('ST-248·②: パスワード設定欄DOM確認')
+         : ng('ST-248·②: DOM要素が見つからない', '');
+       var _st248scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st248idx = _st248scriptTexts.indexOf('async function cloudSetPasswordForCurrentAccount');
+       var _st248src = _st248idx !== -1 ? _st248scriptTexts.slice(_st248idx, _st248idx + 700) : '';
+       _st248src.indexOf('updateUser(') !== -1
+         ? ok('ST-248·③: updateUser呼び出し確認（新規アカウントでなく既存アカウントへの追加）')
+         : ng('ST-248·③: updateUser呼び出しが見つからない', '');
+       _st248src.indexOf('password.length < 8') !== -1
+         ? ok('ST-248·④: パスワード最小文字数ガード確認')
+         : ng('ST-248·④: パスワードガードが見つからない', '');
+       ok('ST-248: パスワード後付け登録機能 確認 完了');
+     } catch(e) {
+       ng('ST-248: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -56562,6 +56697,14 @@ window.addMigration = addMigration;
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;color:#b5a893;font-size:0.8em;"><span style="flex:1;height:1px;background:#e5dccc;"></span>または<span style="flex:1;height:1px;background:#e5dccc;"></span></div>
       <input type="email" id="cloudLoginEmail" placeholder="メールアドレス" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d8cbb8;border-radius:8px;font-size:1em;margin-bottom:10px;">
       <button id="cloudLoginSendBtn" onclick="cloudLoginSendLink()" style="width:100%;padding:11px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.95em;font-weight:600;cursor:pointer;">ログインリンクを送る</button>
+      <div style="display:flex;align-items:center;gap:10px;margin:12px 0;color:#b5a893;font-size:0.8em;"><span style="flex:1;height:1px;background:#e5dccc;"></span>パスワードで<span style="flex:1;height:1px;background:#e5dccc;"></span></div>
+      <!-- v0.45.1354: 会社ネットワーク等でDiscord OAuthのリダイレクト通信（ページ丸ごとの外部遷移）が
+           ファイアウォールに阻まれるケースへの代替手段。パスワード方式は通常のAPI通信のみで完結する。 -->
+      <input type="password" id="cloudLoginPassword" placeholder="パスワード（8文字以上）" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d8cbb8;border-radius:8px;font-size:1em;margin-bottom:10px;">
+      <div style="display:flex;gap:8px;">
+        <button id="cloudLoginPwSignInBtn" onclick="cloudLoginWithPassword()" style="flex:1;padding:11px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.9em;font-weight:600;cursor:pointer;">ログイン</button>
+        <button id="cloudLoginPwSignUpBtn" onclick="cloudSignUpWithPassword()" style="flex:1;padding:11px;border:none;border-radius:8px;background:#6b5a44;color:#fff;font-size:0.9em;font-weight:600;cursor:pointer;">新規登録</button>
+      </div>
     </div>
     <div id="cloudLoginUserArea" style="display:none;">
       <div id="cloudLoginUserLabel" style="font-size:0.95em;margin-bottom:8px;"></div>
@@ -56570,6 +56713,15 @@ window.addMigration = addMigration;
       <div id="cloudRealtimeStatus" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;padding:8px 10px;background:#f9f7f2;border-radius:8px;">⏳ Realtime接続状況を確認中…</div>
       <div id="cloudPresenceIndicator" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;"></div>
       <div id="cloudLoginHistoryLabel" style="font-size:0.68em;color:#a89a88;margin-bottom:14px;"></div>
+      <!-- v0.45.1355: 今ログイン中のアカウント（Discord等）に、後からパスワードを
+           追加登録する機能。会社ネットワーク等でDiscord OAuthのリダイレクトが
+           ブロックされる環境向けの「同じアカウントへの別ログイン経路」を用意する。
+           新しい別アカウントを作る必要がなく、データの引き継ぎも不要になる。 -->
+      <div style="border-top:1px solid #e5dccc;padding-top:12px;margin-bottom:14px;">
+        <div style="font-size:0.78em;color:#8a7a63;margin-bottom:8px;">🔑 パスワードでもログインできるようにする（会社PC等、Discordログインが使えない環境向け）</div>
+        <input type="password" id="cloudSetPasswordInput" placeholder="新しいパスワード（8文字以上）" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #d8cbb8;border-radius:8px;font-size:0.9em;margin-bottom:8px;">
+        <button id="cloudSetPasswordBtn" onclick="cloudSetPasswordForCurrentAccount()" style="width:100%;padding:9px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.85em;font-weight:600;cursor:pointer;">このアカウントにパスワードを設定</button>
+      </div>
       <button onclick="openSharedCalendarModal()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">👨‍👩‍👧 共有カレンダー（フェーズ1・準備中）</button>
       <button onclick="signOutOtherDevicesFromModal()" style="width:100%;padding:9px;border:1px solid #e0cba0;border-radius:8px;background:transparent;color:#a67c00;font-size:0.8em;cursor:pointer;margin-bottom:10px;">📵 他端末を全てログアウトさせる</button>
       <button id="cloudLoginFetchBtn" onclick="cloudFetchFromModal()" style="display:none;width:100%;padding:11px;border:none;border-radius:8px;background:#4facfe;color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;margin-bottom:10px;">⬇️ クラウドのデータを取得</button>
