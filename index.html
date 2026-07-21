@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1350 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1353 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1350';
+    const APP_VERSION = 'v0.45.1353';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33363,6 +33363,9 @@ async function unifiedPushTasks() {
     try { await unifiedEnsurePersonalCalendarAndMigrate(); } catch(e) { console.warn('[Unified] 初期化リトライ失敗:', e); }
   }
   if (!window._personalCalendarId) return null;
+  // v0.45.1353: 上のawait待ちの間にスモークテストが始まった場合、
+  // テスト中の一時的なallTasksの状態が実クラウドへ送信されてしまう恐れがある。
+  if (window._isTesting) return null;
   var toPush = allTasks.filter(function(t){ return t && t.id; }).map(function(t) {
     return {
       id: t.id,
@@ -33432,6 +33435,15 @@ async function unifiedPullTasks() {
   try { localStorage.setItem('deletedTaskIds', JSON.stringify([...deletedIds])); } catch(e) {}
 
   if (changed) {
+    // v0.45.1353: ページ読み込み直後の自動プル（ログインフローの一部）が
+    // ネットワーク往復の最中にスモークテストと重なると、応答到達時に
+    // allTasksを書き換えてTPAGを汚染する競合が起きうる。冒頭のチェックだけでは
+    // 「呼び出し開始時点ではテスト中でなかった」ことしか保証できないため、
+    // 実際に書き換える直前でも再チェックする。
+    if (window._isTesting) {
+      if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル結果あり・だがテスト開始検知のため適用中止');
+      return r;
+    }
     allTasks = Object.keys(localMap).map(function(k){ return localMap[k]; });
     saveAllTasks(true); // v0.45.1333の教訓：ダウンロード経由の保存は再アップロード予約なし
     renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
@@ -33885,6 +33897,21 @@ try {
       }
     }
   }, 45000);
+  // v0.45.1351: WebSocketが「切断通知（CLOSED/TIMED_OUT等）を出さないまま
+  // 静かに死ぬ」ゾンビ接続対策。チャンネル変数の存在チェックだけでは
+  // このケースを検知できないため、3分ごとに問答無用でチャンネルを
+  // 作り直す（張り直しても実害はなく、Realtimeの取りこぼしを長期化させない）。
+  setInterval(function() {
+    if (window._cloudIsLoggedIn && window.supabaseClient) {
+      window.supabaseClient.auth.getUser().then(function(u) {
+        if (u.data && u.data.user && typeof window._unifiedStartRealtimeSubscription === 'function') {
+          if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 定期チャンネル張り直し（ゾンビ接続対策）');
+          if (typeof window._unifiedStopRealtimeSubscription === 'function') window._unifiedStopRealtimeSubscription();
+          window._unifiedStartRealtimeSubscription(u.data.user.id);
+        }
+      });
+    }
+  }, 180000);
   // v0.45.1337: WebSocketの生存確認ハートビートログ（60秒ごと）。
   // 長時間放置していても、コンソールを後から見返せば接続状態の推移が分かるようにする。
   setInterval(function() {
@@ -33951,6 +33978,8 @@ async function cloudLoginRefreshStatus() {
         }
       } catch(e) { _historyEl.textContent = ''; }
     }
+    // v0.45.1352: モーダル状態更新のたびにPresence表示も最新化する。
+    if (typeof window._renderPresenceIndicator === 'function') window._renderPresenceIndicator();
   } else {
     guestArea.style.display = 'block';
     userArea.style.display = 'none';
@@ -34191,9 +34220,29 @@ function _unifiedStartRealtimeSubscription(userId) {
           unifiedPullTasks();
         } catch(e2) { console.warn('[Unified] Realtimeイベント処理エラー:', e2); }
       })
+      // v0.45.1352: Presence機能。「誰が今オンラインか」を同じチャンネル上で共有する。
+      // 個人利用中は「自分の他端末が今開いているか」の可視化に、共有カレンダー実装後は
+      // 「一緒に使っている相手が今開いているか」の可視化に使える。
+      .on('presence', { event: 'sync' }, function() {
+        try {
+          var state = window._unifiedRealtimeChannel.presenceState();
+          window._unifiedPresenceState = state;
+          if (typeof window._renderPresenceIndicator === 'function') window._renderPresenceIndicator();
+        } catch(e4) { console.warn('[Unified] Presence同期エラー:', e4); }
+      })
       .subscribe(function(status) {
         console.log('[Unified] Realtime購読状態: ' + status);
         if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RT購読状態: ' + status);
+        // v0.45.1352: 購読成立時、自分の在席情報（デバイス識別・入室時刻）を送信する。
+        if (status === 'SUBSCRIBED' && window._unifiedRealtimeChannel) {
+          try {
+            window._unifiedRealtimeChannel.track({
+              device: (typeof getOrCreateDeviceId === 'function' ? getOrCreateDeviceId().slice(0, 8) : 'unknown'),
+              name: (window.allSettings && allSettings.profile && allSettings.profile.name) || 'ゲスト',
+              joinedAt: new Date().toISOString()
+            });
+          } catch(e5) { console.warn('[Unified] Presence track失敗:', e5); }
+        }
         // v0.45.1349: 接続断（エラー・タイムアウト・クローズ）時は自動再接続を予約する。
         // 【権威】2026-07-21、PCを開いたままスマホでタスクを作っても自動反映されず、
         // リロードで初めて出てくる（＝Realtime配信が届いていない）事象が実際に発生。
@@ -34218,10 +34267,42 @@ function _unifiedStopRealtimeSubscription() {
       window.supabaseClient.removeChannel(window._unifiedRealtimeChannel);
     }
     window._unifiedRealtimeChannel = null;
+    // v0.45.1352: 購読停止時はPresence表示も空にする（切断中に古い在席情報が残らないように）。
+    window._unifiedPresenceState = {};
+    if (typeof window._renderPresenceIndicator === 'function') window._renderPresenceIndicator();
   } catch(e) { console.warn('[Unified] Realtime購読停止エラー:', e); }
 }
 window._unifiedStartRealtimeSubscription = _unifiedStartRealtimeSubscription;
 window._unifiedStopRealtimeSubscription = _unifiedStopRealtimeSubscription;
+
+// v0.45.1352: Presence状態をアカウントモーダルに表示する。
+// 個人利用中は「自分の他端末が今開いているか」、共有カレンダー実装後は
+// 「一緒に使っている相手が今開いているか」の可視化に使う。
+function _renderPresenceIndicator() {
+  var el = document.getElementById('cloudPresenceIndicator');
+  if (!el) return;
+  var state = window._unifiedPresenceState || {};
+  var keys = Object.keys(state);
+  var myDeviceTag = (typeof getOrCreateDeviceId === 'function' ? getOrCreateDeviceId().slice(0, 8) : '');
+  var entries = [];
+  keys.forEach(function(k) {
+    (state[k] || []).forEach(function(p) {
+      entries.push(p);
+    });
+  });
+  if (entries.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  var otherCount = entries.filter(function(p){ return p.device !== myDeviceTag; }).length;
+  var label = '🟢 今つながっている端末: ' + entries.length + '台';
+  if (otherCount > 0) {
+    var names = entries.filter(function(p){ return p.device !== myDeviceTag; }).map(function(p){ return p.name || '?'; });
+    label += '（他: ' + names.join('・') + '）';
+  }
+  el.innerHTML = label;
+}
+window._renderPresenceIndicator = _renderPresenceIndicator;
 window._cloudStartRealtimeSubscription = _cloudStartRealtimeSubscription;
 window._cloudStopRealtimeSubscription = _cloudStopRealtimeSubscription;
 try {
@@ -34262,6 +34343,22 @@ try {
         setTimeout(function(){ cloudLoginRefreshStatus(); }, 0);
         _cloudStopRealtimeSubscription();
         _unifiedStopRealtimeSubscription(); // v0.45.1344
+      }
+      // v0.45.1353: 【権威】2026-07-21、PCを開いたままスマホでタスクを作っても
+      // 自動反映されない事象を継続調査した結果、Supabaseのアクセストークンは
+      // 通常1時間で期限切れになりsupabase-jsが裏で自動更新するが、Realtime接続
+      // 自体は新しいトークンを知らないままになり、チャンネルは「SUBSCRIBED」の
+      // まま見えても行の配信がサーバー側RLSチェックで静かにブロックされ続ける
+      // ことが分かった。TOKEN_REFRESHED時にRealtimeの認証コンテキストを
+      // 明示的に更新することで、これを防ぐ（切断通知を伴わない障害のため、
+      // v0.45.1349〜1351の再接続ロジックでは検知できなかった）。
+      if (event === 'TOKEN_REFRESHED' && session && session.access_token) {
+        try {
+          if (window.supabaseClient.realtime && typeof window.supabaseClient.realtime.setAuth === 'function') {
+            window.supabaseClient.realtime.setAuth(session.access_token);
+            if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] トークン更新→Realtime認証コンテキストも更新');
+          }
+        } catch(e6) { console.warn('[Unified] Realtime認証コンテキスト更新エラー:', e6); }
       }
       // v0.45.1312: 既存セッション復元時（INITIAL_SESSION）にも購読を開始する
       if (event === 'INITIAL_SESSION' && session && session.user) {
@@ -46829,7 +46926,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ② saveAllTasksの自動同期がunifiedPushTasksを使うよう切り替わっているか
        var _st239scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st239saveIdx = _st239scriptTexts.indexOf('function saveAllTasks(skipCloudSync)');
-       var _st239saveSrc = _st239saveIdx !== -1 ? _st239scriptTexts.slice(_st239saveIdx, _st239saveIdx + 1200) : '';
+       var _st239saveSrc = _st239saveIdx !== -1 ? _st239scriptTexts.slice(_st239saveIdx, _st239saveIdx + 1600) : '';
        _st239saveSrc.indexOf('window.unifiedPushTasks') !== -1
          ? ok('ST-239·②: saveAllTasksが統一エンジンを使用確認')
          : ng('ST-239·②: 旧エンジンのまま', '');
@@ -46931,6 +47028,82 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-243: ネットワーク復帰・チャンネル自己修復 確認 完了');
      } catch(e) {
        ng('ST-243: 例外', e.message);
+     }
+
+     // ===== ST-244: ゾンビ接続対策（3分ごとの強制張り直し）確認（v0.45.1351〜） =====
+     // 背景：WebSocketが切断通知（CLOSED等）を出さずに静かに死ぬケースは、
+     // チャンネル変数の存在チェックだけでは検知できない。3分ごとに問答無用で
+     // チャンネルを作り直すことで、長期間気づかれない取りこぼしを防ぐ。
+     try {
+       var _st244scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st244idx = _st244scriptTexts.indexOf('ゾンビ接続対策');
+       _st244idx !== -1
+         ? ok('ST-244·①: ゾンビ接続対策コメント確認')
+         : ng('ST-244·①: ゾンビ接続対策が見つからない', '');
+       var _st244src = _st244idx !== -1 ? _st244scriptTexts.slice(_st244idx, _st244idx + 900) : '';
+       (_st244src.indexOf('_unifiedStopRealtimeSubscription') !== -1 && _st244src.indexOf('_unifiedStartRealtimeSubscription') !== -1 && _st244src.indexOf('180000') !== -1)
+         ? ok('ST-244·②: 3分間隔で停止→再接続する実装確認')
+         : ng('ST-244·②: 停止→再接続の組み合わせが見つからない', '');
+       ok('ST-244: ゾンビ接続対策 確認 完了');
+     } catch(e) {
+       ng('ST-244: 例外', e.message);
+     }
+
+     // ===== ST-245: Presence（在席確認）機能確認（v0.45.1352〜） =====
+     // 背景：Supabase RealtimeのPresenceは、こちらから普通に使える標準機能。
+     // 「誰が今オンラインか」を可視化することで、共有カレンダー運用時の
+     // 安心感（相手も今見ている、という感覚）を高める。
+     try {
+       typeof window._renderPresenceIndicator === 'function'
+         ? ok('ST-245·①: _renderPresenceIndicator window公開確認')
+         : ng('ST-245·①: 関数が見つからない', '');
+       document.getElementById('cloudPresenceIndicator')
+         ? ok('ST-245·②: cloudPresenceIndicator DOM確認')
+         : ng('ST-245·②: DOM要素が見つからない', '');
+       var _st245scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st245subIdx = _st245scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
+       var _st245subSrc = _st245subIdx !== -1 ? _st245scriptTexts.slice(_st245subIdx, _st245subIdx + 2500) : '';
+       (_st245subSrc.indexOf(".on('presence'") !== -1 && _st245subSrc.indexOf('.track(') !== -1)
+         ? ok('ST-245·③: presence購読・track呼び出し確認')
+         : ng('ST-245·③: presence実装が見つからない', '');
+       // ④ 実際にレンダリング関数を呼んで例外が出ないこと（DOM要素への書き込みのみ・副作用最小）
+       var _st245prevState = window._unifiedPresenceState;
+       window._unifiedPresenceState = { 'test-key': [{ device: 'aaaaaaaa', name: 'テスト端末', joinedAt: new Date().toISOString() }] };
+       window._renderPresenceIndicator();
+       var _st245el = document.getElementById('cloudPresenceIndicator');
+       (_st245el && _st245el.innerHTML.indexOf('つながっている端末') !== -1)
+         ? ok('ST-245·④: Presence表示の実挙動確認')
+         : ng('ST-245·④: 表示内容が不正', '');
+       window._unifiedPresenceState = _st245prevState || {};
+       window._renderPresenceIndicator();
+       ok('ST-245: Presence機能 確認 完了');
+     } catch(e) {
+       ng('ST-245: 例外', e.message);
+     }
+
+     // ===== ST-246: TOKEN_REFRESHED時のRealtime認証更新・二段階_isTestingチェック確認（v0.45.1353〜） =====
+     // 背景：Supabaseアクセストークンの自動更新後、Realtime接続が古いトークンの
+     // ままになり、切断通知を伴わずに配信が静かに止まる（PCを開いたままスマホの
+     // 変更が反映されない）事象が疑われた。また、ネットワーク待ち中にスモーク
+     // テストが開始する競合でTPAGがREDになる事象も実際に発生した。
+     try {
+       var _st246scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       (_st246scriptTexts.indexOf("event === 'TOKEN_REFRESHED'") !== -1 && _st246scriptTexts.indexOf('realtime.setAuth') !== -1)
+         ? ok('ST-246·①: TOKEN_REFRESHED時のRealtime認証更新確認')
+         : ng('ST-246·①: トークン更新対応が見つからない', '');
+       var _st246pullIdx = _st246scriptTexts.indexOf('async function unifiedPullTasks()');
+       var _st246pullSrc = _st246pullIdx !== -1 ? _st246scriptTexts.slice(_st246pullIdx, _st246pullIdx + 2500) : '';
+       (_st246pullSrc.match(/window\._isTesting/g) || []).length >= 2
+         ? ok('ST-246·②: unifiedPullTasksが2箇所以上で_isTesting確認')
+         : ng('ST-246·②: 二段階チェックが見つからない', '');
+       var _st246pushIdx = _st246scriptTexts.indexOf('async function unifiedPushTasks()');
+       var _st246pushSrc = _st246pushIdx !== -1 ? _st246scriptTexts.slice(_st246pushIdx, _st246pushIdx + 900) : '';
+       (_st246pushSrc.match(/window\._isTesting/g) || []).length >= 2
+         ? ok('ST-246·③: unifiedPushTasksが2箇所以上で_isTesting確認')
+         : ng('ST-246·③: 二段階チェックが見つからない', '');
+       ok('ST-246: トークン更新・二段階_isTesting 確認 完了');
+     } catch(e) {
+       ng('ST-246: 例外', e.message);
      }
 
        // 第1条【本番環境】
@@ -56395,6 +56568,7 @@ window.addMigration = addMigration;
       <div style="font-size:0.85em;color:#5b8c5a;background:#f0f6ef;border-radius:8px;padding:10px 12px;margin-bottom:8px;">登録済みです。データは自動で保存・同期されます（他端末の変更も自動で反映）。</div>
       <div id="cloudLastSavedLabel" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;"></div>
       <div id="cloudRealtimeStatus" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;padding:8px 10px;background:#f9f7f2;border-radius:8px;">⏳ Realtime接続状況を確認中…</div>
+      <div id="cloudPresenceIndicator" style="font-size:0.72em;color:#a89a88;margin-bottom:14px;"></div>
       <div id="cloudLoginHistoryLabel" style="font-size:0.68em;color:#a89a88;margin-bottom:14px;"></div>
       <button onclick="openSharedCalendarModal()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">👨‍👩‍👧 共有カレンダー（フェーズ1・準備中）</button>
       <button onclick="signOutOtherDevicesFromModal()" style="width:100%;padding:9px;border:1px solid #e0cba0;border-radius:8px;background:transparent;color:#a67c00;font-size:0.8em;cursor:pointer;margin-bottom:10px;">📵 他端末を全てログアウトさせる</button>
