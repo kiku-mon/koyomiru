@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1356 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1357 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1356';
+    const APP_VERSION = 'v0.45.1357';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -34296,11 +34296,16 @@ function _unifiedStartRealtimeSubscription(userId) {
     if (!window.supabaseClient || !userId) return;
     if (window._unifiedRealtimeChannel) return;
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] Realtime購読開始要求: user=' + userId.slice(0, 8));
-    window._unifiedRealtimeChannel = window.supabaseClient
+    // v0.45.1357: このチャンネル自身への参照を閉じ込め、コールバック内で
+    // 「今も自分が現役のチャンネルか」を照合できるようにする。これがないと、
+    // 古い（既に張り替え済みの）チャンネルからの遅延コールバックが、後から
+    // 確立した新しいチャンネルを誤って巻き込んで壊してしまう。
+    var myChannel = window.supabaseClient
       .channel('unified-tasks-' + userId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'koyomiru_shared_tasks' }, function(payload) {
         try {
           if (window._isTesting) return; // v0.45.1340の教訓
+          if (window._unifiedRealtimeChannel !== myChannel) return; // v0.45.1357: 現役チャンネルでなければ無視
           var calId = (payload.new && payload.new.calendar_id) || (payload.old && payload.old.calendar_id);
           if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RTイベント受信: ' + (payload && payload.eventType) + ' cal=' + (calId ? calId.slice(0, 8) : '?') + (calId && window._myCalendarIds.indexOf(calId) === -1 ? '（自分のカレンダーでないため無視）' : ''));
           if (!calId || window._myCalendarIds.indexOf(calId) === -1) return; // 自分のカレンダーでなければ無視
@@ -34313,7 +34318,8 @@ function _unifiedStartRealtimeSubscription(userId) {
       // 「一緒に使っている相手が今開いているか」の可視化に使える。
       .on('presence', { event: 'sync' }, function() {
         try {
-          var state = window._unifiedRealtimeChannel.presenceState();
+          if (window._unifiedRealtimeChannel !== myChannel) return; // v0.45.1357
+          var state = myChannel.presenceState();
           window._unifiedPresenceState = state;
           if (typeof window._renderPresenceIndicator === 'function') window._renderPresenceIndicator();
         } catch(e4) { console.warn('[Unified] Presence同期エラー:', e4); }
@@ -34321,10 +34327,14 @@ function _unifiedStartRealtimeSubscription(userId) {
       .subscribe(function(status) {
         console.log('[Unified] Realtime購読状態: ' + status);
         if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RT購読状態: ' + status);
+        // v0.45.1357: 既に張り替え済みの古いチャンネルからの遅延コールバックは
+        // 一切処理しない（新しいチャンネルを巻き込んで壊すのを防ぐ）。
+        if (window._unifiedRealtimeChannel !== myChannel && window._unifiedRealtimeChannel !== null) return;
         // v0.45.1352: 購読成立時、自分の在席情報（デバイス識別・入室時刻）を送信する。
-        if (status === 'SUBSCRIBED' && window._unifiedRealtimeChannel) {
+        if (status === 'SUBSCRIBED') {
+          window._unifiedRealtimeChannel = myChannel;
           try {
-            window._unifiedRealtimeChannel.track({
+            myChannel.track({
               device: (typeof getOrCreateDeviceId === 'function' ? getOrCreateDeviceId().slice(0, 8) : 'unknown'),
               name: (window.allSettings && allSettings.profile && allSettings.profile.name) || 'ゲスト',
               joinedAt: new Date().toISOString()
@@ -34334,16 +34344,15 @@ function _unifiedStartRealtimeSubscription(userId) {
         // v0.45.1349: 接続断（エラー・タイムアウト・クローズ）時は自動再接続を予約する。
         // 【権威】2026-07-21、PCを開いたままスマホでタスクを作っても自動反映されず、
         // リロードで初めて出てくる（＝Realtime配信が届いていない）事象が実際に発生。
+        // v0.45.1357: 「CLOSEDならremoveChannelを呼ばない」という応急処置は、
+        // supabase-js内部のチャンネル登録リストに古いチャンネルが残り続ける
+        // リークを招き、1件の変更が何十倍にも重複処理される新たな重大バグを
+        // 生んでいた（「ガガガーッ」という連打ログで確認）。再入防止ガード
+        // （_unifiedRtStopping）で無限再帰を防ぎつつ、removeChannelは必ず呼ぶ。
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (window._unifiedRtStopping) return; // 自分の停止処理中に発火した再入は無視
           try {
-            // v0.45.1356: CLOSEDの時にremoveChannel()を呼ぶと、その内部処理が
-            // 再度CLOSEDステータスを発火させ、_unifiedStopRealtimeSubscription()を
-            // 再帰的に呼び続ける「RangeError: Maximum call stack size exceeded」が
-            // 実際に発生した（数百回のCLOSEDログで確認）。CLOSEDは既に閉じている
-            // 状態を意味するため、removeChannelを呼ばず変数のクリアのみ行う。
-            if (status === 'CLOSED') {
-              window._unifiedRealtimeChannel = null;
-            } else {
+            if (window._unifiedRealtimeChannel === myChannel) {
               _unifiedStopRealtimeSubscription();
             }
             if (!window._unifiedRtReconnectTimer) {
@@ -34356,6 +34365,12 @@ function _unifiedStartRealtimeSubscription(userId) {
           } catch(e3) { console.warn('[Unified] RT再接続予約エラー:', e3); }
         }
       });
+    // v0.45.1357: subscribe()の戻り値（チャンネルオブジェクト自体）は同期的に
+    // 返るため、ここで即座にグローバル変数へ代入する。SUBSCRIBEDイベント
+    // （非同期）を待って代入していると、その間の一瞬に他の呼び出し元
+    // （タブ復帰・online・定期チェック・ゾンビ対策）が「チャンネルがまだ
+    // ない」と誤認し、並行して複数のチャンネルを作ってしまう恐れがある。
+    window._unifiedRealtimeChannel = myChannel;
   } catch(e) { console.warn('[Unified] Realtime購読開始エラー:', e); }
 }
 function _unifiedStopRealtimeSubscription() {
@@ -47311,6 +47326,33 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-249: 例外', e.message);
      }
 
+     // ===== ST-250: チャンネルリーク・多重生成防止 確認（v0.45.1357〜） =====
+     // 背景：v0.45.1356の応急処置（CLOSED時にremoveChannelを呼ばない）が、
+     // supabase-js内部にチャンネルが残り続けるリークを招き、1件の変更が
+     // 何十倍にも重複処理される新たな重大バグを生んでいた（実際に「ガガガーッ」
+     // という連打ログで確認）。チャンネル同一性チェック・同期的な即時代入で修正。
+     try {
+       var _st250scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st250idx = _st250scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
+       var _st250src = _st250idx !== -1 ? _st250scriptTexts.slice(_st250idx, _st250idx + 4500) : '';
+       (_st250src.match(/window\._unifiedRealtimeChannel !== myChannel/g) || []).length >= 3
+         ? ok('ST-250·①: チャンネル同一性チェックが複数箇所に存在確認')
+         : ng('ST-250·①: 同一性チェックが不足', '');
+       _st250src.indexOf('window._unifiedRealtimeChannel = myChannel;') !== -1
+         ? ok('ST-250·②: subscribe()戻り値の同期的な即時代入確認')
+         : ng('ST-250·②: 即時代入が見つからない', '');
+       _st250src.indexOf('if (window._unifiedRtStopping) return; // 自分の停止処理中に発火した再入は無視') !== -1
+         ? ok('ST-250·③: 停止処理中の再入防止ガード確認')
+         : ng('ST-250·③: 再入防止ガードが見つからない', '');
+       // ④ CLOSED時もremoveChannelを呼ぶ経路が復活していること（リーク対策）
+       _st250src.indexOf("removeChannelを呼ばず変数のクリアのみ行う") === -1
+         ? ok('ST-250·④: リーク原因だった応急処置（removeChannelスキップ）を撤回確認')
+         : ng('ST-250·④: 応急処置がまだ残っている', '');
+       ok('ST-250: チャンネルリーク・多重生成防止 確認 完了');
+     } catch(e) {
+       ng('ST-250: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -56813,7 +56855,7 @@ window.addMigration = addMigration;
 
     <div style="border-top:1px solid #eee;padding-top:16px;margin-bottom:16px;">
       <div style="font-size:0.85em;font-weight:600;margin-bottom:8px;">新しい共有カレンダーを作る</div>
-      <input id="sharedCalendarNewName" type="text" placeholder="例：Mao&きくモン暦" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
+      <input id="sharedCalendarNewName" type="text" placeholder="例：太郎&花子暦" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
       <button onclick="createSharedCalendarFromModal()" style="width:100%;padding:10px;border:none;border-radius:8px;background:#4a7856;color:#fff;font-size:0.85em;font-weight:600;cursor:pointer;">作成する</button>
     </div>
 
