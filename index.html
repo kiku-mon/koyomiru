@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1362 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1363 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1362';
+    const APP_VERSION = 'v0.45.1363';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -46393,27 +46393,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-224: 例外', e.message);
      }
 
-     // ===== ST-225: koyomiru_tasksテーブル分離の確認（v0.45.1321〜） =====
+     // ===== ST-225: koyomiru_shared_tasksテーブル使用の確認（v0.45.1321〜、v0.45.1362で統一エンジン用に更新） =====
      // 背景：会社ネットワークの制約により、やることクラフトのSupabaseプロジェクトを
      //   間借りすることになった。データが混ざらないよう、保存先を'tasks'ではなく
-     //   'koyomiru_tasks'という専用テーブルに限定している。この分離が崩れていないか確認する。
+     //   専用テーブルに限定している。この分離が崩れていないか確認する。
+     //   【正直な補足】旧エンジン（supabaseSyncDown/_cloudStartRealtimeSubscription）の
+     //   削除に伴い、旧ブロブテーブル'koyomiru_tasks'への直接参照はもう実質使われて
+     //   いない（初回移行時のRPC呼び出しでのみ間接的に触れる）。統一エンジンが
+     //   使う'koyomiru_shared_tasks'の確認に更新する。
      try {
        var _st225scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       // 「.from('koyomiru_tasks')」が使われているか（最低3箇所：Up/Down/定期チェック）
-       var _st225koyomiruCount = (_st225scriptTexts.match(/from\('koyomiru_tasks'\)/g) || []).length;
-       _st225koyomiruCount >= 3
-         ? ok('ST-225·①: from(\'koyomiru_tasks\')使用確認（' + _st225koyomiruCount + '箇所）')
-         : ng('ST-225·①: koyomiru_tasks使用箇所が不足', _st225koyomiruCount + '箇所のみ');
+       // 「.from('koyomiru_shared_tasks')」が統一エンジンのpush/pull両方で使われているか
+       var _st225koyomiruCount = (_st225scriptTexts.match(/from\('koyomiru_shared_tasks'\)/g) || []).length;
+       _st225koyomiruCount >= 2
+         ? ok('ST-225·①: from(\'koyomiru_shared_tasks\')使用確認（' + _st225koyomiruCount + '箇所）')
+         : ng('ST-225·①: koyomiru_shared_tasks使用箇所が不足', _st225koyomiruCount + '箇所のみ');
        // 無印のtasksテーブル参照が残っていないか（やることクラフトのテーブルと混同する危険）
        var _st225bareTasksCount = (_st225scriptTexts.match(/from\('tasks'\)/g) || []).length;
        _st225bareTasksCount === 0
          ? ok('ST-225·②: 無印tasksテーブルへの誤参照なし確認')
          : ng('ST-225·②: 無印tasksテーブルへの参照が残存', _st225bareTasksCount + '箇所');
-       // Realtime購読対象も同様にkoyomiru_tasksになっているか
-       _st225scriptTexts.indexOf("table: 'koyomiru_tasks'") !== -1
-         ? ok('ST-225·③: Realtime購読対象がkoyomiru_tasks確認')
+       // Realtime購読対象も同様にkoyomiru_shared_tasksになっているか
+       _st225scriptTexts.indexOf("table: 'koyomiru_shared_tasks'") !== -1
+         ? ok('ST-225·③: Realtime購読対象がkoyomiru_shared_tasks確認')
          : ng('ST-225·③: Realtime購読対象が誤っている', '');
-       ok('ST-225: koyomiru_tasksテーブル分離 確認 完了');
+       ok('ST-225: koyomiru_shared_tasksテーブル分離 確認 完了');
      } catch(e) {
        ng('ST-225: 例外', e.message);
      }
@@ -46910,7 +46914,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        var _st242scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st242subIdx = _st242scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st242subSrc = _st242subIdx !== -1 ? _st242scriptTexts.slice(_st242subIdx, _st242subIdx + 2200) : '';
+       var _st242subSrc = _st242subIdx !== -1 ? _st242scriptTexts.slice(_st242subIdx, _st242subIdx + 5000) : '';
        _st242subSrc.indexOf("CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'") !== -1
          ? ok('ST-242·①: Realtime切断時の自動再接続コード確認')
          : ng('ST-242·①: 自動再接続コードが見つからない', '');
@@ -46983,7 +46987,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-245·②: DOM要素が見つからない', '');
        var _st245scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st245subIdx = _st245scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st245subSrc = _st245subIdx !== -1 ? _st245scriptTexts.slice(_st245subIdx, _st245subIdx + 2500) : '';
+       var _st245subSrc = _st245subIdx !== -1 ? _st245scriptTexts.slice(_st245subIdx, _st245subIdx + 5500) : '';
        (_st245subSrc.indexOf(".on('presence'") !== -1 && _st245subSrc.indexOf('.track(') !== -1)
          ? ok('ST-245·③: presence購読・track呼び出し確認')
          : ng('ST-245·③: presence実装が見つからない', '');
@@ -47131,7 +47135,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        var _st250scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st250idx = _st250scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st250src = _st250idx !== -1 ? _st250scriptTexts.slice(_st250idx, _st250idx + 4500) : '';
+       var _st250src = _st250idx !== -1 ? _st250scriptTexts.slice(_st250idx, _st250idx + 7000) : '';
        (_st250src.match(/window\._unifiedRealtimeChannel !== myChannel/g) || []).length >= 3
          ? ok('ST-250·①: チャンネル同一性チェックが複数箇所に存在確認')
          : ng('ST-250·①: 同一性チェックが不足', '');
