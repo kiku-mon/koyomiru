@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1364 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1365 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1364';
+    const APP_VERSION = 'v0.45.1365';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33375,7 +33375,7 @@ async function unifiedEnsurePersonalCalendarAndMigrate() {
   await unifiedRefreshMyCalendarIds();
 }
 
-// プッシュ：ローカルの全タスクを、それぞれの所属カレンダーへupsert
+// プッシュ：ローカルで変更・新規追加されたタスクだけを、それぞれの所属カレンダーへupsert（差分方式・v0.45.1365〜）
 async function unifiedPushTasks() {
   if (window._isTesting) return null; // v0.45.1340の教訓：テスト中は絶対に実送信しない
   if (!window.supabaseClient) return null;
@@ -33391,7 +33391,19 @@ async function unifiedPushTasks() {
   // v0.45.1353: 上のawait待ちの間にスモークテストが始まった場合、
   // テスト中の一時的なallTasksの状態が実クラウドへ送信されてしまう恐れがある。
   if (window._isTesting) return null;
-  var toPush = allTasks.filter(function(t){ return t && t.id; }).map(function(t) {
+  // v0.45.1365: 【権威】2026-07-22、validateCalendarIds()の補完等でsaveAllTasks()が
+  // 呼ばれるたびに、allTasks全件（例：194件）を無条件でupsertしていたため、
+  // 実際に変更されていないタスクまで含めて大量のupdated_atが更新され、
+  // Realtimeが同一ミリ秒で何十件ものUPDATEイベントを一気に配信する現象が
+  // 実際に発生した（デバッグパネルで確認）。前回プッシュ成功時点のスナップショット
+  // （id→updatedAt）と比較し、実際に変更・新規追加されたタスクだけを送る
+  // 差分プッシュに変更する。無駄な通信・DB負荷・Realtimeイベント量を削減する。
+  var _prevSnapshot = window._unifiedLastPushedSnapshot || {};
+  var toPush = allTasks.filter(function(t){
+    if (!t || !t.id) return false;
+    var _sig = t.updatedAt || t.createdAt || '';
+    return _prevSnapshot[t.id] !== _sig;
+  }).map(function(t) {
     return {
       id: t.id,
       calendar_id: t.cloudCalendarId || window._personalCalendarId,
@@ -33412,10 +33424,15 @@ async function unifiedPushTasks() {
   }
   else {
     window._cloudPushFailed = false;
-    if (typeof _syncLog === 'function') _syncLog('統一同期：プッシュ完了', toPush.length + '件');
+    // v0.45.1365: プッシュ成功した分だけスナップショットを更新する
+    // （失敗したタスクは次回また差分として検出され、再送される）。
+    var _newSnapshot = Object.assign({}, _prevSnapshot);
+    toPush.forEach(function(row) { _newSnapshot[row.id] = row.updated_at; });
+    window._unifiedLastPushedSnapshot = _newSnapshot;
+    if (typeof _syncLog === 'function') _syncLog('統一同期：プッシュ完了', toPush.length + '件（差分）');
     // v0.45.1348: デバッグパネル（_dbg_log）にも記録。console.logはスマホのDevToolsが
     // なければ確認できないため、デバッグパネルで直接見える形にする。
-    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プッシュ完了: ' + toPush.length + '件 → calendar=' + (window._personalCalendarId || '?'));
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プッシュ完了: ' + toPush.length + '件（差分） → calendar=' + (window._personalCalendarId || '?'));
   }
   return r;
 }
@@ -33481,6 +33498,17 @@ async function unifiedPullTasks() {
       return r;
     }
     allTasks = Object.keys(localMap).map(function(k){ return localMap[k]; });
+    // v0.45.1365: プルで取り込んだタスクは「既にクラウドと一致している」ため、
+    // 差分プッシュのスナップショットにも反映しておく。反映しないと、次のプッシュ時に
+    // 「ローカルの方が新しい（実際はクラウド由来のデータそのもの）」と誤検知され、
+    // クラウドから受け取ったデータをそのまま送り返す無駄が発生する。
+    try {
+      var _pullSnapshot = window._unifiedLastPushedSnapshot || {};
+      allTasks.forEach(function(t) {
+        if (t && t.id) _pullSnapshot[t.id] = t.updatedAt || t.createdAt || '';
+      });
+      window._unifiedLastPushedSnapshot = _pullSnapshot;
+    } catch(e) { console.warn('[Unified] プルスナップショット更新エラー:', e); }
     saveAllTasks(true); // v0.45.1333の教訓：ダウンロード経由の保存は再アップロード予約なし
     renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
     if (typeof _refreshCurrentViewForSync === 'function') _refreshCurrentViewForSync(); // v0.45.1328/1336の教訓
@@ -47335,6 +47363,32 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-256: calendarIdプレースホルダー方式 確認 完了');
      } catch(e) {
        ng('ST-256: 例外', e.message);
+     }
+
+     // ===== ST-257: 差分プッシュ方式の確認（v0.45.1365〜） =====
+     // 背景：unifiedPushTasksが毎回allTasks全件を無条件でupsertしていたため、
+     // validateCalendarIds()等の些細な補完1件をきっかけに194件全部のupdated_atが
+     // 更新され、Realtimeが同一ミリ秒で何十件ものUPDATEイベントを一気に配信する
+     // 現象が実際にデバッグパネルで確認された。前回プッシュ成功時点のスナップショット
+     // と比較し、実際に変更・新規追加されたタスクだけを送る差分方式に変更した。
+     try {
+       var _st257scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st257pushIdx = _st257scriptTexts.indexOf('async function unifiedPushTasks()');
+       var _st257pushSrc = _st257pushIdx !== -1 ? _st257scriptTexts.slice(_st257pushIdx, _st257pushIdx + 2200) : '';
+       _st257pushSrc.indexOf('_unifiedLastPushedSnapshot') !== -1
+         ? ok('ST-257·①: 差分検出用スナップショットの参照確認')
+         : ng('ST-257·①: 差分方式が見つからない', '');
+       _st257pushSrc.indexOf('_prevSnapshot[t.id] !== _sig') !== -1
+         ? ok('ST-257·②: 変更のあったタスクだけをフィルタする条件確認')
+         : ng('ST-257·②: 差分フィルタ条件が見つからない', '');
+       var _st257pullIdx = _st257scriptTexts.indexOf('async function unifiedPullTasks()');
+       var _st257pullSrc = _st257pullIdx !== -1 ? _st257scriptTexts.slice(_st257pullIdx, _st257pullIdx + 3500) : '';
+       _st257pullSrc.indexOf('_unifiedLastPushedSnapshot') !== -1
+         ? ok('ST-257·③: プル時にもスナップショットを更新確認（送り返し防止）')
+         : ng('ST-257·③: プル時のスナップショット更新が見つからない', '');
+       ok('ST-257: 差分プッシュ方式 確認 完了');
+     } catch(e) {
+       ng('ST-257: 例外', e.message);
      }
 
        // 第1条【本番環境】
