@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1366 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1368 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1366';
+    const APP_VERSION = 'v0.45.1368';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8666,7 +8666,7 @@
       }
     };
     let allSettings = JSON.parse(JSON.stringify(SETTINGS_DEFAULT)); // deep copy
-    function saveAllSettings() {
+    function saveAllSettings(skipCloudSync) {
       // mainCalendarIdを後方互換のため同期（SSOT=allSettings.calendar.mainId）
       if (allSettings.calendar && allSettings.calendar.mainId) {
         localStorage.setItem('mainCalendarId', allSettings.calendar.mainId);
@@ -8676,6 +8676,18 @@
         window.allSettings = allSettings;
       } catch(e) {
         console.error('[allSettings] save失敗', e);
+      }
+      // v0.45.1368: オールセッティングス同期。saveAllTasksと同じデバウンス方式
+      // （1.2秒後にまとめて送る）。skipCloudSync=trueはプル経由の保存で、
+      // 無限ループ防止のため再アップロードを予約しない（saveAllTasksと同じ設計）。
+      if (skipCloudSync) {
+        // クラウド由来の保存のため再アップロードを予約しない
+      } else if (window._cloudIsLoggedIn && typeof window.unifiedPushSettings === 'function') {
+        if (window._settingsAutoSaveTimer) clearTimeout(window._settingsAutoSaveTimer);
+        window._settingsAutoSaveTimer = setTimeout(function() {
+          window._settingsAutoSaveTimer = null;
+          window.unifiedPushSettings();
+        }, 1200);
       }
     }
     function loadAllSettings() {
@@ -8978,6 +8990,36 @@
       }
       return did;
     }
+    // v0.45.1367: 【権威】2026-07-22、端末識別が「端末:7aadde」のような16進数下6桁で
+    // 分かりにくいという指摘を受けた。初回起動時に「絵文字＋読みやすい単語」の
+    // ニックネームを自動生成し、以降はそれを使う。設定画面から変更も可能にする。
+    var _DEVICE_NICKNAME_WORDS = ['はやぶさ','こだま','つばめ','ひかり','のぞみ','さくら','あすか','ふじ','あおば','かもめ'];
+    var _DEVICE_NICKNAME_EMOJI = ['📱','💻','🖥️','⌚','📟'];
+    function getOrCreateDeviceNickname() {
+      try {
+        var nick = localStorage.getItem('deviceNickname');
+        if (nick) return nick;
+        var did = getOrCreateDeviceId();
+        // deviceIdから決定論的に選ぶ（毎回ランダムでは意味がないため）
+        var seed = 0;
+        for (var i = 0; i < did.length; i++) seed = (seed * 31 + did.charCodeAt(i)) >>> 0;
+        var word = _DEVICE_NICKNAME_WORDS[seed % _DEVICE_NICKNAME_WORDS.length];
+        var emoji = _DEVICE_NICKNAME_EMOJI[Math.floor(seed / _DEVICE_NICKNAME_WORDS.length) % _DEVICE_NICKNAME_EMOJI.length];
+        nick = emoji + word;
+        localStorage.setItem('deviceNickname', nick);
+        return nick;
+      } catch(e) { return '端末'; }
+    }
+    window.getOrCreateDeviceNickname = getOrCreateDeviceNickname;
+    function setDeviceNickname(name) {
+      try {
+        var trimmed = (name || '').trim().slice(0, 20);
+        if (!trimmed) return false;
+        localStorage.setItem('deviceNickname', trimmed);
+        return true;
+      } catch(e) { return false; }
+    }
+    window.setDeviceNickname = setDeviceNickname;
     let taskIdCounter = 1; // 互換性のため保持（実際はUUIDを使用）
     // 初期データ（テストデータ54件 - 大学3年生・マックバイト・彼氏あり）
     const INITIAL_DATA = [];
@@ -33524,6 +33566,115 @@ window.unifiedPushTasks = unifiedPushTasks;
 window.unifiedPullTasks = unifiedPullTasks;
 // ===== END v0.45.1344 統一同期エンジン =====
 
+// ===== v0.45.1368: オールセッティングス同期エンジン =====
+// 【権威】2026-07-22、複数端末で「ゲスト」表示になる・カレンダーの記号（◎等）が
+// 揃わないという実害があり、原因はallSettings（プロフィール名・カレンダー一覧等）が
+// 一度も端末間で同期されていなかったことだった。徹底調査の結果、以下の方針で実装する：
+// ①1ユーザー1行＋jsonbカラムのシンプルな構成（GitLab等の実例で裏付けられた業界標準）
+// ②競合解決は「後勝ち（Last-Write-Wins）」。タスクと違い同一設定を複数端末で同時編集
+//   することはほぼないため、idごとのマージのような複雑な仕組みは過剰と判断した。
+// ③「一時的な画面の状態（Ephemeral State）」だけを除外し、それ以外は同期する。
+//   業界用語でいう「Ephemeral State（一時的な状態）」と「App State（持続すべき設定）」
+//   の区別に基づく（OpenAI Apps SDK等の資料で明確化されている定石）。
+//   除外対象：ui.matrixQuadTab（今見ている象限タブ）・ui.lastCalendarId（直近選択、
+//   一時的な状態）・ui.tlLastScrollTop（スクロール位置）の3つのみ。
+//   gist.audioLimitのような数値設定は、実際の秘密トークン（gistToken）自体が
+//   allSettings外の別キーで管理されているため、安全に同期対象に含めてよい。
+var _SETTINGS_SYNC_EXCLUDE_PATHS = ['ui.matrixQuadTab', 'ui.lastCalendarId', 'ui.tlLastScrollTop'];
+function _buildSyncableSettings() {
+  var clone = JSON.parse(JSON.stringify(allSettings));
+  _SETTINGS_SYNC_EXCLUDE_PATHS.forEach(function(path) {
+    var parts = path.split('.');
+    var obj = clone;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (!obj || typeof obj !== 'object') return;
+      obj = obj[parts[i]];
+    }
+    if (obj && typeof obj === 'object') delete obj[parts[parts.length - 1]];
+  });
+  return clone;
+}
+window._buildSyncableSettings = _buildSyncableSettings;
+// プッシュ：ローカルの同期対象設定を、実際に変更があった場合のみクラウドへupsert
+async function unifiedPushSettings() {
+  if (window._isTesting) return null; // v0.45.1340の教訓
+  if (!window.supabaseClient || !window._cloudUserId) return null;
+  if (window._isTesting) return null; // 二段階チェック（v0.45.1353の教訓）
+  var payload = _buildSyncableSettings();
+  var payloadStr = JSON.stringify(payload);
+  // 差分検知：前回プッシュした内容と実質同一なら送らない（無駄な通信・Realtime連打防止）
+  if (window._settingsLastPushedStr === payloadStr) return null;
+  var r = await window.supabaseClient.from('koyomiru_user_settings').upsert({
+    user_id: window._cloudUserId,
+    data: payload,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'user_id' });
+  if (r.error) {
+    console.error('[Unified] 設定プッシュ失敗:', r.error.message);
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プッシュ失敗: ' + r.error.message);
+  } else {
+    window._settingsLastPushedStr = payloadStr;
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プッシュ完了');
+  }
+  return r;
+}
+window.unifiedPushSettings = unifiedPushSettings;
+// プル：クラウドの設定を取得し、除外パス以外を現在のallSettingsへ後勝ちでマージ
+async function unifiedPullSettings() {
+  if (window._isTesting) return null; // v0.45.1340の教訓
+  if (!window.supabaseClient || !window._cloudUserId) return null;
+  var r = await window.supabaseClient.from('koyomiru_user_settings')
+    .select('data, updated_at')
+    .eq('user_id', window._cloudUserId)
+    .maybeSingle();
+  if (window._isTesting) return r; // 競合状態対策（v0.45.1365の教訓と同型）
+  if (r.error) {
+    console.error('[Unified] 設定プル失敗:', r.error.message);
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プル失敗: ' + r.error.message);
+    return r;
+  }
+  if (!r.data || !r.data.data) return r; // クラウドにまだ設定がない（初回プッシュ待ち）
+  var cloudStr = JSON.stringify(r.data.data);
+  if (window._settingsLastPushedStr === cloudStr) return r; // 自分が送った内容の折り返し
+  // 除外パス以外を、クラウドの値でディープマージ（後勝ち＝クラウドを正とする単純な上書き）
+  // 除外パスはローカルの値をクラウド反映前に退避しておく（今のcloudマージで上書きされる前に）
+  try {
+    var _localExcludedBackup = {};
+    _SETTINGS_SYNC_EXCLUDE_PATHS.forEach(function(path) {
+      var parts = path.split('.');
+      var obj = allSettings;
+      for (var i = 0; i < parts.length - 1; i++) { if (!obj) return; obj = obj[parts[i]]; }
+      if (obj) _localExcludedBackup[path] = obj[parts[parts.length - 1]];
+    });
+    // 除外パス以外を、クラウドの値でディープマージ（後勝ち＝クラウドを正とする単純な上書き）
+    Object.keys(r.data.data).forEach(function(topKey) {
+      if (!allSettings[topKey] || typeof allSettings[topKey] !== 'object' || Array.isArray(allSettings[topKey])) {
+        allSettings[topKey] = r.data.data[topKey];
+        return;
+      }
+      Object.assign(allSettings[topKey], r.data.data[topKey]);
+    });
+    // 退避しておいたローカルの値を復元する（除外パスはクラウドの影響を受けない）
+    _SETTINGS_SYNC_EXCLUDE_PATHS.forEach(function(path) {
+      if (!(path in _localExcludedBackup)) return;
+      var parts = path.split('.');
+      var obj = allSettings;
+      for (var i = 0; i < parts.length - 1; i++) { if (!obj) return; obj = obj[parts[i]]; }
+      if (obj) obj[parts[parts.length - 1]] = _localExcludedBackup[path];
+    });
+    saveAllSettings(true); // v0.45.1368: プル経由のためskipCloudSync=trueで再アップロード予約なし
+    window._settingsLastPushedStr = cloudStr;
+    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プル反映完了');
+    if (typeof applyMobileNavPosition === 'function' && allSettings.ui && allSettings.ui.mobileNavPosition) {
+      applyMobileNavPosition(allSettings.ui.mobileNavPosition);
+    }
+    if (typeof loadSettingsUI === 'function') { try { loadSettingsUI(); } catch(e) {} }
+  } catch(e) { console.warn('[Unified] 設定マージエラー:', e); }
+  return r;
+}
+window.unifiedPullSettings = unifiedPullSettings;
+// ===== END v0.45.1368 オールセッティングス同期エンジン =====
+
 // ===== v0.45.1342: 共有カレンダーモーダル制御 =====
 function openSharedCalendarModal() {
   var ov = document.getElementById('sharedCalendarOverlay');
@@ -33651,8 +33802,8 @@ window.joinSharedCalendarFromModal = joinSharedCalendarFromModal;
 // 同期不具合の原因切り分けに時間がかかった反省から追加。
 function _syncDeviceTag() {
   try {
-    var did = getOrCreateDeviceId();
-    return '[端末:' + did.slice(-6) + ']';
+    var nick = (typeof getOrCreateDeviceNickname === 'function') ? getOrCreateDeviceNickname() : '';
+    return nick ? '[' + nick + ']' : '[端末:' + getOrCreateDeviceId().slice(-6) + ']';
   } catch(e) { return '[端末:不明]'; }
 }
 function _syncLog(intent, detail) {
@@ -33823,6 +33974,7 @@ try {
       if (window._cloudIsLoggedIn && typeof window.unifiedPullTasks === 'function') {
         if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] タブ復帰→プル実行');
         window.unifiedPullTasks();
+        if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings(); // v0.45.1368
       }
       // v0.45.1350: タブ復帰時、Realtimeチャンネルが（statusコールバックが
       // 発火せず沈黙したまま）死んでいる場合の自己修復。channelがnullなのに
@@ -33850,6 +34002,7 @@ try {
         });
       }
       if (typeof window.unifiedPullTasks === 'function') window.unifiedPullTasks();
+      if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings(); // v0.45.1368
       if (typeof window.unifiedPushTasks === 'function') window.unifiedPushTasks();
     }
   });
@@ -33859,6 +34012,7 @@ try {
       _cloudCheckAndPullIfNewer();
       if (window._cloudIsLoggedIn && typeof window.unifiedPullTasks === 'function') {
         window.unifiedPullTasks();
+        if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings(); // v0.45.1368
       }
       // v0.45.1350: 45秒ごとの定期チェックでもチャンネル生存を確認し、
       // 死んでいれば再接続する（visibilitychangeが発火しないケースの保険）。
@@ -34195,6 +34349,16 @@ function _unifiedStartRealtimeSubscription(userId) {
           unifiedPullTasks();
         } catch(e2) { console.warn('[Unified] Realtimeイベント処理エラー:', e2); }
       })
+      // v0.45.1368: オールセッティングス同期のRealtime監視。タスクと同じチャンネルに
+      // 相乗りさせる（1ユーザーにつきチャンネルは1本で足りるため）。
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'koyomiru_user_settings' }, function(payload) {
+        try {
+          if (window._isTesting) return;
+          if (window._unifiedRealtimeChannel !== myChannel) return;
+          if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定RTイベント受信');
+          if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings();
+        } catch(e2b) { console.warn('[Unified] 設定Realtimeイベント処理エラー:', e2b); }
+      })
       // v0.45.1352: Presence機能。「誰が今オンラインか」を同じチャンネル上で共有する。
       // 個人利用中は「自分の他端末が今開いているか」の可視化に、共有カレンダー実装後は
       // 「一緒に使っている相手が今開いているか」の可視化に使える。
@@ -34229,7 +34393,7 @@ function _unifiedStartRealtimeSubscription(userId) {
           window._unifiedRealtimeChannel = myChannel;
           try {
             myChannel.track({
-              device: (typeof getOrCreateDeviceId === 'function' ? getOrCreateDeviceId().slice(0, 8) : 'unknown'),
+              device: (typeof getOrCreateDeviceNickname === 'function' ? getOrCreateDeviceNickname() : 'unknown'),
               name: (window.allSettings && allSettings.profile && allSettings.profile.name) || 'ゲスト',
               joinedAt: new Date().toISOString()
             });
@@ -34243,6 +34407,7 @@ function _unifiedStartRealtimeSubscription(userId) {
           // 瞬間に即座にcatch-upする。
           if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] SUBSCRIBED→見逃し分の取得（catch-up）');
           if (typeof unifiedPullTasks === 'function') unifiedPullTasks();
+          if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings(); // v0.45.1368
         }
         // v0.45.1349: 接続断（エラー・タイムアウト・クローズ）時は自動再接続を予約する。
         // 【権威】2026-07-21、PCを開いたままスマホでタスクを作っても自動反映されず、
@@ -34305,7 +34470,7 @@ function _renderPresenceIndicator() {
   if (!el) return;
   var state = window._unifiedPresenceState || {};
   var keys = Object.keys(state);
-  var myDeviceTag = (typeof getOrCreateDeviceId === 'function' ? getOrCreateDeviceId().slice(0, 8) : '');
+  var myDeviceTag = (typeof getOrCreateDeviceNickname === 'function' ? getOrCreateDeviceNickname() : '');
   var entries = [];
   keys.forEach(function(k) {
     (state[k] || []).forEach(function(p) {
@@ -34365,6 +34530,13 @@ try {
           unifiedEnsurePersonalCalendarAndMigrate().then(function() {
             _unifiedStartRealtimeSubscription(session.user.id);
             unifiedPullTasks();
+            if (typeof window.unifiedPullSettings === 'function') {
+              window.unifiedPullSettings().then(function() {
+                // v0.45.1368: プル後、クラウドがまだ空だった場合に備え一度プッシュしておく
+                // （差分検知があるため、既に一致していれば実質何も送らない）。
+                if (typeof window.unifiedPushSettings === 'function') window.unifiedPushSettings();
+              });
+            }
           });
         }
       }
@@ -34394,6 +34566,11 @@ try {
         unifiedEnsurePersonalCalendarAndMigrate().then(function() {
           _unifiedStartRealtimeSubscription(session.user.id);
           unifiedPullTasks();
+          if (typeof window.unifiedPullSettings === 'function') {
+            window.unifiedPullSettings().then(function() {
+              if (typeof window.unifiedPushSettings === 'function') window.unifiedPushSettings();
+            });
+          }
         });
       }
     });
@@ -47391,6 +47568,76 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-257: 例外', e.message);
      }
 
+     // ===== ST-258: 端末ニックネーム・直近タスク末尾表示 確認（v0.45.1367〜） =====
+     // 背景：①同期トーストの端末表示が16進数下6桁で分かりにくいとの指摘。
+     // ②デバッグパネルが長大化し「直近タスク」の場所が開発者自身も探せなかった。
+     try {
+       typeof window.getOrCreateDeviceNickname === 'function'
+         ? ok('ST-258·①: getOrCreateDeviceNickname window公開確認')
+         : ng('ST-258·①: 関数が見つからない', '');
+       typeof window.setDeviceNickname === 'function'
+         ? ok('ST-258·②: setDeviceNickname window公開確認')
+         : ng('ST-258·②: 関数が見つからない', '');
+       var _st258nick = window.getOrCreateDeviceNickname();
+       (_st258nick && _st258nick.length > 0)
+         ? ok('ST-258·③: ニックネーム生成の実挙動確認（' + _st258nick + '）')
+         : ng('ST-258·③: ニックネームが空', '');
+       var _st258tagSrc = typeof _syncDeviceTag === 'function' ? _syncDeviceTag.toString() : '';
+       _st258tagSrc.indexOf('getOrCreateDeviceNickname') !== -1
+         ? ok('ST-258·④: _syncDeviceTagがニックネームを使用確認')
+         : ng('ST-258·④: 旧方式のまま', '');
+       var _st258scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st258scriptTexts.indexOf('パネル最下部に統一') !== -1
+         ? ok('ST-258·⑤: 直近タスクの末尾表示コード確認')
+         : ng('ST-258·⑤: 末尾表示が見つからない', '');
+       ok('ST-258: 端末ニックネーム・直近タスク末尾表示 確認 完了');
+     } catch(e) {
+       ng('ST-258: 例外', e.message);
+     }
+
+     // ===== ST-259: オールセッティングス同期エンジン 確認（v0.45.1368〜） =====
+     // 背景：徹底調査（GitLab等の業界標準・Ephemeral State/App Stateの概念）を経て、
+     // 1ユーザー1行＋jsonbカラム・後勝ち方式で設定同期を実装した。除外対象は
+     // 「今の瞬間の状態（スクロール位置・現在のタブ等）」の3フィールドのみ。
+     try {
+       ['unifiedPushSettings', 'unifiedPullSettings'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-259·' + fn + ': window公開確認')
+           : ng('ST-259·' + fn + ': 未公開', '');
+       });
+       // ① 除外パスが3件に絞られていること（過剰な除外をしていないか）
+       var _st259scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st259excIdx = _st259scriptTexts.indexOf('_SETTINGS_SYNC_EXCLUDE_PATHS = [');
+       var _st259excSrc = _st259excIdx !== -1 ? _st259scriptTexts.slice(_st259excIdx, _st259excIdx + 200) : '';
+       (_st259excSrc.indexOf('ui.matrixQuadTab') !== -1 && _st259excSrc.indexOf('ui.lastCalendarId') !== -1 && _st259excSrc.indexOf('ui.tlLastScrollTop') !== -1)
+         ? ok('ST-259·①: 除外パス（Ephemeral State）3件の内容確認')
+         : ng('ST-259·①: 除外パスの内容が想定と異なる', '');
+       // ② _buildSyncableSettingsが実際に除外パスを取り除くことを実挙動確認
+       var _st259prevQuadTab = allSettings.ui.matrixQuadTab;
+       allSettings.ui.matrixQuadTab = 999; // テスト用に一時変更
+       var _st259payload = (typeof window._buildSyncableSettings === 'function') ? window._buildSyncableSettings() : (typeof _buildSyncableSettings === 'function' ? _buildSyncableSettings() : null);
+       allSettings.ui.matrixQuadTab = _st259prevQuadTab; // 復元
+       (_st259payload && _st259payload.ui && _st259payload.ui.matrixQuadTab === undefined)
+         ? ok('ST-259·②: 除外パスが実際にペイロードから取り除かれる実挙動確認')
+         : ng('ST-259·②: 除外パスがペイロードに残っている（要確認）', '');
+       // ③ saveAllSettingsがskipCloudSync引数を持ち、デバウンスプッシュを予約する構造
+       var _st259saveSrc = typeof saveAllSettings === 'function' ? saveAllSettings.toString() : '';
+       (_st259saveSrc.indexOf('skipCloudSync') !== -1 && _st259saveSrc.indexOf('unifiedPushSettings') !== -1)
+         ? ok('ST-259·③: saveAllSettingsの設定同期デバウンス予約確認')
+         : ng('ST-259·③: デバウンス予約が見つからない', '');
+       // ④ Realtime購読にkoyomiru_user_settingsが含まれるか
+       _st259scriptTexts.indexOf("table: 'koyomiru_user_settings'") !== -1
+         ? ok('ST-259·④: Realtime購読にkoyomiru_user_settings確認')
+         : ng('ST-259·④: 設定テーブルのRealtime監視が見つからない', '');
+       // ⑤ ログイン時の初回プル→プッシュフローが組まれているか
+       (_st259scriptTexts.match(/unifiedPullSettings\(\)/g) || []).length >= 4
+         ? ok('ST-259·⑤: unifiedPullSettings呼び出しが複数箇所に配線されている確認（' + (_st259scriptTexts.match(/unifiedPullSettings\(\)/g) || []).length + '箇所）')
+         : ng('ST-259·⑤: 配線が不足している', '');
+       ok('ST-259: オールセッティングス同期エンジン 確認 完了');
+     } catch(e) {
+       ng('ST-259: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -48333,6 +48580,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
        ok('╚══════════════════════════════════════════════════╝');
        ok('');
+       // v0.45.1367: 【権威】2026-07-22、デバッグパネルが長大化し、
+       // 「直近タスク」がどこにあるか開発者自身でも探せなくなったという指摘を受けた。
+       // 場所を一箇所（このバナーの直後・パネル最末尾）に統一する。
+       try {
+         var _recentTasksEnd = (window.allTasks || []).filter(function(t){ return t && t.kind === 'task'; })
+           .slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); })
+           .slice(0, 5);
+         ok('--- 📌 直近タスク（新しい順・最大5件・パネル最下部に統一） ---');
+         _recentTasksEnd.forEach(function(t){
+           ok('  [' + (t.text||'(無題)') + '] date=' + t.date + ' cal=' + (t.calendarId||'なし').toString().slice(-6) + ' 更新=' + (t.updatedAt || t.createdAt || '不明'));
+         });
+       } catch(eRecent) { ng('直近タスク表示', eRecent.message); }
      } catch(e) { ng('APAG FINAL', e.message); }
 
      window._isTesting = false; // ST終了
