@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1368 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1369 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1368';
+    const APP_VERSION = 'v0.45.1369';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33663,6 +33663,18 @@ async function unifiedPullSettings() {
       if (obj) obj[parts[parts.length - 1]] = _localExcludedBackup[path];
     });
     saveAllSettings(true); // v0.45.1368: プル経由のためskipCloudSync=trueで再アップロード予約なし
+    // v0.45.1369: 【権威】2026-07-22、メインカレンダーの選択が「（他端末のカレンダー）」
+    // というプレースホルダーのまま残る事故が実際に発生した。原因は、UI描画が参照する
+    // グローバル変数calendarsが、allSettings.calendar.listへの「参照」を保持しているだけで、
+    // 上のObject.assignでallSettings.calendar.listが新しい配列オブジェクトに置き換わっても、
+    // calendars自体は古い配列（プレースホルダー入り）を指したままだったこと。
+    // 既存コードの別箇所にも「これがないとタグが消えない」という同型バグの前例コメントが
+    // あり、今回の設定プルにも同じ再同期が必要だった。
+    if (typeof calendars !== 'undefined' && allSettings.calendar && Array.isArray(allSettings.calendar.list)) {
+      calendars = allSettings.calendar.list;
+    } else if (typeof window.calendars !== 'undefined' && allSettings.calendar && Array.isArray(allSettings.calendar.list)) {
+      window.calendars = allSettings.calendar.list;
+    }
     window._settingsLastPushedStr = cloudStr;
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プル反映完了');
     if (typeof applyMobileNavPosition === 'function' && allSettings.ui && allSettings.ui.mobileNavPosition) {
@@ -47636,6 +47648,27 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-259: オールセッティングス同期エンジン 確認 完了');
      } catch(e) {
        ng('ST-259: 例外', e.message);
+     }
+
+     // ===== ST-260: calendars変数の参照食い違いバグ修正 確認（v0.45.1369〜） =====
+     // 背景：メインカレンダーの選択が「（他端末のカレンダー）」プレースホルダーの
+     // まま残る事故が発生した。原因はUI描画が参照するグローバル変数calendarsが、
+     // allSettings.calendar.listへの「参照」を保持しているだけで、設定プルで
+     // allSettings.calendar.listが新しい配列に置き換わっても、calendars自体は
+     // 古い配列を指したままだったこと（既存コードに同型バグの前例あり）。
+     try {
+       var _st260scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st260idx2 = _st260scriptTexts.indexOf('参照の食い違いバグ修正');
+       _st260idx2 !== -1
+         ? ok('ST-260·①: calendars再同期の実装コメント確認')
+         : ng('ST-260·①: 修正コードが見つからない', '');
+       var _st260src = _st260idx2 !== -1 ? _st260scriptTexts.slice(_st260idx2, _st260idx2 + 900) : '';
+       _st260src.indexOf('calendars = allSettings.calendar.list;') !== -1
+         ? ok('ST-260·②: calendars変数の再代入コード確認')
+         : ng('ST-260·②: 再代入コードが見つからない', '');
+       ok('ST-260: calendars変数の参照食い違いバグ修正 確認 完了');
+     } catch(e) {
+       ng('ST-260: 例外', e.message);
      }
 
        // 第1条【本番環境】
