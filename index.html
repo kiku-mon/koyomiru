@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1363 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1364 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1363';
+    const APP_VERSION = 'v0.45.1364';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -22066,6 +22066,16 @@ function reviveBlueprint(id) {
         // 旧バグ：task限定だったため、インポート→重複削除後のvideo等亡霊calendarIdを見逃していた（第53条検証で判明）
         // 未設定の補完はtaskのみ（他kindはcalendarIdオプショナルのため）
         var _CAL_REPAIR_KINDS = ['task','video','audio','note','photo','univcourse','univlesson'];
+        // v0.45.1364: 【権威】プライベートタブ（＝空のlocalStorage）で最初に
+        // クラウドからタスクをプルした際、cloudCalendarIdは正しいのに、ローカルの
+        // calendar.listがまだ空なため「不正ID」と誤判定し、問答無用でfallbackの
+        // IDに書き換えてしまうバグが実際に発生していた（ST-59/61が27件の
+        // 「不正ID」を検出）。この書き換えがsaveAllTasks()経由で再度クラウドへ
+        // 送信され、端末間でcalendarIdが食い違う悪循環を生んでいた。fallbackへの
+        // 書き換えではなく、そのIDをローカルのカレンダー一覧へプレースホルダーとして
+        // 自動追加することでデータを破壊しない。
+        var _placeholderAdded = {};
+        var _calListChanged = false;
         allTasks.forEach(function(t) {
           if (!t) return;
           var _isCalKind = _CAL_REPAIR_KINDS.indexOf(t.kind) !== -1;
@@ -22081,9 +22091,24 @@ function reviveBlueprint(id) {
           if (_calIdMigMap[t.calendarId] && _validCalIds.has(_calIdMigMap[t.calendarId])) {
             t.calendarId = _calIdMigMap[t.calendarId]; _fixedCount++; return;
           }
-          // ④ それ以外 → fallback
+          // ④ UUID形式として妥当なら、fallbackへ書き換えず、ローカル一覧へ
+          // プレースホルダーとして自動追加する（クラウド由来のIDを尊重・保持）。
+          var _uuidReCal = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (_uuidReCal.test(t.calendarId) && !_placeholderAdded[t.calendarId]) {
+            _calList.push({ id: t.calendarId, name: '（他端末のカレンダー）', color: '#b0b0b0', visible: true, shareable: false });
+            _validCalIds.add(t.calendarId);
+            _placeholderAdded[t.calendarId] = true;
+            _calListChanged = true;
+          }
+          if (_validCalIds.has(t.calendarId)) return; // プレースホルダー追加で有効化できた
+          // ⑤ UUIDですらない完全な不正値のみ fallback
           t.calendarId = _defaultCalId; _fixedCount++;
         });
+        if (_calListChanged) {
+          allSettings.calendar.list = _calList;
+          saveAllSettings();
+          window._dbgLog && window._dbgLog('validateCalendarIds: 他端末カレンダーIDをプレースホルダーとして吸収');
+        }
         if (_fixedCount > 0) {
           saveAllTasks();
           window._dbgLog && window._dbgLog('validateCalendarIds done. fixed=' + _fixedCount + '件');
@@ -38211,7 +38236,12 @@ function showDebugLog(_initOnly) {
 
        // ⑬ validateCalendarIdsが不正UUID（work・undefinedでない謎UUID）を修正すること
        if (typeof validateCalendarIds === 'function' && _st53FallbackId) {
-         var _st53FakeUUID = '00000000-dead-beef-0000-000000000000'; // 存在しないUUID
+         // v0.45.1364: 【正直な設計変更】UUID形式のcalendarIdをfallbackへ問答無用で
+       // 書き換える旧仕様は、プライベートタブ等でクラウド由来の正当なカレンダーIDを
+       // 「不正」と誤判定し、勝手に書き換えてクラウドへ再送してしまう実害のある
+       // バグだった。UUID形式として妥当なIDは、ローカルに無ければプレースホルダー
+       // として受け入れる（IDはそのまま維持）よう変更した。
+       var _st53FakeUUID = '00000000-dead-beef-0000-000000000000'; // ローカルに存在しないがUUID形式としては妥当
          var _st53FakeUUIDTask = {
            id: generateTaskId(), kind: 'task', text: 'ST-53不正UUIDテスト',
            date: getLocalDateStr(new Date()), section: 1, completed: false, done: false,
@@ -38226,11 +38256,14 @@ function showDebugLog(_initOnly) {
          window._isTesting = _st53FakePrevTesting;
          var _st53FakeFixed = allTasks.find(function(t){ return t.text === 'ST-53不正UUIDテスト'; });
          var _st53FakeOk = _st53FakeFixed
-           && _st53FakeFixed.calendarId !== _st53FakeUUID
-           && _st53CalIds.has(_st53FakeFixed.calendarId);
+           && _st53FakeFixed.calendarId === _st53FakeUUID
+           && (allSettings.calendar.list || []).some(function(c){ return c.id === _st53FakeUUID; });
          _st53FakeOk
-           ? ok('ST-61: validateCalendarIds 不正UUID→有効UUID修正確認（' + (_st53FakeFixed.calendarId||'').slice(-8) + '）')
-           : ng('ST-61: validateCalendarIds 不正UUID修正', '修正されていない: ' + (_st53FakeFixed && _st53FakeFixed.calendarId));
+           ? ok('ST-61: validateCalendarIds UUID形式の未知ID→プレースホルダー追加確認（IDは維持）')
+           : ng('ST-61: validateCalendarIdsプレースホルダー追加', '想定外の挙動: ' + (_st53FakeFixed && _st53FakeFixed.calendarId));
+         // プレースホルダーとして追加されたカレンダーもクリーンアップ
+         allSettings.calendar.list = (allSettings.calendar.list || []).filter(function(c){ return c.id !== _st53FakeUUID; });
+         saveAllSettings();
          allTasks = allTasks.filter(function(t){ return t.text !== 'ST-53不正UUIDテスト'; });
          saveAllTasks();
          ok('ST-61: 不正UUIDテスト クリーンアップ完了（' + allTasks.length + '件）');
@@ -47280,6 +47313,28 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-255: 旧エンジン完全撤去 総合確認 完了');
      } catch(e) {
        ng('ST-255: 例外', e.message);
+     }
+
+     // ===== ST-256: calendarIdプレースホルダー方式への修正確認（v0.45.1364〜） =====
+     // 背景：プライベートタブ（＝空のlocalStorage）で最初にクラウドから
+     // タスクをプルした際、cloudCalendarIdは正しいのに、ローカルのcalendar.listが
+     // まだ空なため「不正ID」と誤判定し、問答無用でfallbackのIDに書き換えて
+     // しまうバグが実際に発生していた（ST-59/61が27件の「不正ID」を検出）。
+     // この書き換えがsaveAllTasks()経由で再度クラウドへ送信され、端末間で
+     // calendarIdが食い違う悪循環を生んでいた。
+     try {
+       var _st256scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st256idx = _st256scriptTexts.indexOf('function validateCalendarIds');
+       var _st256src = _st256idx !== -1 ? _st256scriptTexts.slice(_st256idx, _st256idx + 6000) : '';
+       _st256src.indexOf('他端末のカレンダー') !== -1
+         ? ok('ST-256·①: 未知IDをプレースホルダーとして受け入れる実装確認')
+         : ng('ST-256·①: プレースホルダー方式が見つからない', '');
+       _st256src.indexOf('_uuidReCal.test(t.calendarId) && !_placeholderAdded[t.calendarId]') !== -1
+         ? ok('ST-256·②: UUID形式の判定でプレースホルダー化の可否を分ける確認')
+         : ng('ST-256·②: UUID判定が見つからない', '');
+       ok('ST-256: calendarIdプレースホルダー方式 確認 完了');
+     } catch(e) {
+       ng('ST-256: 例外', e.message);
      }
 
        // 第1条【本番環境】
