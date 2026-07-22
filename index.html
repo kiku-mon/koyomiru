@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1371 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1373 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1371';
+    const APP_VERSION = 'v0.45.1373';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8682,6 +8682,9 @@
       // 無限ループ防止のため再アップロードを予約しない（saveAllTasksと同じ設計）。
       if (skipCloudSync) {
         // クラウド由来の保存のため再アップロードを予約しない
+      } else if (window._isTesting || window._smokeTestRunning) {
+        // v0.45.1372: テスト実行中はタイマー予約自体を行わない（テスト後に発火して
+        // TPAGを汚染する事故を防ぐ）
       } else if (window._cloudIsLoggedIn && typeof window.unifiedPushSettings === 'function') {
         if (window._settingsAutoSaveTimer) clearTimeout(window._settingsAutoSaveTimer);
         window._settingsAutoSaveTimer = setTimeout(function() {
@@ -15744,6 +15747,7 @@ function toggleGantEnabled(checked) {
       if (toIdx < 0 || toIdx >= gantt.taskIds.length || fromIdx === toIdx) return;
       var tid = gantt.taskIds.splice(fromIdx, 1)[0];
       gantt.taskIds.splice(toIdx, 0, tid);
+      gantt.updatedAt = new Date().toISOString(); // v0.45.1373: 同期漏れ修正（差分プッシュ対応）
       saveAllTasks();
       renderGantView();
     }
@@ -26663,7 +26667,10 @@ function loadSettingsUI() {
     if (fromIdx === -1 || toIdx === -1) return;
     var moved = blueprints.splice(fromIdx, 1)[0];
     blueprints.splice(toIdx, 0, moved);
-    blueprints.forEach(function(b, i){ b.order = i; });
+    blueprints.forEach(function(b, i){
+      b.order = i;
+      b.updatedAt = new Date().toISOString(); // v0.45.1373: 同期漏れ修正（差分プッシュ対応）
+    });
     saveAllTasks();
     renderGantBlueprints();
   }
@@ -28461,6 +28468,12 @@ function renderDashboardView() {
         if (fromIdx === -1) return;
         var moved = allTasks.splice(fromIdx, 1)[0];
         moved.timeSlot = col.key;
+        // v0.45.1373: 【権威】2026-07-22、マトリクス（魚の目）タブでD&D移動しても
+        // 他端末に同期されないという実害が発生した。原因は、このドロップ処理が
+        // updateTask()を経由せずallTasksを直接操作しており、updatedAtを一切
+        // 更新していなかったこと。v0.45.1365で実装した差分プッシュはupdatedAtの
+        // 変化を見て送信対象を決めるため、更新されないタスクは永遠に同期されない。
+        moved.updatedAt = new Date().toISOString();
         // 同じスロットの最後のタスクの直後に挿入（無ければ末尾追加）
         var lastIdxOfCol = -1;
         for (var i = allTasks.length - 1; i >= 0; i--) {
@@ -33597,9 +33610,9 @@ function _buildSyncableSettings() {
 window._buildSyncableSettings = _buildSyncableSettings;
 // プッシュ：ローカルの同期対象設定を、実際に変更があった場合のみクラウドへupsert
 async function unifiedPushSettings() {
-  if (window._isTesting) return null; // v0.45.1340の教訓
+  if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1372: _isTesting単独ではST-75等の一時解除で漏れる教訓（v0.45.1348）を設定同期にも適用
   if (!window.supabaseClient || !window._cloudUserId) return null;
-  if (window._isTesting) return null; // 二段階チェック（v0.45.1353の教訓）
+  if (window._isTesting || window._smokeTestRunning) return null; // 二段階チェック（v0.45.1353の教訓）
   var payload = _buildSyncableSettings();
   var payloadStr = JSON.stringify(payload);
   // 差分検知：前回プッシュした内容と実質同一なら送らない（無駄な通信・Realtime連打防止）
@@ -33621,13 +33634,13 @@ async function unifiedPushSettings() {
 window.unifiedPushSettings = unifiedPushSettings;
 // プル：クラウドの設定を取得し、除外パス以外を現在のallSettingsへ後勝ちでマージ
 async function unifiedPullSettings() {
-  if (window._isTesting) return null; // v0.45.1340の教訓
+  if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1372
   if (!window.supabaseClient || !window._cloudUserId) return null;
   var r = await window.supabaseClient.from('koyomiru_user_settings')
     .select('data, updated_at')
     .eq('user_id', window._cloudUserId)
     .maybeSingle();
-  if (window._isTesting) return r; // 競合状態対策（v0.45.1365の教訓と同型）
+  if (window._isTesting || window._smokeTestRunning) return r; // 競合状態対策（v0.45.1365の教訓と同型）
   if (r.error) {
     console.error('[Unified] 設定プル失敗:', r.error.message);
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プル失敗: ' + r.error.message);
@@ -34365,7 +34378,7 @@ function _unifiedStartRealtimeSubscription(userId) {
       // 相乗りさせる（1ユーザーにつきチャンネルは1本で足りるため）。
       .on('postgres_changes', { event: '*', schema: 'public', table: 'koyomiru_user_settings' }, function(payload) {
         try {
-          if (window._isTesting) return;
+          if (window._isTesting || window._smokeTestRunning) return; // v0.45.1372
           if (window._unifiedRealtimeChannel !== myChannel) return;
           if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定RTイベント受信');
           if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings();
@@ -47684,6 +47697,70 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-261: 例外', e.message);
      }
 
+     // ===== ST-262: 設定同期のテスト隔離強化・第47条/55条誤検知修正 確認（v0.45.1372〜） =====
+     // 背景：①TPAGが「テスト前後でallSettings.ui.visibleTabsが変化」を検出した。
+     // 原因は設定同期の各関数が_isTestingのみでガードされており、v0.45.1348で
+     // タスク同期に適用した_smokeTestRunning（一時解除に影響されない永続フラグ）
+     // による二重ガードが、設定同期には未適用だったこと。
+     // ②_RULES_DATAのwindow公開行を追加した副作用で、第47条・第55条の
+     // 「配列を除外してから検査する」正規表現がマッチしなくなり誤検知していた。
+     try {
+       var _st262scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st262pushIdx = _st262scriptTexts.indexOf('async function unifiedPushSettings()');
+       var _st262pushSrc = _st262pushIdx !== -1 ? _st262scriptTexts.slice(_st262pushIdx, _st262pushIdx + 400) : '';
+       (_st262pushSrc.match(/_smokeTestRunning/g) || []).length >= 2
+         ? ok('ST-262·①: unifiedPushSettingsの二段階_smokeTestRunningガード確認')
+         : ng('ST-262·①: ガードが不足している', '');
+       var _st262pullIdx = _st262scriptTexts.indexOf('async function unifiedPullSettings()');
+       var _st262pullSrc = _st262pullIdx !== -1 ? _st262scriptTexts.slice(_st262pullIdx, _st262pullIdx + 400) : '';
+       (_st262pullSrc.match(/_smokeTestRunning/g) || []).length >= 2
+         ? ok('ST-262·②: unifiedPullSettingsの二段階_smokeTestRunningガード確認')
+         : ng('ST-262·②: ガードが不足している', '');
+       var _st262saveIdx = _st262scriptTexts.indexOf('function saveAllSettings(skipCloudSync)');
+       var _st262saveSrc = _st262saveIdx !== -1 ? _st262scriptTexts.slice(_st262saveIdx, _st262saveIdx + 1200) : '';
+       _st262saveSrc.indexOf('_smokeTestRunning') !== -1
+         ? ok('ST-262·③: saveAllSettingsのデバウンス予約に_smokeTestRunningガード確認')
+         : ng('ST-262·③: デバウンス予約にガードがない', '');
+       _st262scriptTexts.indexOf('window\\._RULES_DATA = _RULES_DATA;\\s*\\n)?\\s*var btnRules') !== -1
+         ? ok('ST-262·④: 第47条/55条の正規表現がwindow公開行に対応済み確認')
+         : ng('ST-262·④: 正規表現が未修正の可能性', '');
+       ok('ST-262: 設定同期テスト隔離・誤検知修正 確認 完了');
+     } catch(e) {
+       ng('ST-262: 例外', e.message);
+     }
+
+     // ===== ST-263: D&D並び替え系のupdatedAt更新漏れ（同期漏れ）修正 確認（v0.45.1373〜） =====
+     // 背景：マトリクス（魚の目）タブでD&D移動しても他端末に同期されないという
+     // 実害が発生した。原因は、複数のD&D処理がupdateTask()を経由せずallTasksを
+     // 直接操作しており、updatedAtを一切更新していなかったこと。v0.45.1365の
+     // 差分プッシュはupdatedAtの変化で送信対象を決めるため、更新されないタスクは
+     // 永遠に同期されない。_buildQuadSlot（マトリクス）・_gantReorderTask（造営内
+     // タスク順）・_bpReorder（志の並び替え）の3箇所を修正した。
+     // 【正直な補足】_gantRowReorder（造営チャートの行の並び替え）は、配列内の
+     // 位置そのものが並び順情報という特殊な設計のため、idごとにupsertする現在の
+     // 同期方式では原理的に並び順を運べない。これは別途の設計課題として残る。
+     try {
+       var _st263scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st263quadIdx = _st263scriptTexts.indexOf('function _buildQuadSlot');
+       var _st263quadSrc = _st263quadIdx !== -1 ? _st263scriptTexts.slice(_st263quadIdx, _st263quadIdx + 1200) : '';
+       _st263quadSrc.indexOf('moved.updatedAt = new Date().toISOString();') !== -1
+         ? ok('ST-263·①: _buildQuadSlot（マトリクス）のupdatedAt更新確認')
+         : ng('ST-263·①: マトリクスのupdatedAt更新が見つからない', '');
+       var _st263gantIdx = _st263scriptTexts.indexOf('function _gantReorderTask(');
+       var _st263gantSrc = _st263gantIdx !== -1 ? _st263scriptTexts.slice(_st263gantIdx, _st263gantIdx + 500) : '';
+       _st263gantSrc.indexOf('gantt.updatedAt = new Date().toISOString();') !== -1
+         ? ok('ST-263·②: _gantReorderTask（造営内タスク順）のupdatedAt更新確認')
+         : ng('ST-263·②: 造営内タスク順のupdatedAt更新が見つからない', '');
+       var _st263bpIdx = _st263scriptTexts.indexOf('function _bpReorder(');
+       var _st263bpSrc = _st263bpIdx !== -1 ? _st263scriptTexts.slice(_st263bpIdx, _st263bpIdx + 700) : '';
+       _st263bpSrc.indexOf('b.updatedAt = new Date().toISOString();') !== -1
+         ? ok('ST-263·③: _bpReorder（志の並び替え）のupdatedAt更新確認')
+         : ng('ST-263·③: 志の並び替えのupdatedAt更新が見つからない', '');
+       ok('ST-263: D&D並び替え系のupdatedAt更新漏れ修正 確認 完了');
+     } catch(e) {
+       ng('ST-263: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -48376,7 +48453,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 記載されている）を除外しないと自己参照的に誤検知するため、JSON全体を除外する（第33条①誤検知防止）。
        var _r49scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _r49hasDynamicRef = _r49scriptTexts.indexOf('_RULES_DATA.length') !== -1;
-       var _r49withoutRulesData = _r49scriptTexts.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\];\s*\n\s*var btnRules = document\.createElement/, '');
+       // v0.45.1372: _RULES_DATAのwindow公開行を追加したことで、この正規表現が
+       // 「];」の直後に直接「var btnRules」が続く前提だったため、マッチしなく
+       // なっていた（間にwindow._RULES_DATA = _RULES_DATA;が挟まったため）。
+       var _r49withoutRulesData = _r49scriptTexts.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\];\s*\n(?:\s*window\._RULES_DATA = _RULES_DATA;\s*\n)?\s*var btnRules = document\.createElement/, '');
        var _r49hasHardcodedBtn = /読む[（(]\s*\d+\s*条[）)]/.test(_r49withoutRulesData);
        _checkResult('第47条', _r49hasDynamicRef && !_r49hasHardcodedBtn, '条文数はRULES_DATA.length動的参照確認（ハードコード不在）');
 
@@ -48426,7 +48506,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 注：境界検出には確実な終端パターン}];を使う（];だけだと自分自身の
        // 正規表現リテラル内の];と誤って早期マッチする恐れがある・第33条①誤検知防止）。
        var _r57html = document.documentElement.outerHTML;
-       var _r57withoutRulesData = _r57html.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\];\s*\n\s*var btnRules = document\.createElement/, '');
+       // v0.45.1372: 第47条と同じ理由（_RULES_DATAのwindow公開行追加）でマッチしなく
+       // なっていたため、window公開行の有無どちらにも対応する。
+       var _r57withoutRulesData = _r57html.replace(/var _RULES_DATA = \[\{"num"[\s\S]*?\];\s*\n(?:\s*window\._RULES_DATA = _RULES_DATA;\s*\n)?\s*var btnRules = document\.createElement/, '');
        var _r57bad = /[^.\w](confirm|alert|prompt)\s*\(/.test(_r57withoutRulesData);
        _checkResult('第55条', !_r57bad, 'confirm/alert/prompt不使用確認（2クリック確認方式に統一）');
 
