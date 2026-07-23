@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1373 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1374 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1373';
+    const APP_VERSION = 'v0.45.1374';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -19319,6 +19319,7 @@ function reviveBlueprint(id) {
       allTasks[idx].completed = false;
       allTasks[idx].displayScope = allTasks[idx].displayScope || 'daily_only';
       allTasks[idx].calendarId = allTasks[idx].calendarId || (allSettings.calendar.mainId || 'default');
+      allTasks[idx].updatedAt = new Date().toISOString(); // v0.45.1374: 同期漏れ修正
       saveAllTasks();
       renderScratchView();
     }
@@ -24515,7 +24516,7 @@ function reviveBlueprint(id) {
     function nbPagesSet(pages) {
       // allTasksからnoteを全削除して差し替え
       allTasks = allTasks.filter(function(t){ return t.kind !== 'note'; });
-      pages.forEach(function(p, i){ p.order = i; });
+      pages.forEach(function(p, i){ p.order = i; p.updatedAt = new Date().toISOString(); }); // v0.45.1374: 同期漏れ修正
       allTasks = allTasks.concat(pages);
       saveAllTasks();
     }
@@ -28585,7 +28586,7 @@ function renderDashboardView() {
           allTasks.splice(newToIdx, 0, moved);
           // orderフィールドを同一section内で振り直す（getDailyTasksのorderソートに対応）
           var secTasks = allTasks.filter(function(x) { return x.section === moved.section && x.date === moved.date; });
-          secTasks.forEach(function(x, i) { x.order = i; });
+          secTasks.forEach(function(x, i) { x.order = i; x.updatedAt = new Date().toISOString(); }); // v0.45.1374: 同期漏れ修正
           saveAllTasks();
           renderQuadView();
         });
@@ -29822,7 +29823,7 @@ function renderDashboardView() {
       // order を連番で振り直す
       stamps.forEach(function(s, i) {
         const t = allTasks.find(t => t.kind === 'stamp' && t.id === s.id);
-        if (t) t.order = i;
+        if (t) { t.order = i; t.updatedAt = new Date().toISOString(); } // v0.45.1374: 同期漏れ修正
       });
       saveAllTasks();
       loadStampSettingsUI();
@@ -47761,6 +47762,34 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-263: 例外', e.message);
      }
 
+     // ===== ST-264: 同期経路の系統的監査で発見した追加5箇所の修正 確認（v0.45.1374〜） =====
+     // 背景：ST-263で見つかったパターン（allTasksを直接操作しupdatedAtを更新しない
+     // ことで差分プッシュから漏れる）が他にも無いか、.section=・order=・done=・
+     // completed=・calendarId=・timeSlot=・date=・displayScope=の代入箇所74件を
+     // 機械的に洗い出し、テスト/マイグレーション/コメントを除外した実質38件を精査、
+     // 実際に日常操作で発生する5箇所（雑記帳→タスク昇格・魚の目セクション内order
+     // 再計算・スタンプ並び替え・睡眠記録の完了マーク・ノートブックページ順）を修正した。
+     try {
+       var _st264scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _checks264 = [
+         ['function promoteScratchItem', 'allTasks[idx].updatedAt = new Date().toISOString(); // v0.45.1374', '雑記帳→タスク昇格'],
+         ['secTasks.forEach(function(x, i)', 'x.updatedAt = new Date().toISOString(); }); // v0.45.1374', '魚の目セクション内order再計算'],
+         ['function reorderStamps', 't.updatedAt = new Date().toISOString(); } // v0.45.1374', 'スタンプ並び替え'],
+         ['function confirmSleepRecord', 'task.updatedAt = new Date().toISOString(); // v0.45.1374', '睡眠記録の完了マーク'],
+         ['function nbPagesSet', 'p.updatedAt = new Date().toISOString(); }); // v0.45.1374', 'ノートブックページ順']
+       ];
+       _checks264.forEach(function(c, i) {
+         var fIdx = _st264scriptTexts.indexOf(c[0]);
+         var fSrc = fIdx !== -1 ? _st264scriptTexts.slice(fIdx, fIdx + 1200) : '';
+         fSrc.indexOf(c[1]) !== -1
+           ? ok('ST-264·' + (i+1) + ': ' + c[2] + ' のupdatedAt更新確認')
+           : ng('ST-264·' + (i+1) + ': ' + c[2] + ' の修正が見つからない', '');
+       });
+       ok('ST-264: 同期経路の系統的監査・追加5箇所修正 確認 完了');
+     } catch(e) {
+       ng('ST-264: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -55141,6 +55170,7 @@ function confirmSleepRecord() {
   if (task) {
     task.completed = true;
     task.done = true;
+    task.updatedAt = new Date().toISOString(); // v0.45.1374: 同期漏れ修正
     saveAllTasks();
   }
 
