@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1374 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1375 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1374';
+    const APP_VERSION = 'v0.45.1375';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -16431,8 +16431,8 @@ function reviveBlueprint(id) {
         label: 'やることを残して、計画と手立てだけ消す', style: 'primary',
         onClick: function() {
           for (var i = allTasks.length - 1; i >= 0; i--) {
-            if (allTasks[i].kind === 'gantt' && allTasks[i].blueprintId === id) allTasks.splice(i, 1);
-            else if (allTasks[i].id === id) allTasks.splice(i, 1);
+            if (allTasks[i].kind === 'gantt' && allTasks[i].blueprintId === id) { _propagateDeletion(allTasks[i].id); allTasks.splice(i, 1); }
+            else if (allTasks[i].id === id) { _propagateDeletion(allTasks[i].id); allTasks.splice(i, 1); }
           }
           if (_gantSelectedBlueprintId === id) _gantSelectedBlueprintId = null;
           saveAllTasks(); closeBlueprintEditor(); renderGantView();
@@ -16443,9 +16443,9 @@ function reviveBlueprint(id) {
         label: `「${bp.title}」をすべてまとめて消す` + (taskCount > 0 ? '（やること含む）' : ''), style: 'danger',
         onClick: function() {
           for (var i = allTasks.length - 1; i >= 0; i--) {
-            if (uniqueTaskIds.includes(allTasks[i].id)) allTasks.splice(i, 1);
-            else if (allTasks[i].kind === 'gantt' && allTasks[i].blueprintId === id) allTasks.splice(i, 1);
-            else if (allTasks[i].id === id) allTasks.splice(i, 1);
+            if (uniqueTaskIds.includes(allTasks[i].id)) { _propagateDeletion(allTasks[i].id); allTasks.splice(i, 1); }
+            else if (allTasks[i].kind === 'gantt' && allTasks[i].blueprintId === id) { _propagateDeletion(allTasks[i].id); allTasks.splice(i, 1); }
+            else if (allTasks[i].id === id) { _propagateDeletion(allTasks[i].id); allTasks.splice(i, 1); }
           }
           if (_gantSelectedBlueprintId === id) _gantSelectedBlueprintId = null;
           saveAllTasks(); closeBlueprintEditor(); renderGantView();
@@ -16865,7 +16865,7 @@ function reviveBlueprint(id) {
         btns.push({
           label: 'やることを残して、手立てだけ消す', style: 'primary',
           onClick: function() {
-            var _idx = allTasks.findIndex(t => t.id === id); if (_idx !== -1) allTasks.splice(_idx, 1);
+            var _idx = allTasks.findIndex(t => t.id === id); if (_idx !== -1) { _propagateDeletion(id); allTasks.splice(_idx, 1); }
             const bp = allTasks.find(t => t.id === gantt.blueprintId);
             if (bp) recalcBlueprintFromGants(bp);
             saveAllTasks(); closeGanttEditor(); renderGantView();
@@ -16876,7 +16876,7 @@ function reviveBlueprint(id) {
           label: `「${gantt.title}」やることごと、すべて消す`, style: 'danger',
           onClick: function() {
             for (var i = allTasks.length - 1; i >= 0; i--) {
-              if (allTasks[i].id === id || validTaskIds.includes(allTasks[i].id)) allTasks.splice(i, 1);
+              if (allTasks[i].id === id || validTaskIds.includes(allTasks[i].id)) { _propagateDeletion(allTasks[i].id); allTasks.splice(i, 1); }
             }
             const bp = allTasks.find(t => t.id === gantt.blueprintId);
             if (bp) recalcBlueprintFromGants(bp);
@@ -16888,7 +16888,7 @@ function reviveBlueprint(id) {
         btns.push({
           label: '手立てを消す', style: 'danger',
           onClick: function() {
-            var _idx = allTasks.findIndex(t => t.id === id); if (_idx !== -1) allTasks.splice(_idx, 1);
+            var _idx = allTasks.findIndex(t => t.id === id); if (_idx !== -1) { _propagateDeletion(id); allTasks.splice(_idx, 1); }
             const bp = allTasks.find(t => t.id === gantt.blueprintId);
             if (bp) recalcBlueprintFromGants(bp);
             saveAllTasks(); closeGanttEditor(); renderGantView();
@@ -47790,6 +47790,35 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-264: 例外', e.message);
      }
 
+     // ===== ST-265: 削除同期（優先度高い4種）の共通ヘルパー導入 確認（v0.45.1375〜） =====
+     // 背景：タスク（deleteTaskById）以外の削除（日誌・写真・志・造営等14種類）が、
+     // クラウドへ一切伝播していなかったことが判明した（削除したはずのものが他端末
+     // では復活・残り続ける）。deleteTaskById専用だった墓石記録・クラウド伝播ロジック
+     // を_propagateDeletionという共通ヘルパーに切り出し、優先度の高い4種
+     // （日誌・写真・志・造営）から対応した。残り10種は次回対応予定。
+     try {
+       typeof window._propagateDeletion === 'function'
+         ? ok('ST-265·①: _propagateDeletion window公開確認')
+         : ng('ST-265·①: 関数が見つからない', '');
+       var _st265scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st265checks = [
+         ['function deleteJournal(id) {\n      const jIdx', '日誌'],
+         ['function deletePhoto(e, photoId) {\n  if (e)', '写真'],
+         ['function deleteBlueprint() {\n      var id', '志'],
+         ['function deleteGantt() {\n      if (!_gantEditingGanttId)', '造営']
+       ];
+       _st265checks.forEach(function(c, i) {
+         var fIdx = _st265scriptTexts.indexOf(c[0]);
+         var fSrc = fIdx !== -1 ? _st265scriptTexts.slice(fIdx, fIdx + 2500) : '';
+         (fSrc.match(/_propagateDeletion\(/g) || []).length >= 1
+           ? ok('ST-265·' + (i+2) + ': ' + c[1] + 'の削除伝播確認')
+           : ng('ST-265·' + (i+2) + ': ' + c[1] + 'の削除伝播が見つからない', '');
+       });
+       ok('ST-265: 削除同期（優先度高い4種）確認 完了');
+     } catch(e) {
+       ng('ST-265: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -50374,9 +50403,31 @@ document.addEventListener('DOMContentLoaded', function() {
       saveAllTasks();
       openJournalDetail(journalId);
     }
-    function deleteJournal(id) {
+    // v0.45.1375: 【権威】2026-07-23、タスク以外（日誌・写真・志・造営等14種類）の
+// 削除が、クラウドへ一切伝播していなかったことが判明した（削除したはずのものが
+// 他端末では復活・残り続ける）。deleteTaskById専用だった墓石記録・クラウド伝播
+// ロジックを共通ヘルパーとして切り出し、各kindの削除関数から呼べるようにする。
+function _propagateDeletion(id) {
+  try {
+    if (!window._isTesting) {
+      var _delIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'));
+      _delIds.add(id);
+      localStorage.setItem('deletedTaskIds', JSON.stringify([..._delIds]));
+    }
+  } catch(e) { console.warn('[_propagateDeletion] 墓石記録エラー:', e); }
+  if (window._cloudIsLoggedIn && !window._isTesting && window.supabaseClient) {
+    window.supabaseClient.from('koyomiru_shared_tasks')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .then(function(r){ if (r && r.error) console.warn('[Unified] 削除の伝播エラー:', r.error.message); })
+      .catch(function(e){ console.warn('[Unified] 削除の伝播エラー:', e); });
+  }
+}
+window._propagateDeletion = _propagateDeletion;
+function deleteJournal(id) {
       const jIdx = allTasks.findIndex(function(t){ return t.id === id && t.kind === 'journal'; });
       if (jIdx !== -1) allTasks.splice(jIdx, 1);
+      _propagateDeletion(id); // v0.45.1375: 同期漏れ修正
       deleteThoughtsByJournal(id); // フラット構造のthoughtsも削除
       saveAllTasks();
       var dm = document.getElementById('journalDetailModal');
@@ -51217,6 +51268,7 @@ function deletePhoto(e, photoId) {
   if (e) e.stopPropagation();
   var idx = allTasks.findIndex(function(t){ return t.id === photoId; });
   if (idx !== -1) allTasks.splice(idx, 1);
+  _propagateDeletion(photoId); // v0.45.1375: 同期漏れ修正
   saveAllTasks();
   deletePhotoImage(photoId, function() {
     renderPhotoLogView();
