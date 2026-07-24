@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1388 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1389 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1388';
+    const APP_VERSION = 'v0.45.1389';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9303,6 +9303,8 @@
       };
       allTasks.push(task);
       saveAllTasks();
+      // v0.45.1389: 共有カレンダー通知（フェーズA）
+      if (typeof _notifySharedCalendar === 'function') _notifySharedCalendar(task.cloudCalendarId, 'created', task.text);
       return task;
     }
     // タスク更新
@@ -18050,6 +18052,7 @@ function reviveBlueprint(id) {
         if (!wasCompleted && task.completed) {
           // 完了時
           onTaskCompleted(task);
+          if (typeof _notifySharedCalendar === 'function') _notifySharedCalendar(task.cloudCalendarId, 'completed', task.text); // v0.45.1389
           if (task.deckId && typeof incrementDeckHistoryStat === 'function') {
             incrementDeckHistoryStat(task.deckId);
           }
@@ -18403,6 +18406,8 @@ function reviveBlueprint(id) {
           .then(function(r){ if (r && r.error) console.warn('[Unified] 削除の伝播エラー:', r.error.message); })
           .catch(function(e){ console.warn('[Unified] 削除の伝播エラー:', e); });
       }
+      // v0.45.1389: 共有カレンダー通知（フェーズA）。削除でDOMから消える前に情報を保持しておく。
+      if (typeof _notifySharedCalendar === 'function') _notifySharedCalendar(task.cloudCalendarId, 'deleted', task.text);
       // 造営工程のtaskIdsから削除 → 再計算
       const _affectedGids = [];
       allTasks.forEach(t => {
@@ -34473,6 +34478,22 @@ function _unifiedStartRealtimeSubscription(userId) {
           if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings();
         } catch(e2b) { console.warn('[Unified] 設定Realtimeイベント処理エラー:', e2b); }
       })
+      // v0.45.1389: 共有カレンダー通知（フェーズA）のRealtime監視。他メンバーが
+      // タスクを作成・完了・削除した瞬間、INSERTイベントを受信してトースト表示する。
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'koyomiru_notifications' }, function(payload) {
+        try {
+          if (window._isTesting || window._smokeTestRunning) return;
+          if (window._unifiedRealtimeChannel !== myChannel) return;
+          var n = payload.new;
+          if (!n || n.actor_id === window._cloudUserId) return; // 自分自身の操作は通知しない
+          var _actionLabel = { created: '追加しました', completed: '完了しました', updated: '更新しました', deleted: '削除しました' }[n.action] || '操作しました';
+          var _msg = '👥 ' + (n.actor_name || '誰か') + 'さんが「' + (n.task_text || '(無題)') + '」を' + _actionLabel;
+          if (typeof window.showToast === 'function') window.showToast(_msg);
+          if (!window._sharedCalNotifHistory) window._sharedCalNotifHistory = [];
+          window._sharedCalNotifHistory.unshift(n);
+          if (window._sharedCalNotifHistory.length > 50) window._sharedCalNotifHistory.length = 50;
+        } catch(eNotifRt) { console.warn('[Notify] Realtime処理エラー:', eNotifRt); }
+      })
       // v0.45.1352: Presence機能。「誰が今オンラインか」を同じチャンネル上で共有する。
       // 個人利用中は「自分の他端末が今開いているか」の可視化に、共有カレンダー実装後は
       // 「一緒に使っている相手が今開いているか」の可視化に使える。
@@ -48143,6 +48164,45 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-274: 例外', e.message);
      }
 
+     // ===== ST-275: 共有カレンダー通知フェーズA 確認（v0.45.1389〜） =====
+     // 背景：TimeTree等の業界標準調査に基づき、「誰かが予定を追加したら通知する」
+     // 機能の土台（フェーズA：テーブルへの記録＋アプリ起動中のRealtime通知・履歴）
+     // を実装した。Supabase公式推奨パターン（notificationsテーブル→将来的に
+     // Database Webhook経由でEdge Functionへ拡張）に沿った設計。フェーズB
+     // （アプリを閉じていても届く本物のプッシュ通知）は次回以降に見送る。
+     try {
+       ['_notifySharedCalendar', 'loadSharedCalendarNotifications'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-275·' + fn + ': window公開確認')
+           : ng('ST-275·' + fn + ': 未公開', '');
+       });
+       // ① 個人用カレンダーには通知しない（実挙動確認）
+       var _st275prevHistLen = (window._sharedCalNotifHistory || []).length;
+       window._notifySharedCalendar(window._personalCalendarId, 'created', 'テスト');
+       (window._sharedCalNotifHistory || []).length === _st275prevHistLen
+         ? ok('ST-275·①: 個人用カレンダーには通知しない確認')
+         : ng('ST-275·①: 個人用カレンダーにも通知してしまっている', '');
+       // ② createTask/toggleTaskById/deleteTaskByIdから呼ばれているか（生ソース確認）
+       var _st275scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st275checks = [
+         ["allTasks.push(task);\n      saveAllTasks();\n      // v0.45.1389", '共有カレンダー通知（フェーズA）', 'createTask'],
+         ['if (!wasCompleted && task.completed) {\n          // 完了時\n          onTaskCompleted(task);\n          if (typeof _notifySharedCalendar', '', 'toggleTaskById（完了）'],
+         ['// v0.45.1389: 共有カレンダー通知（フェーズA）。削除でDOMから消える前', '', 'deleteTaskById']
+       ];
+       _st275checks.forEach(function(c, i) {
+         _st275scriptTexts.indexOf(c[0]) !== -1
+           ? ok('ST-275·②-' + (i+1) + ': ' + c[2] + 'への配線確認')
+           : ng('ST-275·②-' + (i+1) + ': ' + c[2] + 'への配線が見つからない', '');
+       });
+       // ③ Realtime監視の設置確認
+       _st275scriptTexts.indexOf("table: 'koyomiru_notifications'") !== -1
+         ? ok('ST-275·③: koyomiru_notificationsのRealtime監視確認')
+         : ng('ST-275·③: Realtime監視が見つからない', '');
+       ok('ST-275: 共有カレンダー通知フェーズA 確認 完了');
+     } catch(e) {
+       ng('ST-275: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -50777,6 +50837,45 @@ function _propagateDeletion(id) {
   }
 }
 window._propagateDeletion = _propagateDeletion;
+// v0.45.1389: 【共有カレンダー通知・フェーズA】共有カレンダー（is_personal=falseの
+// カレンダー）に属するタスクが作成・完了・削除された時、koyomiru_notificationsに
+// 1行記録する。ベストエフォート（失敗してもタスク操作自体には影響させない・
+// fire-and-forget）。テスト実行中は絶対に送信しない（第63条の教訓）。
+function _notifySharedCalendar(calendarId, action, taskText) {
+  try {
+    if (window._isTesting || window._smokeTestRunning) return;
+    if (!window.supabaseClient || !window._cloudUserId) return;
+    if (!calendarId || calendarId === window._personalCalendarId) return; // 個人用カレンダーは通知しない
+    var _actorName = (window.allSettings && allSettings.profile && allSettings.profile.name) || 'ゲスト';
+    window.supabaseClient.from('koyomiru_notifications').insert({
+      calendar_id: calendarId,
+      actor_id: window._cloudUserId,
+      actor_name: _actorName,
+      action: action,
+      task_text: (taskText || '').slice(0, 100)
+    }).then(function(r) {
+      if (r && r.error) console.warn('[Notify] 通知記録エラー:', r.error.message);
+    }).catch(function(e) { console.warn('[Notify] 通知記録エラー:', e); });
+  } catch(eNotify) { console.warn('[Notify] エラー:', eNotify); }
+}
+window._notifySharedCalendar = _notifySharedCalendar;
+// v0.45.1389: 自分が参加している全共有カレンダーの通知履歴を取得する（最新50件）。
+// アカウントモーダルやカレンダー切替時に呼び、過去分も含めて表示できるようにする。
+async function loadSharedCalendarNotifications() {
+  if (window._isTesting || window._smokeTestRunning) return [];
+  if (!window.supabaseClient || !window._cloudUserId) return [];
+  var _sharedIds = (window._myCalendarIds || []).filter(function(id) { return id !== window._personalCalendarId; });
+  if (_sharedIds.length === 0) return [];
+  var r = await window.supabaseClient.from('koyomiru_notifications')
+    .select('*')
+    .in('calendar_id', _sharedIds)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (r.error) { console.warn('[Notify] 履歴取得エラー:', r.error.message); return []; }
+  window._sharedCalNotifHistory = r.data || [];
+  return window._sharedCalNotifHistory;
+}
+window.loadSharedCalendarNotifications = loadSharedCalendarNotifications;
 function deleteJournal(id) {
       const jIdx = allTasks.findIndex(function(t){ return t.id === id && t.kind === 'journal'; });
       if (jIdx !== -1) allTasks.splice(jIdx, 1);
