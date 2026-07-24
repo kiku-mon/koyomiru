@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1377 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1378 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1377';
+    const APP_VERSION = 'v0.45.1378';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33434,7 +33434,7 @@ async function unifiedEnsurePersonalCalendarAndMigrate() {
 
 // プッシュ：ローカルで変更・新規追加されたタスクだけを、それぞれの所属カレンダーへupsert（差分方式・v0.45.1365〜）
 async function unifiedPushTasks() {
-  if (window._isTesting) return null; // v0.45.1340の教訓：テスト中は絶対に実送信しない
+  if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1340の教訓＋v0.45.1378多層防御：テスト中は絶対に実送信しない
   if (!window.supabaseClient) return null;
   // v0.45.1347: ページ読み込み直後にタスクを作成すると、クラウド初期化
   // （個人用カレンダー保証のネットワーク往復）がまだ終わっておらず
@@ -33447,7 +33447,7 @@ async function unifiedPushTasks() {
   if (!window._personalCalendarId) return null;
   // v0.45.1353: 上のawait待ちの間にスモークテストが始まった場合、
   // テスト中の一時的なallTasksの状態が実クラウドへ送信されてしまう恐れがある。
-  if (window._isTesting) return null;
+  if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1378: 多層防御
   // v0.45.1365: 【権威】2026-07-22、validateCalendarIds()の補完等でsaveAllTasks()が
   // 呼ばれるたびに、allTasks全件（例：194件）を無条件でupsertしていたため、
   // 実際に変更されていないタスクまで含めて大量のupdated_atが更新され、
@@ -33496,7 +33496,7 @@ async function unifiedPushTasks() {
 
 // プル：自分の全カレンダー（個人＋共有）の最新タスクを取得し、id単位でマージ
 async function unifiedPullTasks() {
-  if (window._isTesting) return null; // v0.45.1340の教訓
+  if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1340の教訓＋v0.45.1378多層防御
   if (!window.supabaseClient) return null;
   if (window._myCalendarIds.length === 0) await unifiedRefreshMyCalendarIds();
   if (window._myCalendarIds.length === 0) return null;
@@ -33550,7 +33550,7 @@ async function unifiedPullTasks() {
     // allTasksを書き換えてTPAGを汚染する競合が起きうる。冒頭のチェックだけでは
     // 「呼び出し開始時点ではテスト中でなかった」ことしか保証できないため、
     // 実際に書き換える直前でも再チェックする。
-    if (window._isTesting) {
+    if (window._isTesting || window._smokeTestRunning) { // v0.45.1378: 多層防御
       if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル結果あり・だがテスト開始検知のため適用中止');
       return r;
     }
@@ -33963,7 +33963,7 @@ function _checkIdleTimeoutAndSignOutIfNeeded() {
 window._checkIdleTimeoutAndSignOutIfNeeded = _checkIdleTimeoutAndSignOutIfNeeded;
 async function _cloudCheckAndPullIfNewer() {
   // v0.45.1340: スモークテスト実行中は定期チェック自体を行わない。
-  if (window._isTesting) return;
+  if (window._isTesting || window._smokeTestRunning) return; // v0.45.1378: 多層防御
   // v0.45.1334: 多重実行防止・短時間スロットリング。
   // 【権威】2026-07-16、DevTools使用中などにvisibilitychangeが想定以上に頻発し、
   // 「定期チェック実行」が数秒間隔で何度も走ってしまう現象が確認された。
@@ -33993,6 +33993,7 @@ window._cloudCheckAndPullIfNewer = _cloudCheckAndPullIfNewer;
 try {
   _checkIdleTimeoutAndSignOutIfNeeded(); // v0.45.1338: 起動時にも確認
   document.addEventListener('visibilitychange', function() {
+    if (window._smokeTestRunning) return; // v0.45.1378: 同上の理由でガードを追加
     if (document.visibilityState === 'visible') {
       _checkIdleTimeoutAndSignOutIfNeeded(); // v0.45.1338: タブ復帰時に確認（36時間放置後の想定シナリオ）
       _cloudCheckAndPullIfNewer();
@@ -34034,6 +34035,11 @@ try {
     }
   });
   setInterval(function() {
+    // v0.45.1378: 【権威】2026-07-24、_isTestingが一瞬falseになる瞬間（ST-53/75/149/150/229等
+    // 8箇所）と、この45秒タイマーの発火が重なると、_cloudCheckAndPullIfNewer・
+    // unifiedPullTasksが持つ「_isTestingのみ」のガードをすり抜けてしまう。呼び出し元の
+    // この時点で_smokeTestRunningも確認し、テスト実行中は一切何もしない。
+    if (window._smokeTestRunning) return;
     if (document.visibilityState === 'visible') {
       _checkIdleTimeoutAndSignOutIfNeeded();
       _cloudCheckAndPullIfNewer();
@@ -47858,6 +47864,33 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-267: recalcBlueprintFromGants同期漏れ修正 確認 完了');
      } catch(e) {
        ng('ST-267: 例外', e.message);
+     }
+
+     // ===== ST-268: TPAG汚染の根本原因・多層防御 確認（v0.45.1378〜） =====
+     // 背景：TPAGが繰り返しallSettings.ui.visibleTabsの汚染を検出していた。
+     // 徹底調査の結果、_isTestingが一瞬falseになる8箇所（ST-53/75/149/150/229等）と、
+     // 45秒ごとのsetInterval・visibilitychangeハンドラの発火が重なると、
+     // _cloudCheckAndPullIfNewer・unifiedPullTasks・unifiedPushTasksが
+     // 「_isTestingのみ」のガードしか持たず、_smokeTestRunningをすり抜ける
+     // 可能性があった。setInterval・visibilitychange・関数本体・二段階目
+     // チェックの全箇所に_smokeTestRunningガードを多層で追加した。
+     try {
+       var _st268scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st268checks = [
+         ['setInterval(function() {\n    // v0.45.1378', 'setInterval入口ガード'],
+         ["visibilitychange', function() {\n    if (window._smokeTestRunning) return;", 'visibilitychangeハンドラ入口ガード'],
+         ['async function _cloudCheckAndPullIfNewer() {\n  // v0.45.1340: スモークテスト実行中は定期チェック自体を行わない。\n  if (window._isTesting || window._smokeTestRunning)', '_cloudCheckAndPullIfNewer本体ガード'],
+         ['async function unifiedPushTasks() {\n  if (window._isTesting || window._smokeTestRunning)', 'unifiedPushTasks本体ガード'],
+         ['async function unifiedPullTasks() {\n  if (window._isTesting || window._smokeTestRunning)', 'unifiedPullTasks本体ガード']
+       ];
+       _st268checks.forEach(function(c, i) {
+         _st268scriptTexts.indexOf(c[0]) !== -1
+           ? ok('ST-268·' + (i+1) + ': ' + c[1] + ' 確認')
+           : ng('ST-268·' + (i+1) + ': ' + c[1] + ' が見つからない', '');
+       });
+       ok('ST-268: TPAG汚染の根本原因・多層防御 確認 完了');
+     } catch(e) {
+       ng('ST-268: 例外', e.message);
      }
 
        // 第1条【本番環境】
