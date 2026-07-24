@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1383 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1384 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1383';
+    const APP_VERSION = 'v0.45.1384';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -23826,8 +23826,17 @@ function reviveBlueprint(id) {
       // calendar_merge_backup_* と pre_restore_snapshot_* は動的プレフィックスとして別途許容
       'calendar_merge_audit_log',
       // v0.45.1232〜 Supabase認証セッション（supabase-jsが自動保存する固定キー）
+      // v0.45.1384: 【権威】2026-07-24、sb-qggzbiubdegmacsifrjb-auth-token（別プロジェクトID）が
+      // 「外部侵入」として検知された。個別のプロジェクトIDを直書きする方式は、将来
+      // プロジェクトを切り替えるたびに同じ問題を繰り返すため、'sb-'で始まり
+      // '-auth-token'または'-auth-token-code-verifier'で終わる形式を動的プレフィックスとして
+      // 許容する（下の起動時スキャンでstartsWith('sb-')判定を追加）よう変更する。
+      // 固定キーとしての直書きは不要になったが、後方互換のため残す。
       'sb-xycuxzvejevyylwmkwsk-auth-token',
       'sb-xycuxzvejevyylwmkwsk-auth-token-code-verifier',
+      // v0.45.1384: 端末ニックネーム・ログイン回数等（正当な既存機能、登録漏れ）
+      'deviceNickname', 'loginCount', 'lastLoginAt', 'unifiedMigrationDone', 'lastActivityAt',
+      'mig_travel_items_to_tasks_v1',
       // leveling3SetCheckBox_YYYY-MM-DD（日次チェック進捗）は動的キーのためプレフィックスで許容
     ]);
     window.KEY_WHITELIST = KEY_WHITELIST;
@@ -23837,7 +23846,7 @@ function reviveBlueprint(id) {
       const unknown = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && !KNOWN_KEYS.has(k) && !k.startsWith('backup_') && !k.startsWith('leveling3SetCheckBox_') && !k.startsWith('calendar_merge_backup_') && !k.startsWith('pre_restore_snapshot_') && !k.startsWith('pre_merge_snapshot_')) unknown.push(k + '=' + localStorage.getItem(k));
+        if (k && !KNOWN_KEYS.has(k) && !k.startsWith('backup_') && !k.startsWith('leveling3SetCheckBox_') && !k.startsWith('calendar_merge_backup_') && !k.startsWith('pre_restore_snapshot_') && !k.startsWith('pre_merge_snapshot_') && !k.startsWith('sb-')) unknown.push(k + '=' + localStorage.getItem(k));
       }
       if (unknown.length > 0) {
         window._dbgLog('【外部侵入】INTERCEPT --- 未知キーの書き込みを検知 / ' + unknown.join(' / '));
@@ -23848,7 +23857,7 @@ function reviveBlueprint(id) {
     (function() {
       const _origSetItem = Storage.prototype.setItem;
       Storage.prototype.setItem = function(key, value) {
-        if (this === localStorage && key && !KNOWN_KEYS.has(key) && !key.startsWith('backup_') && !key.startsWith('calendar_merge_backup_') && !key.startsWith('pre_restore_snapshot_') && !key.startsWith('pre_merge_snapshot_')) {
+        if (this === localStorage && key && !KNOWN_KEYS.has(key) && !key.startsWith('backup_') && !key.startsWith('calendar_merge_backup_') && !key.startsWith('pre_restore_snapshot_') && !key.startsWith('pre_merge_snapshot_') && !key.startsWith('sb-') && !key.startsWith('leveling3SetCheckBox_')) {
           window._dbgLog && window._dbgLog('【外部侵入】INTERCEPT --- 未知キーの書き込みを検知 / ' + key + '=' + value);
           window._dbgLog && window._dbgLog('[INTERCEPT] unknown key written: ' + key + '=' + value);
         }
@@ -48033,6 +48042,27 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-271: TPAG正規化比較・キー順序誤検知の根本修正 確認 完了');
      } catch(e) {
        ng('ST-271: 例外', e.message);
+     }
+
+     // ===== ST-272: KEY_WHITELIST登録漏れ修正・sb-プレフィックス動的許容 確認（v0.45.1384〜） =====
+     // 背景：sb-qggzbiubdegmacsifrjb-auth-token（別Supabaseプロジェクト）や
+     // deviceNickname・loginCount等が「外部侵入」として誤検知されていた（実際は
+     // 全て正当な既存機能によるキー）。個別プロジェクトIDの直書きは将来の
+     // プロジェクト切替のたびに同じ問題を繰り返すため、sb-プレフィックス全体を
+     // 動的に許容する方式に変更した。
+     try {
+       ['deviceNickname', 'loginCount', 'lastLoginAt', 'unifiedMigrationDone', 'lastActivityAt', 'mig_travel_items_to_tasks_v1'].forEach(function(k) {
+         KEY_WHITELIST.has(k)
+           ? ok('ST-272·' + k + ': KEY_WHITELIST登録確認')
+           : ng('ST-272·' + k + ': 未登録', '');
+       });
+       var _st272scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       (_st272scriptTexts.match(/startsWith\('sb-'\)/g) || []).length >= 2
+         ? ok('ST-272·sb-プレフィックス: 起動時スキャン・リアルタイム監視の両方で許容確認')
+         : ng('ST-272·sb-プレフィックス: 両方に反映されていない', '');
+       ok('ST-272: KEY_WHITELIST登録漏れ修正 確認 完了');
+     } catch(e) {
+       ng('ST-272: 例外', e.message);
      }
 
        // 第1条【本番環境】
