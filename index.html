@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1381 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1382 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1381';
+    const APP_VERSION = 'v0.45.1382';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8739,7 +8739,38 @@
         allSettings = JSON.parse(JSON.stringify(SETTINGS_DEFAULT));
       }
       window.allSettings = allSettings;
+      if (typeof _installVisibleTabsWatcher === 'function') _installVisibleTabsWatcher(); // v0.45.1382: 診断
     }
+    // v0.45.1382: 【診断】saveAllSettingsベースの診断（v0.45.1381）は「保存された瞬間」しか
+    // 捕捉できず、「値が変更されてから実際に保存されるまでの間に別の関数が先にsaveAllSettingsを
+    // 呼んでしまう」ケースで、無関係な関数を犯人だと誤って特定してしまう欠点があった
+    // （実例：toggleDeepDiveが「たまたま最初にsaveAllSettingsを呼んだだけ」で、実際に
+    // visibleTabsを全部falseにしたのは別の処理だった）。allSettings.ui.visibleTabsへの
+    // 代入そのものをgetter/setterで捕捉し、変更された瞬間に直接スタックトレースを記録する。
+    function _installVisibleTabsWatcher() {
+      try {
+        if (!allSettings || !allSettings.ui) return;
+        var _vtBacking = allSettings.ui.visibleTabs;
+        Object.defineProperty(allSettings.ui, 'visibleTabs', {
+          configurable: true,
+          enumerable: true,
+          get: function() { return _vtBacking; },
+          set: function(newVal) {
+            if ((window._isTesting || window._smokeTestRunning)) {
+              var _before = JSON.stringify(_vtBacking);
+              var _after = JSON.stringify(newVal);
+              if (_before !== _after) {
+                var _stack = (new Error()).stack || '(スタックトレース取得不可)';
+                if (!window._diagVisibleTabsLog) window._diagVisibleTabsLog = [];
+                window._diagVisibleTabsLog.push('[SETTER捕捉] 前=' + _before + ' 後=' + _after + ' スタック=' + _stack.split('\n').slice(0,6).join(' <- '));
+              }
+            }
+            _vtBacking = newVal;
+          }
+        });
+      } catch(eWatch) { console.warn('[診断watcher] 設置エラー:', eWatch); }
+    }
+    window._installVisibleTabsWatcher = _installVisibleTabsWatcher;
     function deepMergeSettings(base, override) {
       if (!override || typeof override !== 'object') return base;
       Object.keys(base).forEach(function(k) {
@@ -35552,6 +35583,7 @@ function showDebugLog(_initOnly) {
      // 比較してしまい、無関係な差分を誤って診断ログに記録してしまう。
      try { window._diagLastVisibleTabsStr = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs); } catch(e) {}
      window._diagVisibleTabsLog = []; // v0.45.1381: 前回実行分の診断ログをクリア
+     if (typeof _installVisibleTabsWatcher === 'function') _installVisibleTabsWatcher(); // v0.45.1382: setter再設置（保険）
 
      // 季節の風・自動補完の誤発火防止（第37条：副作用のある関数の抑制）
      // renderJournalView()はdeleteJournal等から間接的に呼ばれることがあり、
@@ -47939,6 +47971,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-269: visibleTabs変化の診断ログ機構 確認 完了');
      } catch(e) {
        ng('ST-269: 例外', e.message);
+     }
+
+     // ===== ST-270: visibleTabsのsetter方式診断機構 確認（v0.45.1382〜） =====
+     // 背景：v0.45.1381のsaveAllSettingsベース診断で、実際にtoggleDeepDiveが
+     // 「たまたま最初にsaveAllSettingsを呼んだだけ」の無関係な関数だったことが
+     // 判明した。allSettings.ui.visibleTabsへの代入そのものをObject.definePropertyの
+     // setterで直接捕捉し、変更された瞬間の正確なスタックトレースを記録する方式に
+     // 切り替えた。
+     try {
+       typeof window._installVisibleTabsWatcher === 'function'
+         ? ok('ST-270·①: _installVisibleTabsWatcher window公開確認')
+         : ng('ST-270·①: 関数が見つからない', '');
+       // ② 実際にsetterとして機能しているか実挙動確認
+       var _st270desc = Object.getOwnPropertyDescriptor(allSettings.ui, 'visibleTabs');
+       (_st270desc && typeof _st270desc.set === 'function' && typeof _st270desc.get === 'function')
+         ? ok('ST-270·②: visibleTabsがgetter/setterとして設置されている実挙動確認')
+         : ng('ST-270·②: getter/setterが設置されていない', '');
+       // ③ loadAllSettings内で呼ばれているか
+       var _st270scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st270scriptTexts.indexOf('window.allSettings = allSettings;\n      if (typeof _installVisibleTabsWatcher') !== -1
+         ? ok('ST-270·③: loadAllSettings内での設置呼び出し確認')
+         : ng('ST-270·③: loadAllSettings内の呼び出しが見つからない', '');
+       ok('ST-270: visibleTabsのsetter方式診断機構 確認 完了');
+     } catch(e) {
+       ng('ST-270: 例外', e.message);
      }
 
        // 第1条【本番環境】
