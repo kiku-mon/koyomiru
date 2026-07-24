@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1376 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1377 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1376';
+    const APP_VERSION = 'v0.45.1377';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -16725,6 +16725,7 @@ function reviveBlueprint(id) {
       const ends = gants.map(g => g.endDate).filter(Boolean).sort();
       if (starts.length > 0) bp.startDate = starts[0];
       if (ends.length > 0) bp.endDate = ends[ends.length - 1];
+      bp.updatedAt = new Date().toISOString(); // v0.45.1377: 同期漏れ修正
     }
 
     // 連鎖再計算：タスクIDを受け取り → ステップ → 志 の順に再計算
@@ -47835,6 +47836,28 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-266: 入力欄の自動補完誤爆対策 確認 完了');
      } catch(e) {
        ng('ST-266: 例外', e.message);
+     }
+
+     // ===== ST-267: recalcBlueprintFromGants同期漏れ修正・toggleTaskById健全性 確認（v0.45.1377〜） =====
+     // 背景：「タスク完了時の打ち消し線が同期しない」という報告を受け調査した。
+     // toggleTaskById自体はupdatedAtを正しく更新しており問題は見当たらなかったが、
+     // 完了時に連動して呼ばれるrecalcBlueprintFromGants（志の進捗再計算）で
+     // updatedAt未設定の独立した同期漏れを発見・修正した。
+     try {
+       var _st267scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st267toggleIdx = _st267scriptTexts.indexOf('function toggleTaskById(taskId) {');
+       var _st267toggleSrc = _st267toggleIdx !== -1 ? _st267scriptTexts.slice(_st267toggleIdx, _st267toggleIdx + 600) : '';
+       _st267toggleSrc.indexOf('task.updatedAt = new Date().toISOString();') !== -1
+         ? ok('ST-267·①: toggleTaskByIdのupdatedAt更新確認（健全）')
+         : ng('ST-267·①: toggleTaskByIdにupdatedAt更新なし', '');
+       var _st267recalcIdx = _st267scriptTexts.indexOf('function recalcBlueprintFromGants(bp)');
+       var _st267recalcSrc = _st267recalcIdx !== -1 ? _st267scriptTexts.slice(_st267recalcIdx, _st267recalcIdx + 500) : '';
+       _st267recalcSrc.indexOf('bp.updatedAt = new Date().toISOString();') !== -1
+         ? ok('ST-267·②: recalcBlueprintFromGantsのupdatedAt更新確認')
+         : ng('ST-267·②: recalcBlueprintFromGantsにupdatedAt更新なし', '');
+       ok('ST-267: recalcBlueprintFromGants同期漏れ修正 確認 完了');
+     } catch(e) {
+       ng('ST-267: 例外', e.message);
      }
 
        // 第1条【本番環境】
