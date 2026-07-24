@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1378 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1380 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1378';
+    const APP_VERSION = 'v0.45.1380';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8667,6 +8667,23 @@
     };
     let allSettings = JSON.parse(JSON.stringify(SETTINGS_DEFAULT)); // deep copy
     function saveAllSettings(skipCloudSync) {
+      // v0.45.1380: 【診断】TPAGが繰り返しallSettings.ui.visibleTabsの汚染を検出するが、
+      // 静的なコード読解では原因を特定できなかった。テスト実行中（_isTesting or
+      // _smokeTestRunning）にsaveAllSettingsが呼ばれるたび、visibleTabsのJSON表現が
+      // 前回記録時と異なっていれば、呼び出し元のスタックトレースをデバッグパネルに
+      // 記録する。次回のテスト実行で、実際に「誰が」変化させたかが直接わかるようにする。
+      try {
+        if (window._isTesting || window._smokeTestRunning) {
+          var _vtNow = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs);
+          if (window._diagLastVisibleTabsStr !== undefined && window._diagLastVisibleTabsStr !== _vtNow) {
+            var _stack = (new Error()).stack || '(スタックトレース取得不可)';
+            if (typeof window._dbgLog === 'function') {
+              window._dbgLog('🔍[VISIBLETABS DIAGNOSTIC] 変化検出 前=' + window._diagLastVisibleTabsStr + ' 後=' + _vtNow + ' スタック=' + _stack.split('\n').slice(0,6).join(' <- '));
+            }
+          }
+          window._diagLastVisibleTabsStr = _vtNow;
+        }
+      } catch(eDiag) { console.warn('[診断ログ] エラー:', eDiag); }
       // mainCalendarIdを後方互換のため同期（SSOT=allSettings.calendar.mainId）
       if (allSettings.calendar && allSettings.calendar.mainId) {
         localStorage.setItem('mainCalendarId', allSettings.calendar.mainId);
@@ -35528,6 +35545,10 @@ function showDebugLog(_initOnly) {
      // 無効化されTPAG汚染の原因になっていた。_isTestingの一時解除に影響されない
      // 永続フラグを別途用意し、真にスモークテスト実行中かどうかを示す。
      window._smokeTestRunning = true;
+     // v0.45.1380: 診断ログ用の基準値をテスト開始時点でリセットする。
+     // これがないと「テスト開始前の通常状態」と「テスト内の最初の変更」を
+     // 比較してしまい、無関係な差分を誤って診断ログに記録してしまう。
+     try { window._diagLastVisibleTabsStr = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs); } catch(e) {}
 
      // 季節の風・自動補完の誤発火防止（第37条：副作用のある関数の抑制）
      // renderJournalView()はdeleteJournal等から間接的に呼ばれることがあり、
@@ -47288,7 +47309,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-246·①: TOKEN_REFRESHED時のRealtime認証更新確認')
          : ng('ST-246·①: トークン更新対応が見つからない', '');
        var _st246pullIdx = _st246scriptTexts.indexOf('async function unifiedPullTasks()');
-       var _st246pullSrc = _st246pullIdx !== -1 ? _st246scriptTexts.slice(_st246pullIdx, _st246pullIdx + 2500) : '';
+       var _st246pullSrc = _st246pullIdx !== -1 ? _st246scriptTexts.slice(_st246pullIdx, _st246pullIdx + 3200) : '';
        (_st246pullSrc.match(/window\._isTesting/g) || []).length >= 2
          ? ok('ST-246·②: unifiedPullTasksが2箇所以上で_isTesting確認')
          : ng('ST-246·②: 二段階チェックが見つからない', '');
@@ -47891,6 +47912,27 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-268: TPAG汚染の根本原因・多層防御 確認 完了');
      } catch(e) {
        ng('ST-268: 例外', e.message);
+     }
+
+     // ===== ST-269: visibleTabs変化の診断ログ機構 確認（v0.45.1380〜） =====
+     // 背景：TPAGが繰り返しallSettings.ui.visibleTabsの汚染を検出するが、
+     // 静的なコード読解では原因を特定できなかった。saveAllSettingsに、
+     // テスト実行中にvisibleTabsが変化した瞬間、呼び出し元のスタックトレースを
+     // デバッグパネルへ記録する診断ログを仕込んだ。次回のテスト実行で、
+     // 実際に「誰が」変化させたかが直接わかるようにする。
+     try {
+       var _st269scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st269idx = _st269scriptTexts.indexOf('function saveAllSettings(skipCloudSync)');
+       var _st269src = _st269idx !== -1 ? _st269scriptTexts.slice(_st269idx, _st269idx + 1200) : '';
+       _st269src.indexOf('VISIBLETABS DIAGNOSTIC') !== -1
+         ? ok('ST-269·①: saveAllSettings内の診断ログ確認')
+         : ng('ST-269·①: 診断ログが見つからない', '');
+       _st269scriptTexts.indexOf('window._diagLastVisibleTabsStr = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs);') !== -1
+         ? ok('ST-269·②: テスト開始時の基準値リセット確認')
+         : ng('ST-269·②: 基準値リセットが見つからない', '');
+       ok('ST-269: visibleTabs変化の診断ログ機構 確認 完了');
+     } catch(e) {
+       ng('ST-269: 例外', e.message);
      }
 
        // 第1条【本番環境】
