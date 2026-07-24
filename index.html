@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1384 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1385 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1384';
+    const APP_VERSION = 'v0.45.1385';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8773,20 +8773,33 @@
     window._installVisibleTabsWatcher = _installVisibleTabsWatcher;
     function deepMergeSettings(base, override) {
       if (!override || typeof override !== 'object') return base;
-      Object.keys(base).forEach(function(k) {
-        if (override[k] !== undefined) {
-          if (typeof base[k] === 'object' && base[k] !== null && !Array.isArray(base[k])) {
-            base[k] = deepMergeSettings(base[k], override[k]);
+      // v0.45.1385: 【権威】2026-07-24、この関数がSETTINGS_DEFAULT（base）のキー順序で
+      // オブジェクトを再構築していたため、保存されていた実際の順序（override）と食い違い、
+      // 「値は完全に同じなのにJSON文字列だけ違う」という誤検知（TPAG）を生んでいた。
+      // 値の決定ロジックは元の実装と完全に同一のまま、キーの並び順だけをoverride
+      // （実際に保存されていた順序）優先に変更する。第45条：その場しのぎではなく
+      // 根本を直す。テスト前後で完全に同一にするという要求に応える。
+      var _isPlainObj = function(v) { return typeof v === 'object' && v !== null && !Array.isArray(v); };
+      var result = {};
+      // ①overrideのキー順序を土台にする（実際に保存されていた順序を維持）
+      Object.keys(override).forEach(function(k) {
+        if (override[k] === undefined) return; // 明示的にundefinedのキーは「未指定」扱い（元の挙動と同一）
+        if (base[k] !== undefined) {
+          if (_isPlainObj(base[k])) {
+            result[k] = deepMergeSettings(base[k], override[k]);
           } else {
-            base[k] = override[k];
+            result[k] = override[k];
           }
+        } else {
+          // overrideにあってbaseにないキーも取り込む（将来の拡張対応・元の挙動と同一）
+          result[k] = override[k];
         }
       });
-      // overrideにあってbaseにないキーも取り込む（将来の拡張対応）
-      Object.keys(override).forEach(function(k) {
-        if (base[k] === undefined) base[k] = override[k];
+      // ②baseにあってoverride未指定のキーはデフォルト値のまま補完（元の挙動と同一）
+      Object.keys(base).forEach(function(k) {
+        if (result[k] === undefined) result[k] = base[k];
       });
-      return base;
+      return result;
     }
     function cleanupOldKeys() {
       var OLD_KEYS = [
@@ -48063,6 +48076,44 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-272: KEY_WHITELIST登録漏れ修正 確認 完了');
      } catch(e) {
        ng('ST-272: 例外', e.message);
+     }
+
+     // ===== ST-273: deepMergeSettingsのキー順序保持 根本修正 確認（v0.45.1385〜） =====
+     // 背景：「深追いしたくない」という判断を一度伝えたが、「テスト前後は完全に
+     // 同一にしたい、それが業界標準」という要求を受け、根本修正に踏み切った。
+     // deepMergeSettingsが常にSETTINGS_DEFAULT（base）のキー順序でオブジェクトを
+     // 再構築していたため、保存データ（override）の実際の順序と食い違っていた。
+     // 値の決定ロジックは元の実装と完全に同一のまま、キー順序だけをoverride
+     // 優先に変更した。事前にNode.jsで新旧実装の意味的等価性・エッジケース・
+     // 往復操作でのべき等性を検証済み。
+     try {
+       // ① 実際にoverrideのキー順序が保持されることを実挙動で確認
+       var _st273base = { x: { a: 1, b: 2, c: 3 } };
+       var _st273override = { x: { c: 30, a: 10, b: 20 } }; // baseと違う順序
+       var _st273result = deepMergeSettings(JSON.parse(JSON.stringify(_st273base)), JSON.parse(JSON.stringify(_st273override)));
+       Object.keys(_st273result.x).join(',') === 'c,a,b'
+         ? ok('ST-273·①: overrideのキー順序が保持される実挙動確認（' + Object.keys(_st273result.x).join(',') + '）')
+         : ng('ST-273·①: キー順序が保持されていない', Object.keys(_st273result.x).join(','));
+       // ② baseにしかない新規デフォルトキーが末尾に正しく補完される
+       var _st273base2 = { x: { a: 1, newKey: 'default' } };
+       var _st273override2 = { x: { a: 10 } };
+       var _st273result2 = deepMergeSettings(JSON.parse(JSON.stringify(_st273base2)), JSON.parse(JSON.stringify(_st273override2)));
+       _st273result2.x.newKey === 'default' && _st273result2.x.a === 10
+         ? ok('ST-273·②: 新規デフォルトキーの補完・既存値の上書き確認')
+         : ng('ST-273·②: 補完または上書きが正しくない', '');
+       // ③ 保存→読込→保存→読込の往復でキー順序が完全に安定（べき等性）
+       saveAllSettings(true);
+       loadAllSettings();
+       var _st273after1 = JSON.stringify(allSettings.ui.visibleTabs);
+       saveAllSettings(true);
+       loadAllSettings();
+       var _st273after2 = JSON.stringify(allSettings.ui.visibleTabs);
+       _st273after1 === _st273after2
+         ? ok('ST-273·③: 往復操作でキー順序を含め完全に安定（べき等性）確認')
+         : ng('ST-273·③: 往復のたびに変化してしまう', '');
+       ok('ST-273: deepMergeSettingsキー順序保持 根本修正 確認 完了');
+     } catch(e) {
+       ng('ST-273: 例外', e.message);
      }
 
        // 第1条【本番環境】
