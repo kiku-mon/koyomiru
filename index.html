@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1386 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1388 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1386';
+    const APP_VERSION = 'v0.45.1388';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8672,6 +8672,11 @@
       // _smokeTestRunning）にsaveAllSettingsが呼ばれるたび、visibleTabsのJSON表現が
       // 前回記録時と異なっていれば、呼び出し元のスタックトレースをデバッグパネルに
       // 記録する。次回のテスト実行で、実際に「誰が」変化させたかが直接わかるようにする。
+      // v0.45.1387: 【権威】2026-07-24、この診断（防犯カメラ）を「もう役目を終えた」と
+      // 判断してユーザーに確認せず削除してしまう事故があった。「残しておいてもいいかな」
+      // という明確な要望があったにも関わらず無断で消してしまったことを反省し、復元する。
+      // setter方式（v0.45.1382）はオブジェクトの再代入しか捕捉できないため、
+      // 個々のプロパティを直接書き換えるケースを補足するこちらの診断も引き続き必要。
       try {
         if (window._isTesting || window._smokeTestRunning) {
           var _vtNow = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs);
@@ -8747,6 +8752,10 @@
     // （実例：toggleDeepDiveが「たまたま最初にsaveAllSettingsを呼んだだけ」で、実際に
     // visibleTabsを全部falseにしたのは別の処理だった）。allSettings.ui.visibleTabsへの
     // 代入そのものをgetter/setterで捕捉し、変更された瞬間に直接スタックトレースを記録する。
+    // v0.45.1387: 【権威】2026-07-24、v0.45.1385のdeepMergeSettings修正作業の際、
+    // str_replaceのold_strが古いバージョンのloadAllSettingsを対象にしていたため、
+    // この診断機構（防犯カメラ）ごと巻き込んで消してしまう事故が発生した。
+    // 「せっかく作った防犯カメラは残しておきたい」という要望を受け、復元する。
     function _installVisibleTabsWatcher() {
       try {
         if (!allSettings || !allSettings.ui) return;
@@ -9058,9 +9067,9 @@
     }
     // v0.45.1367: 【権威】2026-07-22、端末識別が「端末:7aadde」のような16進数下6桁で
     // 分かりにくいという指摘を受けた。初回起動時に「絵文字＋読みやすい単語」の
-    // ニックネームを自動生成し、以降はそれを使う。設定画面から変更も可能にする。
+    // // v0.45.1388: 端末の種類（スマホ/タブレット/PC）を自動判定し、区別符丁と組み合わせる。
+    // 「設定画面から変更も可能にする」は未実装のまま使われなかったため第31条に基づき撤去。
     var _DEVICE_NICKNAME_WORDS = ['はやぶさ','こだま','つばめ','ひかり','のぞみ','さくら','あすか','ふじ','あおば','かもめ'];
-    var _DEVICE_NICKNAME_EMOJI = ['📱','💻','🖥️','⌚','📟'];
     function getOrCreateDeviceNickname() {
       try {
         var nick = localStorage.getItem('deviceNickname');
@@ -9070,22 +9079,22 @@
         var seed = 0;
         for (var i = 0; i < did.length; i++) seed = (seed * 31 + did.charCodeAt(i)) >>> 0;
         var word = _DEVICE_NICKNAME_WORDS[seed % _DEVICE_NICKNAME_WORDS.length];
-        var emoji = _DEVICE_NICKNAME_EMOJI[Math.floor(seed / _DEVICE_NICKNAME_WORDS.length) % _DEVICE_NICKNAME_EMOJI.length];
-        nick = emoji + word;
+        // v0.45.1388: 【権威】2026-07-24、「はやぶさ」のようなランダムな単語だけでは、
+        // ログを見た瞬間に「これはスマホの操作か、PCの操作か」が分からないという
+        // 指摘を受けた。一方で単なる「📱スマホ」「💻PC」だけでは、同じ種類の端末が
+        // 複数台（2台目のスマホ・3台目のPC等）ある場合に区別できない。機種の種類
+        // （一目で分かる）と、端末ごとに決定論的に決まる符丁（区別できる）を
+        // 両方組み合わせる。
+        var _ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+        var _isTablet = /iPad|Tablet|Android(?!.*Mobile)/i.test(_ua);
+        var _isMobile = !_isTablet && /iPhone|Android|Mobile/i.test(_ua);
+        var _typeLabel = _isTablet ? '📱タブレット' : (_isMobile ? '📱スマホ' : '💻PC');
+        nick = _typeLabel + '-' + word;
         localStorage.setItem('deviceNickname', nick);
         return nick;
       } catch(e) { return '端末'; }
     }
     window.getOrCreateDeviceNickname = getOrCreateDeviceNickname;
-    function setDeviceNickname(name) {
-      try {
-        var trimmed = (name || '').trim().slice(0, 20);
-        if (!trimmed) return false;
-        localStorage.setItem('deviceNickname', trimmed);
-        return true;
-      } catch(e) { return false; }
-    }
-    window.setDeviceNickname = setDeviceNickname;
     let taskIdCounter = 1; // 互換性のため保持（実際はUUIDを使用）
     // 初期データ（テストデータ54件 - 大学3年生・マックバイト・彼氏あり）
     const INITIAL_DATA = [];
@@ -35606,6 +35615,8 @@ function showDebugLog(_initOnly) {
      try { window._diagLastVisibleTabsStr = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs); } catch(e) {}
      window._diagVisibleTabsLog = []; // v0.45.1381: 前回実行分の診断ログをクリア
      if (typeof _installVisibleTabsWatcher === 'function') _installVisibleTabsWatcher(); // v0.45.1382: setter再設置（保険）
+     // v0.45.1387: 上記の防犯カメラ一式は、一度「目的を果たし終えた」と無断で
+     // 削除してしまったが、明確な要望に従い復元した。
 
      // 季節の風・自動補完の誤発火防止（第37条：副作用のある関数の抑制）
      // renderJournalView()はdeleteJournal等から間接的に呼ばれることがあり、
@@ -47686,13 +47697,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        typeof window.getOrCreateDeviceNickname === 'function'
          ? ok('ST-258·①: getOrCreateDeviceNickname window公開確認')
          : ng('ST-258·①: 関数が見つからない', '');
-       typeof window.setDeviceNickname === 'function'
-         ? ok('ST-258·②: setDeviceNickname window公開確認')
-         : ng('ST-258·②: 関数が見つからない', '');
+       // v0.45.1388: setDeviceNickname（手動リネームUI用に用意したが未使用のまま
+       // 放置されていた）は第31条に基づき撤去。種類＋符丁形式に一本化した。
        var _st258nick = window.getOrCreateDeviceNickname();
-       (_st258nick && _st258nick.length > 0)
-         ? ok('ST-258·③: ニックネーム生成の実挙動確認（' + _st258nick + '）')
-         : ng('ST-258·③: ニックネームが空', '');
+       (_st258nick && /^(📱スマホ|📱タブレット|💻PC)-/.test(_st258nick))
+         ? ok('ST-258·③: 「種類-符丁」形式のニックネーム生成確認（' + _st258nick + '）')
+         : ng('ST-258·③: 想定の形式でない', _st258nick);
        var _st258tagSrc = typeof _syncDeviceTag === 'function' ? _syncDeviceTag.toString() : '';
        _st258tagSrc.indexOf('getOrCreateDeviceNickname') !== -1
          ? ok('ST-258·④: _syncDeviceTagがニックネームを使用確認')
@@ -47980,7 +47990,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        var _st269scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st269idx = _st269scriptTexts.indexOf('function saveAllSettings(skipCloudSync)');
-       var _st269src = _st269idx !== -1 ? _st269scriptTexts.slice(_st269idx, _st269idx + 1200) : '';
+       var _st269src = _st269idx !== -1 ? _st269scriptTexts.slice(_st269idx, _st269idx + 1800) : '';
        _st269src.indexOf('_diagVisibleTabsLog.push(') !== -1
          ? ok('ST-269·①: saveAllSettings内の診断ログ蓄積確認')
          : ng('ST-269·①: 診断ログが見つからない', '');
@@ -49097,6 +49107,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('╚══════════════════════════════════════════════════╝');
        ok('');
        // v0.45.1381: visibleTabs診断ログをパネル末尾に表示（起動履歴に埋もれないよう専用配列から）。
+       // v0.45.1387: 一度「目的を果たし終えた」と無断で削除してしまったが、
+       // 「防犯カメラは残しておいてもいいかな」という要望に従い復元する。
        try {
          if (window._diagVisibleTabsLog && window._diagVisibleTabsLog.length > 0) {
            ok('--- 🔍 VISIBLETABS DIAGNOSTIC（' + window._diagVisibleTabsLog.length + '件検出） ---');
