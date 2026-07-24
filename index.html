@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1380 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1381 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1380';
+    const APP_VERSION = 'v0.45.1381';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8677,9 +8677,11 @@
           var _vtNow = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs);
           if (window._diagLastVisibleTabsStr !== undefined && window._diagLastVisibleTabsStr !== _vtNow) {
             var _stack = (new Error()).stack || '(スタックトレース取得不可)';
-            if (typeof window._dbgLog === 'function') {
-              window._dbgLog('🔍[VISIBLETABS DIAGNOSTIC] 変化検出 前=' + window._diagLastVisibleTabsStr + ' 後=' + _vtNow + ' スタック=' + _stack.split('\n').slice(0,6).join(' <- '));
-            }
+            // v0.45.1381: 【権威】2026-07-24、_dbgLog経由だと「起動マイルストーン」の
+            // 履歴に埋もれてしまい見つけづらいという指摘を受けた。専用配列に貯めておき、
+            // パネル末尾（直近タスクの近く）でまとめて表示する方式に変更する。
+            if (!window._diagVisibleTabsLog) window._diagVisibleTabsLog = [];
+            window._diagVisibleTabsLog.push('前=' + window._diagLastVisibleTabsStr + ' 後=' + _vtNow + ' スタック=' + _stack.split('\n').slice(0,6).join(' <- '));
           }
           window._diagLastVisibleTabsStr = _vtNow;
         }
@@ -35549,6 +35551,7 @@ function showDebugLog(_initOnly) {
      // これがないと「テスト開始前の通常状態」と「テスト内の最初の変更」を
      // 比較してしまい、無関係な差分を誤って診断ログに記録してしまう。
      try { window._diagLastVisibleTabsStr = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs); } catch(e) {}
+     window._diagVisibleTabsLog = []; // v0.45.1381: 前回実行分の診断ログをクリア
 
      // 季節の風・自動補完の誤発火防止（第37条：副作用のある関数の抑制）
      // renderJournalView()はdeleteJournal等から間接的に呼ばれることがあり、
@@ -47914,22 +47917,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-268: 例外', e.message);
      }
 
-     // ===== ST-269: visibleTabs変化の診断ログ機構 確認（v0.45.1380〜） =====
+     // ===== ST-269: visibleTabs変化の診断ログ機構 確認（v0.45.1381〜） =====
      // 背景：TPAGが繰り返しallSettings.ui.visibleTabsの汚染を検出するが、
      // 静的なコード読解では原因を特定できなかった。saveAllSettingsに、
      // テスト実行中にvisibleTabsが変化した瞬間、呼び出し元のスタックトレースを
-     // デバッグパネルへ記録する診断ログを仕込んだ。次回のテスト実行で、
-     // 実際に「誰が」変化させたかが直接わかるようにする。
+     // 記録する診断ログを仕込んだ。_dbgLog（起動履歴）に埋もれないよう専用配列に
+     // 貯め、パネル末尾（直近タスクの直前）でまとめて表示する。
      try {
        var _st269scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st269idx = _st269scriptTexts.indexOf('function saveAllSettings(skipCloudSync)');
        var _st269src = _st269idx !== -1 ? _st269scriptTexts.slice(_st269idx, _st269idx + 1200) : '';
-       _st269src.indexOf('VISIBLETABS DIAGNOSTIC') !== -1
-         ? ok('ST-269·①: saveAllSettings内の診断ログ確認')
+       _st269src.indexOf('_diagVisibleTabsLog.push(') !== -1
+         ? ok('ST-269·①: saveAllSettings内の診断ログ蓄積確認')
          : ng('ST-269·①: 診断ログが見つからない', '');
        _st269scriptTexts.indexOf('window._diagLastVisibleTabsStr = JSON.stringify(allSettings.ui && allSettings.ui.visibleTabs);') !== -1
          ? ok('ST-269·②: テスト開始時の基準値リセット確認')
          : ng('ST-269·②: 基準値リセットが見つからない', '');
+       _st269scriptTexts.indexOf('VISIBLETABS DIAGNOSTIC（') !== -1
+         ? ok('ST-269·③: パネル末尾での診断ログ表示確認')
+         : ng('ST-269·③: パネル末尾表示が見つからない', '');
        ok('ST-269: visibleTabs変化の診断ログ機構 確認 完了');
      } catch(e) {
        ng('ST-269: 例外', e.message);
@@ -48882,6 +48888,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
        ok('╚══════════════════════════════════════════════════╝');
        ok('');
+       // v0.45.1381: visibleTabs診断ログをパネル末尾に表示（起動履歴に埋もれないよう専用配列から）。
+       try {
+         if (window._diagVisibleTabsLog && window._diagVisibleTabsLog.length > 0) {
+           ok('--- 🔍 VISIBLETABS DIAGNOSTIC（' + window._diagVisibleTabsLog.length + '件検出） ---');
+           window._diagVisibleTabsLog.forEach(function(entry, i) {
+             ok('  [' + (i+1) + '] ' + entry);
+           });
+         } else {
+           ok('--- 🔍 VISIBLETABS DIAGNOSTIC: 今回は変化なし ---');
+         }
+       } catch(eDiagShow) { ng('VISIBLETABS DIAGNOSTIC表示', eDiagShow.message); }
        // v0.45.1367: 【権威】2026-07-22、デバッグパネルが長大化し、
        // 「直近タスク」がどこにあるか開発者自身でも探せなくなったという指摘を受けた。
        // 場所を一箇所（このバナーの直後・パネル最末尾）に統一する。
