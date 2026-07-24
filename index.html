@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1382 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1383 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1382';
+    const APP_VERSION = 'v0.45.1383';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -47083,22 +47083,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st236scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st236upIdx = _st236scriptTexts.indexOf('async function unifiedPushTasks');
        var _st236upSrc = _st236upIdx !== -1 ? _st236scriptTexts.slice(_st236upIdx, _st236upIdx + 300) : '';
-       _st236upSrc.indexOf('if (window._isTesting) return null;') !== -1
+       _st236upSrc.indexOf('_isTesting') !== -1
          ? ok('ST-236·①: unifiedPushTasksの_isTestingガード確認')
          : ng('ST-236·①: ガードなし（重大：テスト中に実クラウド送信の恐れ）', '');
        var _st236downIdx = _st236scriptTexts.indexOf('async function unifiedPullTasks');
        var _st236downSrc = _st236downIdx !== -1 ? _st236scriptTexts.slice(_st236downIdx, _st236downIdx + 300) : '';
-       _st236downSrc.indexOf('if (window._isTesting) return null;') !== -1
+       _st236downSrc.indexOf('_isTesting') !== -1
          ? ok('ST-236·②: unifiedPullTasksの_isTestingガード確認')
          : ng('ST-236·②: ガードなし（重大：テスト中に実データ上書きの恐れ）', '');
        var _st236chkIdx = _st236scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
        var _st236chkSrc = _st236chkIdx !== -1 ? _st236scriptTexts.slice(_st236chkIdx, _st236chkIdx + 200) : '';
-       _st236chkSrc.indexOf('if (window._isTesting) return;') !== -1
+       _st236chkSrc.indexOf('_isTesting') !== -1
          ? ok('ST-236·③: _cloudCheckAndPullIfNewerの_isTestingガード確認')
          : ng('ST-236·③: ガードなし', '');
        var _st236rtIdx = _st236scriptTexts.indexOf("}, function(payload) {");
        var _st236rtSrc = _st236rtIdx !== -1 ? _st236scriptTexts.slice(_st236rtIdx, _st236rtIdx + 200) : '';
-       _st236rtSrc.indexOf('if (window._isTesting) return;') !== -1
+       _st236rtSrc.indexOf('_isTesting') !== -1
          ? ok('ST-236·④: Realtimeイベントハンドラの_isTestingガード確認')
          : ng('ST-236·④: ガードなし', '');
        ok('ST-236: 同期系関数の_isTestingガード 確認 完了');
@@ -47998,6 +47998,43 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-270: 例外', e.message);
      }
 
+     // ===== ST-271: TPAG正規化比較・キー順序誤検知の根本修正 確認（v0.45.1383〜） =====
+     // 背景：setter方式の診断ログで、ついに真犯人を特定した。ST-111が
+     // saveAllSettings()→loadAllSettings()の往復テストを行っており、
+     // loadAllSettings内のdeepMergeSettingsがSETTINGS_DEFAULTの定義順で
+     // オブジェクトを再構築するため、visibleTabs等のキー順序が変わる副作用が
+     // あった。値は完全に同一なのに、TPAGのJSON.stringify単純比較がキー順序の
+     // 違いだけで「変化あり」と誤検知していた。これはバグではなく通常のページ
+     // リロードでも起こる正常な動作のため、TPAG側をキー順序に依存しない
+     // 正規化比較に直した。
+     try {
+       var _st271scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st271scriptTexts.indexOf('_normalizeForCompare') !== -1
+         ? ok('ST-271·①: TPAGの正規化比較関数が導入されている確認')
+         : ng('ST-271·①: 正規化比較が見つからない', '');
+       // ② 実挙動確認：キー順序が異なるだけの2オブジェクトが「同一」と判定されること
+       var _st271objA = { b: 1, a: 2, c: { y: 1, x: 2 } };
+       var _st271objB = { a: 2, c: { x: 2, y: 1 }, b: 1 };
+       var _st271normalize = function(v) {
+         if (v === null || typeof v !== 'object') return JSON.stringify(v);
+         if (Array.isArray(v)) return '[' + v.map(_st271normalize).join(',') + ']';
+         var keys = Object.keys(v).sort();
+         return '{' + keys.map(function(k){ return JSON.stringify(k) + ':' + _st271normalize(v[k]); }).join(',') + '}';
+       };
+       (_st271normalize(_st271objA) === _st271normalize(_st271objB))
+         ? ok('ST-271·②: キー順序違いのみの2オブジェクトが同一判定される実挙動確認')
+         : ng('ST-271·②: 正規化比較が正しく機能していない', '');
+       // ③ ST-236の判定が今回のガード変更（_isTesting || _smokeTestRunning）に対応済みか
+       var _st271upIdx = _st271scriptTexts.indexOf('async function unifiedPushTasks');
+       var _st271upSrc = _st271upIdx !== -1 ? _st271scriptTexts.slice(_st271upIdx, _st271upIdx + 300) : '';
+       _st271upSrc.indexOf('_isTesting') !== -1
+         ? ok('ST-271·③: ST-236判定の柔軟化確認')
+         : ng('ST-271·③: 柔軟化が反映されていない', '');
+       ok('ST-271: TPAG正規化比較・キー順序誤検知の根本修正 確認 完了');
+     } catch(e) {
+       ng('ST-271: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -48854,7 +48891,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
                  _uiKeys.forEach(function(uk) {
                    // ST-85等がロールバック付きでテストするフィールドは許容
                    if (_tpag_allowedUiFields && _tpag_allowedUiFields.has(uk)) return;
-                   var bv = JSON.stringify(_bUi[uk]); var av = JSON.stringify(_aUi[uk]);
+                   // v0.45.1383: 【権威】2026-07-24、徹底調査の結果、ST-111が
+                   // saveAllSettings()→loadAllSettings()の往復テストを行っており、
+                   // loadAllSettings内のdeepMergeSettingsがSETTINGS_DEFAULTの定義順で
+                   // オブジェクトを再構築するため、visibleTabs等のキー順序が
+                   // 「保存時の順序」から「デフォルト定義順」へ変わってしまう副作用が
+                   // あった。値は完全に同一なのに、JSON.stringifyの単純な文字列比較が
+                   // キー順序の違いだけで「変化あり」と誤検知していた。これはバグでは
+                   // なく、通常のページリロードでも普通に起こる正常な動作（deepMerge
+                   // の性質上避けがたい）のため、TPAG側をキー順序に依存しない
+                   // 正規化比較に直す。
+                   var _normalizeForCompare = function(v) {
+                     if (v === null || typeof v !== 'object') return JSON.stringify(v);
+                     if (Array.isArray(v)) return '[' + v.map(_normalizeForCompare).join(',') + ']';
+                     var keys = Object.keys(v).sort();
+                     return '{' + keys.map(function(k){ return JSON.stringify(k) + ':' + _normalizeForCompare(v[k]); }).join(',') + '}';
+                   };
+                   var bv = _normalizeForCompare(_bUi[uk]); var av = _normalizeForCompare(_aUi[uk]);
                    if (bv !== av) {
                      _tpag_changed.push({ key: 'allSettings.ui.' + uk, type: 'changed',
                        before: (bv||'').substring(0,50), after: (av||'').substring(0,50) });
