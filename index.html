@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1404 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1405 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1404';
+    const APP_VERSION = 'v0.45.1405';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33683,8 +33683,17 @@ async function createSharedCalendar(name) {
     .insert({ name: name, owner_id: u.data.user.id })
     .select('id, name, invite_code, invite_code_expires_at')
     .single();
-  if (r.error) { console.error('[SharedCal] 作成失敗:', r.error.message); }
-  else { console.log('[SharedCal] 作成OK:', r.data); }
+  if (r.error) { console.error('[SharedCal] 作成失敗:', r.error.message); return r; }
+  console.log('[SharedCal] 作成OK:', r.data);
+  // v0.45.1405: 【権威】2026-07-25、koyomiru_shared_calendarsへの作成だけでは、
+  // 作成者自身がkoyomiru_shared_calendar_membersに登録されない致命的な漏れが
+  // あった。作成者自身がRLSにより自分のカレンダーのタスクを見られなくなる恐れが
+  // あるため、作成直後に自分自身もメンバーとして明示的に登録する。
+  try {
+    var mr = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+      .insert({ calendar_id: r.data.id, user_id: u.data.user.id });
+    if (mr.error) console.warn('[SharedCal] 作成者自身のメンバー登録エラー:', mr.error.message);
+  } catch(eMember) { console.warn('[SharedCal] 作成者自身のメンバー登録エラー:', eMember); }
   return r;
 }
 
@@ -34208,9 +34217,23 @@ async function joinSharedCalendarFromModal() {
       saveAllSettings();
     }
   } catch(eJoinCal) { console.warn('[SharedCal] カレンダーリスト統合エラー:', eJoinCal); }
-  _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！');
+  _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！予定を取り込んでいます…');
   if (input) input.value = '';
   refreshSharedCalendarList();
+  // v0.45.1405: 【権威】2026-07-25、「招待された人がスムーズにそのカレンダーへ来て
+  // 予定を確認できるようにしたい」との要望を受けた。参加した直後は、同期対象カレンダー
+  // 一覧（_myCalendarIds）がまだ更新されておらず、次の45秒定期チェックまで、その
+  // カレンダーの予定が一切見えない状態だった。参加した瞬間に一覧を更新し、
+  // 即座に予定を取り込むようにする。
+  try {
+    if (typeof unifiedRefreshMyCalendarIds === 'function') await unifiedRefreshMyCalendarIds();
+    if (typeof unifiedPullTasks === 'function') await unifiedPullTasks();
+    if (typeof renderAllSections === 'function') renderAllSections();
+    _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！予定を取り込みました。');
+  } catch(ePullAfterJoin) {
+    console.warn('[SharedCal] 参加後の即時同期エラー:', ePullAfterJoin);
+    _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！（予定の取り込みは少し時間がかかる場合があります）');
+  }
 }
 window.openSharedCalendarModal = openSharedCalendarModal;
 window.closeSharedCalendarModal = closeSharedCalendarModal;
@@ -48943,6 +48966,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-287: 招待リンク自動参加・コード欄折りたたみ 確認 完了');
      } catch(e) {
        ng('ST-287: 例外', e.message);
+     }
+
+     // ===== ST-288: 参加直後の即時同期・作成者自身のメンバー登録 確認（v0.45.1405〜） =====
+     // 背景：「招待した人がスムーズにそのカレンダーへ来て予定を確認できるように
+     // したい」との要望を受け、①参加直後、次の45秒定期チェックを待たず即座に
+     // 予定を取り込む処理を追加。②さらに深刻な見落としとして、カレンダー作成者
+     // 自身がkoyomiru_shared_calendar_membersに登録されておらず、RLSで自分の
+     // カレンダーのタスクを見られない恐れがあったため、作成直後に自分自身も
+     // メンバー登録するよう修正した。
+     try {
+       var _st288scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st288joinIdx = _st288scriptTexts.indexOf('async function joinSharedCalendarFromModal()');
+       var _st288joinSrc = _st288joinIdx !== -1 ? _st288scriptTexts.slice(_st288joinIdx, _st288joinIdx + 3500) : '';
+       (_st288joinSrc.indexOf('unifiedRefreshMyCalendarIds()') !== -1 && _st288joinSrc.indexOf('unifiedPullTasks()') !== -1)
+         ? ok('ST-288·①: 参加直後の即時同期（カレンダー一覧更新＋タスク取得）確認')
+         : ng('ST-288·①: 即時同期処理が見つからない', '');
+       var _st288createIdx = _st288scriptTexts.indexOf('async function createSharedCalendar(name)');
+       var _st288createSrc = _st288createIdx !== -1 ? _st288scriptTexts.slice(_st288createIdx, _st288createIdx + 1500) : '';
+       _st288createSrc.indexOf("from('koyomiru_shared_calendar_members')") !== -1 &&
+       _st288createSrc.indexOf('.insert({ calendar_id: r.data.id, user_id: u.data.user.id })') !== -1
+         ? ok('ST-288·②: 作成者自身のメンバー登録処理確認')
+         : ng('ST-288·②: メンバー登録処理が見つからない', '');
+       ok('ST-288: 参加直後の即時同期・作成者メンバー登録 確認 完了');
+     } catch(e) {
+       ng('ST-288: 例外', e.message);
      }
 
        // 第1条【本番環境】
