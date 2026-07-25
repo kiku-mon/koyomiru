@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1400 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1401 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1400';
+    const APP_VERSION = 'v0.45.1401';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -26407,6 +26407,13 @@ function loadSettingsUI() {
         row.appendChild(nameInput);
         row.appendChild(visLabel);
         row.appendChild(shareLabel);
+        // v0.45.1401: 招待ボタン（そのカレンダーをそのまま招待できる）
+        var inviteBtn = document.createElement('button');
+        inviteBtn.textContent = '🔗';
+        inviteBtn.title = 'このカレンダーに招待する';
+        inviteBtn.style.cssText = 'width:30px;height:30px;border:1.5px solid #a3c9a8;border-radius:6px;background:#f4f9f5;font-size:0.95em;cursor:pointer;flex-shrink:0;padding:0;text-align:center;';
+        inviteBtn.addEventListener('click', (function(_idx){ return function(e){ e.stopPropagation(); inviteToCalendar(_idx); }; })(idx));
+        row.appendChild(inviteBtn);
         // 削除ボタン（複数ある場合のみ）
         if (calendars.length > 1) {
           const delBtn = document.createElement('button');
@@ -26422,6 +26429,52 @@ function loadSettingsUI() {
         list.appendChild(row);
       });
     }
+    // v0.45.1401: 【権威】2026-07-25、TimeTreeのように「個人用」「共有用」という
+    // 特別扱いをやめ、普段使っているカレンダー一覧の中から、そのまま招待できる
+    // ようにする。まだクラウド上に対応する共有カレンダーがなければその場で作り、
+    // OS標準の共有シートに直接委ねる（Discord/Zoom的な、選択肢を増やさない設計）。
+    async function inviteToCalendar(idx) {
+      var cal = calendars[idx];
+      if (!cal) return;
+      if (!window._cloudIsLoggedIn) {
+        if (typeof showToast === 'function') showToast('招待するには、まずログインしてください');
+        return;
+      }
+      if (typeof showToast === 'function') showToast('招待の準備をしています…');
+      if (!cal.cloudCalendarId) {
+        var r = await createSharedCalendar(cal.name || 'カレンダー');
+        if (!r || r.error || !r.data) {
+          if (typeof showToast === 'function') showToast('⚠️ 招待の準備に失敗しました', {type:'error'});
+          return;
+        }
+        cal.cloudCalendarId = r.data.id;
+        cal.inviteCode = r.data.invite_code;
+        saveCalendars();
+        var _inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(r.data.invite_code);
+        _shareOrCopyInviteUrl(_inviteUrl, cal.name);
+      } else {
+        // 既に共有カレンダーになっている場合、招待コードを取得し直す
+        var _list = await listMySharedCalendars();
+        var _match = _list && _list.data && _list.data.find(function(c){ return c.id === cal.cloudCalendarId; });
+        if (_match) {
+          var _inviteUrl2 = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(_match.invite_code);
+          _shareOrCopyInviteUrl(_inviteUrl2, cal.name);
+        } else {
+          if (typeof showToast === 'function') showToast('⚠️ 招待情報の取得に失敗しました', {type:'error'});
+        }
+      }
+    }
+    function _shareOrCopyInviteUrl(url, calendarName) {
+      if (navigator.share) {
+        navigator.share({ title: 'こよみる カレンダーへの招待', text: '「' + calendarName + '」に招待します。', url: url })
+          .catch(function(e) { console.log('[SharedCal] 共有キャンセルまたは失敗:', e); });
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function() {
+          if (typeof showToast === 'function') showToast('✅ 招待リンクをコピーしました');
+        });
+      }
+    }
+    window.inviteToCalendar = inviteToCalendar;
     function updateCalendarField(idx, field, value) {
       if (calendars[idx]) {
         calendars[idx][field] = value;
@@ -48675,6 +48728,32 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-283: 月齢ラベル常時表示・柔らかい縁取り 確認 完了');
      } catch(e) {
        ng('ST-283: 例外', e.message);
+     }
+
+     // ===== ST-284: カレンダー設定からの直接招待機能 確認（v0.45.1401〜） =====
+     // 背景：「TimeTreeのように個人用・共有用を特別扱いしない」という方針を受け、
+     // 普段のカレンダー一覧（仕事・学校・プライベート等）から、そのまま招待できる
+     // ボタンを追加した。まだクラウド上に対応する共有カレンダーがなければその場で
+     // 作り、OS標準の共有シートに直接委ねる。
+     try {
+       typeof window.inviteToCalendar === 'function'
+         ? ok('ST-284·①: inviteToCalendar window公開確認')
+         : ng('ST-284·①: 関数が見つからない', '');
+       var _st284scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st284uiIdx = _st284scriptTexts.indexOf("row.appendChild(shareLabel);\n        // v0.45.1401");
+       _st284uiIdx !== -1
+         ? ok('ST-284·②: カレンダー設定行への招待ボタン組み込み確認')
+         : ng('ST-284·②: UI組み込みが見つからない', '');
+       // ③ RLS修正SQLが実行済みという前提のもと、実際の作成フロー自体はネットワーク
+       // 依存のため、ここではガード・関数構造のみ確認する
+       var _st284fnIdx = _st284scriptTexts.indexOf('async function inviteToCalendar(idx)');
+       var _st284fnSrc = _st284fnIdx !== -1 ? _st284scriptTexts.slice(_st284fnIdx, _st284fnIdx + 1500) : '';
+       _st284fnSrc.indexOf('createSharedCalendar(') !== -1 && _st284fnSrc.indexOf('cloudCalendarId') !== -1
+         ? ok('ST-284·③: 未共有カレンダーの自動アップグレード処理確認')
+         : ng('ST-284·③: アップグレード処理が見つからない', '');
+       ok('ST-284: カレンダー設定からの直接招待機能 確認 完了');
+     } catch(e) {
+       ng('ST-284: 例外', e.message);
      }
 
        // 第1条【本番環境】
