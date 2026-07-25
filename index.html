@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1401 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1402 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1401';
+    const APP_VERSION = 'v0.45.1402';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -7714,6 +7714,13 @@
           style="width:100%;margin-top:10px;padding:10px;border:1.5px dashed #c5cae9;border-radius:8px;background:transparent;color:#3949ab;font-size:0.85em;font-weight:600;cursor:pointer;">
           ＋ カレンダーを追加する
         </button>
+        <!-- v0.45.1402: 初回セットアップ画面（テンプレートから選ぶ）が、初回起動時にしか
+             開けず、後から使いたくなっても導線がないという指摘を受け、いつでも呼べる
+             「追加専用」の入り口を用意した。 -->
+        <button onclick="openCalendarTemplatePicker()"
+          style="width:100%;margin-top:8px;padding:10px;border:1.5px dashed #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.85em;font-weight:600;cursor:pointer;">
+          📋 テンプレートから追加する
+        </button>
       </div>
       <!-- 本能マトリクス設定 -->
       <div style="background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
@@ -9040,6 +9047,20 @@
           ${t.name}
         </label>
       `).join('');
+      // v0.45.1402: openCalendarTemplatePicker（追加専用モード）がボタンのonclickを
+      // 動的に上書きすることがあるため、通常の初回セットアップでは必ずcompleteSetup用に
+      // 明示的にリセットする（相互汚染防止）。タイトル・説明文も念のため元に戻す。
+      var _titleEl = overlay.querySelector('h2');
+      if (_titleEl) _titleEl.textContent = 'こよみる — 季節と生きる';
+      var _descEls = overlay.querySelectorAll('p');
+      if (_descEls[0]) _descEls[0].textContent = '使うカレンダーを選んでください';
+      var _btn = overlay.querySelector('button');
+      if (_btn) {
+        _btn.onclick = function() {
+          var checked = Array.prototype.slice.call(document.querySelectorAll('.setup-cb:checked')).map(function(cb){ return cb.value; });
+          completeSetup(checked);
+        };
+      }
       overlay.style.display = 'flex';
     }
     function getCalendar(id) {
@@ -9230,6 +9251,51 @@
       document.getElementById('setupOverlay').style.display = 'none';
       loadCalendarSettingsUI();
     }
+    // v0.45.1402: 【権威】2026-07-25、「初回セットアップ画面（テンプレートから選ぶ）が
+    // 初回起動時にしか開けない」という指摘を受けた。completeSetupは既存のcalendarsを
+    // 丸ごと置き換える設計のため、単純に画面を再利用可能にするだけでは、既存ユーザーが
+    // 誤って使うとデータを失う危険がある。「既存に追加する」専用の関数を新設し、
+    // 設定画面からいつでも安全に呼べるようにする。
+    function openCalendarTemplatePicker() {
+      var overlay = document.getElementById('setupOverlay');
+      if (!overlay) return;
+      var container = document.getElementById('setupCheckboxes');
+      var existingNames = calendars.map(function(c){ return c.name; });
+      container.innerHTML = CALENDAR_TEMPLATES.map(function(t) {
+        var already = existingNames.indexOf(t.name) !== -1;
+        return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px solid #eee;border-radius:10px;cursor:' + (already ? 'not-allowed;opacity:0.4;' : 'pointer;') + 'font-size:0.9em;">' +
+          '<input type="checkbox" class="setup-cb" value="' + t.name + '" ' + (already ? 'disabled' : '') + '' +
+          ' style="width:16px;height:16px;accent-color:' + t.color + ';">' +
+          '<span style="width:12px;height:12px;border-radius:50%;background:' + t.color + ';display:inline-block;"></span>' +
+          t.name + (already ? '（追加済み）' : '') +
+        '</label>';
+      }).join('');
+      var titleEl = overlay.querySelector('h2');
+      if (titleEl) titleEl.textContent = 'カレンダーを追加';
+      var descEl = overlay.querySelector('p');
+      if (descEl) descEl.textContent = '追加したいカレンダーを選んでください';
+      var btn = overlay.querySelector('button');
+      if (btn) {
+        btn.onclick = function() {
+          var checked = Array.prototype.slice.call(document.querySelectorAll('.setup-cb:checked')).map(function(cb){ return cb.value; });
+          addTemplatesToCalendars(checked);
+        };
+      }
+      overlay.style.display = 'flex';
+    }
+    function addTemplatesToCalendars(selectedNames) {
+      if (selectedNames.length === 0) { showToast('⚠️ 追加するカレンダーを選んでください。', {type:'warn'}); return; }
+      selectedNames.forEach(function(name) {
+        var tmpl = CALENDAR_TEMPLATES.find(function(t){ return t.name === name; }) || { name: name, color: '#b0bec5', shareable: true };
+        calendars.push(createCalendarFromTemplate(tmpl));
+      });
+      saveCalendars();
+      document.getElementById('setupOverlay').style.display = 'none';
+      loadCalendarSettingsUI();
+      showToast('✅ カレンダーを追加しました');
+    }
+    window.openCalendarTemplatePicker = openCalendarTemplatePicker;
+    window.addTemplatesToCalendars = addTemplatesToCalendars;
     // タスク作成
     /**
      * タスク作成
@@ -48754,6 +48820,40 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-284: カレンダー設定からの直接招待機能 確認 完了');
      } catch(e) {
        ng('ST-284: 例外', e.message);
+     }
+
+     // ===== ST-285: カレンダーテンプレート追加機能（初回セットアップ再利用化） 確認（v0.45.1402〜） =====
+     // 背景：「初回起動時にしか開けないカレンダー選択画面が、既に使い始めたら
+     // 二度と開けなくなる」との指摘を受けた。completeSetup（初回専用）は既存の
+     // calendarsを丸ごと置き換える設計のため、単純な再利用は危険と判明。
+     // 「既存に追加する」専用の関数（addTemplatesToCalendars）を新設し、
+     // 設定画面からいつでも安全に呼べるようにした。
+     try {
+       ['openCalendarTemplatePicker', 'addTemplatesToCalendars'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-285·' + fn + ': window公開確認')
+           : ng('ST-285·' + fn + ': 未公開', '');
+       });
+       // ① 実挙動：既存カレンダーを壊さず、追加だけされる確認
+       var _st285before = calendars.length;
+       var _st285beforeIds = calendars.map(function(c){ return c.id; });
+       window.addTemplatesToCalendars(['仕事']);
+       var _st285after = calendars.length;
+       (_st285after === _st285before + 1 && _st285beforeIds.every(function(id){ return calendars.some(function(c){ return c.id === id; }); }))
+         ? ok('ST-285·①: 既存カレンダーを壊さず追加される実挙動確認')
+         : ng('ST-285·①: 既存カレンダーが壊れた、または追加されない', '前=' + _st285before + ' 後=' + _st285after);
+       // クリーンアップ
+       calendars = calendars.filter(function(c){ return _st285beforeIds.indexOf(c.id) !== -1; });
+       saveCalendars();
+       ok('ST-285·②: クリーンアップ完了');
+       // ③ 設定画面にボタンが組み込まれているか
+       var _st285scriptTexts = document.documentElement.innerHTML;
+       _st285scriptTexts.indexOf('📋 テンプレートから追加する') !== -1
+         ? ok('ST-285·③: 設定画面へのボタン組み込み確認')
+         : ng('ST-285·③: ボタンが見つからない', '');
+       ok('ST-285: カレンダーテンプレート追加機能 確認 完了');
+     } catch(e) {
+       ng('ST-285: 例外', e.message);
      }
 
        // 第1条【本番環境】
