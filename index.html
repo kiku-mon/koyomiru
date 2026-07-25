@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1405 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1406 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1405';
+    const APP_VERSION = 'v0.45.1406';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -26539,7 +26539,11 @@ function loadSettingsUI() {
       if (!cal.cloudCalendarId) {
         var r = await createSharedCalendar(cal.name || 'カレンダー');
         if (!r || r.error || !r.data) {
-          if (typeof showToast === 'function') showToast('⚠️ 招待の準備に失敗しました', {type:'error'});
+          // v0.45.1406: 【権威】2026-07-25、「失敗しました」としか出ず原因が分からない
+          // という指摘を受け、実際のDBエラー内容をトーストに含めるよう改善する。
+          var _errMsg = (r && r.error && r.error.message) ? r.error.message : '不明なエラー';
+          if (typeof showToast === 'function') showToast('⚠️ 招待の準備に失敗しました: ' + _errMsg, {type:'error', duration:6000});
+          console.error('[SharedCal] inviteToCalendar作成失敗:', r);
           return;
         }
         cal.cloudCalendarId = r.data.id;
@@ -26555,7 +26559,9 @@ function loadSettingsUI() {
           var _inviteUrl2 = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(_match.invite_code);
           _shareOrCopyInviteUrl(_inviteUrl2, cal.name);
         } else {
-          if (typeof showToast === 'function') showToast('⚠️ 招待情報の取得に失敗しました', {type:'error'});
+          var _errMsg2 = (_list && _list.error && _list.error.message) ? _list.error.message : '該当カレンダーが見つかりません';
+          if (typeof showToast === 'function') showToast('⚠️ 招待情報の取得に失敗しました: ' + _errMsg2, {type:'error', duration:6000});
+          console.error('[SharedCal] inviteToCalendar取得失敗:', _list);
         }
       }
     }
@@ -48773,6 +48779,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        document.getElementById('kazedayoriMoonCanvas')
          ? ok('ST-281·②: kazedayoriMoonCanvas DOM存在確認')
          : ng('ST-281·②: Canvas要素が見つからない', '');
+       // v0.45.1406: 【権威】2026-07-25、この検証がタイミング依存だった（起動2.6秒後に
+       // 自動で開く季節の風だよりモーダルで、ユーザーが実際に「文章を読む」を開いた
+       // 状態のままスモークテストが走ると、環境依存で失敗していた）。実行タイミングに
+       // 依存しないよう、明示的にモーダルを開き直してから確認する確実な形に修正する。
+       if (typeof showKazedayoriModal === 'function') showKazedayoriModal();
        var _st281textArea = document.getElementById('kazedayoriTextArea');
        (_st281textArea && _st281textArea.style.display === 'none')
          ? ok('ST-281·③: 文章エリアが初期状態で非表示確認')
@@ -48991,6 +49002,27 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-288: 参加直後の即時同期・作成者メンバー登録 確認 完了');
      } catch(e) {
        ng('ST-288: 例外', e.message);
+     }
+
+     // ===== ST-289: 招待エラーの詳細化・ST-281タイミング依存修正 確認（v0.45.1406〜） =====
+     // 背景：「招待の準備に失敗しました」としか出ず原因が分からないとの指摘を受け、
+     // 実際のDBエラー内容をトーストに含めるよう改善した。またST-281が起動2.6秒後の
+     // 季節の風だより自動表示とタイミング依存で不安定に失敗する問題を修正した。
+     try {
+       var _st289scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st289inviteIdx = _st289scriptTexts.indexOf('async function inviteToCalendar(idx)');
+       var _st289inviteSrc = _st289inviteIdx !== -1 ? _st289scriptTexts.slice(_st289inviteIdx, _st289inviteIdx + 2000) : '';
+       (_st289inviteSrc.indexOf('_errMsg') !== -1 && _st289inviteSrc.indexOf('_errMsg2') !== -1)
+         ? ok('ST-289·①: 招待エラーメッセージの詳細化確認')
+         : ng('ST-289·①: 詳細化されていない', '');
+       var _st289idx281 = _st289scriptTexts.indexOf('ST-281·③');
+       var _st289src281 = _st289idx281 !== -1 ? _st289scriptTexts.slice(Math.max(0,_st289idx281-400), _st289idx281) : '';
+       _st289src281.indexOf('showKazedayoriModal();') !== -1
+         ? ok('ST-289·②: ST-281タイミング依存修正（明示的なモーダル再表示）確認')
+         : ng('ST-289·②: 修正が見つからない', '');
+       ok('ST-289: 招待エラー詳細化・ST-281修正 確認 完了');
+     } catch(e) {
+       ng('ST-289: 例外', e.message);
      }
 
        // 第1条【本番環境】
