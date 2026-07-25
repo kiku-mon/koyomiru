@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1397 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1400 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1397';
+    const APP_VERSION = 'v0.45.1400';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -4766,18 +4766,9 @@
     if (typeof renderDailyFocusBanner === 'function') renderDailyFocusBanner();
   }, 2600);
 
-  // 初回起動時（_splashGreetingSeen未設定 = まだ1回も起動していない）にマトリクス紹介を表示
-  // _splashGreetingSeen は closeSplash前の挨拶生成時に設定済みなので
-  // mig_matrix_intro_v1 フラグで「紹介済みか」を管理
-  setTimeout(function() {
-    if (!localStorage.getItem('mig_matrix_intro_v2')) {
-      localStorage.setItem('mig_matrix_intro_v2', '1');
-      var modal = document.getElementById('matrixIntroModal');
-      if (modal) {
-        modal.style.display = 'flex';
-      }
-    }
-  }, 2200); // スプラッシュが消えた後に表示
+  // v0.45.1399: 【権威】2026-07-25、「起動しなくていいんじゃないかな」という指摘を受け、
+  // マトリクス紹介モーダルの初回自動起動を撤去する。モーダル自体（DOM）は残すが、
+  // 自動で開かせる処理だけを削除する（第31条：不要になった自動発火は削除）。
 })();
 </script>
 <!-- ===== 起動スプラッシュ ここまで ===== -->
@@ -8579,7 +8570,7 @@
         kingdomModeBase:  'kingdom',
         growthAxis:       'shin', // 成長軸：'shin'真 / 'zen'善 / 'bi'美 / 'sei'聖 / 'ko'功
         matrixLayer:      0,  // 多層マトリクスの現在レイヤー（0=アイゼンハワー）
-        pinnedMatrixLayers: null, // ピン留め層のid配列（nullは全層表示）
+        pinnedMatrixLayers: ['eisenhower'], // v0.45.1399: 「40層の切り替えが面倒くさい」との指摘を受け、一旦アイゼンハワーマトリクス1層だけに固定する。既存のピン留め機能を活用（コード変更を最小限に）。元に戻す場合はnullに戻せば全層表示に復帰する。
         unlockedSecretLayers: [],  // 管理者解放済みの秘匿レイヤーID配列
         showMatrixCenterCircle: false,  // マトリクスのセンターサークル（中央円）の表示。各層のlayer.center値（今ここで／敬天愛人／勇気等）を動的表示。デフォルトfalse=非表示。第42条：DEFAULT:false→判定:=== true
         instinctMode:     true,
@@ -8734,6 +8725,16 @@
           if (!allSettings.meta.phaseBDone) {
             cleanupOldKeys();
             allSettings.meta.phaseBDone = true;
+            saveAllSettings();
+          }
+          // v0.45.1399: 【権威】2026-07-25、「40層の切り替えが面倒くさい」との指摘を受け、
+          // 一旦アイゼンハワーマトリクス1層だけに固定する。deepMergeSettingsは保存データを
+          // 優先する設計（第64条）のため、既存ユーザーにはデフォルト値の変更だけでは
+          // 反映されない。1回限りのマイグレーションで明示的に適用する。ユーザーが手動で
+          // 元に戻した場合はこのマイグレーションを再実行しない（フラグで一度きり管理）。
+          if (!localStorage.getItem('mig_pinned_matrix_default_v1')) {
+            localStorage.setItem('mig_pinned_matrix_default_v1', '1');
+            allSettings.ui.pinnedMatrixLayers = ['eisenhower'];
             saveAllSettings();
           }
         } else {
@@ -12178,6 +12179,102 @@ function myDeckApply(idx) {
     }
     // ===== 月間ビュー：行リサイズ機能 =====
     // 月齢プレースホルダーを後から埋める（calcMoonAgeNAOJがまだ未定義の場合のフォールバック）
+    // v0.45.1398: 【権威】2026-07-25、季節の風だよりが「開くたびに全文読まされる」
+    // 摩擦を生んでいるという指摘（三井住友銀行Oliveアプリの例え）を受け、開いた瞬間は
+    // 月の絵だけを見せ、文字はタップした人にだけ見せる設計に変更する。ダッシュボードに
+    // あった月Canvas描画ロジックを、canvasId・ageを引数に取る共通関数として切り出し、
+    // 季節の風だよりモーダルからも呼べるようにする（第9条：コード共有）。
+    function _drawMoonCanvas(canvasId, age) {
+      var _cv = document.getElementById(canvasId);
+    if (_cv) {
+      _cv.width=160; _cv.height=160;
+      var _ctx=_cv.getContext('2d'),_cx=80,_cy=80,_R=66;
+      _ctx.clearRect(0,0,160,160);
+      // 背景：深夜の空
+      var _bgG=_ctx.createRadialGradient(80,80,0,80,80,80);
+      _bgG.addColorStop(0,'#0d0d1f'); _bgG.addColorStop(1,'#06060f');
+      _ctx.fillStyle=_bgG; _ctx.fillRect(0,0,160,160);
+      // 星
+      [[20,18,0.9],[140,25,0.7],[45,60,0.6],[130,55,1.0],[15,90,0.8],[150,80,0.6],[35,140,0.7],[145,130,0.9],[75,15,0.8],[110,145,0.7]].forEach(function(s){
+        _ctx.beginPath(); _ctx.arc(s[0],s[1],s[2],0,Math.PI*2);
+        _ctx.fillStyle='rgba(255,248,220,0.7)'; _ctx.fill();
+      });
+      // 月の暗面ベース
+      _ctx.fillStyle='#04040e'; _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2); _ctx.fill();
+      // Meeus式輝面比計算 + try-catchでCanvas保護（iOS Safari対応）
+      try {
+        var _calcMeeusIllum = function(age) {
+          var D = (age / 29.530589) * 360;
+          var Dr = D * Math.PI / 180;
+          var M  = (age * 12.19075) * Math.PI / 180;
+          var Mm = (age * 13.06440) * Math.PI / 180;
+          var dD = -6.289*Math.sin(Mm)+2.100*Math.sin(M)-1.274*Math.sin(2*Dr-Mm)-0.658*Math.sin(2*Dr)-0.214*Math.sin(2*Mm)-0.110*Math.sin(Dr);
+          var Dc = D + dD;
+          var il = Math.max(0, Math.min(1, (1 - Math.cos(Dc * Math.PI / 180)) / 2));
+          var isWax = (Dc % 360 + 360) % 360 < 180;
+          return { il: il, isWax: isWax };
+        };
+        var _md = _calcMeeusIllum(age);
+        var _il = _md.il, _isWax = _md.isWax;
+        _ctx.save();
+        _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2); _ctx.clip();
+        var _mg=_ctx.createRadialGradient(_cx-_R*.25,_cy-_R*.25,_R*.05,_cx,_cy,_R);
+        _mg.addColorStop(0,'rgba(255,251,230,.95)'); _mg.addColorStop(.5,'rgba(244,216,120,.9)'); _mg.addColorStop(1,'rgba(184,134,11,.85)');
+        _ctx.fillStyle='rgba(4,4,14,0.97)'; _ctx.fillRect(_cx-_R,_cy-_R,_R*2,_R*2);
+        _ctx.fillStyle=_mg; _ctx.beginPath();
+        if (_il >= 0.99) {
+          // 満月：真円
+          _ctx.arc(_cx,_cy,_R,0,Math.PI*2);
+        } else if (_il > 0.01) {
+          // 月の描画：右側が光源（北半球）
+          // il=0.5→半月, il>0.5→左にふっくら, il<0.5→右側細い三日月
+          // _ew: il=0.5→0, il=1→R（線形）にさらに1.5倍補正（ただし0〜R内）
+          // il<0.5の場合は楕円が内側に入り込んで三日月を形成
+          var _ewRaw = _R * (2 * _il - 1); // -R〜+R
+          var _ew = Math.abs(_ewRaw) * 1.0; // 係数1.0（補正なし・数学的に正確）
+          if (_ew > _R) _ew = _R;
+          var _convex = _ewRaw >= 0; // true=ふっくら側, false=三日月凹み側
+
+          if (typeof _ctx.ellipse === 'function') {
+            if (_isWax) {
+              _ctx.arc(_cx,_cy,_R,-Math.PI/2,Math.PI/2,false); // 右半円
+              if (_ew < 1) {
+                _ctx.lineTo(_cx,_cy-_R); // ちょうど半月
+              } else if (_convex) {
+                // il>0.5: 左にはみ出す（反時計回り）
+                _ctx.ellipse(_cx,_cy,_ew,_R,0,Math.PI/2,-Math.PI/2,false);
+              } else {
+                // il<0.5: 右側が凹む三日月（時計回り）
+                _ctx.ellipse(_cx,_cy,_ew,_R,0,Math.PI/2,-Math.PI/2,true);
+              }
+            } else {
+              _ctx.arc(_cx,_cy,_R,Math.PI/2,-Math.PI/2,false); // 左半円
+              if (_ew < 1) {
+                _ctx.lineTo(_cx,_cy+_R);
+              } else if (_convex) {
+                _ctx.ellipse(_cx,_cy,_ew,_R,0,-Math.PI/2,Math.PI/2,false);
+              } else {
+                _ctx.ellipse(_cx,_cy,_ew,_R,0,-Math.PI/2,Math.PI/2,true);
+              }
+            }
+          } else {
+            if (_isWax){ _ctx.arc(_cx,_cy,_R,-Math.PI/2,Math.PI/2,false); _ctx.lineTo(_cx,_cy-_R); }
+            else { _ctx.arc(_cx,_cy,_R,Math.PI/2,-Math.PI/2,false); _ctx.lineTo(_cx,_cy+_R); }
+          }
+        }
+        _ctx.fill(); _ctx.restore();
+      } catch(e) { /* Canvas描画エラー：テキスト表示には影響しない */ }
+      // 月暈（ハロ）
+      var _halo=_ctx.createRadialGradient(_cx,_cy,_R,_cx,_cy,_R+20);
+      _halo.addColorStop(0,'rgba(200,170,80,0.12)'); _halo.addColorStop(1,'rgba(200,170,80,0)');
+      _ctx.beginPath(); _ctx.arc(_cx,_cy,_R+20,0,Math.PI*2); _ctx.fillStyle=_halo; _ctx.fill();
+      // 縁光
+      _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2);
+      _ctx.strokeStyle='rgba(255,210,60,0.22)'; _ctx.lineWidth=1.5; _ctx.stroke();
+    }
+    
+    }
+    window._drawMoonCanvas = _drawMoonCanvas;
     function fillMoonAges() {
       var fn = typeof calcMoonAgeNAOJ === 'function' ? calcMoonAgeNAOJ : window.calcMoonAgeNAOJ;
       if (typeof fn !== 'function') return;
@@ -23925,6 +24022,7 @@ function reviveBlueprint(id) {
       // v0.45.1384: 端末ニックネーム・ログイン回数等（正当な既存機能、登録漏れ）
       'deviceNickname', 'loginCount', 'lastLoginAt', 'unifiedMigrationDone', 'lastActivityAt',
       'mig_travel_items_to_tasks_v1',
+      'mig_pinned_matrix_default_v1', // v0.45.1399
       // leveling3SetCheckBox_YYYY-MM-DD（日次チェック進捗）は動的キーのためプレフィックスで許容
     ]);
     window.KEY_WHITELIST = KEY_WHITELIST;
@@ -27703,10 +27801,14 @@ function loadSettingsUI() {
           var _ageRound = Math.round(_age * 10) / 10;
           var _phaseNames = ['🌑新月（しんげつ）','🌒繊月（せんげつ）','🌒繊月（せんげつ）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌓弓張月（ゆみはりづき）※上弦','🌓弓張月（ゆみはりづき）※上弦','🌔十日月（とおかつき）','🌔十日月（とおかつき）','🌔十三夜月（じゅうさんやづき）','🌔十三夜月（じゅうさんやづき）','🌔小望月（こもちづき）','🌕満月（まんげつ）・望月（もちづき）','🌕満月（まんげつ）・望月（もちづき）','🌖十六夜（いざよい）','🌖立待月（たちまちづき）','🌖居待月（いまちづき）','🌖寝待月（ねまちづき）','🌗更待月（ふけまちづき）','🌗更待月（ふけまちづき）','🌗弓張月（ゆみはりづき）※下弦','🌘弓張月（ゆみはりづき）※下弦','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌑晦日月（みそかづき）'];
           var _phase = _phaseNames[Math.min(Math.round(_ageRound), 29)] || '';
-          _moonFooter = '今日の月は月齢 ' + _ageRound + '。\n' + _phase + '。\n\n今日もおつかれさま。';
+          _moonFooter = '今日もおつかれさま。'; // v0.45.1400: 月齢はkazedayoriMoonLabelで常時表示するため、折りたたみ内での重複記載をやめる
         } else {
           _moonFooter = '今日もおつかれさま。';
         }
+        // v0.45.1400: 常に見える月齢ラベル用（_moonFooterとは別に、短い一目で分かる形にする）
+        var _moonLabelText = (typeof _ageRound !== 'undefined' && typeof _phase !== 'undefined')
+          ? '月齢 ' + _ageRound + ' ・ ' + _phase
+          : '';
 
         // DOM反映
         var _modal = document.getElementById('kazedayoriModal');
@@ -27716,6 +27818,12 @@ function loadSettingsUI() {
         document.getElementById('kazedayoriGreet').textContent = _greet;
         document.getElementById('kazedayoriBody').innerHTML  = _body;
         document.getElementById('kazedayoriFooter').textContent = _moonFooter;
+        var _kzMoonLabel = document.getElementById('kazedayoriMoonLabel');
+        if (_kzMoonLabel) _kzMoonLabel.textContent = _moonLabelText;
+        var _kzTextArea = document.getElementById('kazedayoriTextArea');
+        var _kzToggleLabel = document.getElementById('kazedayoriTextToggleLabel');
+        if (_kzTextArea) _kzTextArea.style.display = 'none';
+        if (_kzToggleLabel) _kzToggleLabel.textContent = '文章を読む ▼';
 
         // 候カラーを適用
         _card.style.background = 'linear-gradient(160deg,' + _col.from + ' 0%,' + _col.to + ' 100%)';
@@ -27732,6 +27840,12 @@ function loadSettingsUI() {
         // ふわっとフェードイン＋スケールアップ（高級感）
         _modal.style.opacity = '0';
         _modal.style.display = 'flex';
+        // v0.45.1399: 【権威】2026-07-25、Canvas描画が_modal.style.display='flex'より
+        // 前（まだ非表示のDOM状態）に実行されていたため、正しく描画されず不自然な
+        // 見た目になっていた。表示状態になった直後に描画するよう修正する。
+        if (typeof _drawMoonCanvas === 'function' && typeof _age !== 'undefined') {
+          _drawMoonCanvas('kazedayoriMoonCanvas', _age);
+        }
         var _card = document.getElementById('kazedayoriCard');
         if (_card) {
           _card.style.transform = 'scale(0.92) translateY(16px)';
@@ -28348,95 +28462,9 @@ function renderDashboardView() {
       var _nm = _naojGetNearestNewMoon(_now.getTime());
       if (_nm) { var _nd=new Date(_nm); _set2('dbLastNewMoon', _nd.getFullYear()+'/'+((_nd.getMonth()+1)<10?'0':'')+((_nd.getMonth()+1))+'/'+(_nd.getDate()<10?'0':'')+_nd.getDate()); }
     }
-    // 月Canvas
-    var _cv = document.getElementById('dbMoonCanvas');
-    if (_cv) {
-      _cv.width=160; _cv.height=160;
-      var _ctx=_cv.getContext('2d'),_cx=80,_cy=80,_R=66;
-      _ctx.clearRect(0,0,160,160);
-      // 背景：深夜の空
-      var _bgG=_ctx.createRadialGradient(80,80,0,80,80,80);
-      _bgG.addColorStop(0,'#0d0d1f'); _bgG.addColorStop(1,'#06060f');
-      _ctx.fillStyle=_bgG; _ctx.fillRect(0,0,160,160);
-      // 星
-      [[20,18,0.9],[140,25,0.7],[45,60,0.6],[130,55,1.0],[15,90,0.8],[150,80,0.6],[35,140,0.7],[145,130,0.9],[75,15,0.8],[110,145,0.7]].forEach(function(s){
-        _ctx.beginPath(); _ctx.arc(s[0],s[1],s[2],0,Math.PI*2);
-        _ctx.fillStyle='rgba(255,248,220,0.7)'; _ctx.fill();
-      });
-      // 月の暗面ベース
-      _ctx.fillStyle='#04040e'; _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2); _ctx.fill();
-      // Meeus式輝面比計算 + try-catchでCanvas保護（iOS Safari対応）
-      try {
-        var _calcMeeusIllum = function(age) {
-          var D = (age / 29.530589) * 360;
-          var Dr = D * Math.PI / 180;
-          var M  = (age * 12.19075) * Math.PI / 180;
-          var Mm = (age * 13.06440) * Math.PI / 180;
-          var dD = -6.289*Math.sin(Mm)+2.100*Math.sin(M)-1.274*Math.sin(2*Dr-Mm)-0.658*Math.sin(2*Dr)-0.214*Math.sin(2*Mm)-0.110*Math.sin(Dr);
-          var Dc = D + dD;
-          var il = Math.max(0, Math.min(1, (1 - Math.cos(Dc * Math.PI / 180)) / 2));
-          var isWax = (Dc % 360 + 360) % 360 < 180;
-          return { il: il, isWax: isWax };
-        };
-        var _md = _calcMeeusIllum(_age);
-        var _il = _md.il, _isWax = _md.isWax;
-        _ctx.save();
-        _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2); _ctx.clip();
-        var _mg=_ctx.createRadialGradient(_cx-_R*.25,_cy-_R*.25,_R*.05,_cx,_cy,_R);
-        _mg.addColorStop(0,'rgba(255,251,230,.95)'); _mg.addColorStop(.5,'rgba(244,216,120,.9)'); _mg.addColorStop(1,'rgba(184,134,11,.85)');
-        _ctx.fillStyle='rgba(4,4,14,0.97)'; _ctx.fillRect(_cx-_R,_cy-_R,_R*2,_R*2);
-        _ctx.fillStyle=_mg; _ctx.beginPath();
-        if (_il >= 0.99) {
-          // 満月：真円
-          _ctx.arc(_cx,_cy,_R,0,Math.PI*2);
-        } else if (_il > 0.01) {
-          // 月の描画：右側が光源（北半球）
-          // il=0.5→半月, il>0.5→左にふっくら, il<0.5→右側細い三日月
-          // _ew: il=0.5→0, il=1→R（線形）にさらに1.5倍補正（ただし0〜R内）
-          // il<0.5の場合は楕円が内側に入り込んで三日月を形成
-          var _ewRaw = _R * (2 * _il - 1); // -R〜+R
-          var _ew = Math.abs(_ewRaw) * 1.0; // 係数1.0（補正なし・数学的に正確）
-          if (_ew > _R) _ew = _R;
-          var _convex = _ewRaw >= 0; // true=ふっくら側, false=三日月凹み側
-
-          if (typeof _ctx.ellipse === 'function') {
-            if (_isWax) {
-              _ctx.arc(_cx,_cy,_R,-Math.PI/2,Math.PI/2,false); // 右半円
-              if (_ew < 1) {
-                _ctx.lineTo(_cx,_cy-_R); // ちょうど半月
-              } else if (_convex) {
-                // il>0.5: 左にはみ出す（反時計回り）
-                _ctx.ellipse(_cx,_cy,_ew,_R,0,Math.PI/2,-Math.PI/2,false);
-              } else {
-                // il<0.5: 右側が凹む三日月（時計回り）
-                _ctx.ellipse(_cx,_cy,_ew,_R,0,Math.PI/2,-Math.PI/2,true);
-              }
-            } else {
-              _ctx.arc(_cx,_cy,_R,Math.PI/2,-Math.PI/2,false); // 左半円
-              if (_ew < 1) {
-                _ctx.lineTo(_cx,_cy+_R);
-              } else if (_convex) {
-                _ctx.ellipse(_cx,_cy,_ew,_R,0,-Math.PI/2,Math.PI/2,false);
-              } else {
-                _ctx.ellipse(_cx,_cy,_ew,_R,0,-Math.PI/2,Math.PI/2,true);
-              }
-            }
-          } else {
-            if (_isWax){ _ctx.arc(_cx,_cy,_R,-Math.PI/2,Math.PI/2,false); _ctx.lineTo(_cx,_cy-_R); }
-            else { _ctx.arc(_cx,_cy,_R,Math.PI/2,-Math.PI/2,false); _ctx.lineTo(_cx,_cy+_R); }
-          }
-        }
-        _ctx.fill(); _ctx.restore();
-      } catch(e) { /* Canvas描画エラー：テキスト表示には影響しない */ }
-      // 月暈（ハロ）
-      var _halo=_ctx.createRadialGradient(_cx,_cy,_R,_cx,_cy,_R+20);
-      _halo.addColorStop(0,'rgba(200,170,80,0.12)'); _halo.addColorStop(1,'rgba(200,170,80,0)');
-      _ctx.beginPath(); _ctx.arc(_cx,_cy,_R+20,0,Math.PI*2); _ctx.fillStyle=_halo; _ctx.fill();
-      // 縁光
-      _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2);
-      _ctx.strokeStyle='rgba(255,210,60,0.22)'; _ctx.lineWidth=1.5; _ctx.stroke();
-    }
-    // 月齢カード・天象カードをダッシュボード上部に表示
+    // 月C    // 月Canvas
+    if (typeof _drawMoonCanvas === 'function') _drawMoonCanvas('dbMoonCanvas', _age);
+// 月齢カード・天象カードをダッシュボード上部に表示
     var _moonCard = document.getElementById('dbMoonCard');
     if (_moonCard) _moonCard.style.display = 'block';
     var _skyCard = document.getElementById('dbSkyCard');
@@ -31031,9 +31059,24 @@ window.addEventListener('afterprint', function() {
       <div id="kazedayoriScroll" style="padding:28px 24px 16px;overflow-y:auto;flex:1;border-radius:28px 28px 0 0;">
         <div style="font-size:1.35em;font-weight:800;letter-spacing:0.06em;margin-bottom:6px;" id="kazedayoriLabel">🌸 季節の風だより</div>
         <div style="font-size:0.85em;font-weight:500;margin-bottom:18px;opacity:0.75;" id="kazedayoriDate"></div>
-        <div style="font-size:0.98em;font-weight:700;margin-bottom:18px;line-height:1.6;" id="kazedayoriGreet"></div>
-        <div style="font-size:0.93em;line-height:1.8;" id="kazedayoriBody"></div>
-        <div style="margin-top:20px;font-size:0.93em;line-height:2.0;white-space:pre-line;" id="kazedayoriFooter"></div>
+        <!-- v0.45.1400: 【権威】2026-07-25、月の絵の「夜空の黒い円」が、季節ごとに色が
+             変わる暖色系の背景の上で浮いて見えるという指摘を受けた。季節の風だより自体の
+             色は変えず、月の周りに柔らかいグロー（box-shadow）を足して馴染ませる。 -->
+        <div style="text-align:center;margin-bottom:8px;">
+          <canvas id="kazedayoriMoonCanvas" width="160" height="160" style="border-radius:50%;box-shadow:0 0 24px 8px rgba(255,255,255,0.35), 0 4px 16px rgba(0,0,0,0.15);"></canvas>
+        </div>
+        <!-- v0.45.1400: 月齢・月相名は「一目で分かる数値・ラベル」であり、時間をかけて
+             読む「文章」とは性質が違う。天気アプリの気温表示のように常に見せ、
+             挨拶・長文だけを折りたたみの対象にする。 -->
+        <div id="kazedayoriMoonLabel" style="text-align:center;font-size:0.85em;font-weight:700;margin-bottom:16px;opacity:0.85;"></div>
+        <div id="kazedayoriTextToggleRow" style="text-align:center;margin-bottom:4px;">
+          <a onclick="var b=document.getElementById('kazedayoriTextArea');var t=document.getElementById('kazedayoriTextToggleLabel');if(b.style.display==='none'){b.style.display='block';t.textContent='文章をたたむ ▲';}else{b.style.display='none';t.textContent='文章を読む ▼';}" style="font-size:0.85em;opacity:0.75;cursor:pointer;text-decoration:underline;" id="kazedayoriTextToggleLabel">文章を読む ▼</a>
+        </div>
+        <div id="kazedayoriTextArea" style="display:none;">
+          <div style="font-size:0.98em;font-weight:700;margin-bottom:18px;line-height:1.6;margin-top:14px;" id="kazedayoriGreet"></div>
+          <div style="font-size:0.93em;line-height:1.8;" id="kazedayoriBody"></div>
+          <div style="margin-top:20px;font-size:0.93em;line-height:2.0;white-space:pre-line;" id="kazedayoriFooter"></div>
+        </div>
       </div>
       <!-- 常に見える閉じるボタン -->
       <div style="padding:12px 24px 24px;flex-shrink:0;border-radius:0 0 28px 28px;" id="kazedayoriBtnArea">
@@ -48544,6 +48587,94 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-280: 招待UI再設計・個人用カレンダー除外 確認 完了');
      } catch(e) {
        ng('ST-280: 例外', e.message);
+     }
+
+     // ===== ST-281: 季節の風だより 月Canvas化・文章折りたたみ 確認（v0.45.1398〜） =====
+     // 背景：「開くたびに全文読まされる摩擦」（三井住友銀行Oliveアプリの例え）という
+     // 指摘を受け、開いた瞬間は月の絵だけを見せ、文字は自分でタップした人にだけ
+     // 見せる設計に変更した。ダッシュボードにあった月Canvas描画ロジックを
+     // _drawMoonCanvas(canvasId, age)という共通関数に切り出し（第9条：コード共有）、
+     // ダッシュボード・季節の風だよりの両方から呼べるようにした。
+     try {
+       typeof window._drawMoonCanvas === 'function'
+         ? ok('ST-281·①: _drawMoonCanvas共通関数のwindow公開確認')
+         : ng('ST-281·①: 関数が見つからない', '');
+       document.getElementById('kazedayoriMoonCanvas')
+         ? ok('ST-281·②: kazedayoriMoonCanvas DOM存在確認')
+         : ng('ST-281·②: Canvas要素が見つからない', '');
+       var _st281textArea = document.getElementById('kazedayoriTextArea');
+       (_st281textArea && _st281textArea.style.display === 'none')
+         ? ok('ST-281·③: 文章エリアが初期状態で非表示確認')
+         : ng('ST-281·③: 文章エリアが初期表示のまま', '');
+       document.getElementById('kazedayoriTextToggleLabel')
+         ? ok('ST-281·④: 文章開閉トグルのDOM存在確認')
+         : ng('ST-281·④: トグルが見つからない', '');
+       // ⑤ ダッシュボード側が共通関数呼び出しに置き換わっている（重複コード削除）確認
+       var _st281scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st281scriptTexts.indexOf("_drawMoonCanvas(\'dbMoonCanvas\', _age)") !== -1
+         ? ok('ST-281·⑤: ダッシュボードが共通関数を使用（重複コード削除）確認')
+         : ng('ST-281·⑤: ダッシュボードがまだ独自描画のまま', '');
+       ok('ST-281: 季節の風だより 月Canvas化・文章折りたたみ 確認 完了');
+     } catch(e) {
+       ng('ST-281: 例外', e.message);
+     }
+
+     // ===== ST-282: 月Canvas描画位置修正・マトリクス紹介自動起動撤去・40層固定 確認（v0.45.1399〜） =====
+     try {
+       var _st282scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st282kzIdx = _st282scriptTexts.indexOf('function showKazedayoriModal');
+       var _st282kzSrc = _st282kzIdx !== -1 ? _st282scriptTexts.slice(_st282kzIdx, _st282kzIdx + 9000) : '';
+       var _st282flexPos = _st282kzSrc.indexOf("_modal.style.display = 'flex';");
+       var _st282drawPos = _st282kzSrc.indexOf("_drawMoonCanvas('kazedayoriMoonCanvas', _age)");
+       (_st282flexPos !== -1 && _st282drawPos !== -1 && _st282drawPos > _st282flexPos)
+         ? ok('ST-282·①: Canvas描画がモーダル表示後に実行される順序確認')
+         : ng('ST-282·①: 描画順序が正しくない', '');
+       _st282scriptTexts.indexOf("if (!localStorage.getItem(" + "'mig_matrix_intro_v2'))") === -1
+         ? ok('ST-282·②: マトリクス紹介モーダルの自動起動撤去確認')
+         : ng('ST-282·②: 自動起動コードがまだ残っている', '');
+       document.getElementById('matrixIntroModal')
+         ? ok('ST-282·②b: matrixIntroModal自体のDOMは残存確認（手動で開ける想定）')
+         : ng('ST-282·②b: DOM自体が消えている', '');
+       _st282scriptTexts.indexOf("pinnedMatrixLayers: ['eisenhower']") !== -1
+         ? ok('ST-282·③: SETTINGS_DEFAULTが1層固定に変更されている確認')
+         : ng('ST-282·③: デフォルト値が変更されていない', '');
+       _st282scriptTexts.indexOf("localStorage.getItem('mig_pinned_matrix_default_v1')") !== -1
+         ? ok('ST-282·④: 既存ユーザー向けマイグレーション確認')
+         : ng('ST-282·④: マイグレーションが見つからない', '');
+       KEY_WHITELIST.has('mig_pinned_matrix_default_v1')
+         ? ok('ST-282·⑤: マイグレーションフラグKEY_WHITELIST登録確認')
+         : ng('ST-282·⑤: 未登録', '');
+       ok('ST-282: 月Canvas位置修正・マトリクス紹介撤去・40層固定 確認 完了');
+     } catch(e) {
+       ng('ST-282: 例外', e.message);
+     }
+
+     // ===== ST-283: 月齢ラベル常時表示・柔らかい縁取り 確認（v0.45.1400〜） =====
+     // 背景：月の絵の黒い夜空が、季節ごとに色が変わる暖色系の背景の上で浮いて
+     // 見えるとの指摘を受け、グロー（box-shadow）で馴染ませた。また月齢・月相名は
+     // 「一目で分かる数値・ラベル」であり、時間をかけて読む文章とは性質が違うため、
+     // 常に見せる方針に変更した（挨拶・長文だけを折りたたみ対象のままにする）。
+     try {
+       document.getElementById('kazedayoriMoonLabel')
+         ? ok('ST-283·①: kazedayoriMoonLabel DOM存在確認')
+         : ng('ST-283·①: ラベルDOMが見つからない', '');
+       var _st283canvas = document.getElementById('kazedayoriMoonCanvas');
+       (_st283canvas && _st283canvas.style.boxShadow && _st283canvas.style.boxShadow.length > 0)
+         ? ok('ST-283·②: 月Canvasの柔らかい縁取り(box-shadow)確認')
+         : ng('ST-283·②: 縁取りが設定されていない', '');
+       var _st283scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st283scriptTexts.indexOf('_moonLabelText') !== -1
+         ? ok('ST-283·③: 月齢ラベル用テキスト生成ロジック確認')
+         : ng('ST-283·③: 生成ロジックが見つからない', '');
+       // ④ 折りたたみ内フッターに月齢の重複記載が無い確認（「今日もおつかれさま。」のみ）
+       var _st283kzIdx = _st283scriptTexts.indexOf('function showKazedayoriModal');
+       var _st283kzSrc = _st283kzIdx !== -1 ? _st283scriptTexts.slice(_st283kzIdx, _st283kzIdx + 6000) : '';
+       _st283kzSrc.indexOf("_moonFooter = '今日の月は月齢") === -1
+         ? ok('ST-283·④: 折りたたみ内フッターの月齢重複記載が解消されている確認')
+         : ng('ST-283·④: まだ重複記載が残っている', '');
+       ok('ST-283: 月齢ラベル常時表示・柔らかい縁取り 確認 完了');
+     } catch(e) {
+       ng('ST-283: 例外', e.message);
      }
 
        // 第1条【本番環境】
