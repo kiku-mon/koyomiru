@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1402 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1403 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1402';
+    const APP_VERSION = 'v0.45.1403';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -5028,7 +5028,12 @@
 
   <!-- ===== v0.28 初回セットアップ ===== -->
   <div id="setupOverlay" style="display:none;position:fixed;inset:0;z-index:999999;background:linear-gradient(135deg,#e8f5e9,#e3f2fd);align-items:center;justify-content:center;">
-    <div style="background:#fff;border-radius:16px;padding:32px 28px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+    <div style="background:#fff;border-radius:16px;padding:32px 28px;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.12);position:relative;">
+      <!-- v0.45.1403: 【権威】2026-07-25、この画面には元々「閉じる」手段が一切なく、
+           テンプレートから追加モードで全項目が追加済み（全チェックボックス無効化）の
+           場合、ユーザーが完全に行き詰まる事故が実際に発生した。閉じるボタンを追加する。
+           初回セットアップ時は隠し、追加モードの時だけ表示する（初回は必ず選ばせる設計を維持）。 -->
+      <button id="setupOverlayCloseBtn" onclick="document.getElementById('setupOverlay').style.display='none';" style="display:none;position:absolute;top:12px;right:12px;background:none;border:none;font-size:1.4em;color:#999;cursor:pointer;padding:4px 8px;">✕</button>
       <div style="text-align:center;margin-bottom:24px;">
         <div style="font-size:2.5em;margin-bottom:8px;">🏰</div>
         <h2 style="margin:0 0 8px;font-size:1.3em;color:#333;">こよみる — 季節と生きる</h2>
@@ -5036,7 +5041,7 @@
         <p style="margin:8px 0 0;font-size:0.72em;color:#aaa;">わからないことがあれば、右下の「？」か📚図書館へ</p>
       </div>
       <div id="setupCheckboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px;"></div>
-      <button onclick="
+      <button id="setupOverlayMainBtn" onclick="
         const checked = Array.from(document.querySelectorAll('.setup-cb:checked')).map(cb => cb.value);
         completeSetup(checked);
       " style="width:100%;padding:14px;border:none;border-radius:10px;background:linear-gradient(135deg,#4facfe,#00f2fe);color:#fff;font-size:1em;font-weight:700;cursor:pointer;">
@@ -9054,8 +9059,11 @@
       if (_titleEl) _titleEl.textContent = 'こよみる — 季節と生きる';
       var _descEls = overlay.querySelectorAll('p');
       if (_descEls[0]) _descEls[0].textContent = '使うカレンダーを選んでください';
-      var _btn = overlay.querySelector('button');
+      var _closeBtn = document.getElementById('setupOverlayCloseBtn');
+      if (_closeBtn) _closeBtn.style.display = 'none'; // 初回セットアップは必ず選ばせる設計を維持
+      var _btn = document.getElementById('setupOverlayMainBtn');
       if (_btn) {
+        _btn.textContent = '🚀 はじめる';
         _btn.onclick = function() {
           var checked = Array.prototype.slice.call(document.querySelectorAll('.setup-cb:checked')).map(function(cb){ return cb.value; });
           completeSetup(checked);
@@ -9261,6 +9269,7 @@
       if (!overlay) return;
       var container = document.getElementById('setupCheckboxes');
       var existingNames = calendars.map(function(c){ return c.name; });
+      var _allAlreadyAdded = CALENDAR_TEMPLATES.every(function(t){ return existingNames.indexOf(t.name) !== -1; });
       container.innerHTML = CALENDAR_TEMPLATES.map(function(t) {
         var already = existingNames.indexOf(t.name) !== -1;
         return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:2px solid #eee;border-radius:10px;cursor:' + (already ? 'not-allowed;opacity:0.4;' : 'pointer;') + 'font-size:0.9em;">' +
@@ -9273,14 +9282,21 @@
       var titleEl = overlay.querySelector('h2');
       if (titleEl) titleEl.textContent = 'カレンダーを追加';
       var descEl = overlay.querySelector('p');
-      if (descEl) descEl.textContent = '追加したいカレンダーを選んでください';
-      var btn = overlay.querySelector('button');
+      // v0.45.1403: 用意されたテンプレート（6件）が全て追加済みの場合、選べるものが
+      // 何もなくなる。そのまま行き詰まらせず、その旨を伝えて閉じるボタンだけを促す。
+      if (descEl) descEl.textContent = _allAlreadyAdded ? '用意されたカレンダーは、もう全部追加済みです。' : '追加したいカレンダーを選んでください';
+      var btn = document.getElementById('setupOverlayMainBtn');
       if (btn) {
-        btn.onclick = function() {
-          var checked = Array.prototype.slice.call(document.querySelectorAll('.setup-cb:checked')).map(function(cb){ return cb.value; });
-          addTemplatesToCalendars(checked);
-        };
+        btn.textContent = _allAlreadyAdded ? '閉じる' : '追加する';
+        btn.onclick = _allAlreadyAdded
+          ? function() { overlay.style.display = 'none'; }
+          : function() {
+              var checked = Array.prototype.slice.call(document.querySelectorAll('.setup-cb:checked')).map(function(cb){ return cb.value; });
+              addTemplatesToCalendars(checked);
+            };
       }
+      var closeBtn = document.getElementById('setupOverlayCloseBtn');
+      if (closeBtn) closeBtn.style.display = 'block'; // 追加モードでは常に閉じるボタンを見せる
       overlay.style.display = 'flex';
     }
     function addTemplatesToCalendars(selectedNames) {
@@ -48854,6 +48870,41 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-285: カレンダーテンプレート追加機能 確認 完了');
      } catch(e) {
        ng('ST-285: 例外', e.message);
+     }
+
+     // ===== ST-286: テンプレート追加画面の閉じ込め事故修正 確認（v0.45.1403〜） =====
+     // 背景：テンプレートから追加する画面を開いた時、全テンプレートが既に追加済みだと
+     // 全チェックボックスが無効化され、しかも閉じるボタン自体がそもそも存在しない
+     // という、完全な行き詰まり事故が実際に発生した。閉じるボタンを追加し、全部
+     // 追加済みの場合はその旨を伝えてボタンを「閉じる」に変える対応を行った。
+     try {
+       document.getElementById('setupOverlayCloseBtn')
+         ? ok('ST-286·①: setupOverlayCloseBtn DOM存在確認')
+         : ng('ST-286·①: 閉じるボタンが見つからない', '');
+       document.getElementById('setupOverlayMainBtn')
+         ? ok('ST-286·②: setupOverlayMainBtn DOM存在確認')
+         : ng('ST-286·②: メインボタンが見つからない', '');
+       // ③ 実挙動：全テンプレートが追加済みの状態でopenCalendarTemplatePickerを呼ぶと、
+       // 閉じるボタンが見え、メインボタンが「閉じる」になっている確認
+       var _st286origCalendars = calendars.slice();
+       var _st286origNames = _st286origCalendars.map(function(c){ return c.name; });
+       var _st286missing = CALENDAR_TEMPLATES.filter(function(t){ return _st286origNames.indexOf(t.name) === -1; });
+       // 不足分を一時的に補い、全テンプレート充足状態を作る
+       _st286missing.forEach(function(t) { calendars.push(createCalendarFromTemplate(t)); });
+       window.openCalendarTemplatePicker();
+       var _st286closeBtn = document.getElementById('setupOverlayCloseBtn');
+       var _st286mainBtn = document.getElementById('setupOverlayMainBtn');
+       (_st286closeBtn && _st286closeBtn.style.display === 'block' && _st286mainBtn && _st286mainBtn.textContent === '閉じる')
+         ? ok('ST-286·③: 全部追加済み時に閉じるボタン表示・メインボタンが「閉じる」になる実挙動確認')
+         : ng('ST-286·③: 行き詰まり対応が機能していない', '');
+       document.getElementById('setupOverlay').style.display = 'none';
+       // クリーンアップ（追加した分を取り除き元の状態に戻す）
+       calendars = _st286origCalendars;
+       saveCalendars();
+       ok('ST-286·④: クリーンアップ完了');
+       ok('ST-286: テンプレート追加画面の閉じ込め事故修正 確認 完了');
+     } catch(e) {
+       ng('ST-286: 例外', e.message);
      }
 
        // 第1条【本番環境】
