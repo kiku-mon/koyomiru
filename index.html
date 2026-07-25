@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1403 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1404 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1403';
+    const APP_VERSION = 'v0.45.1404';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -134,8 +134,21 @@
           window.openSharedCalendarModal();
           var joinInput = document.getElementById('sharedCalendarJoinCode');
           if (joinInput) joinInput.value = joinCode;
-          if (typeof window._sharedCalSetStatus === 'function') {
-            window._sharedCalSetStatus('招待リンクから開きました。「参加する」を押してください。');
+          // v0.45.1404: 【権威】2026-07-25、「招待するボタンはOS標準の共有シートが開いて
+          // 親切だが、リンクを受け取った側は手動で『参加する』を押す必要があり、もう一手間
+          // 掛かる」との指摘を受けた。ログイン済みなら、その場で自動的に参加まで完了させる
+          // （Discord/Zoomのようなワンタップ体験に近づける）。
+          if (window._cloudIsLoggedIn) {
+            if (typeof window._sharedCalSetStatus === 'function') {
+              window._sharedCalSetStatus('招待リンクから参加しています…');
+            }
+            if (typeof window.joinSharedCalendarFromModal === 'function') {
+              window.joinSharedCalendarFromModal();
+            }
+          } else {
+            if (typeof window._sharedCalSetStatus === 'function') {
+              window._sharedCalSetStatus('招待リンクから開きました。ログイン後、コードが入力済みなので「参加する」を押してください。');
+            }
           }
         }
       }, 800); // アプリ初期化・ログイン状態確認を待つ
@@ -48907,6 +48920,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-286: 例外', e.message);
      }
 
+     // ===== ST-287: 招待リンクの自動参加・8桁コード欄の折りたたみ 確認（v0.45.1404〜） =====
+     // 背景：「招待するボタンはOS共有シートが開いて親切だが、受け取った側は手動で
+     // 『参加する』を押す必要がありもう一手間かかる」との指摘を受け、ログイン済み
+     // なら招待リンクを開いた瞬間に自動で参加まで完了するようにした。また「8桁の
+     // コードを手入力する人はいない」との指摘を受け、リンクを主役にし、手入力欄は
+     // 折りたたみの中の保険に格下げした。
+     try {
+       var _st287scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st287scriptTexts.indexOf('window.joinSharedCalendarFromModal();') !== -1 &&
+       _st287scriptTexts.indexOf('if (window._cloudIsLoggedIn) {') !== -1
+         ? ok('ST-287·①: 招待リンクのログイン済み自動参加ロジック確認')
+         : ng('ST-287·①: 自動参加ロジックが見つからない', '');
+       document.getElementById('sharedCalendarJoinCode')
+         ? ok('ST-287·②: sharedCalendarJoinCode DOM存在確認（折りたたみ後も残存）')
+         : ng('ST-287·②: 手入力欄が消えている', '');
+       var _st287input = document.getElementById('sharedCalendarJoinCode');
+       var _st287details = _st287input ? _st287input.closest('details') : null;
+       _st287details
+         ? ok('ST-287·③: 手入力欄がdetails（折りたたみ）の中に格下げされている確認')
+         : ng('ST-287·③: 折りたたみ構造になっていない', '');
+       ok('ST-287: 招待リンク自動参加・コード欄折りたたみ 確認 完了');
+     } catch(e) {
+       ng('ST-287: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -58533,9 +58571,16 @@ window.addMigration = addMigration;
     </div>
 
     <div style="border-top:1px solid #eee;padding-top:16px;">
-      <div style="font-size:0.85em;font-weight:600;margin-bottom:8px;">招待コードで参加する</div>
-      <input id="sharedCalendarJoinCode" type="text" placeholder="8桁のコード" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
-      <button onclick="joinSharedCalendarFromModal()" style="width:100%;padding:10px;border:1px solid #4a7856;border-radius:8px;background:transparent;color:#4a7856;font-size:0.85em;font-weight:600;cursor:pointer;">参加する</button>
+      <!-- v0.45.1404: 【権威】2026-07-25、「8桁のコードを手入力する人はまずいない」との
+           指摘を受け、招待リンク（タップ一発で開く）を主役にし、この手入力欄は
+           「リンクが使えない時の保険」として折りたたみの中に格下げする。 -->
+      <details>
+        <summary style="font-size:0.8em;color:#999;cursor:pointer;">招待コードをお持ちの場合はこちら</summary>
+        <div style="margin-top:10px;">
+          <input id="sharedCalendarJoinCode" type="text" placeholder="8桁のコード" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
+          <button onclick="joinSharedCalendarFromModal()" style="width:100%;padding:10px;border:1px solid #4a7856;border-radius:8px;background:transparent;color:#4a7856;font-size:0.85em;font-weight:600;cursor:pointer;">参加する</button>
+        </div>
+      </details>
     </div>
 
     <div id="sharedCalendarStatus" style="font-size:0.78em;color:#7a6a54;margin-top:14px;min-height:1.2em;"></div>
