@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1395 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1396 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1395';
+    const APP_VERSION = 'v0.45.1396';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33520,8 +33520,12 @@ async function joinSharedCalendarByCode(code) {
 async function listMySharedCalendars() {
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
+  // v0.45.1396: 【権威】2026-07-25、is_personal（個人用カレンダー）を除外していなかったため、
+  // 招待する相手がいない個人用カレンダーまで「共有カレンダー」として一覧に出てしまい、
+  // 「個人用カレンダーが2つあってどっちがどっちか分からない」という混乱を招いた。
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
-    .select('id, name, invite_code, invite_code_expires_at, owner_id')
+    .select('id, name, invite_code, invite_code_expires_at, owner_id, is_personal')
+    .eq('is_personal', false)
     .order('created_at', { ascending: true });
   if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); }
   return r;
@@ -33895,15 +33899,20 @@ async function refreshSharedCalendarList() {
     var inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(c.invite_code);
     var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(inviteUrl);
     var safeId = 'sc_' + c.id.replace(/-/g, '');
-    // v0.45.1394: メンバー表示フィルタのUI。そのカレンダーに実在するタスクから
-    // 動的に作成者一覧を抽出し、自分以外の各メンバーにチェックボックスを表示する。
-    // メンバーが1人（自分だけ、まだ他の人が投稿していない）の場合は表示しない。
+    // v0.45.1396: 【権威】2026-07-25、業界最高峰（Discord・Zoom・LINE等）の招待UXを
+    // 再調査した結果、「1つの明確な招待アクションを主役にし、他は控えめにする」
+    // という共通原則を発見した。従来のQR＋リンクコピー＋シェアの3点が横並びで
+    // 競合していた設計をやめ、「招待する」ボタン1つを主役にし、QR・リンクコピーは
+    // 折りたたみの補助にする。また「表示するメンバー」が管理者機能に見えるという
+    // 指摘を受け、<details>で折りたたみ、「あなた自身の画面にだけ影響する」旨を
+    // 明記して、他人の権限を操作するものではないことを明確にした。
     var _members = (typeof getSharedCalendarMembers === 'function') ? getSharedCalendarMembers(c.id) : [];
     var _others = _members.filter(function(m){ return !m.isMe; });
     var _mfList = (allSettings.ui.memberFilters && allSettings.ui.memberFilters[c.id]) || [];
     var _memberFilterHtml = _others.length === 0 ? '' :
-      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #e5e0d5;">' +
-        '<div style="font-size:0.72em;color:#888;margin-bottom:6px;">表示するメンバー</div>' +
+      '<details style="margin-top:10px;">' +
+        '<summary style="font-size:0.75em;color:#888;cursor:pointer;">👁️ あなたの画面での表示設定</summary>' +
+        '<div style="font-size:0.68em;color:#aaa;margin:6px 0;">ここでの操作は、あなた自身の画面にだけ影響します。相手には影響しません。</div>' +
         _others.map(function(m) {
           var _checked = _mfList.indexOf(m.userId) === -1;
           var _safeUid = m.userId.replace(/'/g, '');
@@ -33912,16 +33921,17 @@ async function refreshSharedCalendarList() {
             (m.name || '(名前不明)') +
           '</label>';
         }).join('') +
-      '</div>';
+      '</details>';
     return '<div style="background:#f9f7f2;border-radius:12px;padding:14px;margin-bottom:10px;">' +
-      '<div style="font-size:0.9em;font-weight:600;margin-bottom:8px;">' + (c.name || '(無題)') + '</div>' +
-      '<div style="display:flex;gap:12px;align-items:flex-start;">' +
-        '<img src="' + qrUrl + '" width="90" height="90" style="border-radius:8px;background:#fff;flex-shrink:0;" alt="招待QRコード">' +
-        '<div style="flex:1;min-width:0;">' +
-          '<div style="font-size:0.68em;color:#999;margin-bottom:6px;">' + new Date(c.invite_code_expires_at).toLocaleDateString('ja-JP') + 'まで有効</div>' +
-          '<button onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:7px;background:#fff;color:#555;font-size:0.72em;cursor:pointer;margin-bottom:6px;">🔗 招待リンクをコピー</button>' +
-          '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + (c.name || '共有カレンダー').replace(/'/g,'') + '\')" style="width:100%;padding:7px;border:none;border-radius:7px;background:#4a7856;color:#fff;font-size:0.72em;cursor:pointer;">📤 シェアする</button>' +
-        '</div>' +
+      '<div style="font-size:0.9em;font-weight:600;margin-bottom:10px;">' + (c.name || '(無題)') + '</div>' +
+      '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + (c.name || '共有カレンダー').replace(/'/g,'') + '\')" style="width:100%;padding:11px;border:none;border-radius:8px;background:#4a7856;color:#fff;font-size:0.85em;font-weight:600;cursor:pointer;">📤 招待する</button>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">' +
+        '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.72em;color:#7a8a75;cursor:pointer;text-decoration:underline;">🔗 リンクをコピー</a>' +
+        '<a onclick="document.getElementById(\'' + safeId + '_qr\').style.display = document.getElementById(\'' + safeId + '_qr\').style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.72em;color:#7a8a75;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
+      '</div>' +
+      '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-top:10px;">' +
+        '<img src="' + qrUrl + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
+        '<div style="font-size:0.65em;color:#999;margin-top:4px;">' + new Date(c.invite_code_expires_at).toLocaleDateString('ja-JP') + 'まで有効</div>' +
       '</div>' +
       _memberFilterHtml +
     '</div>';
@@ -48501,6 +48511,41 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-279: 例外', e.message);
      }
 
+     // ===== ST-280: 招待UI再設計・個人用カレンダー除外 確認（v0.45.1396〜） =====
+     // 背景：①「個人用カレンダーが招待一覧に2つ出て見分けがつかない」との指摘を受け、
+     // listMySharedCalendarsにis_personal=falseフィルタを追加した。②「タスクの
+     // 共有同期は今後実装予定」という古い説明文を、実態（実装済み）に合わせて
+     // 更新した。③Discord・Zoom等の業界標準を再調査し、「1つの明確な招待アクション
+     // を主役にし、他は控えめにする」原則に基づき、QR＋リンクコピー＋シェアの
+     // 3点横並びだった招待UIを「招待するボタン1つを主役、QR/コピーは補助」に
+     // 再設計した。④メンバー表示フィルタが管理者機能に見えるという指摘を受け、
+     // <details>で折りたたみ、「あなた自身の画面にだけ影響する」旨を明記した。
+     try {
+       var _st280scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st280listIdx = _st280scriptTexts.indexOf('async function listMySharedCalendars()');
+       var _st280listSrc = _st280listIdx !== -1 ? _st280scriptTexts.slice(_st280listIdx, _st280listIdx + 700) : '';
+       _st280listSrc.indexOf(".eq(\'is_personal\', false)") !== -1
+         ? ok('ST-280·①: 個人用カレンダー除外フィルタ確認')
+         : ng('ST-280·①: フィルタが見つからない', '');
+       _st280scriptTexts.indexOf('招待した相手と、タスクを共有できます。') !== -1
+         ? ok('ST-280·②: 説明文の実態への更新確認')
+         : ng('ST-280·②: 説明文が更新されていない', '');
+       _st280scriptTexts.indexOf('フェーズ1：招待' + '・参加の入り口のみ') === -1
+         ? ok('ST-280·②b: 古い「今後実装予定」表記が残っていない確認')
+         : ng('ST-280·②b: 古い表記が残っている', '');
+       var _st280renderIdx = _st280scriptTexts.indexOf('async function refreshSharedCalendarList()');
+       var _st280renderSrc = _st280renderIdx !== -1 ? _st280scriptTexts.slice(_st280renderIdx, _st280renderIdx + 4000) : '';
+       _st280renderSrc.indexOf('📤 招待する') !== -1
+         ? ok('ST-280·③: 招待するボタンが主役として存在確認')
+         : ng('ST-280·③: 主役ボタンが見つからない', '');
+       _st280renderSrc.indexOf('<details') !== -1 && _st280renderSrc.indexOf('あなた自身の画面にだけ影響します') !== -1
+         ? ok('ST-280·④: メンバー表示設定が折りたたみ・自己影響の明記を伴って実装されている確認')
+         : ng('ST-280·④: 折りたたみ・説明文が見つからない', '');
+       ok('ST-280: 招待UI再設計・個人用カレンダー除外 確認 完了');
+     } catch(e) {
+       ng('ST-280: 例外', e.message);
+     }
+
        // 第1条【本番環境】
        //
        // 【制度趣旨】
@@ -58116,7 +58161,7 @@ window.addMigration = addMigration;
   <div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:400px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.18);position:relative;">
     <button onclick="closeSharedCalendarModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:1.3em;color:#999;cursor:pointer;">✕</button>
     <div style="font-size:1.1em;font-weight:700;margin-bottom:4px;">👨‍👩‍👧 共有カレンダー</div>
-    <div style="font-size:0.75em;color:#999;margin-bottom:18px;">フェーズ1：招待・参加の入り口のみ（タスクの共有同期は今後実装予定）</div>
+    <div style="font-size:0.75em;color:#999;margin-bottom:18px;">招待した相手と、タスクを共有できます。</div>
 
     <div id="sharedCalendarMyList" style="margin-bottom:18px;"></div>
 
