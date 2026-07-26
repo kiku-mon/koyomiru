@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1406 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1408 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1406';
+    const APP_VERSION = 'v0.45.1408';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -7191,6 +7191,15 @@
           </div>
           <p style="font-size:0.72em;color:#888;margin:0 0 10px 0;">最古の記録〜昨日までの「日誌も雑記もない日」に、天象・月齢・七十二候のメモを1件ずつ追加します。実行前に件数の確認モーダルが出ます。</p>
           <button id="adminAutoFillJournalBtn" onclick="openAutoFillJournalConfirm()" style="width:100%;padding:9px;background:transparent;border:1px solid #00acc1;border-radius:8px;color:#80deea;font-size:0.82em;cursor:pointer;">📓 日誌の空日を補完する</button>
+        </div>
+        <!-- v0.45.1408: 【権威】2026-07-25、開発者が「誰がどの共有カレンダーに
+             参加したか」を把握できる場所が必要との要望を受け、管理者パネル専用の
+             一覧を追加する。参加者側のUIには一切影響しない（TimeTree同様、参加者は
+             「参加しました」のみのシンプルな体験を維持）。 -->
+        <div id="adminSharedCalMembersArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+          <div style="font-size:0.82em;font-weight:700;color:#a3c9a8;margin-bottom:8px;">👨‍👩‍👧 共有カレンダー参加者一覧</div>
+          <button id="adminSharedCalMembersBtn" onclick="loadAdminSharedCalMembers()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7856;border-radius:8px;color:#a3c9a8;font-size:0.82em;cursor:pointer;margin-bottom:8px;">🔄 参加者一覧を読み込む</button>
+          <div id="adminSharedCalMembersList" style="font-size:0.78em;color:#ccc;line-height:1.7;"></div>
         </div>
         <!-- v0.45.863〜 カレンダー重複検出 / v0.45.864〜 Phase 2: 詳細パネル + プレビュー / v0.45.865〜 識別子リネーム(Dupe→Duplicate・第15条) / v0.45.866〜 Phase 3: バックアップ + 復元 / v0.45.867〜 Phase 4: マージ実行 + アトミック + 検証 + 監査ログ(原潜・原発級完成) -->
         <div id="adminCalendarDuplicateArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
@@ -26549,6 +26558,13 @@ function loadSettingsUI() {
         cal.cloudCalendarId = r.data.id;
         cal.inviteCode = r.data.invite_code;
         saveCalendars();
+        // v0.45.1407: 【権威】2026-07-25、参加した側には即時同期（unifiedRefreshMyCalendarIds
+        // ＋unifiedPullTasks）を追加したが、作成した側（招待する側）にも同じ対応をしないと、
+        // 新しく作った共有カレンダーがRealtime監視対象（_myCalendarIds）に反映されず、
+        // 相手が予定を追加してもリアルタイムで気づけない恐れがあった。
+        try {
+          if (typeof unifiedRefreshMyCalendarIds === 'function') await unifiedRefreshMyCalendarIds();
+        } catch(eRefreshAfterCreate) { console.warn('[SharedCal] 作成後のカレンダー一覧更新エラー:', eRefreshAfterCreate); }
         var _inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(r.data.invite_code);
         _shareOrCopyInviteUrl(_inviteUrl, cal.name);
       } else {
@@ -33697,7 +33713,7 @@ async function createSharedCalendar(name) {
   // あるため、作成直後に自分自身もメンバーとして明示的に登録する。
   try {
     var mr = await window.supabaseClient.from('koyomiru_shared_calendar_members')
-      .insert({ calendar_id: r.data.id, user_id: u.data.user.id });
+      .insert({ calendar_id: r.data.id, user_id: u.data.user.id, display_name: (window.allSettings && allSettings.profile && allSettings.profile.name) || null });
     if (mr.error) console.warn('[SharedCal] 作成者自身のメンバー登録エラー:', mr.error.message);
   } catch(eMember) { console.warn('[SharedCal] 作成者自身のメンバー登録エラー:', eMember); }
   return r;
@@ -33716,7 +33732,11 @@ async function lookupInviteCode(code) {
 async function joinSharedCalendarByCode(code) {
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
-  var r = await window.supabaseClient.rpc('koyomiru_join_by_invite', { code: code });
+  // v0.45.1408: 【権威】2026-07-25、開発者が「誰が参加したか」を管理者パネルで
+  // 把握できるようにするため、参加時に表示名も一緒に記録する。参加者側のUIは
+  // 変えず「参加しました」のみのシンプルな体験を維持する（TimeTree同様）。
+  var _displayName = (window.allSettings && allSettings.profile && allSettings.profile.name) || null;
+  var r = await window.supabaseClient.rpc('koyomiru_join_by_invite', { code: code, p_display_name: _displayName });
   if (r.error) { console.error('[SharedCal] 参加失敗:', r.error.message); }
   else { console.log('[SharedCal] 参加OK。calendar_id=' + r.data); }
   return r;
@@ -33741,6 +33761,44 @@ window.createSharedCalendar = createSharedCalendar;
 window.lookupInviteCode = lookupInviteCode;
 window.joinSharedCalendarByCode = joinSharedCalendarByCode;
 window.listMySharedCalendars = listMySharedCalendars;
+// v0.45.1408: 【権威】2026-07-25、開発者（管理者パネル）専用。自分がオーナーの
+// 共有カレンダーごとに、参加者の表示名・参加日時を一覧表示する。参加者側のUIには
+// 一切表示されない、開発者だけがアクセスする画面。
+async function loadAdminSharedCalMembers() {
+  var listEl = document.getElementById('adminSharedCalMembersList');
+  if (!listEl) return;
+  listEl.textContent = '読み込み中…';
+  if (!window.supabaseClient || !window._cloudUserId) { listEl.textContent = '⚠️ ログインしていません'; return; }
+  var calRes = await window.supabaseClient.from('koyomiru_shared_calendars')
+    .select('id, name')
+    .eq('owner_id', window._cloudUserId)
+    .eq('is_personal', false);
+  if (calRes.error || !calRes.data || calRes.data.length === 0) {
+    listEl.textContent = '自分がオーナーの共有カレンダーはまだありません。';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < calRes.data.length; i++) {
+    var cal = calRes.data[i];
+    var memRes = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+      .select('display_name, user_id, joined_at')
+      .eq('calendar_id', cal.id)
+      .order('joined_at', { ascending: true });
+    html += '<div style="margin-bottom:10px;"><b>' + (cal.name || '(無題)') + '</b><br>';
+    if (memRes.error || !memRes.data || memRes.data.length === 0) {
+      html += '<span style="color:#888;">（メンバー情報の取得に失敗、または0件）</span>';
+    } else {
+      memRes.data.forEach(function(m) {
+        var _isMe = m.user_id === window._cloudUserId;
+        var _dt = m.joined_at ? new Date(m.joined_at).toLocaleString('ja-JP') : '';
+        html += '・' + (m.display_name || '(名前未設定)') + (_isMe ? '（自分）' : '') + ' — ' + _dt + '<br>';
+      });
+    }
+    html += '</div>';
+  }
+  listEl.innerHTML = html;
+}
+window.loadAdminSharedCalMembers = loadAdminSharedCalMembers;
 // ===== END v0.45.1342 共有カレンダー =====
 
 // ===== v0.45.1344: 統一同期エンジン（個人＝メンバー1人のカレンダーとして扱う） =====
@@ -49023,6 +49081,54 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-289: 招待エラー詳細化・ST-281修正 確認 完了');
      } catch(e) {
        ng('ST-289: 例外', e.message);
+     }
+
+     // ===== ST-290: 招待作成側の即時同期（対称性の確保） 確認（v0.45.1407〜） =====
+     // 背景：参加した側には即時同期を追加したが、招待する側（作成者）にも同じ対応を
+     // しないと、新しく作った共有カレンダーがRealtime監視対象に反映されず、相手の
+     // 更新にリアルタイムで気づけない恐れがあったため、対称に修正した。
+     try {
+       var _st290scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st290idx = _st290scriptTexts.indexOf('async function inviteToCalendar(idx)');
+       var _st290src = _st290idx !== -1 ? _st290scriptTexts.slice(_st290idx, _st290idx + 2500) : '';
+       _st290src.indexOf('unifiedRefreshMyCalendarIds()') !== -1
+         ? ok('ST-290·①: 招待作成側の即時カレンダー一覧更新確認')
+         : ng('ST-290·①: 更新処理が見つからない', '');
+       ok('ST-290: 招待作成側の即時同期 確認 完了');
+     } catch(e) {
+       ng('ST-290: 例外', e.message);
+     }
+
+     // ===== ST-291: 参加者名の記録・管理者パネル一覧 確認（v0.45.1408〜） =====
+     // 背景：「誰が参加したか、管理者パネルで分かるようにしたい」との要望を受けた。
+     // 参加者側のUIは変えず「参加しました」のみのシンプルな体験を維持し（TimeTree
+     // 同様）、名前だけを記録する（メールアドレスはSupabaseダッシュボードで既に
+     // 見られるため、過剰な複製を避け入れない）。
+     try {
+       var _st291scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st291joinIdx = _st291scriptTexts.indexOf('async function joinSharedCalendarByCode(code)');
+       var _st291joinSrc = _st291joinIdx !== -1 ? _st291scriptTexts.slice(_st291joinIdx, _st291joinIdx + 800) : '';
+       _st291joinSrc.indexOf('p_display_name') !== -1
+         ? ok('ST-291·①: 参加時の表示名送信確認')
+         : ng('ST-291·①: 表示名送信が見つからない', '');
+       var _st291createIdx = _st291scriptTexts.indexOf('async function createSharedCalendar(name)');
+       var _st291createSrc = _st291createIdx !== -1 ? _st291scriptTexts.slice(_st291createIdx, _st291createIdx + 1600) : '';
+       _st291createSrc.indexOf('display_name:') !== -1
+         ? ok('ST-291·②: 作成者自身の表示名記録確認')
+         : ng('ST-291·②: 記録処理が見つからない', '');
+       typeof window.loadAdminSharedCalMembers === 'function'
+         ? ok('ST-291·③: loadAdminSharedCalMembers window公開確認')
+         : ng('ST-291·③: 関数が見つからない', '');
+       document.getElementById('adminSharedCalMembersArea')
+         ? ok('ST-291·④: 管理者パネルへの一覧セクション組み込み確認')
+         : ng('ST-291·④: セクションが見つからない', '');
+       // ⑤ メールアドレスは扱わない（過剰設計を避けた）ことの確認
+       _st291scriptTexts.indexOf("from('koyomiru_shared_calendar_members')\n      .select('display_name, user_id, joined_at')") !== -1
+         ? ok('ST-291·⑤: 名前のみ取得・メールアドレス不使用の設計確認')
+         : ng('ST-291·⑤: 想定の取得列と異なる', '');
+       ok('ST-291: 参加者名の記録・管理者パネル一覧 確認 完了');
+     } catch(e) {
+       ng('ST-291: 例外', e.message);
      }
 
        // 第1条【本番環境】
