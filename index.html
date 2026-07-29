@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1408 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1412 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1408';
+    const APP_VERSION = 'v0.45.1412';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -20207,6 +20207,8 @@ function reviveBlueprint(id) {
       var input = document.createElement('input');
       input.type = 'text';
       input.value = opts.defaultValue || '';
+      input.autocomplete = 'off'; // v0.45.1412: ブラウザのパスワード自動補完誤爆対策
+      input.name = 'text-input-modal-' + Date.now();
       if (opts.placeholder) input.placeholder = opts.placeholder;
       input.style.cssText = 'width:100%;padding:11px;border:1px solid #ddd;border-radius:10px;font-size:0.95em;box-sizing:border-box;margin-bottom:16px;';
       var btnRow = document.createElement('div');
@@ -28850,6 +28852,12 @@ function renderDashboardView() {
       var input = document.createElement('input');
       input.type = 'text';
       input.placeholder = '追加...';
+      // v0.45.1412: 【権威】2026-07-29、この入力欄にブラウザの保存済みメール
+      // アドレス・パスワードが自動補完候補として出てしまう不具合が実際に報告
+      // された。autocomplete属性が未設定だったため、Chromeがログインフォームと
+      // 誤認識していた。第266条（ST-266）の他の入力欄と同じ対策を適用する。
+      input.autocomplete = 'off';
+      input.name = 'quad-task-text-' + col.key;
       input.style.cssText = 'flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:0.75em;background:#fff;min-width:0;';
       var addBtn = document.createElement('button');
       addBtn.type = 'button'; // フォーム送信防止
@@ -31866,6 +31874,8 @@ function _makeInlineEditor(row, currentVal, onSave, onCancel, color) {
   var inp = document.createElement('input');
   inp.type = 'text';
   inp.value = currentVal;
+  inp.autocomplete = 'off'; // v0.45.1412: ブラウザのパスワード自動補完誤爆対策
+  inp.name = 'inline-editor-' + Date.now();
   inp.style.cssText = 'flex:1;padding:6px 10px;border:1.5px solid ' + color + ';border-radius:8px;font-size:0.85em;outline:none;width:100%;box-sizing:border-box;';
   var saveBtn = document.createElement('button');
   saveBtn.textContent = '保存';
@@ -33801,6 +33811,94 @@ async function loadAdminSharedCalMembers() {
 window.loadAdminSharedCalMembers = loadAdminSharedCalMembers;
 // ===== END v0.45.1342 共有カレンダー =====
 
+// ===== v0.45.1409: プッシュ通知フェーズB（アプリを閉じていても届く本物のプッシュ通知） =====
+// 【権威】2026-07-26、フェーズA（アプリを開いている間のトースト通知）の続きとして、
+// Service Worker + VAPID + Database Webhook + Edge Functionによる本格実装。
+// VAPID公開鍵は秘密情報ではないため、ここに直接埋め込む（秘密鍵はEdge Function側のみ）。
+var KOYOMIRU_VAPID_PUBLIC_KEY = 'BDMTMEbGjllvQBGhrY1gtSBlF3tdJ3fHChVrT0cBk-kGX_Tx5LzVzeWzLA6VUmxepqw9d0TLs9DHMk8OJxWAjLc';
+
+function _urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var rawData = atob(base64);
+  var outputArray = new Uint8Array(rawData.length);
+  for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+// Service Workerを登録する（プッシュ通知の土台。ページ読み込み時に毎回呼んでよい：冪等）
+async function registerKoyomiruServiceWorker() {
+  if (!('serviceWorker' in navigator)) { console.warn('[Push] このブラウザはService Worker非対応'); return null; }
+  try {
+    var reg = await navigator.serviceWorker.register('./sw.js');
+    return reg;
+  } catch (e) {
+    console.warn('[Push] Service Worker登録失敗:', e);
+    return null;
+  }
+}
+window.registerKoyomiruServiceWorker = registerKoyomiruServiceWorker;
+
+// プッシュ通知を有効化する（通知許可のリクエスト→購読→Supabaseへ保存）
+async function enablePushNotifications() {
+  if (!window._cloudIsLoggedIn) { if (typeof showToast === 'function') showToast('通知を有効にするには、まずログインしてください'); return; }
+  if (!('Notification' in window) || !('PushManager' in window)) {
+    if (typeof showToast === 'function') showToast('⚠️ このブラウザはプッシュ通知に対応していません', {type:'error'});
+    return;
+  }
+  var permission = await Notification.requestPermission();
+  if (permission !== 'granted') {
+    if (typeof showToast === 'function') showToast('通知が許可されませんでした');
+    return;
+  }
+  var reg = await registerKoyomiruServiceWorker();
+  if (!reg) { if (typeof showToast === 'function') showToast('⚠️ Service Workerの登録に失敗しました', {type:'error'}); return; }
+  try {
+    var sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlBase64ToUint8Array(KOYOMIRU_VAPID_PUBLIC_KEY)
+    });
+    var subJson = sub.toJSON();
+    var r = await window.supabaseClient.from('koyomiru_push_subscriptions').upsert({
+      user_id: window._cloudUserId,
+      endpoint: subJson.endpoint,
+      subscription: subJson
+    }, { onConflict: 'user_id,endpoint' });
+    if (r.error) {
+      console.error('[Push] 購読情報の保存失敗:', r.error.message);
+      if (typeof showToast === 'function') showToast('⚠️ 通知の設定に失敗しました: ' + r.error.message, {type:'error', duration:6000});
+      return;
+    }
+    if (typeof showToast === 'function') showToast('✅ プッシュ通知を有効にしました');
+  } catch (e) {
+    console.error('[Push] 購読失敗:', e);
+    if (typeof showToast === 'function') showToast('⚠️ 通知の設定に失敗しました: ' + e.message, {type:'error', duration:6000});
+  }
+}
+window.enablePushNotifications = enablePushNotifications;
+
+// プッシュ通知を無効化する
+async function disablePushNotifications() {
+  try {
+    var reg = await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      var sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        var endpoint = sub.endpoint;
+        await sub.unsubscribe();
+        if (window.supabaseClient && window._cloudUserId) {
+          await window.supabaseClient.from('koyomiru_push_subscriptions').delete().eq('user_id', window._cloudUserId).eq('endpoint', endpoint);
+        }
+      }
+    }
+    if (typeof showToast === 'function') showToast('🔕 プッシュ通知を無効にしました');
+  } catch (e) {
+    console.error('[Push] 解除失敗:', e);
+  }
+}
+window.disablePushNotifications = disablePushNotifications;
+// ===== END v0.45.1409 プッシュ通知フェーズB =====
+
 // ===== v0.45.1344: 統一同期エンジン（個人＝メンバー1人のカレンダーとして扱う） =====
 // 【権威】2026-07-17、「個人用（blob）」と「共有用（1行1タスク）」の2つの仕組みを
 // 並立させる設計をやめ、個人用カレンダーも「メンバーが自分1人だけの共有カレンダー」
@@ -34279,6 +34377,13 @@ async function joinSharedCalendarFromModal() {
       });
       calendars = allSettings.calendar.list;
       saveAllSettings();
+    }
+    // v0.45.1410: 【権威】2026-07-26、招待した側が「相手が参加したこと」を知る手段が
+    // まだなかった。既存の通知基盤（フェーズA）を再利用し、'joined'という種別で
+    // 記録する。相手が予定を追加・完了させれば気づけたが、参加した瞬間自体は
+    // 見過ごされていたため、この抜けを塞ぐ。
+    if (_sharedCloudId && typeof _notifySharedCalendar === 'function') {
+      _notifySharedCalendar(_sharedCloudId, 'joined', null);
     }
   } catch(eJoinCal) { console.warn('[SharedCal] カレンダーリスト統合エラー:', eJoinCal); }
   _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！予定を取り込んでいます…');
@@ -34765,32 +34870,12 @@ function signOutOtherDevicesFromModal() {
   });
 }
 window.signOutOtherDevicesFromModal = signOutOtherDevicesFromModal;
-async function cloudFetchFromModal() {
-  var btn = document.getElementById('cloudLoginFetchBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '取得中…'; }
-  _cloudLoginSetStatus('クラウドのデータを確認しています…');
-  // v0.45.1362: 旧エンジン（supabaseSyncDown）を廃止したため、統一エンジンの
-  // unifiedPullTasksへ置き換える。
-  var _beforeCount = allTasks.length;
-  try {
-    await unifiedPullTasks();
-  } catch(e) {
-    if (btn) { btn.disabled = false; btn.textContent = '⬇️ クラウドのデータを取得'; }
-    _cloudLoginSetStatus('⚠️ 取得に失敗しました: ' + e.message);
-    return;
-  }
-  if (btn) { btn.disabled = false; btn.textContent = '⬇️ クラウドのデータを取得'; }
-  if (btn) btn.style.display = 'none';
-  _cloudLoginSetStatus('✅ クラウドのデータ（' + allTasks.length + '件）を取得しました。');
-  if (typeof window.showToast === 'function') window.showToast('✅ クラウドのデータを取得しました');
-}
 // 第3条: window公開
 window.openCloudLoginModal = openCloudLoginModal;
 window.closeCloudLoginModal = closeCloudLoginModal;
 window.cloudLoginSendLink = cloudLoginSendLink;
 window.cloudLoginRefreshStatus = cloudLoginRefreshStatus;
 window.cloudLogoutFromModal = cloudLogoutFromModal;
-window.cloudFetchFromModal = cloudFetchFromModal;
 // ===== END v0.45.1234 ログインモーダル制御 =====
 
 // ===== v0.45.1236: ログイン状態インジケーター＆ようこそ演出 =====
@@ -34885,8 +34970,14 @@ function _unifiedStartRealtimeSubscription(userId) {
           if (window._unifiedRealtimeChannel !== myChannel) return;
           var n = payload.new;
           if (!n || n.actor_id === window._cloudUserId) return; // 自分自身の操作は通知しない
-          var _actionLabel = { created: '追加しました', completed: '完了しました', updated: '更新しました', deleted: '削除しました' }[n.action] || '操作しました';
-          var _msg = '👥 ' + (n.actor_name || '誰か') + 'さんが「' + (n.task_text || '(無題)') + '」を' + _actionLabel;
+          // v0.45.1410: 'joined'（参加）はタスク名を伴わないため、専用のメッセージ文を使う
+          var _msg;
+          if (n.action === 'joined') {
+            _msg = '👥 ' + (n.actor_name || '誰か') + 'さんが参加しました！';
+          } else {
+            var _actionLabel = { created: '追加しました', completed: '完了しました', updated: '更新しました', deleted: '削除しました' }[n.action] || '操作しました';
+            _msg = '👥 ' + (n.actor_name || '誰か') + 'さんが「' + (n.task_text || '(無題)') + '」を' + _actionLabel;
+          }
           if (typeof window.showToast === 'function') window.showToast(_msg);
           if (!window._sharedCalNotifHistory) window._sharedCalNotifHistory = [];
           window._sharedCalNotifHistory.unshift(n);
@@ -47100,20 +47191,6 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-221: 例外', e.message);
      }
 
-     // ===== ST-222: クラウドデータ取得ボタンの実装確認（v0.45.1305〜、v0.45.1362で統一エンジン用に更新） =====
-     // 背景：複数端末間の同期テストで、クラウドにデータがあっても
-     //   取得する手段が存在しない不具合が発見された（テキスト表示のみで実装なし）。
-     try {
-       var _st222Btn = document.getElementById('cloudLoginFetchBtn');
-       _st222Btn ? ok('ST-222·①: cloudLoginFetchBtn DOM存在確認') : ng('ST-222·①: ボタンDOM欠落', '');
-       typeof window.cloudFetchFromModal === 'function' ? ok('ST-222·②: cloudFetchFromModal window公開確認') : ng('ST-222·②: 関数未公開', '');
-       var _st222src = typeof window.cloudFetchFromModal === 'function' ? window.cloudFetchFromModal.toString() : '';
-       _st222src.indexOf('unifiedPullTasks') !== -1 ? ok('ST-222·③: 統一エンジン（unifiedPullTasks）経由の取得確認') : ng('ST-222·③: 統一エンジン未使用', '');
-       ok('ST-222: クラウドデータ取得ボタン実装確認 完了');
-     } catch(e) {
-       ng('ST-222: 例外', e.message);
-     }
-
      // ===== ST-223: 完全自動同期（後勝ち方式）の実装確認（v0.45.1306〜、v0.45.1362で統一エンジン用に更新） =====
      try {
        // ① ログイン時、統一エンジンの初期化（unifiedEnsurePersonalCalendarAndMigrate）が呼ばれる
@@ -48045,11 +48122,6 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // _cloudStartRealtimeSubscription; という危険な公開行も本体削除後に残っていたため
      // 削除した。
      try {
-       // ① cloudFetchFromModal（手動ボタン）が統一エンジンに移行済み
-       var _st255fetchSrc = typeof window.cloudFetchFromModal === 'function' ? window.cloudFetchFromModal.toString() : '';
-       _st255fetchSrc.indexOf('unifiedPullTasks') !== -1
-         ? ok('ST-255·①: cloudFetchFromModalが統一エンジンへ移行済み確認')
-         : ng('ST-255·①: 旧エンジンのまま', '');
        // ② SIGNED_OUT内も削除済み関数を呼んでいないこと
        var _st255scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        var _st255soIdx = _st255scriptTexts.indexOf("if (event === 'SIGNED_OUT') {");
@@ -49129,6 +49201,101 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-291: 参加者名の記録・管理者パネル一覧 確認 完了');
      } catch(e) {
        ng('ST-291: 例外', e.message);
+     }
+
+     // ===== ST-292: プッシュ通知フェーズB（Service Worker・購読） 確認（v0.45.1409〜） =====
+     // 背景：フェーズA（アプリを開いている間のトースト通知）に続き、アプリを閉じて
+     // いても届く本物のプッシュ通知を実装した。Service Worker + VAPID + Database
+     // Webhook + Edge Functionの標準構成。
+     try {
+       ['registerKoyomiruServiceWorker', 'enablePushNotifications', 'disablePushNotifications'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-292·' + fn + ': window公開確認')
+           : ng('ST-292·' + fn + ': 未公開', '');
+       });
+       var _st292scriptTexts = document.documentElement.innerHTML;
+       _st292scriptTexts.indexOf('🔔 プッシュ通知を有効にする') !== -1
+         ? ok('ST-292·①: アカウントメニューへのボタン組み込み確認')
+         : ng('ST-292·①: ボタンが見つからない', '');
+       typeof KOYOMIRU_VAPID_PUBLIC_KEY === 'string' && KOYOMIRU_VAPID_PUBLIC_KEY.length > 20
+         ? ok('ST-292·②: VAPID公開鍵の設定確認')
+         : ng('ST-292·②: VAPID公開鍵が設定されていない', '');
+       ok('ST-292: プッシュ通知フェーズB（Service Worker・購読） 確認 完了');
+     } catch(e) {
+       ng('ST-292: 例外', e.message);
+     }
+
+     // ===== ST-293: 参加通知（招待した側への通知）確認（v0.45.1410〜） =====
+     // 背景：参加した側には既に通知が届いていたが、招待した側が「相手が参加した」
+     // ことを知る手段がまだなかった。既存の通知基盤（フェーズA）を再利用し、
+     // 'joined'という種別で記録・専用メッセージで通知するようにした。
+     try {
+       var _st293scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st293joinIdx = _st293scriptTexts.indexOf('async function joinSharedCalendarFromModal()');
+       var _st293joinSrc = _st293joinIdx !== -1 ? _st293scriptTexts.slice(_st293joinIdx, _st293joinIdx + 2500) : '';
+       _st293joinSrc.indexOf("_notifySharedCalendar(_sharedCloudId, 'joined', null)") !== -1
+         ? ok('ST-293·①: 参加成功時のjoined通知記録確認')
+         : ng('ST-293·①: 通知記録が見つからない', '');
+       _st293scriptTexts.indexOf("n.action === 'joined'") !== -1
+         ? ok('ST-293·②: Realtime受信側の参加専用メッセージ確認')
+         : ng('ST-293·②: 専用メッセージが見つからない', '');
+       ok('ST-293: 参加通知（招待した側への通知） 確認 完了');
+     } catch(e) {
+       ng('ST-293: 例外', e.message);
+     }
+
+     // ===== ST-294: アカウントメニューの整理（折りたたみ化） 確認（v0.45.1411〜） =====
+     // 背景：「アカウント画面のUIをすっきりさせたい」との要望を受けた。パスワード
+     // 設定・他端末ログアウト・クラウドデータ取得は、トラブル時にしか使わない
+     // 上級者向け設定であり、普段よく使う共有カレンダー・通知設定・ログアウトと
+     // 同列に並んでいると目移りするため、折りたたみに格下げした。
+     try {
+       ['cloudSetPasswordInput', 'cloudSetPasswordBtn'].forEach(function(id) {
+         document.getElementById(id)
+           ? ok('ST-294·' + id + ': 折りたたみ後もDOM存在確認')
+           : ng('ST-294·' + id + ': DOM欠落', '');
+       });
+       var _st294pwInput = document.getElementById('cloudSetPasswordInput');
+       var _st294details = _st294pwInput ? _st294pwInput.closest('details') : null;
+       _st294details
+         ? ok('ST-294·①: 上級者向け設定がdetails（折りたたみ）の中に格下げされている確認')
+         : ng('ST-294·①: 折りたたみ構造になっていない', '');
+       ok('ST-294: アカウントメニューの整理 確認 完了');
+     } catch(e) {
+       ng('ST-294: 例外', e.message);
+     }
+
+     // ===== ST-295: 自動補完誤爆対策・死んだUIの削除 確認（v0.45.1412〜） =====
+     // 背景：①マトリクスのタスク追加欄に、ブラウザの保存済みメールアドレスが
+     // 自動補完候補として出てしまう不具合が実際に報告された。autocomplete属性が
+     // 未設定だったため、Chromeがログインフォームと誤認識していた。汎用モーダル・
+     // 共通インライン編集ヘルパーにも同様の対策を適用した。②「⬇️ クラウドの
+     // データを取得」ボタンは、一度も表示状態に切り替わる処理がなく、誰にも
+     // 見えていなかった完全に死んだUIだったため、第31条に基づき完全削除した。
+     try {
+       var _st295scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st295quadIdx = _st295scriptTexts.indexOf('function _buildQuadSlot(col, tasks)');
+       var _st295quadSrc = _st295quadIdx !== -1 ? _st295scriptTexts.slice(_st295quadIdx, _st295quadIdx + 4500) : '';
+       _st295quadSrc.indexOf("input.autocomplete = 'off';") !== -1
+         ? ok('ST-295·①: マトリクス追加欄のautocomplete対策確認')
+         : ng('ST-295·①: 対策が見つからない', '');
+       var _st295modalIdx = _st295scriptTexts.indexOf('function showTextInputModal(opts)');
+       var _st295modalSrc = _st295modalIdx !== -1 ? _st295scriptTexts.slice(_st295modalIdx, _st295modalIdx + 1200) : '';
+       _st295modalSrc.indexOf("input.autocomplete = 'off';") !== -1
+         ? ok('ST-295·②: 汎用入力モーダルのautocomplete対策確認')
+         : ng('ST-295·②: 対策が見つからない', '');
+       var _st295inlineIdx = _st295scriptTexts.indexOf('function _makeInlineEditor(row, currentVal, onSave, onCancel, color)');
+       var _st295inlineSrc = _st295inlineIdx !== -1 ? _st295scriptTexts.slice(_st295inlineIdx, _st295inlineIdx + 400) : '';
+       _st295inlineSrc.indexOf("inp.autocomplete = 'off';") !== -1
+         ? ok('ST-295·③: 共通インライン編集ヘルパーのautocomplete対策確認')
+         : ng('ST-295·③: 対策が見つからない', '');
+       // ④ 死んだUI（クラウドデータ取得関連）が完全に消えていること
+       (_st295scriptTexts.indexOf('cloudFetch' + 'FromModal') === -1 && document.getElementById('cloudLoginFetchBtn') === null)
+         ? ok('ST-295·④: 死んだUI（クラウドデータ取得ボタン）の完全削除確認')
+         : ng('ST-295·④: 残骸が残っている', '');
+       ok('ST-295: 自動補完誤爆対策・死んだUIの削除 確認 完了');
+     } catch(e) {
+       ng('ST-295: 例外', e.message);
      }
 
        // 第1条【本番環境】
@@ -58726,14 +58893,23 @@ window.addMigration = addMigration;
            追加登録する機能。会社ネットワーク等でDiscord OAuthのリダイレクトが
            ブロックされる環境向けの「同じアカウントへの別ログイン経路」を用意する。
            新しい別アカウントを作る必要がなく、データの引き継ぎも不要になる。 -->
-      <div style="border-top:1px solid #e5dccc;padding-top:12px;margin-bottom:14px;">
-        <div style="font-size:0.78em;color:#8a7a63;margin-bottom:8px;">🔑 パスワードでもログインできるようにする（会社PC等、Discordログインが使えない環境向け）</div>
-        <input type="password" id="cloudSetPasswordInput" placeholder="新しいパスワード（8文字以上）" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #d8cbb8;border-radius:8px;font-size:0.9em;margin-bottom:8px;">
-        <button id="cloudSetPasswordBtn" onclick="cloudSetPasswordForCurrentAccount()" style="width:100%;padding:9px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.85em;font-weight:600;cursor:pointer;">このアカウントにパスワードを設定</button>
-      </div>
+      <!-- v0.45.1411: 【権威】2026-07-29、「アカウント画面のUIをすっきりさせたい」との
+           要望を受けた。パスワード設定・他端末ログアウト・クラウドデータ取得は、
+           トラブル時にしか使わない上級者向け設定であり、普段よく使う共有カレンダー・
+           通知設定・ログアウトと同列に並んでいると目移りする。折りたたみに格下げする。 -->
       <button onclick="openSharedCalendarModal()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">👨‍👩‍👧 共有カレンダー</button>
-      <button onclick="signOutOtherDevicesFromModal()" style="width:100%;padding:9px;border:1px solid #e0cba0;border-radius:8px;background:transparent;color:#a67c00;font-size:0.8em;cursor:pointer;margin-bottom:10px;">📵 他端末を全てログアウトさせる</button>
-      <button id="cloudLoginFetchBtn" onclick="cloudFetchFromModal()" style="display:none;width:100%;padding:11px;border:none;border-radius:8px;background:#4facfe;color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;margin-bottom:10px;">⬇️ クラウドのデータを取得</button>
+      <button onclick="enablePushNotifications()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">🔔 プッシュ通知を有効にする</button>
+      <details style="margin-bottom:10px;">
+        <summary style="font-size:0.78em;color:#a89a88;cursor:pointer;padding:4px 0;">⚙️ その他の設定（ログイン方法・端末管理）</summary>
+        <div style="margin-top:10px;">
+          <div style="border-top:1px solid #e5dccc;padding-top:12px;margin-bottom:14px;">
+            <div style="font-size:0.78em;color:#8a7a63;margin-bottom:8px;">🔑 パスワードでもログインできるようにする（会社PC等、Discordログインが使えない環境向け）</div>
+            <input type="password" id="cloudSetPasswordInput" placeholder="新しいパスワード（8文字以上）" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #d8cbb8;border-radius:8px;font-size:0.9em;margin-bottom:8px;">
+            <button id="cloudSetPasswordBtn" onclick="cloudSetPasswordForCurrentAccount()" style="width:100%;padding:9px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.85em;font-weight:600;cursor:pointer;">このアカウントにパスワードを設定</button>
+          </div>
+          <button onclick="signOutOtherDevicesFromModal()" style="width:100%;padding:9px;border:1px solid #e0cba0;border-radius:8px;background:transparent;color:#a67c00;font-size:0.8em;cursor:pointer;margin-bottom:10px;">📵 他端末を全てログアウトさせる</button>
+        </div>
+      </details>
       <button onclick="cloudLogoutFromModal()" style="width:100%;padding:9px;border:none;border-radius:8px;background:transparent;color:#a89a88;font-size:0.85em;cursor:pointer;">ログアウト</button>
     </div>
     <div id="cloudLoginStatus" style="font-size:0.85em;color:#7a6a54;margin-top:10px;min-height:1.2em;"></div>
