@@ -1,9 +1,21 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1413 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1418 ★ -->
 
 <html lang="ja">
 <head>
   <meta charset="utf-8">
+  <!-- v0.45.1415: 【権威】2026-07-30、庭ビューのOrbitControls.jsが内部で
+       `import ... from 'three'` という短縮名を使っており、それを実際のURLに
+       対応させるための「importmap」が本体に無かったため、読み込みに失敗して
+       いた。ページの早い段階で宣言する必要があるため、head内に置く。 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
   <!-- Content-Security-Policy：XSSの多層防御。inline onclick(770)/inline script(14)が
        あるため script-src に 'unsafe-inline' は外せないが、外部スクリプトの読込元を
        cdnjs(three.js)のみに限定し、悪意ある外部ドメインへの注入・送信を遮断する。
@@ -41,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1413';
+    const APP_VERSION = 'v0.45.1418';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -5077,6 +5089,7 @@
     <button class="nav-tab" id="navSearch" onclick="openSearchModal()" title="タスクを検索"
       ><span class="nav-tab-icon">🔍</span><span class="nav-tab-label">検索</span></button>
     <button class="nav-tab" id="navDashboard" onclick="switchView('dashboard')" title="ダッシュボード"><span class="nav-tab-icon">📈</span><span class="nav-tab-label">ダッシュボード</span></button>
+    <button class="nav-tab" id="navGarden" onclick="switchView('garden')" title="庭"><span class="nav-tab-icon">🌳</span><span class="nav-tab-label">庭</span></button>
     <div id="navFocusBadge" style="display:none;align-items:center;position:sticky;right:0;background:#fff;padding:0 6px 0 4px;flex-shrink:0;z-index:1;">
       <span id="navFocusText" style="font-size:0.68em;color:#f59e0b;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.01em;cursor:default;" title=""></span>
     </div>
@@ -6940,7 +6953,22 @@
 <!--   - URL: #privacy / #terms / #tokushoho で直接単独表示可能 -->
 <!--   - 上部に3タブ（タップでセクション切替） -->
 <!--   - プレースホルダーは黄色背景+点線枠で視覚化（後で手動で埋める） -->
+<!-- v0.45.1414: 季節の庭（3Dビュー）。実際の暦・月齢データと連動する。 -->
+<div id="gardenView" style="display:none;width:100%;height:calc(100vh - 50px);position:relative;background:#2c3e4a;overflow:hidden;">
+  <div id="gardenCanvasContainer" style="width:100%;height:100%;position:relative;"></div>
+  <div id="gardenLabel" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);color:#f3ead9;font-size:14px;background:rgba(20,30,25,0.45);padding:7px 18px;border-radius:18px;z-index:10;pointer-events:none;backdrop-filter:blur(6px);"></div>
+  <div id="gardenFallback" style="display:none;padding:60px 20px;text-align:center;color:#e8dfc8;">
+    <div style="font-size:2.5em;margin-bottom:12px;">🌳</div>
+    <div style="font-size:0.95em;line-height:1.8;">お使いの端末では、庭の3D表示を読み込めませんでした。<br>通信環境の良い場所で、もう一度開いてみてください。</div>
+  </div>
+  <div id="gardenVisitPanel" style="position:fixed;bottom:16px;left:78px;width:220px;max-height:38vh;overflow-y:auto;background:rgba(20,30,25,0.55);backdrop-filter:blur(8px);border-radius:14px;padding:14px;z-index:10;color:#f3ead9;font-size:12.5px;">
+    <div style="font-weight:700;margin-bottom:8px;letter-spacing:0.05em;">🚪 庭をたずねる</div>
+    <div id="gardenVisitList" style="font-size:0.9em;opacity:0.8;">読み込み中…</div>
+  </div>
+</div>
+
 <div id="legalView" style="display:none;background:#faf6ee;min-height:calc(100vh - 50px);color:#5a4520;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Hiragino Kaku Gothic ProN',Meiryo,sans-serif;line-height:1.85;font-size:15px;overflow-y:auto;-webkit-text-size-adjust:100%;">
+
   <div style="max-width:720px;margin:0 auto;padding:24px 20px 80px;box-sizing:border-box;">
 
     <!-- 戻るボタン -->
@@ -24340,6 +24368,9 @@ function reviveBlueprint(id) {
       const settingsView = document.getElementById('settingsView');
       const notebookView = document.getElementById('notebookView');
       const gantView = document.getElementById('gantView');
+      // v0.45.1414: 庭ビューも共通の非表示対象に含める（他ビューへ切替時に確実に隠す）
+      var _gdvHideAlways = document.getElementById('gardenView');
+      if (_gdvHideAlways) _gdvHideAlways.style.display = 'none';
       // 全ビューを非表示
       dailyView.style.display = 'none';
       dailyView.classList.remove('daily-active');
@@ -24473,6 +24504,14 @@ function reviveBlueprint(id) {
         if (typeof renderDashboardVideos === 'function') {
           try { renderDashboardVideos(); } catch(e) {}
         }
+      } else if (view === 'garden') {
+        // v0.45.1414: 【権威】2026-07-30、「季節の庭」3Dビュー。既存のcraftModeEnabled/
+        // craftRenderModeフラグの入り口だけが用意され、中身が空だったのを実装する。
+        var _dbvHide = document.getElementById('dashboardView'); if (_dbvHide) _dbvHide.style.display = 'none';
+        var _lgvHide = document.getElementById('legalView'); if (_lgvHide) _lgvHide.style.display = 'none';
+        var _gdvShow = document.getElementById('gardenView');
+        if (_gdvShow) _gdvShow.style.display = 'block';
+        if (typeof initGardenWorld === 'function') initGardenWorld();
       } else if (view === 'legal') {
         // v0.45.634〜：法的情報ページ（プライバシー・利用規約・特商法）
         var _lgvShow = document.getElementById('legalView');
@@ -33817,6 +33856,529 @@ async function loadAdminSharedCalMembers() {
   listEl.innerHTML = html;
 }
 window.loadAdminSharedCalMembers = loadAdminSharedCalMembers;
+
+// ===== v0.45.1414: 季節の庭（3Dビュー） =====
+// 【権威】2026-07-30、やることクラフトのcraftModeEnabled/craftRenderModeという
+// 入り口だけ用意され中身が空だった機能を、こよみるの「季節と共に生きる」という
+// テーマに合わせて実装する。今日の議論の集大成：王国→庭への世界観転換・
+// 実際の暦（七十二候）・月齢データとの連動・共有カレンダーのメンバーを
+// 「庭をたずねる」機能に活かす。Three.jsの読み込みは、やることクラフトの
+// initCraftWorldにあった「重複ロード防止・失敗時2Dフォールバック」という
+// 堅牢な設計思想を踏襲しつつ、現代的なESモジュール動的importで実装する。
+var _gardenInitialized = false;
+var _gardenBuilt = null; // シーン操作用の参照一式（再入場時の季節反映などに使う）
+
+function initGardenWorld() {
+  var label = document.getElementById('gardenLabel');
+  if (_gardenInitialized) {
+    if (_gardenBuilt) _gardenApplyTodaySeasonAndMoon();
+    if (typeof _loadGardenVisitList === 'function') _loadGardenVisitList();
+    return;
+  }
+  if (window._gardenLoading) return; // 重複ロード防止
+  window._gardenLoading = true;
+  if (label) label.textContent = '🌳 庭を育てています…';
+  Promise.all([
+    import('three'),
+    import('three/addons/controls/OrbitControls.js')
+  ]).then(function(mods) {
+    window._gardenLoading = false;
+    _gardenInitialized = true;
+    _buildGardenScene(mods[0], mods[1].OrbitControls);
+    if (typeof _loadGardenVisitList === 'function') _loadGardenVisitList();
+  }).catch(function(e) {
+    console.warn('[Garden] Three.js読み込み失敗、フォールバック表示:', e);
+    window._gardenLoading = false;
+    _gardenInitialized = false;
+    var fb = document.getElementById('gardenFallback');
+    if (fb) fb.style.display = 'block';
+    if (label) label.textContent = '';
+  });
+}
+window.initGardenWorld = initGardenWorld;
+
+function _buildGardenScene(THREE_MOD, OrbitControls) {
+  var THREE = THREE_MOD;
+  var container = document.getElementById('gardenCanvasContainer');
+  if (!container) return;
+  if (container.clientWidth === 0 || container.clientHeight === 0) {
+    // v0.45.1414: ビュー切替直後はレイアウト確定前でサイズ0になりうる（やることクラフトの
+    // initCraftWorldにあった対策と同じ）。少し待ってからリトライする。
+    setTimeout(function() { _gardenInitialized = false; if (typeof initGardenWorld === 'function') initGardenWorld(); }, 120);
+    return;
+  }
+  var label = document.getElementById('gardenLabel');
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x2c3e4a);
+  scene.fog = new THREE.FogExp2(0x2c3e4a, 0.016);
+
+  var camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 200);
+  camera.position.set(14, 11, 16);
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  container.appendChild(renderer.domElement);
+
+  var controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.06;
+  controls.maxPolarAngle = Math.PI / 2 - 0.05;
+  controls.minDistance = 6;
+  controls.maxDistance = 40;
+  controls.target.set(0, 1, 0);
+
+  var moonLight = new THREE.DirectionalLight(0xdbe6ff, 1.9);
+  moonLight.position.set(-10, 18, -6);
+  moonLight.castShadow = true;
+  moonLight.shadow.mapSize.set(2048, 2048);
+  moonLight.shadow.camera.left = -20; moonLight.shadow.camera.right = 20;
+  moonLight.shadow.camera.top = 20; moonLight.shadow.camera.bottom = -20;
+  scene.add(moonLight);
+  var warmFill = new THREE.PointLight(0xffcf8a, 1.0, 34);
+  warmFill.position.set(6, 4, 8);
+  scene.add(warmFill);
+  scene.add(new THREE.HemisphereLight(0x8fb0d8, 0x2f4030, 0.75));
+  var ambientLight = new THREE.AmbientLight(0x6a7a85, 1.15);
+  scene.add(ambientLight);
+
+  var groundMat = new THREE.MeshStandardMaterial({ color: 0x3a4d32, roughness: 0.88, metalness: 0.02 });
+  var ground = new THREE.Mesh(new THREE.CircleGeometry(16, 64), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  var graveMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c2, roughness: 1 });
+  var gravel = new THREE.Mesh(new THREE.RingGeometry(6.6, 9.4, 64), graveMat);
+  gravel.rotation.x = -Math.PI / 2;
+  gravel.position.y = 0.01;
+  gravel.receiveShadow = true;
+  scene.add(gravel);
+  for (var r = 6.9; r < 9.2; r += 0.35) {
+    var ring = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.05, 64), new THREE.MeshStandardMaterial({ color: 0xb7ae98, roughness: 1 }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.015;
+    scene.add(ring);
+  }
+
+  var pondMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1c4560, roughness: 0.08, metalness: 0.1,
+    transparent: true, opacity: 0.9, clearcoat: 0.6, clearcoatRoughness: 0.15
+  });
+  var pond = new THREE.Mesh(new THREE.CircleGeometry(5.6, 64), pondMat);
+  pond.rotation.x = -Math.PI / 2;
+  pond.position.y = 0.03;
+  scene.add(pond);
+  var pondRim = new THREE.Mesh(new THREE.RingGeometry(5.55, 5.85, 48), new THREE.MeshStandardMaterial({ color: 0x555049, roughness: 1 }));
+  pondRim.rotation.x = -Math.PI / 2;
+  pondRim.position.y = 0.02;
+  scene.add(pondRim);
+  var moonGlow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 4.5, 1, 12), new THREE.MeshBasicMaterial({ color: 0xdfeaff, transparent: true, opacity: 0.35 }));
+  moonGlow.rotation.x = -Math.PI / 2;
+  moonGlow.position.set(-2, 0.04, -1);
+  scene.add(moonGlow);
+
+  var steppingStoneMat = new THREE.MeshStandardMaterial({ color: 0x6b6b63, roughness: 0.9 });
+  [[0.3, -6.2], [1.1, -4.6], [1.6, -3.0], [1.3, -1.4], [0.5, 0.1]].forEach(function(p) {
+    var s = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 0.18, 10), steppingStoneMat);
+    s.position.set(p[0], 0.09, p[1]);
+    s.rotation.y = Math.random() * Math.PI;
+    s.castShadow = true; s.receiveShadow = true;
+    scene.add(s);
+  });
+
+  function buildToro(x, z, scale) {
+    var g = new THREE.Group();
+    var stoneMat = new THREE.MeshStandardMaterial({ color: 0x8a8a80, roughness: 0.95 });
+    var base = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.25, 8), stoneMat);
+    base.position.y = 0.13; g.add(base);
+    var pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 1.5, 8), stoneMat);
+    pillar.position.y = 1.0; g.add(pillar);
+    var fireBoxBase = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.32, 0.2, 8), stoneMat);
+    fireBoxBase.position.y = 1.85; g.add(fireBoxBase);
+    var fireBox = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.62), stoneMat);
+    fireBox.position.y = 2.2; g.add(fireBox);
+    var light = new THREE.PointLight(0xffb15c, 1.1, 4.5);
+    light.position.y = 2.2; g.add(light);
+    var flame = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffcf8a }));
+    flame.position.y = 2.2; g.add(flame);
+    var roof = new THREE.Mesh(new THREE.ConeGeometry(0.58, 0.42, 4), stoneMat);
+    roof.position.y = 2.62; roof.rotation.y = Math.PI / 4; g.add(roof);
+    var top = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), stoneMat);
+    top.position.y = 2.92; g.add(top);
+    g.traverse(function(o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    g.position.set(x, 0, z);
+    g.scale.setScalar(scale || 1);
+    scene.add(g);
+  }
+  buildToro(-3.4, -2.2, 1);
+  buildToro(4.5, 2.6, 0.72);
+
+  function buildPine(x, z, scale) {
+    var g = new THREE.Group();
+    var barkMat = new THREE.MeshStandardMaterial({ color: 0x4a3324, roughness: 1 });
+    var leafMat = new THREE.MeshStandardMaterial({ color: 0x3f6b45, roughness: 0.85 });
+    var curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.3, 0.9, 0.1),
+      new THREE.Vector3(-0.2, 1.7, 0.3), new THREE.Vector3(0.4, 2.4, 0)
+    ]);
+    var trunk = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.18, 8, false), barkMat);
+    trunk.castShadow = true;
+    g.add(trunk);
+    [[0.4, 2.5, 0], [1.0, 1.9, 0.3], [-0.6, 1.6, -0.2], [0.1, 1.1, 0.5]].forEach(function(p) {
+      var leaf = new THREE.Mesh(new THREE.SphereGeometry(0.55 + Math.random() * 0.15, 8, 8), leafMat);
+      leaf.position.set(p[0], p[1], p[2]);
+      leaf.scale.y = 0.55;
+      leaf.castShadow = true;
+      g.add(leaf);
+    });
+    g.position.set(x, 0, z);
+    g.scale.setScalar(scale || 1);
+    scene.add(g);
+  }
+  buildPine(-5.5, 3.5, 1.3);
+  buildPine(6.2, -3.8, 1.0);
+  buildPine(-6.8, -5.5, 0.85);
+
+  var SEASON_LEAF_COLOR = { spring: 0xf4b8c6, summer: 0x4d7a3f, autumn: 0xc96a2e, winter: 0xffffff };
+  var SEASON_GROUND = { spring: 0x3a4d32, summer: 0x2f4a2a, autumn: 0x4a3a26, winter: 0x5a5f66 };
+  var seasonTreeGroup = null;
+  var fallingPetals = [];
+  function buildSeasonTree(x, z, season) {
+    if (seasonTreeGroup) { scene.remove(seasonTreeGroup); }
+    fallingPetals.forEach(function(p) { scene.remove(p); });
+    fallingPetals = [];
+    var g = new THREE.Group();
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, 2.4, 8), new THREE.MeshStandardMaterial({ color: 0x3d2a20, roughness: 1 }));
+    trunk.position.y = 1.2; trunk.castShadow = true;
+    g.add(trunk);
+    var leafColor = SEASON_LEAF_COLOR[season] || SEASON_LEAF_COLOR.spring;
+    var leafOpacity = season === 'winter' ? 0.55 : 1;
+    var leafCount = season === 'winter' ? 3 : 6;
+    var petalMat = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.8, transparent: true, opacity: leafOpacity });
+    for (var i = 0; i < leafCount; i++) {
+      var cluster = new THREE.Mesh(new THREE.SphereGeometry(0.75 + Math.random() * 0.25, 8, 8), petalMat);
+      cluster.position.set((Math.random() - 0.5) * 1.6, 2.4 + Math.random() * 0.9, (Math.random() - 0.5) * 1.6);
+      cluster.castShadow = true;
+      g.add(cluster);
+    }
+    g.position.set(x, 0, z);
+    scene.add(g);
+    seasonTreeGroup = g;
+    if (season === 'spring' || season === 'autumn') {
+      var petalGeo = new THREE.PlaneGeometry(0.08, 0.08);
+      var petalFallMat = new THREE.MeshBasicMaterial({ color: leafColor, side: THREE.DoubleSide, transparent: true });
+      for (var i = 0; i < 40; i++) {
+        var p = new THREE.Mesh(petalGeo, petalFallMat);
+        p.position.set(x + (Math.random() - 0.5) * 3, 1 + Math.random() * 3, z + (Math.random() - 0.5) * 3);
+        p.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        p.userData.speed = 0.004 + Math.random() * 0.006;
+        scene.add(p);
+        fallingPetals.push(p);
+      }
+    }
+    if (season === 'winter') {
+      var snowGeo = new THREE.SphereGeometry(0.03, 6, 6);
+      var snowMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      for (var i = 0; i < 60; i++) {
+        var s = new THREE.Mesh(snowGeo, snowMat);
+        s.position.set((Math.random() - 0.5) * 20, 3 + Math.random() * 8, (Math.random() - 0.5) * 20);
+        s.userData.speed = 0.008 + Math.random() * 0.012;
+        scene.add(s);
+        fallingPetals.push(s);
+      }
+    }
+  }
+
+  function buildBamboo(x, z) {
+    var mat = new THREE.MeshStandardMaterial({ color: 0x6a8f4f, roughness: 0.7 });
+    var h = 5 + Math.random() * 2;
+    var b = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, h, 8), mat);
+    b.position.set(x, h / 2, z);
+    b.castShadow = true;
+    scene.add(b);
+  }
+  for (var i = 0; i < 14; i++) {
+    var ang = Math.random() * Math.PI * 2;
+    var rad = 12 + Math.random() * 2.5;
+    buildBamboo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+  }
+
+  var moon = new THREE.Mesh(new THREE.SphereGeometry(1.3, 32, 32), new THREE.MeshBasicMaterial({ color: 0xf5f0e0 }));
+  // v0.45.1418: 【権威】2026-07-30、月が初期カメラの視野角の外に配置されており、
+  // 「月の描画は？」と聞かれるまで気づけなかった。視野に入りやすい位置に調整する。
+  moon.position.set(-8, 13, -10);
+  scene.add(moon);
+  var moonHalo = new THREE.Mesh(new THREE.SphereGeometry(1.9, 32, 32), new THREE.MeshBasicMaterial({ color: 0xdce8ff, transparent: true, opacity: 0.25 }));
+  moonHalo.position.copy(moon.position);
+  scene.add(moonHalo);
+  var moonShadow = new THREE.Mesh(new THREE.SphereGeometry(1.32, 32, 32), new THREE.MeshBasicMaterial({ color: 0x2c3e4a }));
+  moonShadow.position.copy(moon.position);
+  scene.add(moonShadow);
+
+  var starGeo = new THREE.BufferGeometry();
+  var starCount = 400;
+  var starPos = new Float32Array(starCount * 3);
+  for (var i = 0; i < starCount; i++) {
+    var rr = 60 + Math.random() * 20;
+    var theta = Math.random() * Math.PI * 2;
+    var phi = Math.random() * Math.PI * 0.5;
+    starPos[i*3] = rr * Math.sin(phi) * Math.cos(theta);
+    starPos[i*3+1] = Math.abs(rr * Math.cos(phi)) + 5;
+    starPos[i*3+2] = rr * Math.sin(phi) * Math.sin(theta);
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  var stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.12 }));
+  scene.add(stars);
+
+  window.addEventListener('resize', function() {
+    if (!container.clientWidth) return;
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+
+  var clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    var t = clock.getElapsedTime();
+    pond.material.opacity = 0.85 + Math.sin(t * 0.6) * 0.03;
+    moonGlow.material.opacity = 0.3 + Math.sin(t * 0.8) * 0.08;
+    fallingPetals.forEach(function(p) {
+      p.position.y -= p.userData.speed;
+      p.rotation.z += 0.01;
+      if (p.position.y < 0.05) p.position.y = 4.5;
+    });
+    koiList.forEach(function(k) {
+      var dx = k.userData.targetX - k.position.x;
+      var dz = k.userData.targetZ - k.position.z;
+      var dist = Math.sqrt(dx*dx + dz*dz);
+      if (dist < 0.3) {
+        k.userData.targetX = (Math.random() - 0.5) * 4.5;
+        k.userData.targetZ = (Math.random() - 0.5) * 4.5;
+      }
+      var desiredHeading = Math.atan2(dz, dx);
+      var headingDiff = desiredHeading - k.userData.heading;
+      while (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
+      while (headingDiff < -Math.PI) headingDiff += Math.PI * 2;
+      k.userData.heading += headingDiff * 0.03;
+      k.userData.burstTimer -= 0.016;
+      var speedMul = 1;
+      if (k.userData.burstTimer < 0) k.userData.burstTimer = 1.5 + Math.random() * 3;
+      if (k.userData.burstTimer > 2.2) speedMul = 2.0;
+      var speed = k.userData.baseSpeed * speedMul * 0.012;
+      k.position.x += Math.cos(k.userData.heading) * speed;
+      k.position.z += Math.sin(k.userData.heading) * speed;
+      k.position.y = 0.1 + Math.sin(t * 1.5 + k.userData.bob) * 0.02;
+      k.rotation.y = -k.userData.heading + Math.PI / 2;
+      k.userData.wiggle += 0.15 + speedMul * 0.12;
+      if (k.children[0]) k.children[0].rotation.y = Math.sin(k.userData.wiggle) * (0.2 + speedMul * 0.08);
+    });
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  // ===== 鯉（池を泳ぐ） =====
+  var koiList = [];
+  var KOI_PATTERNS = [
+    { base: 0xf5efe0, spot: 0xe8623a }, { base: 0xf5efe0, spot: 0x1c1c1c },
+    { base: 0xe8623a, spot: 0x1c1c1c }, { base: 0xf5efe0, spot: 0xe8623a }
+  ];
+  var koiProfile = [
+    new THREE.Vector2(0.001, -0.52), new THREE.Vector2(0.05, -0.46),
+    new THREE.Vector2(0.11, -0.32), new THREE.Vector2(0.155, -0.12),
+    new THREE.Vector2(0.165, 0.08), new THREE.Vector2(0.14, 0.26),
+    new THREE.Vector2(0.09, 0.38), new THREE.Vector2(0.03, 0.46),
+    new THREE.Vector2(0.001, 0.49)
+  ];
+  var koiBodyGeo = new THREE.LatheGeometry(koiProfile, 14);
+  function buildKoi() {
+    for (var i = 0; i < 4; i++) {
+      var pat = KOI_PATTERNS[i % KOI_PATTERNS.length];
+      var g = new THREE.Group();
+      var baseMat = new THREE.MeshPhysicalMaterial({ color: pat.base, roughness: 0.28, metalness: 0.08, clearcoat: 0.4, clearcoatRoughness: 0.3 });
+      var spotMat = new THREE.MeshStandardMaterial({ color: pat.spot, roughness: 0.4 });
+      var body = new THREE.Mesh(koiBodyGeo, baseMat);
+      body.rotation.z = Math.PI / 2;
+      body.scale.set(1, 1, 1.35);
+      body.castShadow = true;
+      g.add(body);
+      var spotCount = 2 + Math.floor(Math.random() * 2);
+      for (var s = 0; s < spotCount; s++) {
+        var spot = new THREE.Mesh(new THREE.SphereGeometry(0.09 + Math.random() * 0.04, 8, 8), spotMat);
+        var yPos = -0.15 + Math.random() * 0.5;
+        spot.position.set((Math.random() > 0.5 ? 1 : -1) * 0.1, yPos, 0.05);
+        spot.scale.set(0.5, 1, 1);
+        body.add(spot);
+      }
+      var tailShape = new THREE.Shape();
+      tailShape.moveTo(0, 0);
+      tailShape.quadraticCurveTo(0.25, 0.12, 0.32, 0.02);
+      tailShape.quadraticCurveTo(0.25, -0.02, 0.32, -0.13);
+      tailShape.quadraticCurveTo(0.1, -0.08, 0, 0);
+      var tail = new THREE.Mesh(new THREE.ShapeGeometry(tailShape), new THREE.MeshStandardMaterial({ color: pat.base, roughness: 0.4, side: THREE.DoubleSide, transparent: true, opacity: 0.92 }));
+      tail.rotation.y = Math.PI / 2;
+      tail.position.set(0, -0.5, 0);
+      body.add(tail);
+      var dorsal = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.16, 4), spotMat);
+      dorsal.rotation.x = Math.PI;
+      dorsal.scale.set(1.8, 1, 0.2);
+      dorsal.position.set(0, 0.05, 0.15);
+      body.add(dorsal);
+      var eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.2 });
+      [1, -1].forEach(function(side) {
+        var eye = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 6), eyeMat);
+        eye.position.set(side * 0.1, 0.36, 0.08);
+        body.add(eye);
+      });
+      g.position.y = 0.1;
+      g.position.x = (Math.random() - 0.5) * 6;
+      g.position.z = (Math.random() - 0.5) * 6;
+      g.userData.targetX = (Math.random() - 0.5) * 4.5;
+      g.userData.targetZ = (Math.random() - 0.5) * 4.5;
+      g.userData.baseSpeed = 0.35 + Math.random() * 0.25;
+      g.userData.burstTimer = Math.random() * 3;
+      g.userData.heading = Math.random() * Math.PI * 2;
+      g.userData.bob = Math.random() * Math.PI * 2;
+      g.userData.wiggle = Math.random() * Math.PI * 2;
+      scene.add(g);
+      koiList.push(g);
+    }
+  }
+  buildKoi();
+
+  // ===== 龍口（りゅうこう）：日本庭園の手水鉢に実在する意匠 =====
+  function buildRyukou(x, z) {
+    var g = new THREE.Group();
+    var stoneMat = new THREE.MeshStandardMaterial({ color: 0x4a5550, roughness: 0.9, metalness: 0.15 });
+    var head = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.9, 4), stoneMat);
+    head.rotation.z = Math.PI / 2; head.rotation.y = Math.PI / 4;
+    head.position.set(0, 1.6, 0); head.castShadow = true;
+    g.add(head);
+    [[-0.15, 0.3], [0.15, 0.3]].forEach(function(p) {
+      var horn = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.35, 6), stoneMat);
+      horn.position.set(p[0], 1.6 + p[1], -0.1);
+      g.add(horn);
+    });
+    var pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1.6, 8), stoneMat);
+    pillar.position.set(0, 0.8, 0); pillar.castShadow = true;
+    g.add(pillar);
+    var basin = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.5, 0.3, 12), stoneMat);
+    basin.position.y = 0.15; basin.castShadow = true; basin.receiveShadow = true;
+    g.add(basin);
+    var stream = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.015, 1.35, 6),
+      new THREE.MeshStandardMaterial({ color: 0x9fd0f0, transparent: true, opacity: 0.55, roughness: 0.1 }));
+    stream.position.set(0.32, 0.9, 0);
+    g.add(stream);
+    g.position.set(x, 0, z);
+    scene.add(g);
+  }
+  buildRyukou(4.8, -1.5);
+
+  animate();
+
+  _gardenBuilt = {
+    THREE: THREE, scene: scene, moon: moon, moonShadow: moonShadow, moonHalo: moonHalo,
+    moonLight: moonLight, stars: stars, ambientLight: ambientLight,
+    groundMat: groundMat, buildSeasonTree: buildSeasonTree, SEASON_GROUND: SEASON_GROUND
+  };
+  _gardenApplyTodaySeasonAndMoon();
+}
+
+// 実際の暦（七十二候）・月齢データを、庭の見た目に反映する
+function _gardenApplyTodaySeasonAndMoon() {
+  if (!_gardenBuilt) return;
+  var season = 'spring';
+  try {
+    if (typeof getCurrentShichijuniKou === 'function') {
+      var kou = getCurrentShichijuniKou(new Date());
+      if (kou && kou.season) season = kou.season;
+    }
+  } catch(e) { console.warn('[Garden] 季節取得エラー:', e); }
+  _gardenBuilt.buildSeasonTree(7.5, 5.5, season);
+  _gardenBuilt.groundMat.color.setHex(_gardenBuilt.SEASON_GROUND[season] || _gardenBuilt.SEASON_GROUND.spring);
+
+  var moonPhase = 0.5;
+  try {
+    if (typeof calcMoonAgeNAOJ === 'function') {
+      var age = calcMoonAgeNAOJ(new Date());
+      moonPhase = age / 29.53; // 0=新月〜1=満月に近い満ち欠け周期
+    }
+  } catch(e) { console.warn('[Garden] 月齢取得エラー:', e); }
+  var illum = 1 - Math.abs(moonPhase - 0.5) * 2; // 0=新月・1=満月に近い明るさ目安
+  _gardenBuilt.moonShadow.position.x = _gardenBuilt.moon.position.x + (1 - illum) * 1.1;
+
+  // v0.45.1418: 【権威】2026-07-30、「これ、夜なの？」との指摘を受けた。庭は
+  // 常に固定の夜景として実装していたが、こよみるには既に正確な日照時間の計算
+  // 仕組み（_getSunData）があるため、実際の今の時刻が昼か夜かで、庭の見た目も
+  // 切り替わるようにする。
+  var isDaytime = true;
+  try {
+    if (typeof _getSunData === 'function') {
+      var _now = new Date();
+      var _hourFloat = _now.getHours() + _now.getMinutes() / 60;
+      var _sun = _getSunData(_now);
+      isDaytime = _hourFloat >= _sun.rise && _hourFloat < _sun.set;
+    }
+  } catch(e) { console.warn('[Garden] 日照時間取得エラー:', e); }
+  if (isDaytime) {
+    _gardenBuilt.scene.background.setHex(0x8fc4e8);
+    _gardenBuilt.scene.fog.color.setHex(0x8fc4e8);
+    _gardenBuilt.moon.visible = false;
+    _gardenBuilt.moonHalo.visible = false;
+    _gardenBuilt.moonShadow.visible = false;
+    _gardenBuilt.stars.visible = false;
+    _gardenBuilt.moonLight.color.setHex(0xfff4e0);
+    _gardenBuilt.moonLight.intensity = 2.1;
+    _gardenBuilt.ambientLight.intensity = 1.5;
+  } else {
+    _gardenBuilt.scene.background.setHex(0x2c3e4a);
+    _gardenBuilt.scene.fog.color.setHex(0x2c3e4a);
+    _gardenBuilt.moon.visible = true;
+    _gardenBuilt.moonHalo.visible = true;
+    _gardenBuilt.moonShadow.visible = true;
+    _gardenBuilt.stars.visible = true;
+    _gardenBuilt.moonLight.color.setHex(0xdbe6ff);
+    _gardenBuilt.moonLight.intensity = 1.9;
+    _gardenBuilt.ambientLight.intensity = 1.15;
+  }
+
+  var label = document.getElementById('gardenLabel');
+  var seasonLabel = { spring: '🌸 春', summer: '🌿 夏', autumn: '🍁 秋', winter: '❄️ 冬' }[season] || '🌳';
+  // v0.45.1417: 【権威】2026-07-30、名前未設定時「あなたさんの庭」という不自然な
+  // 表記になっていた。「さん」は名前がある時だけ付ける。
+  var _profileName = (window.allSettings && allSettings.profile && allSettings.profile.name) || '';
+  var gardenOwnerLabel = _profileName ? (_profileName + 'さんの庭') : 'あなたの庭';
+  var timeOfDayLabel = isDaytime ? '☀️' : '🌙';
+  if (label) label.textContent = seasonLabel + ' ' + timeOfDayLabel + ' — ' + gardenOwnerLabel;
+}
+
+// 「庭をたずねる」：今日実装した共有カレンダーの実メンバーを一覧表示する。
+// 正直、他人の庭を実際に3Dで再現するには、その人の持ち物データの同期基盤が
+// 別途必要になるため、今回は「一覧を見て、選べる」ところまでを実装する
+// （実際の3D切替は次回以降のスコープ）。
+async function _loadGardenVisitList() {
+  var listEl = document.getElementById('gardenVisitList');
+  if (!listEl) return;
+  if (!window._cloudIsLoggedIn) { listEl.textContent = 'ログインすると、共有カレンダーの相手の庭が見られるようになります。'; return; }
+  if (typeof listMySharedCalendars !== 'function') { listEl.textContent = ''; return; }
+  var r = await listMySharedCalendars();
+  if (!r || r.error || !r.data || r.data.length === 0) {
+    listEl.textContent = 'まだ共有カレンダーに参加していません。';
+    return;
+  }
+  listEl.innerHTML = r.data.map(function(c) {
+    return '<div style="padding:5px 0;border-top:1px solid rgba(243,234,217,0.12);">🌱 ' + (c.name || '(無題)') + '</div>';
+  }).join('');
+}
+window._loadGardenVisitList = _loadGardenVisitList;
+
+
 // ===== END v0.45.1342 共有カレンダー =====
 
 // v0.45.1413: 【権威】2026-07-30、「自由帳のタブが謎に増殖している」との報告を
@@ -49399,6 +49961,122 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-296: 重複コンテンツ手動除去ツール 確認 完了');
      } catch(e) {
        ng('ST-296: 例外', e.message);
+     }
+
+     // ===== ST-297: 季節の庭（3Dビュー）実装 確認（v0.45.1414〜） =====
+     // 背景：やることクラフトのcraftModeEnabled/craftRenderModeという入り口だけ
+     // 用意され中身が空だった機能を、こよみるの「季節と共に生きる」テーマに
+     // 合わせて実装した。実際の暦（七十二候）・月齢データと連動し、Three.jsの
+     // 読み込みはやることクラフトの堅牢な設計（重複ロード防止・失敗時フォール
+     // バック）を踏襲した。
+     try {
+       document.getElementById('navGarden')
+         ? ok('ST-297·①: navGardenナビゲーションボタンのDOM存在確認')
+         : ng('ST-297·①: ボタンが見つからない', '');
+       document.getElementById('gardenView')
+         ? ok('ST-297·②: gardenView DOM存在確認')
+         : ng('ST-297·②: gardenViewが見つからない', '');
+       document.getElementById('gardenCanvasContainer')
+         ? ok('ST-297·③: gardenCanvasContainer DOM存在確認')
+         : ng('ST-297·③: コンテナが見つからない', '');
+       document.getElementById('gardenFallback')
+         ? ok('ST-297·④: gardenFallback（失敗時表示）DOM存在確認')
+         : ng('ST-297·④: フォールバック要素が見つからない', '');
+       ['initGardenWorld', '_loadGardenVisitList'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-297·' + fn + ': window公開確認')
+           : ng('ST-297·' + fn + ': 未公開', '');
+       });
+       var _st297scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st297swIdx = _st297scriptTexts.indexOf("if (view === 'garden')");
+       _st297swIdx !== -1
+         ? ok('ST-297·⑤: switchViewへのgarden分岐組み込み確認')
+         : ng('ST-297·⑤: 分岐が見つからない', '');
+       // ⑥ 実際の暦データ（七十二候のseason）と連動しているか確認
+       var _st297buildIdx = _st297scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st297buildSrc = _st297buildIdx !== -1 ? _st297scriptTexts.slice(_st297buildIdx, _st297buildIdx + 700) : '';
+       _st297buildSrc.indexOf('getCurrentShichijuniKou') !== -1 && _st297buildSrc.indexOf('calcMoonAgeNAOJ') !== -1
+         ? ok('ST-297·⑥: 実際の暦（七十二候）・月齢データとの連動確認')
+         : ng('ST-297·⑥: 実データ連動が見つからない', '');
+       // ⑦ コンテナサイズ0時のリトライ対策（やることクラフトのパターン踏襲）確認
+       var _st297sceneIdx = _st297scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls)');
+       var _st297sceneSrc = _st297sceneIdx !== -1 ? _st297scriptTexts.slice(_st297sceneIdx, _st297sceneIdx + 600) : '';
+       _st297sceneSrc.indexOf('clientWidth === 0') !== -1
+         ? ok('ST-297·⑦: コンテナサイズ0時のリトライ対策確認')
+         : ng('ST-297·⑦: リトライ対策が見つからない', '');
+       // ⑧ 鯉・龍口の実装確認
+       (_st297scriptTexts.indexOf('function buildKoi()') !== -1 && _st297scriptTexts.indexOf('function buildRyukou(x, z)') !== -1)
+         ? ok('ST-297·⑧: 鯉・龍口の実装確認')
+         : ng('ST-297·⑧: 鯉・龍口が見つからない', '');
+       ok('ST-297: 季節の庭（3Dビュー）実装 確認 完了');
+     } catch(e) {
+       ng('ST-297: 例外', e.message);
+     }
+
+     // ===== ST-298: 庭ビューのimportmap修正 確認（v0.45.1415〜） =====
+     // 背景：庭ビューを開くと「Failed to resolve module specifier "three"」という
+     // エラーで読み込みに失敗した。OrbitControls.jsが内部で`import ... from 'three'`
+     // という短縮名を使っており、それを実際のURLに対応させる「importmap」が本体に
+     // 無かったことが原因。head内に追加し、初期化コードの参照も統一した。
+     try {
+       document.querySelector('script[type="importmap"]')
+         ? ok('ST-298·①: importmapタグの存在確認')
+         : ng('ST-298·①: importmapタグが見つからない', '');
+       var _st298importmapText = document.querySelector('script[type="importmap"]') ? document.querySelector('script[type="importmap"]').textContent : '';
+       var _st298parsed = null;
+       try { _st298parsed = JSON.parse(_st298importmapText); } catch(eParse) {}
+       (_st298parsed && _st298parsed.imports && _st298parsed.imports['three'] && _st298parsed.imports['three/addons/'])
+         ? ok('ST-298·②: importmapがthree・three/addons/両方を定義していること確認')
+         : ng('ST-298·②: importmap定義が不完全', JSON.stringify(_st298parsed));
+       var _st298scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st298scriptTexts.indexOf("import('three')") !== -1 && _st298scriptTexts.indexOf("import('three/addons/controls/OrbitControls.js')") !== -1
+         ? ok('ST-298·③: initGardenWorldがimportmapの短縮名を使用している確認')
+         : ng('ST-298·③: 短縮名を使用していない', '');
+       // ④ 庭をたずねるパネルが禅モードボタン（左下・固定）と重ならない位置にあるか確認
+       var _st298visitPanel = document.getElementById('gardenVisitPanel');
+       (_st298visitPanel && parseInt(_st298visitPanel.style.left, 10) >= 70)
+         ? ok('ST-298·④: 庭をたずねるパネルが禅モードボタンと重ならない位置に調整されている確認')
+         : ng('ST-298·④: 位置調整が反映されていない', _st298visitPanel ? _st298visitPanel.style.left : 'なし');
+       // ⑤ 名前未設定時「あなたさんの庭」という不自然な表記にならないこと確認
+       var _st298gardenApplyIdx = _st298scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st298gardenApplySrc = _st298gardenApplyIdx !== -1 ? _st298scriptTexts.slice(_st298gardenApplyIdx, _st298gardenApplyIdx + 1800) : '';
+       _st298gardenApplySrc.indexOf("'あなたの庭'") !== -1
+         ? ok('ST-298·⑤: 名前未設定時の自然な表記（あなたの庭）確認')
+         : ng('ST-298·⑤: 修正が見つからない', '');
+       ok('ST-298: 庭ビューのimportmap修正 確認 完了');
+     } catch(e) {
+       ng('ST-298: 例外', e.message);
+     }
+
+     // ===== ST-299: 庭の月位置修正・実際の昼夜切り替え 確認（v0.45.1418〜） =====
+     // 背景：①月が初期カメラの視野角の外に配置されており、「月の描画は？」と
+     // 聞かれるまで気づけなかった。視野に入りやすい位置に調整し、視野角も
+     // 広げた。②「これ、夜なの？」との指摘を受け、庭が常に固定の夜景だった
+     // ことに気づいた。既存の日照時間計算（_getSunData）を使い、実際の今の
+     // 時刻が昼か夜かで、庭の見た目（空の色・月と星の表示・光の強さ）が
+     // 切り替わるようにした。
+     try {
+       var _st299scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       // ① 月の位置が視野角の外だった問題の修正確認
+       _st299scriptTexts.indexOf('moon.position.set(-8, 13, -10)') !== -1
+         ? ok('ST-299·①: 月の位置調整確認')
+         : ng('ST-299·①: 位置調整が見つからない', '');
+       _st299scriptTexts.indexOf('new THREE.PerspectiveCamera(55,') !== -1
+         ? ok('ST-299·②: カメラ視野角を広げた確認')
+         : ng('ST-299·②: 視野角調整が見つからない', '');
+       // ③ 実際の日照時間データとの連動確認
+       var _st299applyIdx = _st299scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st299applySrc = _st299applyIdx !== -1 ? _st299scriptTexts.slice(_st299applyIdx, _st299applyIdx + 2500) : '';
+       _st299applySrc.indexOf('_getSunData') !== -1 && _st299applySrc.indexOf('isDaytime') !== -1
+         ? ok('ST-299·③: 実際の日照時間（_getSunData）との昼夜連動確認')
+         : ng('ST-299·③: 昼夜連動が見つからない', '');
+       // ④ 昼夜それぞれで背景・月・星の表示が切り替わるロジック確認
+       (_st299applySrc.indexOf('scene.background.setHex(0x8fc4e8)') !== -1 && _st299applySrc.indexOf('moon.visible = false') !== -1)
+         ? ok('ST-299·④: 昼の空・月非表示への切り替えロジック確認')
+         : ng('ST-299·④: 切り替えロジックが見つからない', '');
+       ok('ST-299: 庭の月位置修正・実際の昼夜切り替え 確認 完了');
+     } catch(e) {
+       ng('ST-299: 例外', e.message);
      }
 
        // 第1条【本番環境】
