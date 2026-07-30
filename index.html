@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1412 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1413 ★ -->
 
 <html lang="ja">
 <head>
@@ -41,7 +41,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1412';
+    const APP_VERSION = 'v0.45.1413';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -7200,6 +7200,14 @@
           <div style="font-size:0.82em;font-weight:700;color:#a3c9a8;margin-bottom:8px;">👨‍👩‍👧 共有カレンダー参加者一覧</div>
           <button id="adminSharedCalMembersBtn" onclick="loadAdminSharedCalMembers()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7856;border-radius:8px;color:#a3c9a8;font-size:0.82em;cursor:pointer;margin-bottom:8px;">🔄 参加者一覧を読み込む</button>
           <div id="adminSharedCalMembersList" style="font-size:0.78em;color:#ccc;line-height:1.7;"></div>
+        </div>
+        <!-- v0.45.1413: 「自由帳のタブが謎に増殖している」との報告を受けた応急処置。
+             既存の重複除去はインポート時にしか動かず、同期経由の重複には対応して
+             いなかったため、いつでも手動実行できるツールを追加する。 -->
+        <div id="adminPurgeDupeArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+          <div style="font-size:0.82em;font-weight:700;color:#ff8a65;margin-bottom:8px;">🧹 重複コンテンツを掃除</div>
+          <div style="font-size:0.72em;color:#999;margin-bottom:8px;">自由帳・日誌・スタンプ等が同期の影響で増殖してしまった場合に実行してください。</div>
+          <button id="adminPurgeDupeBtn" onclick="runPurgeDuplicateContentFromAdmin()" style="width:100%;padding:9px;background:transparent;border:1px solid #ff8a65;border-radius:8px;color:#ffab91;font-size:0.82em;cursor:pointer;">🧹 重複を検出して削除する</button>
         </div>
         <!-- v0.45.863〜 カレンダー重複検出 / v0.45.864〜 Phase 2: 詳細パネル + プレビュー / v0.45.865〜 識別子リネーム(Dupe→Duplicate・第15条) / v0.45.866〜 Phase 3: バックアップ + 復元 / v0.45.867〜 Phase 4: マージ実行 + アトミック + 検証 + 監査ログ(原潜・原発級完成) -->
         <div id="adminCalendarDuplicateArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
@@ -33811,6 +33819,67 @@ async function loadAdminSharedCalMembers() {
 window.loadAdminSharedCalMembers = loadAdminSharedCalMembers;
 // ===== END v0.45.1342 共有カレンダー =====
 
+// v0.45.1413: 【権威】2026-07-30、「自由帳のタブが謎に増殖している」との報告を
+// 受けた。既存の重複除去（importData内の_CONTENT_DUPE_KEYS）は「インポート時」
+// にしか動かず、クラウド同期（Realtime pull）経由で発生した重複には対応して
+// いなかった。原因の完全特定はできていないが、正直、今すぐ実害を止める応急処置
+// として、いつでも手動実行できる重複除去ツールを管理者パネルに追加する。
+// ロジックはimportData内の_CONTENT_DUPE_KEYSと同じ考え方だが、既存のインポート
+// フローに手を触れないよう、あえて複製している（将来的には共通化が望ましい）。
+var _PURGE_DUPE_KEYS = {
+  task:        function(t) { return [t.text||'', t.date||'', t.section||'', t.time||'']; },
+  stamp:       function(t) { return [t.name||'', t.color||'', t.startTime||'', t.endTime||'']; },
+  journal:     function(t) { return [t.date||'']; },
+  blueprint:   function(t) { return [t.title||'', t.grandvisionId||'']; },
+  gantt:       function(t) { return [t.title||'', t.blueprintId||'']; },
+  grandvision: function(t) { return [t.title||'']; },
+  note:        function(t) { return [t.dateL||'', t.dateR||'', t.title||'']; },
+  thought:     function(t) { return [t.text||'', t.journalId||'', t.parentId||'']; },
+  scratch:     function(t) { return [t.text||'', t.date||'', t.createdAt||'']; }
+};
+function _purgeDupeKey(t) {
+  var kind = t.kind || 'task';
+  var fn = _PURGE_DUPE_KEYS[kind];
+  if (!fn) return null;
+  try {
+    var parts = fn(t);
+    if (!Array.isArray(parts)) return null;
+    return kind + '|' + parts.join('|');
+  } catch(e) { return null; }
+}
+function purgeDuplicateContent() {
+  var before = allTasks.length;
+  // updatedAtが新しい方を残すため、新しい順に並べてから重複判定する
+  var sorted = allTasks.slice().sort(function(a, b) {
+    var au = a.updatedAt || a.createdAt || '';
+    var bu = b.updatedAt || b.createdAt || '';
+    return bu.localeCompare(au);
+  });
+  var seenKeys = {};
+  var keepIds = {};
+  var removedIds = [];
+  sorted.forEach(function(t) {
+    var key = _purgeDupeKey(t);
+    if (!key) { keepIds[t.id] = true; return; } // 検出対象外の種別はそのまま残す
+    if (seenKeys[key]) { removedIds.push(t.id); return; } // 重複（古い方）→除去対象
+    seenKeys[key] = true;
+    keepIds[t.id] = true;
+  });
+  allTasks = allTasks.filter(function(t) { return keepIds[t.id]; });
+  removedIds.forEach(function(id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(id); });
+  saveAllTasks();
+  if (typeof renderAllSections === 'function') renderAllSections();
+  return { before: before, after: allTasks.length, removed: removedIds.length };
+}
+window.purgeDuplicateContent = purgeDuplicateContent;
+function runPurgeDuplicateContentFromAdmin() {
+  var r = purgeDuplicateContent();
+  if (typeof showToast === 'function') {
+    showToast(r.removed > 0 ? ('🧹 重複を' + r.removed + '件、削除しました（' + r.before + '→' + r.after + '件）') : '重複は見つかりませんでした');
+  }
+}
+window.runPurgeDuplicateContentFromAdmin = runPurgeDuplicateContentFromAdmin;
+
 // ===== v0.45.1409: プッシュ通知フェーズB（アプリを閉じていても届く本物のプッシュ通知） =====
 // 【権威】2026-07-26、フェーズA（アプリを開いている間のトースト通知）の続きとして、
 // Service Worker + VAPID + Database Webhook + Edge Functionによる本格実装。
@@ -49296,6 +49365,40 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-295: 自動補完誤爆対策・死んだUIの削除 確認 完了');
      } catch(e) {
        ng('ST-295: 例外', e.message);
+     }
+
+     // ===== ST-296: 重複コンテンツ手動除去ツール 確認（v0.45.1413〜） =====
+     // 背景：「自由帳のタブが謎に増殖している」との報告を受けた。既存の重複除去は
+     // インポート時にしか動かず、クラウド同期経由の重複には対応していなかった
+     // ため、いつでも手動実行できる保守ツールを新設した。
+     try {
+       ['purgeDuplicateContent', 'runPurgeDuplicateContentFromAdmin'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-296·' + fn + ': window公開確認')
+           : ng('ST-296·' + fn + ': 未公開', '');
+       });
+       document.getElementById('adminPurgeDupeBtn')
+         ? ok('ST-296·①: 管理者パネルへのボタン組み込み確認')
+         : ng('ST-296·①: ボタンが見つからない', '');
+       // ② 実挙動：意図的に重複したnoteを作り、1件だけ残って削除されるか確認
+       var _st296before = allTasks.length;
+       var _dup1 = { id: generateTaskId(), kind: 'note', title: 'ST296テスト', dateL: '2026-01-01', dateR: '', textL: '', textR: '', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
+       var _dup2 = { id: generateTaskId(), kind: 'note', title: 'ST296テスト', dateL: '2026-01-01', dateR: '', textL: '', textR: '', createdAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' };
+       allTasks.push(_dup1, _dup2);
+       var _st296result = purgeDuplicateContent();
+       var _st296remaining = allTasks.filter(function(t){ return t.title === 'ST296テスト'; });
+       (_st296result.removed >= 1 && _st296remaining.length === 1 && _st296remaining[0].id === _dup2.id)
+         ? ok('ST-296·②: 重複除去の実挙動確認（新しい方が残る・' + _st296result.removed + '件削除）')
+         : ng('ST-296·②: 想定通りに除去されない', JSON.stringify(_st296result) + ' 残存=' + _st296remaining.length);
+       // クリーンアップ
+       allTasks = allTasks.filter(function(t){ return t.title !== 'ST296テスト'; });
+       saveAllTasks();
+       (allTasks.length === _st296before)
+         ? ok('ST-296·③: クリーンアップ完了（件数復元）')
+         : ng('ST-296·③: 件数が復元されない', '');
+       ok('ST-296: 重複コンテンツ手動除去ツール 確認 完了');
+     } catch(e) {
+       ng('ST-296: 例外', e.message);
      }
 
        // 第1条【本番環境】
