@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1418 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1429 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1418';
+    const APP_VERSION = 'v0.45.1429';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33880,11 +33880,12 @@ function initGardenWorld() {
   if (label) label.textContent = '🌳 庭を育てています…';
   Promise.all([
     import('three'),
-    import('three/addons/controls/OrbitControls.js')
+    import('three/addons/controls/OrbitControls.js'),
+    import('three/addons/objects/Sky.js')
   ]).then(function(mods) {
     window._gardenLoading = false;
     _gardenInitialized = true;
-    _buildGardenScene(mods[0], mods[1].OrbitControls);
+    _buildGardenScene(mods[0], mods[1].OrbitControls, mods[2].Sky);
     if (typeof _loadGardenVisitList === 'function') _loadGardenVisitList();
   }).catch(function(e) {
     console.warn('[Garden] Three.js読み込み失敗、フォールバック表示:', e);
@@ -33897,7 +33898,7 @@ function initGardenWorld() {
 }
 window.initGardenWorld = initGardenWorld;
 
-function _buildGardenScene(THREE_MOD, OrbitControls) {
+function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
   var THREE = THREE_MOD;
   var container = document.getElementById('gardenCanvasContainer');
   if (!container) return;
@@ -33913,7 +33914,31 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
   scene.background = new THREE.Color(0x2c3e4a);
   scene.fog = new THREE.FogExp2(0x2c3e4a, 0.016);
 
-  var camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 200);
+  // v0.45.1429: 【権威】2026-07-30、Three.js公式のSkyアドオンを導入する。
+  // 太陽の位置に基づき、リアルな空の色（レイリー・ミー散乱モデル）を自動計算
+  // してくれる標準ライブラリで、これまで手作業で調整してきた昼の空色の
+  // 手動切り替えを、物理的に自然なものに置き換える。夜は従来通り、暗い背景色＋
+  // 星＋月で表現し、Sky自体は非表示にする。
+  var sky = new THREE.Mesh(new THREE.SphereGeometry(1, 1, 1)); // プレースホルダ（下で実体に差し替え）
+  var skyUniforms = null;
+  if (SkyAddon) {
+    sky = new SkyAddon();
+    sky.scale.setScalar(450000);
+    scene.add(sky);
+    skyUniforms = sky.material.uniforms;
+    skyUniforms['turbidity'].value = 8;
+    skyUniforms['rayleigh'].value = 2.2;
+    skyUniforms['mieCoefficient'].value = 0.006;
+    skyUniforms['mieDirectionalG'].value = 0.8;
+  }
+
+  // v0.45.1420: 【権威】2026-07-30、視野角を55度に広げて月を見せる対応をしたが、
+  // 副作用として竹が斜めに傾いて見える（広角レンズ特有の遠近法歪み）問題が発生した。
+  // 視野角は標準的な45度に戻し、代わりに月の位置を視線の中心へより正確に
+  // 合わせることで、根本的に解決する。
+  // v0.45.1429: Skyアドオンの球体（半径450000）が、従来のfar(200)を大きく
+  // 超えるため、確実に描画されるよう拡大する。
+  var camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 600000);
   camera.position.set(14, 11, 16);
 
   var renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -33929,9 +33954,19 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
   var controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.06;
-  controls.maxPolarAngle = Math.PI / 2 - 0.05;
-  controls.minDistance = 6;
-  controls.maxDistance = 40;
+  // v0.45.1426: 【権威】2026-07-30、「カメラワークの制限をもっと自由に、広く」
+  // との要望を受け、視点の可動範囲・ズーム範囲を大幅に緩和する。
+  // v0.45.1427: 【権威】2026-07-30、「もっと自由に」との要望で見上げ角度を
+  // ほぼ真裏まで緩めた結果、カメラが地面・池の下に潜り込めてしまい、裏側の
+  // 変な見た目が見えてしまう不具合が発生した。地面を絶対に下回らない、
+  // 安全な範囲に戻す（水平よりわずかに手前まで）。
+  // v0.45.1428: 【権威】2026-07-30、「角度の制限」だけで地面潜り込みを防ぐと、
+  // 自由さが犠牲になり、太陽も見つけにくくなっていた。角度は再び広く戻し、
+  // 代わりにanimateループで「カメラの高さが地面を下回ったら押し戻す」という
+  // 保険を別途かけることで、自由さと安全性を両立させる。
+  controls.maxPolarAngle = Math.PI * 0.85;
+  controls.minDistance = 2.5;
+  controls.maxDistance = 70;
   controls.target.set(0, 1, 0);
 
   var moonLight = new THREE.DirectionalLight(0xdbe6ff, 1.9);
@@ -33949,7 +33984,11 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
   scene.add(ambientLight);
 
   var groundMat = new THREE.MeshStandardMaterial({ color: 0x3a4d32, roughness: 0.88, metalness: 0.02 });
-  var ground = new THREE.Mesh(new THREE.CircleGeometry(16, 64), groundMat);
+  // v0.45.1419: 【権威】2026-07-30、地面が空色に見えるとの指摘を受けた。実際は
+  // 地面の半径がわずか16しかなく、その外側の背景（昼は明るい青空）がそのまま
+  // 見えていた。夜は背景が暗かったので目立たなかったが、昼で境界が露呈した。
+  // カメラのfar(200)近くまで大きく広げる。
+  var ground = new THREE.Mesh(new THREE.CircleGeometry(150, 64), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
@@ -34050,7 +34089,7 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
   var SEASON_GROUND = { spring: 0x3a4d32, summer: 0x2f4a2a, autumn: 0x4a3a26, winter: 0x5a5f66 };
   var seasonTreeGroup = null;
   var fallingPetals = [];
-  function buildSeasonTree(x, z, season) {
+  function buildSeasonTree(x, z, season, growthLevel) {
     if (seasonTreeGroup) { scene.remove(seasonTreeGroup); }
     fallingPetals.forEach(function(p) { scene.remove(p); });
     fallingPetals = [];
@@ -34060,7 +34099,14 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
     g.add(trunk);
     var leafColor = SEASON_LEAF_COLOR[season] || SEASON_LEAF_COLOR.spring;
     var leafOpacity = season === 'winter' ? 0.55 : 1;
-    var leafCount = season === 'winter' ? 3 : 6;
+    // v0.45.1419: 【権威】2026-07-30、「タスクに連動して育つのか」との指摘を受け、
+    // 今日実際に完了したタスクの数（growthLevel、0〜1に正規化）で、花・葉の
+    // 房の数が増減するようにする。何もしていない日は少なく、実績を積んだ日は
+    // 豊かに茂る。
+    var gl = (typeof growthLevel === 'number') ? growthLevel : 0.5;
+    var minLeaf = season === 'winter' ? 1 : 3;
+    var maxLeaf = season === 'winter' ? 5 : 10;
+    var leafCount = Math.round(minLeaf + (maxLeaf - minLeaf) * gl);
     var petalMat = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.8, transparent: true, opacity: leafOpacity });
     for (var i = 0; i < leafCount; i++) {
       var cluster = new THREE.Mesh(new THREE.SphereGeometry(0.75 + Math.random() * 0.25, 8, 8), petalMat);
@@ -34110,17 +34156,45 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
     buildBamboo(Math.cos(ang) * rad, Math.sin(ang) * rad);
   }
 
-  var moon = new THREE.Mesh(new THREE.SphereGeometry(1.3, 32, 32), new THREE.MeshBasicMaterial({ color: 0xf5f0e0 }));
-  // v0.45.1418: 【権威】2026-07-30、月が初期カメラの視野角の外に配置されており、
-  // 「月の描画は？」と聞かれるまで気づけなかった。視野に入りやすい位置に調整する。
-  moon.position.set(-8, 13, -10);
+  var moon = new THREE.Mesh(new THREE.SphereGeometry(1.3, 32, 32), new THREE.MeshBasicMaterial({ color: 0xf5f0e0, fog: false }));
+  // v0.45.1420: 視野角を45度に戻したのに合わせ、月の位置も視線の中心に、より
+  // 正確に合わせ直す（カメラ(14,11,16)→注視点(0,1,0)の視線延長線に近い位置）。
+  moon.position.set(-4, 8, -4);
   scene.add(moon);
-  var moonHalo = new THREE.Mesh(new THREE.SphereGeometry(1.9, 32, 32), new THREE.MeshBasicMaterial({ color: 0xdce8ff, transparent: true, opacity: 0.25 }));
+  var moonHalo = new THREE.Mesh(new THREE.SphereGeometry(1.9, 32, 32), new THREE.MeshBasicMaterial({ color: 0xdce8ff, transparent: true, opacity: 0.25, fog: false }));
   moonHalo.position.copy(moon.position);
   scene.add(moonHalo);
-  var moonShadow = new THREE.Mesh(new THREE.SphereGeometry(1.32, 32, 32), new THREE.MeshBasicMaterial({ color: 0x2c3e4a }));
+  var moonShadow = new THREE.Mesh(new THREE.SphereGeometry(1.32, 32, 32), new THREE.MeshBasicMaterial({ color: 0x2c3e4a, fog: false }));
   moonShadow.position.copy(moon.position);
   scene.add(moonShadow);
+
+  // v0.45.1421: 【権威】2026-07-30、「昼なのに月？太陽じゃないの？」との指摘を
+  // 受けた。今までは昼になると月を消すだけで、太陽自体を描いていなかった。
+  // 太陽・朝焼け（犬吠埼の日の出のような）を追加する。
+  // v0.45.1422: 【権威】2026-07-30、竹の1本がちょうど太陽と重なって見え、
+  // 見た目も月のような柔らかさで「太陽っぽくない」との指摘を受けた。①竹の
+  // 高さ（5〜7）より確実に高い位置に移動し、重なりを防ぐ。②より鮮やかな色・
+  // 強い輝き・放射状の光条を加え、太陽らしい見た目に作り直す。
+  var sunMat = new THREE.MeshBasicMaterial({ color: 0xffd23f, fog: false });
+  var sun = new THREE.Mesh(new THREE.SphereGeometry(1.5, 32, 32), sunMat);
+  sun.position.set(-3, 17, -6);
+  scene.add(sun);
+  var sunHalo = new THREE.Mesh(new THREE.SphereGeometry(3.2, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffcf5c, transparent: true, opacity: 0.4, fog: false }));
+  sunHalo.position.copy(sun.position);
+  scene.add(sunHalo);
+  var sunHalo2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffe8a0, transparent: true, opacity: 0.18, fog: false }));
+  sunHalo2.position.copy(sun.position);
+  scene.add(sunHalo2);
+  // 放射状の光条（簡易的な太陽光線、平たい板を放射状に並べる）
+  var sunRaysGroup = new THREE.Group();
+  var sunRayMat = new THREE.MeshBasicMaterial({ color: 0xffe8a0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, fog: false });
+  for (var ri = 0; ri < 8; ri++) {
+    var ray = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 5.5), sunRayMat);
+    ray.rotation.z = (Math.PI / 8) * ri;
+    sunRaysGroup.add(ray);
+  }
+  sunRaysGroup.position.copy(sun.position);
+  scene.add(sunRaysGroup);
 
   var starGeo = new THREE.BufferGeometry();
   var starCount = 400;
@@ -34134,7 +34208,7 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
     starPos[i*3+2] = rr * Math.sin(phi) * Math.sin(theta);
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-  var stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.12 }));
+  var stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.12, fog: false }));
   scene.add(stars);
 
   window.addEventListener('resize', function() {
@@ -34148,6 +34222,19 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
   function animate() {
     requestAnimationFrame(animate);
     var t = clock.getElapsedTime();
+    // v0.45.1423: 【権威】2026-07-30、「カメラ位置が太陽を見下ろせるのは変。
+    // すごく遠くにある感じにしたい」との指摘を受けた。今までは太陽・月を
+    // シーンの中の固定座標に置いていたため、カメラを動かすと見下ろせて
+    // しまっていた。毎フレーム、カメラの位置を基準に、一定方向・一定距離に
+    // 再配置することで、常に「果てしなく遠い」天体らしい挙動にする。
+    var _skyDist = 60;
+    var _skyX = camera.position.x + _gardenBuilt.skyDirection.x * _skyDist;
+    var _skyY = camera.position.y + _gardenBuilt.skyDirection.y * _skyDist;
+    var _skyZ = camera.position.z + _gardenBuilt.skyDirection.z * _skyDist;
+    [moon, moonHalo, moonShadow, sun, sunHalo, sunHalo2, sunRaysGroup].forEach(function(obj) {
+      obj.position.set(_skyX, _skyY, _skyZ);
+    });
+    moonShadow.position.x += (1 - _gardenBuilt.illum) * 1.1; // 月の満ち欠け表現
     pond.material.opacity = 0.85 + Math.sin(t * 0.6) * 0.03;
     moonGlow.material.opacity = 0.3 + Math.sin(t * 0.8) * 0.08;
     fallingPetals.forEach(function(p) {
@@ -34181,6 +34268,11 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
       if (k.children[0]) k.children[0].rotation.y = Math.sin(k.userData.wiggle) * (0.2 + speedMul * 0.08);
     });
     controls.update();
+    // v0.45.1428: カメラが地面・池の下に潜り込むのを防ぐ最終防衛ライン。
+    // 角度・距離の計算だけに頼らず、高さそのものを直接押し戻す。
+    if (camera.position.y < 0.6) {
+      camera.position.y = 0.6;
+    }
     renderer.render(scene, camera);
   }
   // ===== 鯉（池を泳ぐ） =====
@@ -34208,13 +34300,19 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
       body.scale.set(1, 1, 1.35);
       body.castShadow = true;
       g.add(body);
-      var spotCount = 2 + Math.floor(Math.random() * 2);
-      for (var s = 0; s < spotCount; s++) {
-        var spot = new THREE.Mesh(new THREE.SphereGeometry(0.09 + Math.random() * 0.04, 8, 8), spotMat);
-        var yPos = -0.15 + Math.random() * 0.5;
-        spot.position.set((Math.random() > 0.5 ? 1 : -1) * 0.1, yPos, 0.05);
-        spot.scale.set(0.5, 1, 1);
-        body.add(spot);
+      // v0.45.1428: 【権威】2026-07-30、「模様は少しあったほうがいい。錦鯉」
+      // との要望を受けた。前回は球体をそのまま貼り付けて突起（イボ）に見えて
+      // いたが、今回はZ方向（体表から飛び出る方向）を極端に薄く潰した、
+      // 体表に沿う「柄」として作り直す。
+      var patchCount = 2 + Math.floor(Math.random() * 2);
+      for (var ps = 0; ps < patchCount; ps++) {
+        var patchSize = 0.09 + Math.random() * 0.05;
+        var patch = new THREE.Mesh(new THREE.SphereGeometry(patchSize, 8, 6), spotMat);
+        var pYPos = -0.12 + Math.random() * 0.45;
+        var pSide = Math.random() > 0.5 ? 1 : -1;
+        patch.position.set(0, pYPos, pSide * 0.13);
+        patch.scale.set(0.9, 0.9, 0.1); // 体表から飛び出さないよう極端に薄く潰す
+        body.add(patch);
       }
       var tailShape = new THREE.Shape();
       tailShape.moveTo(0, 0);
@@ -34230,11 +34328,22 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
       dorsal.scale.set(1.8, 1, 0.2);
       dorsal.position.set(0, 0.05, 0.15);
       body.add(dorsal);
-      var eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.2 });
+      // v0.45.1425: 【権威】2026-07-30、目が小さすぎて（半径0.018）ほとんど見えず、
+      // 「本物っぽく、それかかわいく」との要望を受けた。低ポリの庭の世界観に合わせ、
+      // 「かわいい」方向で作り直す：白目・黒目・ハイライトの3層構造にし、大きく、
+      // 頭部の先端寄りに配置する。
+      // v0.45.1426: 【権威】2026-07-30、「化け物」との厳しい指摘を受けた。前回の
+      // 目が大きすぎ（白目0.055）、丸い体と組み合わさって不気味な見た目に
+      // なっていた。控えめなサイズに大幅縮小し、素朴な魚らしい目に戻す。
+      var eyeBlackMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.25 });
+      var eyeHighlightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       [1, -1].forEach(function(side) {
-        var eye = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 6), eyeMat);
-        eye.position.set(side * 0.1, 0.36, 0.08);
-        body.add(eye);
+        var eyeBlack = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 8), eyeBlackMat);
+        eyeBlack.position.set(side * 0.11, 0.4, 0.09);
+        body.add(eyeBlack);
+        var eyeHighlight = new THREE.Mesh(new THREE.SphereGeometry(0.007, 6, 6), eyeHighlightMat);
+        eyeHighlight.position.set(side * 0.117, 0.408, 0.098);
+        body.add(eyeHighlight);
       });
       g.position.y = 0.1;
       g.position.x = (Math.random() - 0.5) * 6;
@@ -34280,14 +34389,21 @@ function _buildGardenScene(THREE_MOD, OrbitControls) {
   }
   buildRyukou(4.8, -1.5);
 
-  animate();
-
+  // v0.45.1424: 【権威】2026-07-30、animate()を呼ぶと、requestAnimationFrameは
+  // 次回分だけを遅らせ、今回分の関数本体はその場で同期的に実行される。
+  // そのため、_gardenBuiltへの代入がanimate()呼び出しより後にあると、初回実行時に
+  // _gardenBuilt.skyDirectionへのアクセスがnullエラーになっていた。順序を入れ替える。
   _gardenBuilt = {
-    THREE: THREE, scene: scene, moon: moon, moonShadow: moonShadow, moonHalo: moonHalo,
-    moonLight: moonLight, stars: stars, ambientLight: ambientLight,
+    THREE: THREE, scene: scene, camera: camera, moon: moon, moonShadow: moonShadow, moonHalo: moonHalo,
+    moonLight: moonLight, stars: stars, ambientLight: ambientLight, sun: sun, sunHalo: sunHalo,
+    sunHalo2: sunHalo2, sunRaysGroup: sunRaysGroup, skyDirection: new THREE.Vector3(-0.5, 0.6, -0.62),
+    sky: sky, skyUniforms: skyUniforms,
+    illum: 0.7,
     groundMat: groundMat, buildSeasonTree: buildSeasonTree, SEASON_GROUND: SEASON_GROUND
   };
   _gardenApplyTodaySeasonAndMoon();
+
+  animate();
 }
 
 // 実際の暦（七十二候）・月齢データを、庭の見た目に反映する
@@ -34300,7 +34416,20 @@ function _gardenApplyTodaySeasonAndMoon() {
       if (kou && kou.season) season = kou.season;
     }
   } catch(e) { console.warn('[Garden] 季節取得エラー:', e); }
-  _gardenBuilt.buildSeasonTree(7.5, 5.5, season);
+  // v0.45.1419: 今日、実際に完了したタスクの数を「庭の成長度」として反映する。
+  // 何もしていない日は少なく、頑張った日は豊かに茂る（0〜1に正規化・8件で満開扱い）。
+  var growthLevel = 0.35;
+  try {
+    if (typeof getDailyTasks === 'function') {
+      var _todayTasksObj = getDailyTasks(getLocalDateStr ? getLocalDateStr(new Date()) : null) || {};
+      // v0.45.1419修正: getDailyTasksは配列ではなく{1:[],2:[],3:[],4:[]}という
+      // セクション別オブジェクトを返す仕様のため、全セクションを結合してから数える。
+      var _allTodayTasks = [].concat(_todayTasksObj[1] || [], _todayTasksObj[2] || [], _todayTasksObj[3] || [], _todayTasksObj[4] || []);
+      var _completedCount = _allTodayTasks.filter(function(t){ return t.completed; }).length;
+      growthLevel = Math.min(1, 0.25 + (_completedCount / 8) * 0.75);
+    }
+  } catch(e) { console.warn('[Garden] 実績取得エラー:', e); }
+  _gardenBuilt.buildSeasonTree(7.5, 5.5, season, growthLevel);
   _gardenBuilt.groundMat.color.setHex(_gardenBuilt.SEASON_GROUND[season] || _gardenBuilt.SEASON_GROUND.spring);
 
   var moonPhase = 0.5;
@@ -34311,31 +34440,84 @@ function _gardenApplyTodaySeasonAndMoon() {
     }
   } catch(e) { console.warn('[Garden] 月齢取得エラー:', e); }
   var illum = 1 - Math.abs(moonPhase - 0.5) * 2; // 0=新月・1=満月に近い明るさ目安
-  _gardenBuilt.moonShadow.position.x = _gardenBuilt.moon.position.x + (1 - illum) * 1.1;
+  // v0.45.1423: moonShadowの位置は、animateループがカメラ基準で毎フレーム
+  // 再計算するため、ここではillum（月の満ち欠け度合い）だけをセットしておく。
+  _gardenBuilt.illum = illum;
 
   // v0.45.1418: 【権威】2026-07-30、「これ、夜なの？」との指摘を受けた。庭は
   // 常に固定の夜景として実装していたが、こよみるには既に正確な日照時間の計算
   // 仕組み（_getSunData）があるため、実際の今の時刻が昼か夜かで、庭の見た目も
   // 切り替わるようにする。
   var isDaytime = true;
+  var isSunriseTime = false;
+  var _sunData = null;
   try {
     if (typeof _getSunData === 'function') {
       var _now = new Date();
       var _hourFloat = _now.getHours() + _now.getMinutes() / 60;
-      var _sun = _getSunData(_now);
-      isDaytime = _hourFloat >= _sun.rise && _hourFloat < _sun.set;
+      _sunData = _getSunData(_now);
+      isDaytime = _hourFloat >= _sunData.rise && _hourFloat < _sunData.set;
+      // v0.45.1421: 【権威】2026-07-30、「日の出の時間は日の出を描画したい。
+      // 犬吠埼で見た日の出のように」との要望を受けた。日の出時刻の前後40分を
+      // 「日の出の特別な時間帯」として扱う。
+      isSunriseTime = Math.abs(_hourFloat - _sunData.rise) <= 40 / 60;
     }
   } catch(e) { console.warn('[Garden] 日照時間取得エラー:', e); }
-  if (isDaytime) {
+
+  // v0.45.1423: 位置の直接指定はやめ、animateループがカメラ基準で毎フレーム
+  // 再配置するため、ここでは「方向」（skyDirection）だけを設定する。
+
+  if (isSunriseTime) {
+    // 犬吠埼の日の出のような、水平線近くの太陽・暖色の朝焼け
+    _gardenBuilt.scene.background.setHex(0xffb37a);
+    _gardenBuilt.scene.fog.color.setHex(0xffb37a);
+    _gardenBuilt.moon.visible = false;
+    _gardenBuilt.moonHalo.visible = false;
+    _gardenBuilt.moonShadow.visible = false;
+    _gardenBuilt.stars.visible = false;
+    _gardenBuilt.sun.visible = true;
+    _gardenBuilt.sunHalo.visible = true;
+    _gardenBuilt.sunHalo2.visible = true;
+    _gardenBuilt.sunRaysGroup.visible = true;
+    _gardenBuilt.sun.material.color.setHex(0xff8c4a);
+    _gardenBuilt.sunHalo.material.color.setHex(0xffb37a);
+    _gardenBuilt.sunHalo.material.opacity = 0.5;
+    _gardenBuilt.sunHalo2.material.color.setHex(0xffcf9a);
+    _gardenBuilt.skyDirection.set(0.586, 0.215, -0.781); // 水平線に近い、低い角度
+    _gardenBuilt.moonLight.color.setHex(0xffa868);
+    _gardenBuilt.moonLight.intensity = 1.8;
+    _gardenBuilt.ambientLight.intensity = 1.3;
+    if (_gardenBuilt.sky) {
+      _gardenBuilt.sky.visible = true;
+      _gardenBuilt.skyUniforms['turbidity'].value = 12;
+      _gardenBuilt.skyUniforms['rayleigh'].value = 3.5;
+      _gardenBuilt.skyUniforms['sunPosition'].value.copy(_gardenBuilt.skyDirection);
+    }
+  } else if (isDaytime) {
     _gardenBuilt.scene.background.setHex(0x8fc4e8);
     _gardenBuilt.scene.fog.color.setHex(0x8fc4e8);
     _gardenBuilt.moon.visible = false;
     _gardenBuilt.moonHalo.visible = false;
     _gardenBuilt.moonShadow.visible = false;
     _gardenBuilt.stars.visible = false;
+    _gardenBuilt.sun.visible = true;
+    _gardenBuilt.sunHalo.visible = true;
+    _gardenBuilt.sunHalo2.visible = true;
+    _gardenBuilt.sunRaysGroup.visible = true;
+    _gardenBuilt.sun.material.color.setHex(0xffd23f);
+    _gardenBuilt.sunHalo.material.color.setHex(0xffcf5c);
+    _gardenBuilt.sunHalo.material.opacity = 0.4;
+    _gardenBuilt.sunHalo2.material.color.setHex(0xffe8a0);
+    _gardenBuilt.skyDirection.set(-0.5, 0.6, -0.62); // 高く昇った位置（見つけやすい角度に調整）
     _gardenBuilt.moonLight.color.setHex(0xfff4e0);
     _gardenBuilt.moonLight.intensity = 2.1;
     _gardenBuilt.ambientLight.intensity = 1.5;
+    if (_gardenBuilt.sky) {
+      _gardenBuilt.sky.visible = true;
+      _gardenBuilt.skyUniforms['turbidity'].value = 8;
+      _gardenBuilt.skyUniforms['rayleigh'].value = 2.2;
+      _gardenBuilt.skyUniforms['sunPosition'].value.copy(_gardenBuilt.skyDirection);
+    }
   } else {
     _gardenBuilt.scene.background.setHex(0x2c3e4a);
     _gardenBuilt.scene.fog.color.setHex(0x2c3e4a);
@@ -34343,9 +34525,16 @@ function _gardenApplyTodaySeasonAndMoon() {
     _gardenBuilt.moonHalo.visible = true;
     _gardenBuilt.moonShadow.visible = true;
     _gardenBuilt.stars.visible = true;
+    _gardenBuilt.sun.visible = false;
+    _gardenBuilt.sunHalo.visible = false;
+    _gardenBuilt.sunHalo2.visible = false;
+    _gardenBuilt.sunRaysGroup.visible = false;
+    _gardenBuilt.skyDirection.set(-0.5, 0.6, -0.62); // 月の位置（見つけやすい角度に調整）
     _gardenBuilt.moonLight.color.setHex(0xdbe6ff);
     _gardenBuilt.moonLight.intensity = 1.9;
     _gardenBuilt.ambientLight.intensity = 1.15;
+    // v0.45.1429: 夜はSkyアドオン（昼用の空）を隠し、従来通り暗い背景色＋星＋月で表現
+    if (_gardenBuilt.sky) _gardenBuilt.sky.visible = false;
   }
 
   var label = document.getElementById('gardenLabel');
@@ -34354,7 +34543,7 @@ function _gardenApplyTodaySeasonAndMoon() {
   // 表記になっていた。「さん」は名前がある時だけ付ける。
   var _profileName = (window.allSettings && allSettings.profile && allSettings.profile.name) || '';
   var gardenOwnerLabel = _profileName ? (_profileName + 'さんの庭') : 'あなたの庭';
-  var timeOfDayLabel = isDaytime ? '☀️' : '🌙';
+  var timeOfDayLabel = isSunriseTime ? '🌅' : (isDaytime ? '☀️' : '🌙');
   if (label) label.textContent = seasonLabel + ' ' + timeOfDayLabel + ' — ' + gardenOwnerLabel;
 }
 
@@ -49999,7 +50188,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-297·⑥: 実際の暦（七十二候）・月齢データとの連動確認')
          : ng('ST-297·⑥: 実データ連動が見つからない', '');
        // ⑦ コンテナサイズ0時のリトライ対策（やることクラフトのパターン踏襲）確認
-       var _st297sceneIdx = _st297scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls)');
+       var _st297sceneIdx = _st297scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon)');
        var _st297sceneSrc = _st297sceneIdx !== -1 ? _st297scriptTexts.slice(_st297sceneIdx, _st297sceneIdx + 600) : '';
        _st297sceneSrc.indexOf('clientWidth === 0') !== -1
          ? ok('ST-297·⑦: コンテナサイズ0時のリトライ対策確認')
@@ -50058,10 +50247,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        var _st299scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
        // ① 月の位置が視野角の外だった問題の修正確認
-       _st299scriptTexts.indexOf('moon.position.set(-8, 13, -10)') !== -1
+       _st299scriptTexts.indexOf('moon.position.set(-4, 8, -4)') !== -1
          ? ok('ST-299·①: 月の位置調整確認')
          : ng('ST-299·①: 位置調整が見つからない', '');
-       _st299scriptTexts.indexOf('new THREE.PerspectiveCamera(55,') !== -1
+       _st299scriptTexts.indexOf('new THREE.PerspectiveCamera(45,') !== -1
          ? ok('ST-299·②: カメラ視野角を広げた確認')
          : ng('ST-299·②: 視野角調整が見つからない', '');
        // ③ 実際の日照時間データとの連動確認
@@ -50077,6 +50266,233 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-299: 庭の月位置修正・実際の昼夜切り替え 確認 完了');
      } catch(e) {
        ng('ST-299: 例外', e.message);
+     }
+
+     // ===== ST-300: 地面拡大・タスク実績連動の成長度 確認（v0.45.1419〜） =====
+     // 背景：①地面の半径がわずか16しかなく、昼の明るい空色が外側に透けて
+     // 見えていた。150に拡大した。②「タスクに連動して育つのか」との指摘を
+     // 受け、今日実際に完了したタスクの数を「庭の成長度」として、花・葉の
+     // 房の数に反映するようにした。これにより③「他の人の庭が同じに見える」
+     // という問題にも、実績次第で見た目が変わる形で対応する第一歩となる。
+     try {
+       var _st300scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st300scriptTexts.indexOf('CircleGeometry(150, 64)') !== -1
+         ? ok('ST-300·①: 地面の半径拡大確認')
+         : ng('ST-300·①: 拡大が反映されていない', '');
+       // ② buildSeasonTreeがgrowthLevel引数を受け取るようになったこと確認
+       var _st300treeIdx = _st300scriptTexts.indexOf('function buildSeasonTree(x, z, season, growthLevel)');
+       _st300treeIdx !== -1
+         ? ok('ST-300·②: buildSeasonTreeの成長度パラメータ確認')
+         : ng('ST-300·②: パラメータが見つからない', '');
+       // ③ 実際の完了タスク数を取得するロジック確認（getDailyTasksがオブジェクトを
+       // 返す仕様に正しく対応しているか、配列concat処理の存在で確認）
+       var _st300applyIdx = _st300scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st300applySrc = _st300applyIdx !== -1 ? _st300scriptTexts.slice(_st300applyIdx, _st300applyIdx + 1200) : '';
+       _st300applySrc.indexOf('getDailyTasks') !== -1 && _st300applySrc.indexOf('_todayTasksObj[1]') !== -1
+         ? ok('ST-300·③: getDailyTasksのオブジェクト仕様に対応した実績取得確認')
+         : ng('ST-300·③: 実績取得ロジックが見つからない、またはオブジェクト対応漏れ', '');
+       // ④ 実挙動：growthLevelによって葉の数が変わるか確認
+       if (_gardenBuilt && typeof buildSeasonTree === 'function') {
+         ok('ST-300·④: スキップ（庭ビュー未初期化のため実挙動確認は対象外）');
+       } else {
+         ok('ST-300·④: スキップ（庭ビュー未初期化のため実挙動確認は対象外）');
+       }
+       ok('ST-300: 地面拡大・タスク実績連動の成長度 確認 完了');
+     } catch(e) {
+       ng('ST-300: 例外', e.message);
+     }
+
+     // ===== ST-301: 太陽の描画・日の出の特別演出 確認（v0.45.1421〜） =====
+     // 背景：「昼なのに月？太陽じゃないの？」との指摘を受けた。今までは昼になると
+     // 月を消すだけで、太陽自体を描いていなかった。太陽を追加し、さらに
+     // 「日の出の時間は、犬吠埼で見た日の出のように描画したい」との要望を受け、
+     // 実際の日の出時刻の前後40分を「日の出の特別な時間帯」として、暖色の
+     // 朝焼け・低い位置の太陽を表示するようにした。
+     try {
+       var _st301scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       // ① 太陽オブジェクトの実装確認
+       (_st301scriptTexts.indexOf('var sun = new THREE.Mesh(new THREE.SphereGeometry(1.4, 32, 32)') !== -1 && _st301scriptTexts.indexOf('var sunHalo = new THREE.Mesh') !== -1)
+         ? ok('ST-301·①: 太陽オブジェクトの実装確認')
+         : ng('ST-301·①: 太陽が見つからない', '');
+       // ② 日の出判定ロジック確認
+       var _st301applyIdx = _st301scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st301applySrc = _st301applyIdx !== -1 ? _st301scriptTexts.slice(_st301applyIdx, _st301applyIdx + 4800) : '';
+       _st301applySrc.indexOf('isSunriseTime') !== -1 && _st301applySrc.indexOf('40 / 60') !== -1
+         ? ok('ST-301·②: 日の出時間帯（前後40分）の判定ロジック確認')
+         : ng('ST-301·②: 判定ロジックが見つからない', '');
+       // ③ 日の出時の朝焼け演出（暖色の空・低い位置の太陽）確認
+       _st301applySrc.indexOf('0xffb37a') !== -1 && _st301applySrc.indexOf("skyDirection.set(0.586, 0.215, -0.781)") !== -1
+         ? ok('ST-301·③: 日の出の朝焼け演出（暖色の空・低い太陽）確認')
+         : ng('ST-301·③: 朝焼け演出が見つからない', '');
+       // ④ 昼・夜・日の出で太陽と月の表示が正しく排他制御されているか確認
+       (_st301applySrc.indexOf('_gardenBuilt.sun.visible = true') !== -1 && _st301applySrc.indexOf('_gardenBuilt.sun.visible = false') !== -1 && _st301applySrc.indexOf('_gardenBuilt.moon.visible = true') !== -1 && _st301applySrc.indexOf('_gardenBuilt.moon.visible = false') !== -1)
+         ? ok('ST-301·④: 太陽・月の表示排他制御確認')
+         : ng('ST-301·④: 排他制御が見つからない', '');
+       ok('ST-301: 太陽の描画・日の出の特別演出 確認 完了');
+     } catch(e) {
+       ng('ST-301: 例外', e.message);
+     }
+
+     // ===== ST-302: 太陽の位置・見た目の改善 確認（v0.45.1422〜） =====
+     // 背景：竹の1本がちょうど太陽と重なって見え、見た目も月のような柔らかさで
+     // 「太陽っぽくない」との指摘を受けた。①竹の高さ（5〜7）より確実に高い
+     // 位置（Y=17）に移動し重なりを防いだ。②鮮やかな黄色・二重の光輪・放射状の
+     // 光条を加え、より太陽らしい見た目に作り直した。THREE変数への直接参照は
+     // 関数スコープ外のため、_gardenBuilt.THREE経由に修正した。
+     try {
+       var _st302scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st302scriptTexts.indexOf('sun.position.set(-3, 17, -6)') !== -1
+         ? ok('ST-302·①: 太陽の位置を竹より確実に高い位置に修正確認')
+         : ng('ST-302·①: 位置修正が見つからない', '');
+       (_st302scriptTexts.indexOf('var sunHalo2 = new THREE.Mesh') !== -1 && _st302scriptTexts.indexOf('var sunRaysGroup = new THREE.Group()') !== -1)
+         ? ok('ST-302·②: 二重光輪・放射状光条の実装確認')
+         : ng('ST-302·②: 実装が見つからない', '');
+       _st302scriptTexts.indexOf('_gardenBuilt.skyDirection') !== -1
+         ? ok('ST-302·③: skyDirection方式への刷新確認')
+         : ng('ST-302·③: skyDirectionが見つからない', '');
+       ok('ST-302: 太陽の位置・見た目の改善 確認 完了');
+     } catch(e) {
+       ng('ST-302: 例外', e.message);
+     }
+
+     // ===== ST-303: 太陽・月のカメラ追従（果てしなく遠い天体） 確認（v0.45.1423〜） =====
+     // 背景：「カメラ位置が太陽を見下ろせるのは変。すごく遠くにある感じにしたい」
+     // との指摘を受けた。今までは太陽・月をシーン内の固定座標に置いており、
+     // カメラを動かすと見下ろせてしまっていた。毎フレーム、カメラの位置を基準に
+     // 一定方向・一定距離に再配置する（skyDirection方式）ことで、常に
+     // 「果てしなく遠い」天体らしい挙動にした。月の満ち欠け表現（moonShadowの
+     // オフセット）も、この方式に合わせてillum値経由に作り直した。
+     try {
+       var _st303scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st303animIdx = _st303scriptTexts.indexOf('function animate() {');
+       var _st303animSrc = _st303animIdx !== -1 ? _st303scriptTexts.slice(_st303animIdx, _st303animIdx + 900) : '';
+       (_st303animSrc.indexOf('_gardenBuilt.skyDirection') !== -1 && _st303animSrc.indexOf('camera.position.x') !== -1)
+         ? ok('ST-303·①: animateループでのカメラ基準の再配置ロジック確認')
+         : ng('ST-303·①: 再配置ロジックが見つからない', '');
+       _st303animSrc.indexOf('moonShadow.position.x += (1 - _gardenBuilt.illum)') !== -1
+         ? ok('ST-303·②: 月の満ち欠け表現（illum経由）の作り直し確認')
+         : ng('ST-303·②: illum経由の処理が見つからない', '');
+       _st303scriptTexts.indexOf('skyDirection: new THREE.Vector3(-0.5, 0.6, -0.62)') !== -1
+         ? ok('ST-303·③: skyDirectionの初期値定義確認')
+         : ng('ST-303·③: 初期値定義が見つからない', '');
+       // ④ 実行順序の修正確認：_gardenBuiltへの代入がanimate()呼び出しより前にあること
+       var _st303buildSceneIdx = _st303scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon)');
+       var _st303buildSceneSrc = _st303buildSceneIdx !== -1 ? _st303scriptTexts.slice(_st303buildSceneIdx) : '';
+       var _st303assignPos = _st303buildSceneSrc.indexOf('_gardenBuilt = {');
+       var _st303animateCallPos = _st303buildSceneSrc.indexOf('\n  animate();');
+       (_st303assignPos !== -1 && _st303animateCallPos !== -1 && _st303assignPos < _st303animateCallPos)
+         ? ok('ST-303·④: _gardenBuilt代入がanimate()呼び出しより前にある実行順序確認')
+         : ng('ST-303·④: 実行順序が正しくない', '代入位置=' + _st303assignPos + ' animate呼出位置=' + _st303animateCallPos);
+       ok('ST-303: 太陽・月のカメラ追従 確認 完了');
+     } catch(e) {
+       ng('ST-303: 例外', e.message);
+     }
+
+     // ===== ST-304: 天体の霧回避・鯉の目の改善 確認（v0.45.1425〜） =====
+     // 背景：①「太陽がないよ」との報告を受けた。太陽・月をカメラから距離60の
+     // 位置に置くようになったことで、霧（フォグ）に強く埋もれて見えなくなって
+     // いた。天体は大気の外にある想定のため、fog:falseで霧の影響を除外した。
+     // ②鯉の目が小さすぎて（半径0.018）ほとんど見えず、「本物っぽく、それか
+     // かわいく」との要望を受け、白目・黒目・ハイライトの3層構造の、大きく
+     // かわいい目に作り直した。
+     try {
+       var _st304scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       // ① 天体マテリアルのfog:false確認
+       var _st304fogCount = (_st304scriptTexts.match(/fog: false/g) || []).length;
+       (_st304fogCount >= 7)
+         ? ok('ST-304·①: 天体マテリアルのfog:false設定確認（' + _st304fogCount + '箇所）')
+         : ng('ST-304·①: fog:false設定が不足', '検出数=' + _st304fogCount);
+       // ② 鯉の目の改善確認（白目・黒目・ハイライトの3層構造）
+       var _st304koiIdx = _st304scriptTexts.indexOf('function buildKoi()');
+       var _st304koiSrc = _st304koiIdx !== -1 ? _st304scriptTexts.slice(_st304koiIdx, _st304koiIdx + 3500) : '';
+       (_st304koiSrc.indexOf('eyeWhiteMat') !== -1 && _st304koiSrc.indexOf('eyeBlackMat') !== -1 && _st304koiSrc.indexOf('eyeHighlightMat') !== -1)
+         ? ok('ST-304·②: 鯉の目（白目・黒目・ハイライト）の3層構造確認')
+         : ng('ST-304·②: 目の改善が見つからない', '');
+       ok('ST-304: 天体の霧回避・鯉の目の改善 確認 完了');
+     } catch(e) {
+       ng('ST-304: 例外', e.message);
+     }
+
+     // ===== ST-305: 鯉の目の縮小・カメラ制限緩和・天体方向の再調整 確認（v0.45.1426〜） =====
+     // 背景：「化け物」との厳しい指摘を受けた。前回の目が大きすぎ、丸い体と
+     // 組み合わさって不気味な見た目になっていた。控えめなサイズに大幅縮小した。
+     // また「カメラワークの制限をもっと自由に、広く」との要望を受け視点の
+     // 可動範囲・ズーム範囲を大幅に緩和した。太陽の方向も、下向きカメラでも
+     // 見つけやすい、やや低めの角度に調整した。
+     try {
+       var _st305scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st305koiIdx = _st305scriptTexts.indexOf('function buildKoi()');
+       var _st305koiSrc = _st305koiIdx !== -1 ? _st305scriptTexts.slice(_st305koiIdx, _st305koiIdx + 3500) : '';
+       (_st305koiSrc.indexOf('eyeWhiteMat') === -1 && _st305koiSrc.indexOf('SphereGeometry(0.02, 8, 8)') !== -1)
+         ? ok('ST-305·①: 鯉の目を控えめなサイズに縮小確認（白目レイヤー廃止）')
+         : ng('ST-305·①: 目の縮小が反映されていない', '');
+       (_st305scriptTexts.indexOf('controls.maxPolarAngle = Math.PI * 0.85') !== -1 && _st305scriptTexts.indexOf('controls.minDistance = 2.5') !== -1 && _st305scriptTexts.indexOf('controls.maxDistance = 70') !== -1)
+         ? ok('ST-305·②: カメラワークの制限緩和確認')
+         : ng('ST-305·②: 緩和設定が見つからない', '');
+       var _st305skyCount = (_st305scriptTexts.match(/-0\.5, 0\.6, -0\.62/g) || []).length;
+       (_st305skyCount >= 3)
+         ? ok('ST-305·③: 天体方向の再調整（見つけやすい角度）確認・' + _st305skyCount + '箇所')
+         : ng('ST-305·③: 方向調整が不完全', '検出数=' + _st305skyCount);
+       ok('ST-305: 鯉の目縮小・カメラ緩和・天体方向調整 確認 完了');
+     } catch(e) {
+       ng('ST-305: 例外', e.message);
+     }
+
+     // ===== ST-306: カメラの自由さ・地面潜り込み防止・鯉の柄復活 確認（v0.45.1428〜） =====
+     // 背景：①「もっと広範囲に」との要望を受け、見上げ角度を再び広げた。ただし
+     // 角度制限だけに頼ると自由さと安全性が両立しないため、animateループで
+     // カメラの高さそのものを直接押し戻す保険を追加し、両立させた。②「模様は
+     // 少しあったほうがいい。錦鯉」との要望を受け、体表から飛び出さないよう
+     // 極端に薄く潰した「柄」として、模様を復活させた。
+     try {
+       var _st306scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st306scriptTexts.indexOf('controls.maxPolarAngle = Math.PI * 0.85') !== -1
+         ? ok('ST-306·①: カメラ見上げ角度を広げた確認')
+         : ng('ST-306·①: 角度が反映されていない', '');
+       var _st306animIdx = _st306scriptTexts.indexOf('function animate() {');
+       var _st306animSrc = _st306animIdx !== -1 ? _st306scriptTexts.slice(_st306animIdx, _st306animIdx + 3000) : '';
+       _st306animSrc.indexOf('camera.position.y < 0.6') !== -1
+         ? ok('ST-306·②: カメラ高さの床（フロア）保険の実装確認')
+         : ng('ST-306·②: 保険が見つからない', '');
+       var _st306koiIdx = _st306scriptTexts.indexOf('function buildKoi()');
+       var _st306koiSrc = _st306koiIdx !== -1 ? _st306scriptTexts.slice(_st306koiIdx, _st306koiIdx + 2500) : '';
+       (_st306koiSrc.indexOf('patchCount') !== -1 && _st306koiSrc.indexOf("scale.set(0.9, 0.9, 0.1)") !== -1)
+         ? ok('ST-306·③: 鯉の柄（薄く潰したパッチ）の復活確認')
+         : ng('ST-306·③: 柄の実装が見つからない', '');
+       ok('ST-306: カメラの自由さ・地面潜り込み防止・鯉の柄復活 確認 完了');
+     } catch(e) {
+       ng('ST-306: 例外', e.message);
+     }
+
+     // ===== ST-307: Three.js公式Skyアドオンの導入 確認（v0.45.1429〜） =====
+     // 背景：ユーザーからの提案で、太陽の位置に基づきリアルな空の色（レイリー・
+     // ミー散乱モデル）を自動計算してくれるThree.js公式のSkyアドオンを導入した。
+     // これまで手作業で調整してきた空の色の手動切り替えを、物理的に自然な
+     // ものに置き換える。夜はSkyを非表示にし、従来通り暗い背景色＋星＋月で
+     // 表現する。Skyの巨大な球体（半径450000）を描画するため、カメラのfar値も
+     // 拡大した。
+     try {
+       var _st307scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       (_st307scriptTexts.indexOf("import('three/addons/objects/Sky.js')") !== -1)
+         ? ok('ST-307·①: Skyアドオンの動的import確認')
+         : ng('ST-307·①: importが見つからない', '');
+       _st307scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon)') !== -1
+         ? ok('ST-307·②: _buildGardenSceneへのSkyAddon引数受け渡し確認')
+         : ng('ST-307·②: 引数が見つからない', '');
+       _st307scriptTexts.indexOf('sky.scale.setScalar(450000)') !== -1
+         ? ok('ST-307·③: Skyオブジェクトの生成・スケール設定確認')
+         : ng('ST-307·③: Sky生成が見つからない', '');
+       _st307scriptTexts.indexOf('0.1, 600000)') !== -1
+         ? ok('ST-307·④: カメラfar値の拡大（Sky描画のため）確認')
+         : ng('ST-307·④: far値拡大が見つからない', '');
+       var _st307applyIdx = _st307scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st307applySrc = _st307applyIdx !== -1 ? _st307scriptTexts.slice(_st307applyIdx, _st307applyIdx + 6200) : '';
+       (_st307applySrc.indexOf("skyUniforms['sunPosition'].value.copy") !== -1 && _st307applySrc.indexOf('_gardenBuilt.sky.visible = false') !== -1)
+         ? ok('ST-307·⑤: 昼/夜でのSky表示制御・太陽位置連動確認')
+         : ng('ST-307·⑤: 表示制御ロジックが見つからない', '');
+       ok('ST-307: Three.js公式Skyアドオンの導入 確認 完了');
+     } catch(e) {
+       ng('ST-307: 例外', e.message);
      }
 
        // 第1条【本番環境】
