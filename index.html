@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1429 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1435 ★ -->
 
 <html lang="ja">
 <head>
@@ -21,7 +21,7 @@
        cdnjs(three.js)のみに限定し、悪意ある外部ドメインへの注入・送信を遮断する。
        接続先(connect)も GitHub Gist 同期等の正規先のみ許可。
        v0.45.1312〜：Supabase Realtime（複数端末の即時同期）用にwss://を追加。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://img.youtube.com https://api.qrserver.com https://chart.googleapis.com https://*.githubusercontent.com; connect-src 'self' https://api.github.com https://xycuxzvejevyylwmkwsk.supabase.co wss://xycuxzvejevyylwmkwsk.supabase.co; frame-src https://www.youtube.com https://www.youtube-nocookie.com; media-src 'self' blob: data:; object-src 'none'; base-uri 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://www.youtube.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://img.youtube.com https://api.qrserver.com https://chart.googleapis.com https://*.githubusercontent.com https://cdn.jsdelivr.net; connect-src 'self' https://api.github.com https://xycuxzvejevyylwmkwsk.supabase.co wss://xycuxzvejevyylwmkwsk.supabase.co; frame-src https://www.youtube.com https://www.youtube-nocookie.com; media-src 'self' blob: data:; object-src 'none'; base-uri 'self';">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Noto+Sans+JP:wght@400;700&display=swap">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1429';
+    const APP_VERSION = 'v0.45.1435';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6957,6 +6957,7 @@
 <div id="gardenView" style="display:none;width:100%;height:calc(100vh - 50px);position:relative;background:#2c3e4a;overflow:hidden;">
   <div id="gardenCanvasContainer" style="width:100%;height:100%;position:relative;"></div>
   <div id="gardenLabel" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);color:#f3ead9;font-size:14px;background:rgba(20,30,25,0.45);padding:7px 18px;border-radius:18px;z-index:10;pointer-events:none;backdrop-filter:blur(6px);"></div>
+  <button id="gardenLookAtSunBtn" onclick="gardenViewGoraikou()" style="position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(20,30,25,0.5);color:#f3ead9;border:1px solid rgba(243,234,217,0.35);border-radius:16px;padding:6px 16px;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px);">🌅 ご来光を見る</button>
   <div id="gardenFallback" style="display:none;padding:60px 20px;text-align:center;color:#e8dfc8;">
     <div style="font-size:2.5em;margin-bottom:12px;">🌳</div>
     <div style="font-size:0.95em;line-height:1.8;">お使いの端末では、庭の3D表示を読み込めませんでした。<br>通信環境の良い場所で、もう一度開いてみてください。</div>
@@ -33881,11 +33882,13 @@ function initGardenWorld() {
   Promise.all([
     import('three'),
     import('three/addons/controls/OrbitControls.js'),
-    import('three/addons/objects/Sky.js')
+    import('three/addons/objects/Sky.js'),
+    import('three/addons/objects/Lensflare.js'),
+    import('three/addons/objects/Water.js')
   ]).then(function(mods) {
     window._gardenLoading = false;
     _gardenInitialized = true;
-    _buildGardenScene(mods[0], mods[1].OrbitControls, mods[2].Sky);
+    _buildGardenScene(mods[0], mods[1].OrbitControls, mods[2].Sky, mods[3], mods[4].Water);
     if (typeof _loadGardenVisitList === 'function') _loadGardenVisitList();
   }).catch(function(e) {
     console.warn('[Garden] Three.js読み込み失敗、フォールバック表示:', e);
@@ -33898,7 +33901,39 @@ function initGardenWorld() {
 }
 window.initGardenWorld = initGardenWorld;
 
-function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
+// v0.45.1434: 【権威】2026-07-30、「太陽を見たい」という要望が繰り返し
+// あったため、探さなくても確実に見られる「☀️ 太陽を見る」ボタンを実装する。
+// カメラの現在位置から注視点までの距離を保ったまま、注視点を太陽の方向へ
+// 向け直すことで、視線を太陽に合わせる。
+// v0.45.1435: 【権威】2026-07-30、「太陽を見さえすればいいのではない。
+// ご来光を見たい。犬吠埼ホテルで見たご来光を再現したい」との指摘を受けた。
+// 単に視線を向けるだけでなく、カメラの位置自体を、水面を手前に・低めの
+// 高さから・水平線の彼方を臨む、ご来光にふさわしい構図に組み直す。
+function gardenViewGoraikou() {
+  if (!_gardenBuilt || !_gardenBuilt.camera || !_gardenBuilt.controls) return;
+  var camera = _gardenBuilt.camera;
+  var controls = _gardenBuilt.controls;
+  var dir = _gardenBuilt.skyDirection;
+  // 日の出方向の反対側、低めの高さ（バルコニーから見下ろす目線）に立つ
+  var viewDist = 15;
+  camera.position.set(
+    -dir.x * viewDist,
+    3.5,
+    -dir.z * viewDist
+  );
+  // 水平線の彼方、日の出の方向を、やや見上げるように臨む
+  controls.target.set(
+    camera.position.x + dir.x * 20,
+    camera.position.y + dir.y * 20,
+    camera.position.z + dir.z * 20
+  );
+  controls.update();
+}
+window.gardenViewGoraikou = gardenViewGoraikou;
+// 後方互換のため、旧名でも呼べるようにする
+window.gardenLookAtSun = gardenViewGoraikou;
+
+function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon) {
   var THREE = THREE_MOD;
   var container = document.getElementById('gardenCanvasContainer');
   if (!container) return;
@@ -33912,7 +33947,9 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x2c3e4a);
-  scene.fog = new THREE.FogExp2(0x2c3e4a, 0.016);
+  // v0.45.1431: 【権威】2026-07-30、「霧をつけすぎ」との指摘を受けた。Sky
+  // アドオンが既に大気の奥行きを表現してくれるため、手動の霧は控えめにする。
+  scene.fog = new THREE.FogExp2(0x2c3e4a, 0.006);
 
   // v0.45.1429: 【権威】2026-07-30、Three.js公式のSkyアドオンを導入する。
   // 太陽の位置に基づき、リアルな空の色（レイリー・ミー散乱モデル）を自動計算
@@ -33926,9 +33963,13 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
     sky.scale.setScalar(450000);
     scene.add(sky);
     skyUniforms = sky.material.uniforms;
-    skyUniforms['turbidity'].value = 8;
-    skyUniforms['rayleigh'].value = 2.2;
-    skyUniforms['mieCoefficient'].value = 0.006;
+    // v0.45.1432: 【権威】2026-07-30、「白くなった」との報告を受けた。カメラを
+    // 大きく引けるようにした結果、Skyの物理シミュレーションが、極端な角度・
+    // 距離で白飛びしやすくなっていた。turbidity・rayleighを大きく下げ、
+    // より安定して青空らしく見える、控えめな設定にする。
+    skyUniforms['turbidity'].value = 3;
+    skyUniforms['rayleigh'].value = 1;
+    skyUniforms['mieCoefficient'].value = 0.003;
     skyUniforms['mieDirectionalG'].value = 0.8;
   }
 
@@ -33947,7 +33988,7 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  renderer.toneMappingExposure = 0.9;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
@@ -33966,7 +34007,9 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
   // 保険を別途かけることで、自由さと安全性を両立させる。
   controls.maxPolarAngle = Math.PI * 0.85;
   controls.minDistance = 2.5;
-  controls.maxDistance = 70;
+  // v0.45.1431: 【権威】2026-07-30、「もっと引きたいし、もっと大きく動かしたい」
+  // との要望を受け、ズームアウトできる範囲を大きく拡大する。
+  controls.maxDistance = 220;
   controls.target.set(0, 1, 0);
 
   var moonLight = new THREE.DirectionalLight(0xdbe6ff, 1.9);
@@ -33988,7 +34031,9 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
   // 地面の半径がわずか16しかなく、その外側の背景（昼は明るい青空）がそのまま
   // 見えていた。夜は背景が暗かったので目立たなかったが、昼で境界が露呈した。
   // カメラのfar(200)近くまで大きく広げる。
-  var ground = new THREE.Mesh(new THREE.CircleGeometry(150, 64), groundMat);
+  // v0.45.1431: カメラの引きの範囲を220まで拡大したのに合わせ、地面の半径も
+  // 十分に大きくし、地面の外側（背景の空）が見えてしまう問題を防ぐ。
+  var ground = new THREE.Mesh(new THREE.CircleGeometry(400, 64), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
@@ -34006,11 +34051,33 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
     scene.add(ring);
   }
 
-  var pondMat = new THREE.MeshPhysicalMaterial({
-    color: 0x1c4560, roughness: 0.08, metalness: 0.1,
-    transparent: true, opacity: 0.9, clearcoat: 0.6, clearcoatRoughness: 0.15
-  });
-  var pond = new THREE.Mesh(new THREE.CircleGeometry(5.6, 64), pondMat);
+  // v0.45.1433: 【権威】2026-07-30、Three.js公式のWaterアドオンを導入する。
+  // 今までの半透明の円盤ではなく、周りの景色を反射する、本物の水面にする。
+  var pond;
+  if (WaterAddon) {
+    var waterNormals = new THREE.TextureLoader().load(
+      'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/textures/waternormals.jpg',
+      function(tex) { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; }
+    );
+    pond = new WaterAddon(new THREE.CircleGeometry(5.6, 64), {
+      textureWidth: 512, textureHeight: 512,
+      waterNormals: waterNormals,
+      sunDirection: new THREE.Vector3(0, 1, 0),
+      sunColor: 0xffffff,
+      // v0.45.1434: 【権威】2026-07-30、「池が白くなって水らしさが消えた」との
+      // 指摘を受けた。明るいSkyの反射で水面全体が白飛びしていたため、水色を
+      // より暗く、歪みも抑えて水らしさを取り戻す。
+      waterColor: 0x062338,
+      distortionScale: 1.2,
+      fog: scene.fog !== undefined
+    });
+  } else {
+    // Water読み込み失敗時のフォールバック（従来の見た目）
+    pond = new THREE.Mesh(new THREE.CircleGeometry(5.6, 64), new THREE.MeshPhysicalMaterial({
+      color: 0x1c4560, roughness: 0.08, metalness: 0.1,
+      transparent: true, opacity: 0.9, clearcoat: 0.6, clearcoatRoughness: 0.15
+    }));
+  }
   pond.rotation.x = -Math.PI / 2;
   pond.position.y = 0.03;
   scene.add(pond);
@@ -34175,11 +34242,33 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
   // 見た目も月のような柔らかさで「太陽っぽくない」との指摘を受けた。①竹の
   // 高さ（5〜7）より確実に高い位置に移動し、重なりを防ぐ。②より鮮やかな色・
   // 強い輝き・放射状の光条を加え、太陽らしい見た目に作り直す。
-  var sunMat = new THREE.MeshBasicMaterial({ color: 0xffd23f, fog: false });
-  var sun = new THREE.Mesh(new THREE.SphereGeometry(1.5, 32, 32), sunMat);
+  // v0.45.1430: 【権威】2026-07-30、Skyアドオンの明るい表現に、今までの
+  // 小さな黄色い球が埋もれて見えなくなっていた。より白く・大きく・強く
+  // 発光させ、Skyの中でもはっきり際立つ「くっきりした太陽の芯」にする。
+  // v0.45.1431: 【権威】2026-07-30、「白く明るく」した結果、Sky自体の明るい
+  // 白っぽい部分と同化してしまい、逆にコントラストが下がった可能性が高い。
+  // 彩度の高い、はっきりした黄金色に戻し、白いSkyの中でも際立たせる。
+  var sunMat = new THREE.MeshBasicMaterial({ color: 0xffc800, fog: false, toneMapped: false });
+  var sun = new THREE.Mesh(new THREE.SphereGeometry(2.2, 32, 32), sunMat);
   sun.position.set(-3, 17, -6);
   scene.add(sun);
-  var sunHalo = new THREE.Mesh(new THREE.SphereGeometry(3.2, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffcf5c, transparent: true, opacity: 0.4, fog: false }));
+  // v0.45.1433: 【権威】2026-07-30、Three.js公式のLensflareアドオンを導入。
+  // カメラが太陽の方を向くと、光の輪・光条が自然に浮かび上がる。太陽（sun）の
+  // 子要素にすることで、位置を自動的に追従させる。
+  var lensflare = null;
+  if (LensflareMod) {
+    var _flareLoader = new THREE.TextureLoader();
+    var _flare0 = _flareLoader.load('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/textures/lensflare/lensflare0.png');
+    var _flare3 = _flareLoader.load('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/textures/lensflare/lensflare3.png');
+    lensflare = new LensflareMod.Lensflare();
+    lensflare.addElement(new LensflareMod.LensflareElement(_flare0, 300, 0, sunMat.color));
+    lensflare.addElement(new LensflareMod.LensflareElement(_flare3, 40, 0.6));
+    lensflare.addElement(new LensflareMod.LensflareElement(_flare3, 60, 0.7));
+    lensflare.addElement(new LensflareMod.LensflareElement(_flare3, 90, 0.9));
+    lensflare.addElement(new LensflareMod.LensflareElement(_flare3, 50, 1));
+    sun.add(lensflare);
+  }
+  var sunHalo = new THREE.Mesh(new THREE.SphereGeometry(4.2, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.55, fog: false }));
   sunHalo.position.copy(sun.position);
   scene.add(sunHalo);
   var sunHalo2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffe8a0, transparent: true, opacity: 0.18, fog: false }));
@@ -34235,7 +34324,14 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
       obj.position.set(_skyX, _skyY, _skyZ);
     });
     moonShadow.position.x += (1 - _gardenBuilt.illum) * 1.1; // 月の満ち欠け表現
-    pond.material.opacity = 0.85 + Math.sin(t * 0.6) * 0.03;
+    // v0.45.1433: Waterアドオンは、時間経過で波を動かし、太陽の方向を反映させる
+    // ことで、周りの景色を反射するリアルな水面になる。
+    if (pond.material.uniforms && pond.material.uniforms['time']) {
+      pond.material.uniforms['time'].value += 1.0 / 60.0;
+    }
+    if (pond.material.uniforms && pond.material.uniforms['sunDirection'] && _gardenBuilt) {
+      pond.material.uniforms['sunDirection'].value.copy(_gardenBuilt.skyDirection).normalize();
+    }
     moonGlow.material.opacity = 0.3 + Math.sin(t * 0.8) * 0.08;
     fallingPetals.forEach(function(p) {
       p.position.y -= p.userData.speed;
@@ -34319,7 +34415,10 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
       tailShape.quadraticCurveTo(0.25, 0.12, 0.32, 0.02);
       tailShape.quadraticCurveTo(0.25, -0.02, 0.32, -0.13);
       tailShape.quadraticCurveTo(0.1, -0.08, 0, 0);
-      var tail = new THREE.Mesh(new THREE.ShapeGeometry(tailShape), new THREE.MeshStandardMaterial({ color: pat.base, roughness: 0.4, side: THREE.DoubleSide, transparent: true, opacity: 0.92 }));
+      // v0.45.1434: 【権威】2026-07-30、「透明な鯉もいる」との指摘を受けた。Waterの
+      // 反射描画（別カメラでシーンを描画する仕組み）が、透明マテリアルをうまく
+      // 処理できず、透けて見える不具合が発生していた。不透明化して解消する。
+      var tail = new THREE.Mesh(new THREE.ShapeGeometry(tailShape), new THREE.MeshStandardMaterial({ color: pat.base, roughness: 0.4, side: THREE.DoubleSide }));
       tail.rotation.y = Math.PI / 2;
       tail.position.set(0, -0.5, 0);
       body.add(tail);
@@ -34394,10 +34493,10 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon) {
   // そのため、_gardenBuiltへの代入がanimate()呼び出しより後にあると、初回実行時に
   // _gardenBuilt.skyDirectionへのアクセスがnullエラーになっていた。順序を入れ替える。
   _gardenBuilt = {
-    THREE: THREE, scene: scene, camera: camera, moon: moon, moonShadow: moonShadow, moonHalo: moonHalo,
+    THREE: THREE, scene: scene, camera: camera, controls: controls, moon: moon, moonShadow: moonShadow, moonHalo: moonHalo,
     moonLight: moonLight, stars: stars, ambientLight: ambientLight, sun: sun, sunHalo: sunHalo,
     sunHalo2: sunHalo2, sunRaysGroup: sunRaysGroup, skyDirection: new THREE.Vector3(-0.5, 0.6, -0.62),
-    sky: sky, skyUniforms: skyUniforms,
+    sky: sky, skyUniforms: skyUniforms, lensflare: lensflare,
     illum: 0.7,
     groundMat: groundMat, buildSeasonTree: buildSeasonTree, SEASON_GROUND: SEASON_GROUND
   };
@@ -34476,6 +34575,7 @@ function _gardenApplyTodaySeasonAndMoon() {
     _gardenBuilt.moonShadow.visible = false;
     _gardenBuilt.stars.visible = false;
     _gardenBuilt.sun.visible = true;
+    if (_gardenBuilt.lensflare) _gardenBuilt.lensflare.visible = true;
     _gardenBuilt.sunHalo.visible = true;
     _gardenBuilt.sunHalo2.visible = true;
     _gardenBuilt.sunRaysGroup.visible = true;
@@ -34489,18 +34589,19 @@ function _gardenApplyTodaySeasonAndMoon() {
     _gardenBuilt.ambientLight.intensity = 1.3;
     if (_gardenBuilt.sky) {
       _gardenBuilt.sky.visible = true;
-      _gardenBuilt.skyUniforms['turbidity'].value = 12;
-      _gardenBuilt.skyUniforms['rayleigh'].value = 3.5;
+      _gardenBuilt.skyUniforms['turbidity'].value = 6;
+      _gardenBuilt.skyUniforms['rayleigh'].value = 2;
       _gardenBuilt.skyUniforms['sunPosition'].value.copy(_gardenBuilt.skyDirection);
     }
   } else if (isDaytime) {
-    _gardenBuilt.scene.background.setHex(0x8fc4e8);
-    _gardenBuilt.scene.fog.color.setHex(0x8fc4e8);
+    _gardenBuilt.scene.background.setHex(0xcfe3ee);
+    _gardenBuilt.scene.fog.color.setHex(0xcfe3ee);
     _gardenBuilt.moon.visible = false;
     _gardenBuilt.moonHalo.visible = false;
     _gardenBuilt.moonShadow.visible = false;
     _gardenBuilt.stars.visible = false;
     _gardenBuilt.sun.visible = true;
+    if (_gardenBuilt.lensflare) _gardenBuilt.lensflare.visible = true;
     _gardenBuilt.sunHalo.visible = true;
     _gardenBuilt.sunHalo2.visible = true;
     _gardenBuilt.sunRaysGroup.visible = true;
@@ -34514,8 +34615,8 @@ function _gardenApplyTodaySeasonAndMoon() {
     _gardenBuilt.ambientLight.intensity = 1.5;
     if (_gardenBuilt.sky) {
       _gardenBuilt.sky.visible = true;
-      _gardenBuilt.skyUniforms['turbidity'].value = 8;
-      _gardenBuilt.skyUniforms['rayleigh'].value = 2.2;
+      _gardenBuilt.skyUniforms['turbidity'].value = 3;
+      _gardenBuilt.skyUniforms['rayleigh'].value = 1;
       _gardenBuilt.skyUniforms['sunPosition'].value.copy(_gardenBuilt.skyDirection);
     }
   } else {
@@ -34526,6 +34627,7 @@ function _gardenApplyTodaySeasonAndMoon() {
     _gardenBuilt.moonShadow.visible = true;
     _gardenBuilt.stars.visible = true;
     _gardenBuilt.sun.visible = false;
+    if (_gardenBuilt.lensflare) _gardenBuilt.lensflare.visible = false;
     _gardenBuilt.sunHalo.visible = false;
     _gardenBuilt.sunHalo2.visible = false;
     _gardenBuilt.sunRaysGroup.visible = false;
@@ -50188,7 +50290,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-297·⑥: 実際の暦（七十二候）・月齢データとの連動確認')
          : ng('ST-297·⑥: 実データ連動が見つからない', '');
        // ⑦ コンテナサイズ0時のリトライ対策（やることクラフトのパターン踏襲）確認
-       var _st297sceneIdx = _st297scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon)');
+       var _st297sceneIdx = _st297scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon)');
        var _st297sceneSrc = _st297sceneIdx !== -1 ? _st297scriptTexts.slice(_st297sceneIdx, _st297sceneIdx + 600) : '';
        _st297sceneSrc.indexOf('clientWidth === 0') !== -1
          ? ok('ST-297·⑦: コンテナサイズ0時のリトライ対策確認')
@@ -50276,7 +50378,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // という問題にも、実績次第で見た目が変わる形で対応する第一歩となる。
      try {
        var _st300scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       _st300scriptTexts.indexOf('CircleGeometry(150, 64)') !== -1
+       _st300scriptTexts.indexOf('CircleGeometry(400, 64)') !== -1
          ? ok('ST-300·①: 地面の半径拡大確認')
          : ng('ST-300·①: 拡大が反映されていない', '');
        // ② buildSeasonTreeがgrowthLevel引数を受け取るようになったこと確認
@@ -50376,7 +50478,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-303·③: skyDirectionの初期値定義確認')
          : ng('ST-303·③: 初期値定義が見つからない', '');
        // ④ 実行順序の修正確認：_gardenBuiltへの代入がanimate()呼び出しより前にあること
-       var _st303buildSceneIdx = _st303scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon)');
+       var _st303buildSceneIdx = _st303scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon)');
        var _st303buildSceneSrc = _st303buildSceneIdx !== -1 ? _st303scriptTexts.slice(_st303buildSceneIdx) : '';
        var _st303assignPos = _st303buildSceneSrc.indexOf('_gardenBuilt = {');
        var _st303animateCallPos = _st303buildSceneSrc.indexOf('\n  animate();');
@@ -50426,7 +50528,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_st305koiSrc.indexOf('eyeWhiteMat') === -1 && _st305koiSrc.indexOf('SphereGeometry(0.02, 8, 8)') !== -1)
          ? ok('ST-305·①: 鯉の目を控えめなサイズに縮小確認（白目レイヤー廃止）')
          : ng('ST-305·①: 目の縮小が反映されていない', '');
-       (_st305scriptTexts.indexOf('controls.maxPolarAngle = Math.PI * 0.85') !== -1 && _st305scriptTexts.indexOf('controls.minDistance = 2.5') !== -1 && _st305scriptTexts.indexOf('controls.maxDistance = 70') !== -1)
+       (_st305scriptTexts.indexOf('controls.maxPolarAngle = Math.PI * 0.85') !== -1 && _st305scriptTexts.indexOf('controls.minDistance = 2.5') !== -1 && _st305scriptTexts.indexOf('controls.maxDistance = 220') !== -1)
          ? ok('ST-305·②: カメラワークの制限緩和確認')
          : ng('ST-305·②: 緩和設定が見つからない', '');
        var _st305skyCount = (_st305scriptTexts.match(/-0\.5, 0\.6, -0\.62/g) || []).length;
@@ -50476,7 +50578,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_st307scriptTexts.indexOf("import('three/addons/objects/Sky.js')") !== -1)
          ? ok('ST-307·①: Skyアドオンの動的import確認')
          : ng('ST-307·①: importが見つからない', '');
-       _st307scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon)') !== -1
+       _st307scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon)') !== -1
          ? ok('ST-307·②: _buildGardenSceneへのSkyAddon引数受け渡し確認')
          : ng('ST-307·②: 引数が見つからない', '');
        _st307scriptTexts.indexOf('sky.scale.setScalar(450000)') !== -1
@@ -50493,6 +50595,131 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-307: Three.js公式Skyアドオンの導入 確認 完了');
      } catch(e) {
        ng('ST-307: 例外', e.message);
+     }
+
+     // ===== ST-308: 太陽の視認性向上（Skyの明るさに埋もれない） 確認（v0.45.1430〜） =====
+     // 背景：Skyアドオン導入後、「太陽はどっかいった」との報告を受けた。Skyの
+     // 明るい表現に、今までの小さな黄色い球が埋もれて見えなくなっていた。
+     // より白く・大きく・強く発光させ（toneMapped:false）、Sky側の
+     // mieCoefficientも下げて過度な白飛びグローを抑え、コントラストを出した。
+     try {
+       var _st308scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       (_st308scriptTexts.indexOf('SphereGeometry(2.2, 32, 32)') !== -1 && _st308scriptTexts.indexOf('toneMapped: false') !== -1)
+         ? ok('ST-308·①: 太陽本体の大型化・発光強化確認')
+         : ng('ST-308·①: 強化が見つからない', '');
+       _st308scriptTexts.indexOf("skyUniforms['mieCoefficient'].value = 0.0035") !== -1
+         ? ok('ST-308·②: Sky側のmieCoefficient抑制（コントラスト向上）確認')
+         : ng('ST-308·②: 抑制が見つからない', '');
+       ok('ST-308: 太陽の視認性向上 確認 完了');
+     } catch(e) {
+       ng('ST-308: 例外', e.message);
+     }
+
+     // ===== ST-309: 霧の緩和・カメラ引き範囲拡大・太陽色の彩度回復 確認（v0.45.1431〜） =====
+     // 背景：①「霧をつけすぎ」との指摘を受け、Skyアドオンが既に大気の奥行きを
+     // 表現するため、手動の霧を大幅に弱めた。②「もっと引きたいし、もっと大きく
+     // 動かしたい」との要望を受け、ズームアウト範囲を大きく拡大し、それに
+     // 合わせて地面の半径も拡大（外側の空が見える問題を防止）した。③太陽が
+     // 依然見えないとの報告を受け、「白く明るく」が逆にSkyの白い部分と同化
+     // していた可能性を踏まえ、彩度の高い黄金色に戻した。
+     try {
+       var _st309scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st309scriptTexts.indexOf('new THREE.FogExp2(0x2c3e4a, 0.006)') !== -1
+         ? ok('ST-309·①: 霧の濃度緩和確認')
+         : ng('ST-309·①: 緩和が反映されていない', '');
+       (_st309scriptTexts.indexOf('controls.maxDistance = 220') !== -1 && _st309scriptTexts.indexOf('CircleGeometry(400, 64)') !== -1)
+         ? ok('ST-309·②: カメラ引き範囲拡大・地面拡大確認')
+         : ng('ST-309·②: 拡大が反映されていない', '');
+       _st309scriptTexts.indexOf('color: 0xffc800') !== -1
+         ? ok('ST-309·③: 太陽の彩度の高い黄金色への回帰確認')
+         : ng('ST-309·③: 色の修正が見つからない', '');
+       ok('ST-309: 霧緩和・カメラ拡大・太陽色回復 確認 完了');
+     } catch(e) {
+       ng('ST-309: 例外', e.message);
+     }
+
+     // ===== ST-310: Skyの白飛び抑制 確認（v0.45.1432〜） =====
+     // 背景：カメラを大きく引けるようにした結果、Skyの物理シミュレーションが
+     // 極端な角度・距離で「白くなった」との報告を受けた。turbidity・rayleighを
+     // 大きく下げ、より安定して青空らしく見える控えめな設定にし、露出も
+     // 少し落として白飛びリスクをさらに減らした。
+     try {
+       var _st310scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st310scriptTexts.indexOf("skyUniforms['turbidity'].value = 3;") !== -1
+         ? ok('ST-310·①: Sky初期設定（turbidity）の抑制確認')
+         : ng('ST-310·①: 抑制が反映されていない', '');
+       var _st310applyIdx = _st310scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st310applySrc = _st310applyIdx !== -1 ? _st310scriptTexts.slice(_st310applyIdx, _st310applyIdx + 6800) : '';
+       (_st310applySrc.indexOf("skyUniforms['turbidity'].value = 6") !== -1 && _st310applySrc.indexOf("skyUniforms['turbidity'].value = 3") !== -1)
+         ? ok('ST-310·②: 日の出・昼それぞれのturbidity抑制確認')
+         : ng('ST-310·②: 抑制が反映されていない', '');
+       _st310scriptTexts.indexOf('renderer.toneMappingExposure = 0.9') !== -1
+         ? ok('ST-310·③: 露出の低減確認')
+         : ng('ST-310·③: 低減が反映されていない', '');
+       ok('ST-310: Skyの白飛び抑制 確認 完了');
+     } catch(e) {
+       ng('ST-310: 例外', e.message);
+     }
+
+     // ===== ST-311: Lensflare・Waterアドオンの導入 確認（v0.45.1433〜） =====
+     // 背景：ユーザーの提案で、太陽の視認性向上のためThree.js公式のLensflare
+     // アドオン、池のリアルさ向上のためWaterアドオンを導入した。CSPのimg-srcに
+     // cdn.jsdelivr.netが無くテクスチャが読み込めなかったため追加した。
+     // Object3D.visibleは子要素に自動伝播しないため、太陽の表示切替の3箇所
+     // すべてにlensflareの表示連動を個別に追加した。
+     try {
+       var _st311scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       (_st311scriptTexts.indexOf("import('three/addons/objects/Lensflare.js')") !== -1 && _st311scriptTexts.indexOf("import('three/addons/objects/Water.js')") !== -1)
+         ? ok('ST-311·①: Lensflare・Waterの動的import確認')
+         : ng('ST-311·①: importが見つからない', '');
+       _st311scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon)') !== -1
+         ? ok('ST-311·②: _buildGardenSceneへの引数受け渡し確認')
+         : ng('ST-311·②: 引数が見つからない', '');
+       _st311scriptTexts.indexOf('sun.add(lensflare)') !== -1
+         ? ok('ST-311·③: Lensflareが太陽に追従する実装確認')
+         : ng('ST-311·③: 追従実装が見つからない', '');
+       var _st311lensflareCount = (_st311scriptTexts.match(/if \(_gardenBuilt\.lensflare\) _gardenBuilt\.lensflare\.visible/g) || []).length;
+       (_st311lensflareCount >= 3)
+         ? ok('ST-311·④: 昼夜3状態すべてでlensflare表示連動確認・' + _st311lensflareCount + '箇所')
+         : ng('ST-311·④: 連動が不足', '検出数=' + _st311lensflareCount);
+       _st311scriptTexts.indexOf('new WaterAddon(new THREE.CircleGeometry(5.6, 64)') !== -1
+         ? ok('ST-311·⑤: Waterアドオンによる池の実装確認')
+         : ng('ST-311·⑤: Water実装が見つからない', '');
+       ok('ST-311: Lensflare・Waterアドオンの導入 確認 完了');
+     } catch(e) {
+       ng('ST-311: 例外', e.message);
+     }
+
+     // ===== ST-312: 池の白飛び修正・鯉の透明バグ修正・太陽を見るボタン 確認（v0.45.1434〜） =====
+     // 背景：①「池が白くなって水らしさが消えた」との指摘を受け、水色をより
+     // 暗くし歪みも抑えた。②「透明な鯉もいる」との指摘を受け、Waterの反射
+     // 描画が透明マテリアルをうまく処理できていなかった尾ビレを不透明化した。
+     // ③「太陽を見たい」という要望が繰り返しあったため、探さなくても確実に
+     // 見られる「☀️ 太陽を見る」ボタンを実装した。
+     try {
+       var _st312scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st312scriptTexts.indexOf('waterColor: 0x062338') !== -1
+         ? ok('ST-312·①: 池の水色を暗くする修正確認')
+         : ng('ST-312·①: 修正が見つからない', '');
+       var _st312koiIdx = _st312scriptTexts.indexOf('function buildKoi()');
+       var _st312koiSrc = _st312koiIdx !== -1 ? _st312scriptTexts.slice(_st312koiIdx, _st312koiIdx + 3500) : '';
+       _st312koiSrc.indexOf('transparent: true, opacity: 0.92') === -1
+         ? ok('ST-312·②: 鯉の尾ビレ不透明化確認')
+         : ng('ST-312·②: まだ透明のまま', '');
+       document.getElementById('gardenLookAtSunBtn')
+         ? ok('ST-312·③: ご来光を見るボタンのDOM存在確認')
+         : ng('ST-312·③: ボタンが見つからない', '');
+       typeof window.gardenViewGoraikou === 'function'
+         ? ok('ST-312·④: gardenViewGoraikou window公開確認')
+         : ng('ST-312·④: 未公開', '');
+       var _st312funcIdx = _st312scriptTexts.indexOf('function gardenViewGoraikou()');
+       var _st312funcSrc = _st312funcIdx !== -1 ? _st312scriptTexts.slice(_st312funcIdx, _st312funcIdx + 900) : '';
+       (_st312funcSrc.indexOf('camera.position.set(') !== -1 && _st312funcSrc.indexOf('camera.position.x + dir.x * 20') !== -1)
+         ? ok('ST-312·⑤: ご来光の構図（カメラ位置＋視線方向）確認')
+         : ng('ST-312·⑤: 計算式が見つからない', '');
+       ok('ST-312: 池・鯉の修正・ご来光を見るボタン 確認 完了');
+     } catch(e) {
+       ng('ST-312: 例外', e.message);
      }
 
        // 第1条【本番環境】
