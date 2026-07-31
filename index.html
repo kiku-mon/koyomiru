@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1435 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1443 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1435';
+    const APP_VERSION = 'v0.45.1443';
   const APP_LAST_UPDATED = '2026-07-13'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6957,7 +6957,11 @@
 <div id="gardenView" style="display:none;width:100%;height:calc(100vh - 50px);position:relative;background:#2c3e4a;overflow:hidden;">
   <div id="gardenCanvasContainer" style="width:100%;height:100%;position:relative;"></div>
   <div id="gardenLabel" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);color:#f3ead9;font-size:14px;background:rgba(20,30,25,0.45);padding:7px 18px;border-radius:18px;z-index:10;pointer-events:none;backdrop-filter:blur(6px);"></div>
-  <button id="gardenLookAtSunBtn" onclick="gardenViewGoraikou()" style="position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(20,30,25,0.5);color:#f3ead9;border:1px solid rgba(243,234,217,0.35);border-radius:16px;padding:6px 16px;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px);">🌅 ご来光を見る</button>
+  <div id="gardenSunriseTimeLabel" style="position:absolute;top:52px;left:50%;transform:translateX(-50%);color:#ffcf9a;font-size:11.5px;z-index:10;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);"></div>
+  <button id="gardenLookAtSunBtn" onclick="gardenViewGoraikou()" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(20,30,25,0.5);color:#f3ead9;border:1px solid rgba(243,234,217,0.35);border-radius:16px;padding:6px 16px;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px);">☀️ 太陽を見る</button>
+  <button id="gardenRealGoraikouBtn" onclick="gardenViewRealGoraikou()" style="position:absolute;top:116px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(255,140,74,0.5);color:#fff;border:1px solid rgba(255,200,150,0.45);border-radius:16px;padding:6px 16px;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px);">🌅 ご来光を見る（リアルタイム）</button>
+  <button id="gardenPreviewBtn" onclick="gardenPreviewSunrise()" style="position:absolute;top:154px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(255,140,74,0.55);color:#fff;border:1px solid rgba(255,200,150,0.5);border-radius:16px;padding:6px 16px;font-size:12px;cursor:pointer;backdrop-filter:blur(6px);">🔎 日の出をプレビュー</button>
+  <button id="gardenPreviewBackBtn" onclick="gardenPreviewBackToRealtime()" style="display:none;position:absolute;top:192px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(20,30,25,0.5);color:#f3ead9;border:1px solid rgba(243,234,217,0.35);border-radius:16px;padding:5px 14px;font-size:11.5px;cursor:pointer;backdrop-filter:blur(6px);">⏱️ 実際の時刻に戻す</button>
   <div id="gardenFallback" style="display:none;padding:60px 20px;text-align:center;color:#e8dfc8;">
     <div style="font-size:2.5em;margin-bottom:12px;">🌳</div>
     <div style="font-size:0.95em;line-height:1.8;">お使いの端末では、庭の3D表示を読み込めませんでした。<br>通信環境の良い場所で、もう一度開いてみてください。</div>
@@ -24372,6 +24376,9 @@ function reviveBlueprint(id) {
       // v0.45.1414: 庭ビューも共通の非表示対象に含める（他ビューへ切替時に確実に隠す）
       var _gdvHideAlways = document.getElementById('gardenView');
       if (_gdvHideAlways) _gdvHideAlways.style.display = 'none';
+      // v0.45.1441: 庭ビューを離れる際、1分ごとの自動更新タイマーを止める
+      // （garden分岐に入り直せば、initGardenWorld内で再開される）
+      if (window._gardenUpdateInterval) { clearInterval(window._gardenUpdateInterval); window._gardenUpdateInterval = null; }
       // 全ビューを非表示
       dailyView.style.display = 'none';
       dailyView.classList.remove('daily-active');
@@ -33871,6 +33878,19 @@ var _gardenBuilt = null; // シーン操作用の参照一式（再入場時の�
 
 function initGardenWorld() {
   var label = document.getElementById('gardenLabel');
+  // v0.45.1436: 庭ビューを開き直すたびに、前回のプレビュー状態を持ち越さない
+  window._gardenPreviewMode = null;
+  var _backBtn = document.getElementById('gardenPreviewBackBtn');
+  if (_backBtn) _backBtn.style.display = 'none';
+  // v0.45.1441: 【権威】2026-07-30、「リアルタイムに動くの？」との疑問を受けた。
+  // 今までは開いた瞬間の時刻を一度だけ判定していたため、座って眺めていても
+  // 変化しなかった。1分ごとに自動で再チェックし、プレビュー中でなければ
+  // 実際の時刻の経過を反映する。
+  if (window._gardenUpdateInterval) clearInterval(window._gardenUpdateInterval);
+  window._gardenUpdateInterval = setInterval(function() {
+    if (window._gardenPreviewMode) return; // プレビュー中は自動更新しない
+    if (typeof _gardenApplyTodaySeasonAndMoon === 'function' && _gardenBuilt) _gardenApplyTodaySeasonAndMoon();
+  }, 60000);
   if (_gardenInitialized) {
     if (_gardenBuilt) _gardenApplyTodaySeasonAndMoon();
     if (typeof _loadGardenVisitList === 'function') _loadGardenVisitList();
@@ -33933,6 +33953,43 @@ window.gardenViewGoraikou = gardenViewGoraikou;
 // 後方互換のため、旧名でも呼べるようにする
 window.gardenLookAtSun = gardenViewGoraikou;
 
+// v0.45.1436: 【権威】2026-07-30、実際の日の出を待たなくても、その場で
+// 確認できるプレビュー機能。押すと、季節・空・カメラ構図まで、まとめて
+// 日の出の状態に切り替わる。
+function gardenPreviewSunrise() {
+  window._gardenPreviewMode = 'sunrise';
+  if (typeof _gardenApplyTodaySeasonAndMoon === 'function') _gardenApplyTodaySeasonAndMoon();
+  if (typeof gardenViewGoraikou === 'function') gardenViewGoraikou();
+  var btn = document.getElementById('gardenPreviewBackBtn');
+  if (btn) btn.style.display = 'block';
+}
+window.gardenPreviewSunrise = gardenPreviewSunrise;
+
+// プレビューをやめて、実際の今の時刻の状態に戻す
+function gardenPreviewBackToRealtime() {
+  window._gardenPreviewMode = null;
+  if (typeof _gardenApplyTodaySeasonAndMoon === 'function') _gardenApplyTodaySeasonAndMoon();
+  var btn = document.getElementById('gardenPreviewBackBtn');
+  if (btn) btn.style.display = 'none';
+}
+window.gardenPreviewBackToRealtime = gardenPreviewBackToRealtime;
+
+// v0.45.1443: 【権威】2026-07-30、「ご来光は日の出のこと。リアルタイムで見たい。
+// それとは別物として、太陽を見るは、いつでも押せる汎用ボタンとして表記を直せ」
+// との指摘を受けた。①ボタンの表記を「太陽を見る」という正直な名前に変更した。
+// ②「ご来光を見る（リアルタイム）」を新設。プレビューを強制的に解除してから
+// 太陽の方向を向くことで、常に「今、実際にある通りの」状態を見せる。実際の
+// 日の出の時間帯（1分ごとに自動更新される、本物の経過時間）に押せば、
+// そのまま本物のご来光が見られる。
+function gardenViewRealGoraikou() {
+  window._gardenPreviewMode = null;
+  var backBtn = document.getElementById('gardenPreviewBackBtn');
+  if (backBtn) backBtn.style.display = 'none';
+  if (typeof _gardenApplyTodaySeasonAndMoon === 'function') _gardenApplyTodaySeasonAndMoon();
+  if (typeof gardenViewGoraikou === 'function') gardenViewGoraikou();
+}
+window.gardenViewRealGoraikou = gardenViewRealGoraikou;
+
 function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon) {
   var THREE = THREE_MOD;
   var container = document.getElementById('gardenCanvasContainer');
@@ -33988,6 +34045,11 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // v0.45.1438: 【権威】2026-07-30、「半分とか、ちょっとだけとか、地平線から
+  // 太陽が出てくるようにして」との指摘を受けた。今までは太陽を水平線の少し
+  // 上に浮かべているだけで、実際に地面で下半分が隠れる仕組みがなかった。
+  // クリッピング平面で、カメラの目線の高さより下を、太陽・光輪から切り取る。
+  renderer.localClippingEnabled = true;
   renderer.toneMappingExposure = 0.9;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
@@ -34248,7 +34310,9 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
   // v0.45.1431: 【権威】2026-07-30、「白く明るく」した結果、Sky自体の明るい
   // 白っぽい部分と同化してしまい、逆にコントラストが下がった可能性が高い。
   // 彩度の高い、はっきりした黄金色に戻し、白いSkyの中でも際立たせる。
-  var sunMat = new THREE.MeshBasicMaterial({ color: 0xffc800, fog: false, toneMapped: false });
+  // 地平線で切り取るためのクリッピング平面（カメラの目線の高さに毎フレーム追従させる）
+  var horizonClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  var sunMat = new THREE.MeshBasicMaterial({ color: 0xffc800, fog: false, toneMapped: false, clippingPlanes: [horizonClipPlane] });
   var sun = new THREE.Mesh(new THREE.SphereGeometry(2.2, 32, 32), sunMat);
   sun.position.set(-3, 17, -6);
   scene.add(sun);
@@ -34268,10 +34332,10 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
     lensflare.addElement(new LensflareMod.LensflareElement(_flare3, 50, 1));
     sun.add(lensflare);
   }
-  var sunHalo = new THREE.Mesh(new THREE.SphereGeometry(4.2, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.55, fog: false }));
+  var sunHalo = new THREE.Mesh(new THREE.SphereGeometry(4.2, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.55, fog: false, clippingPlanes: [horizonClipPlane] }));
   sunHalo.position.copy(sun.position);
   scene.add(sunHalo);
-  var sunHalo2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffe8a0, transparent: true, opacity: 0.18, fog: false }));
+  var sunHalo2 = new THREE.Mesh(new THREE.SphereGeometry(4.6, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffe8a0, transparent: true, opacity: 0.18, fog: false, clippingPlanes: [horizonClipPlane] }));
   sunHalo2.position.copy(sun.position);
   scene.add(sunHalo2);
   // 放射状の光条（簡易的な太陽光線、平たい板を放射状に並べる）
@@ -34323,6 +34387,9 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
     [moon, moonHalo, moonShadow, sun, sunHalo, sunHalo2, sunRaysGroup].forEach(function(obj) {
       obj.position.set(_skyX, _skyY, _skyZ);
     });
+    // v0.45.1438: 地平線のクリッピング平面を、カメラの目線の高さに追従させる。
+    // これにより、太陽が「昇っていく途中」なら、下半分が地面に隠れて見える。
+    horizonClipPlane.constant = -camera.position.y;
     moonShadow.position.x += (1 - _gardenBuilt.illum) * 1.1; // 月の満ち欠け表現
     // v0.45.1433: Waterアドオンは、時間経過で波を動かし、太陽の方向を反映させる
     // ことで、周りの景色を反射するリアルな水面になる。
@@ -34550,6 +34617,7 @@ function _gardenApplyTodaySeasonAndMoon() {
   var isDaytime = true;
   var isSunriseTime = false;
   var _sunData = null;
+  var _sunriseProgress = 0.5; // 0=日の出開始(地平線ぎりぎり)〜1=日の出終了(高く昇る)
   try {
     if (typeof _getSunData === 'function') {
       var _now = new Date();
@@ -34560,8 +34628,21 @@ function _gardenApplyTodaySeasonAndMoon() {
       // 犬吠埼で見た日の出のように」との要望を受けた。日の出時刻の前後40分を
       // 「日の出の特別な時間帯」として扱う。
       isSunriseTime = Math.abs(_hourFloat - _sunData.rise) <= 40 / 60;
+      // v0.45.1441: 【権威】2026-07-30、「だんだん昇ってくるの？」との疑問を
+      // 受けた。日の出時刻からの経過分数を0〜1に正規化し、太陽の高さの
+      // 連続的な変化に使う（日の出前は0、日の出時刻ちょうどで0.5、40分後で1）。
+      var _minutesFromRise = (_hourFloat - _sunData.rise) * 60;
+      _sunriseProgress = Math.max(0, Math.min(1, (_minutesFromRise + 40) / 80));
     }
   } catch(e) { console.warn('[Garden] 日照時間取得エラー:', e); }
+
+  // v0.45.1436: 【権威】2026-07-30、「日の出時刻は本当に見れるの？」との疑問を
+  // 受けた。実際の日の出を待たなくても、その場で確認できるプレビュー機能を
+  // 追加する。window._gardenPreviewModeが設定されていれば、実際の時刻より
+  // 優先する。
+  if (window._gardenPreviewMode === 'sunrise') { isSunriseTime = true; isDaytime = false; _sunriseProgress = 0.3; /* Y=0（ちょうど半分）になる値 */ }
+  else if (window._gardenPreviewMode === 'day') { isSunriseTime = false; isDaytime = true; }
+  else if (window._gardenPreviewMode === 'night') { isSunriseTime = false; isDaytime = false; }
 
   // v0.45.1423: 位置の直接指定はやめ、animateループがカメラ基準で毎フレーム
   // 再配置するため、ここでは「方向」（skyDirection）だけを設定する。
@@ -34578,12 +34659,21 @@ function _gardenApplyTodaySeasonAndMoon() {
     if (_gardenBuilt.lensflare) _gardenBuilt.lensflare.visible = true;
     _gardenBuilt.sunHalo.visible = true;
     _gardenBuilt.sunHalo2.visible = true;
-    _gardenBuilt.sunRaysGroup.visible = true;
+    _gardenBuilt.sunRaysGroup.visible = false; // v0.45.1440: 「大地に伸びる光がちゃちい」との指摘を受け、手作りの光条は廃止（Lensflareが既にあるため不要）
     _gardenBuilt.sun.material.color.setHex(0xff8c4a);
     _gardenBuilt.sunHalo.material.color.setHex(0xffb37a);
     _gardenBuilt.sunHalo.material.opacity = 0.5;
     _gardenBuilt.sunHalo2.material.color.setHex(0xffcf9a);
-    _gardenBuilt.skyDirection.set(0.586, 0.215, -0.781); // 水平線に近い、低い角度
+    // v0.45.1437: 【権威】2026-07-30、「地平線から出てくるのが本当のご来光」との
+    // 指摘を受けた。仰角約12度は、既にかなり昇った状態だった。水平線ギリギリ、
+    // まさに昇り始める瞬間（仰角約5度）に調整する。
+    // v0.45.1441: 【権威】2026-07-30、「だんだん昇ってくるの？」との疑問を
+    // 受けた。固定の「半分」ではなく、実際の経過分数（_sunriseProgress）に
+    // 応じて、地平線の下（見えない）〜かなり昇った状態まで、連続的に変化
+    // させる。
+    var _sunriseY = -0.15 + _sunriseProgress * 0.5; // -0.15（まだ見えない）〜0.35（かなり昇る）
+    var _sunriseHoriz = Math.sqrt(Math.max(0.01, 1 - _sunriseY * _sunriseY));
+    _gardenBuilt.skyDirection.set(0.6 * _sunriseHoriz, _sunriseY, -0.8 * _sunriseHoriz);
     _gardenBuilt.moonLight.color.setHex(0xffa868);
     _gardenBuilt.moonLight.intensity = 1.8;
     _gardenBuilt.ambientLight.intensity = 1.3;
@@ -34604,7 +34694,7 @@ function _gardenApplyTodaySeasonAndMoon() {
     if (_gardenBuilt.lensflare) _gardenBuilt.lensflare.visible = true;
     _gardenBuilt.sunHalo.visible = true;
     _gardenBuilt.sunHalo2.visible = true;
-    _gardenBuilt.sunRaysGroup.visible = true;
+    _gardenBuilt.sunRaysGroup.visible = false; // v0.45.1440: 「大地に伸びる光がちゃちい」との指摘を受け、手作りの光条は廃止（Lensflareが既にあるため不要）
     _gardenBuilt.sun.material.color.setHex(0xffd23f);
     _gardenBuilt.sunHalo.material.color.setHex(0xffcf5c);
     _gardenBuilt.sunHalo.material.opacity = 0.4;
@@ -34647,6 +34737,21 @@ function _gardenApplyTodaySeasonAndMoon() {
   var gardenOwnerLabel = _profileName ? (_profileName + 'さんの庭') : 'あなたの庭';
   var timeOfDayLabel = isSunriseTime ? '🌅' : (isDaytime ? '☀️' : '🌙');
   if (label) label.textContent = seasonLabel + ' ' + timeOfDayLabel + ' — ' + gardenOwnerLabel;
+
+  // v0.45.1437: 【権威】2026-07-30、「日の出時間も出せ」との要望を受けた。
+  // 既に計算済みの日の出時刻（_sunData.rise）を、HH:MM形式で表示する。
+  var sunriseLabel = document.getElementById('gardenSunriseTimeLabel');
+  if (sunriseLabel) {
+    if (_sunData && typeof _sunData.rise === 'number') {
+      var _riseH = Math.floor(_sunData.rise);
+      var _riseM = Math.round((_sunData.rise - _riseH) * 60);
+      if (_riseM === 60) { _riseM = 0; _riseH += 1; }
+      var _riseStr = ('0' + _riseH).slice(-2) + ':' + ('0' + _riseM).slice(-2);
+      sunriseLabel.textContent = '今日の日の出 ' + _riseStr;
+    } else {
+      sunriseLabel.textContent = '';
+    }
+  }
 }
 
 // 「庭をたずねる」：今日実装した共有カレンダーの実メンバーを一覧表示する。
@@ -50423,7 +50528,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-301·②: 日の出時間帯（前後40分）の判定ロジック確認')
          : ng('ST-301·②: 判定ロジックが見つからない', '');
        // ③ 日の出時の朝焼け演出（暖色の空・低い位置の太陽）確認
-       _st301applySrc.indexOf('0xffb37a') !== -1 && _st301applySrc.indexOf("skyDirection.set(0.586, 0.215, -0.781)") !== -1
+       _st301applySrc.indexOf('0xffb37a') !== -1 && _st301applySrc.indexOf("_sunriseHoriz") !== -1
          ? ok('ST-301·③: 日の出の朝焼け演出（暖色の空・低い太陽）確認')
          : ng('ST-301·③: 朝焼け演出が見つからない', '');
        // ④ 昼・夜・日の出で太陽と月の表示が正しく排他制御されているか確認
@@ -50720,6 +50825,172 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-312: 池・鯉の修正・ご来光を見るボタン 確認 完了');
      } catch(e) {
        ng('ST-312: 例外', e.message);
+     }
+
+     // ===== ST-313: 日の出プレビュー機能 確認（v0.45.1436〜） =====
+     // 背景：「日の出時刻は本当に見れるの？」との疑問を受けた。実際の日の出を
+     // 待たなくても、その場で確認できるプレビュー機能を実装した。庭ビューを
+     // 開き直すたびに、前回のプレビュー状態を持ち越さないようリセットする。
+     try {
+       document.getElementById('gardenPreviewBtn')
+         ? ok('ST-313·①: 日の出プレビューボタンのDOM存在確認')
+         : ng('ST-313·①: ボタンが見つからない', '');
+       document.getElementById('gardenPreviewBackBtn')
+         ? ok('ST-313·②: 実際の時刻に戻すボタンのDOM存在確認')
+         : ng('ST-313·②: ボタンが見つからない', '');
+       (typeof window.gardenPreviewSunrise === 'function' && typeof window.gardenPreviewBackToRealtime === 'function')
+         ? ok('ST-313·③: プレビュー関数のwindow公開確認')
+         : ng('ST-313·③: 未公開', '');
+       var _st313scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st313applyIdx = _st313scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st313applySrc = _st313applyIdx !== -1 ? _st313scriptTexts.slice(_st313applyIdx, _st313applyIdx + 3200) : '';
+       _st313applySrc.indexOf("window._gardenPreviewMode === 'sunrise'") !== -1
+         ? ok('ST-313·④: プレビューモードによる上書きロジック確認')
+         : ng('ST-313·④: 上書きロジックが見つからない', '');
+       _st313scriptTexts.indexOf('window._gardenPreviewMode = null;') !== -1
+         ? ok('ST-313·⑤: 庭ビュー再入場時のプレビューリセット確認')
+         : ng('ST-313·⑤: リセットが見つからない', '');
+       ok('ST-313: 日の出プレビュー機能 確認 完了');
+     } catch(e) {
+       ng('ST-313: 例外', e.message);
+     }
+
+     // ===== ST-314: 水平線ギリギリの構図・日の出時刻表示 確認（v0.45.1437〜） =====
+     // 背景：「地平線から出てくるのが本当のご来光」との指摘を受け、仰角を
+     // 約12度から約5度に下げ、水平線ギリギリから昇り始める瞬間の構図にした。
+     // また「日の出時間も出せ」との要望を受け、日の出時刻をHH:MM形式で
+     // 画面に表示するようにした。
+     try {
+       var _st314scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st314skyCount = (_st314scriptTexts.match(/_sunriseHoriz/g) || []).length;
+       (_st314skyCount >= 2)
+         ? ok('ST-314·①: 日の出の仰角を連続的に変化させる仕組み確認・' + _st314skyCount + '箇所')
+         : ng('ST-314·①: 仕組みが見つからない', '検出数=' + _st314skyCount);
+       document.getElementById('gardenSunriseTimeLabel')
+         ? ok('ST-314·②: 日の出時刻表示欄のDOM存在確認')
+         : ng('ST-314·②: 表示欄が見つからない', '');
+       var _st314applyIdx = _st314scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st314applySrc = _st314applyIdx !== -1 ? _st314scriptTexts.slice(_st314applyIdx, _st314applyIdx + 8500) : '';
+       _st314applySrc.indexOf("今日の日の出") !== -1
+         ? ok('ST-314·③: 日の出時刻の計算・表示ロジック確認')
+         : ng('ST-314·③: ロジックが見つからない', '');
+       ok('ST-314: 水平線ギリギリの構図・日の出時刻表示 確認 完了');
+     } catch(e) {
+       ng('ST-314: 例外', e.message);
+     }
+
+     // ===== ST-315: 地平線クリッピング（太陽が地面から出てくる演出） 確認（v0.45.1438〜） =====
+     // 背景：「半分とか、ちょっとだけとか、地平線から太陽が出てくるようにして」
+     // との指摘を受けた。今までは太陽を水平線の少し上に浮かべているだけで、
+     // 実際に地面で下半分が隠れる仕組みがなかった。クリッピング平面を導入し、
+     // カメラの目線の高さより下を、太陽・光輪から切り取るようにした。
+     try {
+       var _st315scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       _st315scriptTexts.indexOf('renderer.localClippingEnabled = true;') !== -1
+         ? ok('ST-315·①: クリッピング機能の有効化確認')
+         : ng('ST-315·①: 有効化が見つからない', '');
+       _st315scriptTexts.indexOf('var horizonClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);') !== -1
+         ? ok('ST-315·②: 地平線クリッピング平面の定義確認')
+         : ng('ST-315·②: 平面定義が見つからない', '');
+       var _st315clipCount = (_st315scriptTexts.match(/clippingPlanes: \[horizonClipPlane\]/g) || []).length;
+       (_st315clipCount >= 3)
+         ? ok('ST-315·③: 太陽・光輪へのクリッピング適用確認・' + _st315clipCount + '箇所')
+         : ng('ST-315·③: 適用が不足', '検出数=' + _st315clipCount);
+       var _st315animIdx = _st315scriptTexts.indexOf('function animate() {');
+       var _st315animSrc = _st315animIdx !== -1 ? _st315scriptTexts.slice(_st315animIdx, _st315animIdx + 1400) : '';
+       _st315animSrc.indexOf('horizonClipPlane.constant = -camera.position.y;') !== -1
+         ? ok('ST-315·④: クリッピング平面のカメラ追従確認')
+         : ng('ST-315·④: 追従処理が見つからない', '');
+       var _st315skyCount = (_st315scriptTexts.match(/_sunriseHoriz/g) || []).length;
+       (_st315skyCount >= 2)
+         ? ok('ST-315·⑤: 太陽が地平線付近に来る仰角の仕組み確認・' + _st315skyCount + '箇所')
+         : ng('ST-315·⑤: 仕組みが見つからない', '検出数=' + _st315skyCount);
+       ok('ST-315: 地平線クリッピング 確認 完了');
+     } catch(e) {
+       ng('ST-315: 例外', e.message);
+     }
+
+     // ===== ST-316: 手作り光条の廃止（安っぽさの解消） 確認（v0.45.1440〜） =====
+     // 背景：「大地に伸びる光がちゃちい」との指摘を受けた。手作りの光条
+     // （放射状の板）が、Skyの水平線と重なって安っぽく見えていた。既に
+     // Lensflareという、より本格的な仕組みがあるため、手作りの光条は
+     // 常に非表示にして廃止する。
+     try {
+       var _st316scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st316visibleTrueCount = (_st316scriptTexts.match(/_gardenBuilt\.sunRaysGroup\.visible = true/g) || []).length;
+       (_st316visibleTrueCount === 0)
+         ? ok('ST-316·①: sunRaysGroupが常に非表示（廃止）確認')
+         : ng('ST-316·①: まだ表示される箇所が残っている', '検出数=' + _st316visibleTrueCount);
+       var _st316visibleFalseCount = (_st316scriptTexts.match(/_gardenBuilt\.sunRaysGroup\.visible = false/g) || []).length;
+       (_st316visibleFalseCount >= 2)
+         ? ok('ST-316·②: 昼・日の出両方で非表示化確認・' + _st316visibleFalseCount + '箇所')
+         : ng('ST-316·②: 非表示化が不足', '検出数=' + _st316visibleFalseCount);
+       ok('ST-316: 手作り光条の廃止 確認 完了');
+     } catch(e) {
+       ng('ST-316: 例外', e.message);
+     }
+
+     // ===== ST-317: リアルタイム更新・日の出の連続的な上昇 確認（v0.45.1441〜） =====
+     // 背景：「リアルタイムに動くの？だんだん昇ってくるの？」との疑問を受けた。
+     // 今までは開いた瞬間の時刻を一度だけ判定しており、座って眺めていても
+     // 変化しなかった。1分ごとに自動で再チェックする仕組みと、日の出の間、
+     // 太陽の高さが連続的に変化する仕組みを追加した。
+     try {
+       var _st317scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st317initIdx = _st317scriptTexts.indexOf('function initGardenWorld()');
+       var _st317initSrc = _st317initIdx !== -1 ? _st317scriptTexts.slice(_st317initIdx, _st317initIdx + 900) : '';
+       (_st317initSrc.indexOf('window._gardenUpdateInterval = setInterval(function()') !== -1 && _st317initSrc.indexOf('60000') !== -1)
+         ? ok('ST-317·①: 1分ごとの自動更新タイマー確認')
+         : ng('ST-317·①: タイマーが見つからない', '');
+       _st317initSrc.indexOf("if (window._gardenPreviewMode) return;") !== -1
+         ? ok('ST-317·②: プレビュー中は自動更新しない防御確認')
+         : ng('ST-317·②: 防御が見つからない', '');
+       _st317scriptTexts.indexOf("if (window._gardenUpdateInterval) { clearInterval(window._gardenUpdateInterval); window._gardenUpdateInterval = null; }") !== -1
+         ? ok('ST-317·③: 庭ビュー退出時のタイマー停止確認')
+         : ng('ST-317·③: 停止処理が見つからない', '');
+       var _st317applyIdx = _st317scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
+       var _st317applySrc = _st317applyIdx !== -1 ? _st317scriptTexts.slice(_st317applyIdx, _st317applyIdx + 3600) : '';
+       _st317applySrc.indexOf('_sunriseProgress') !== -1
+         ? ok('ST-317·④: 日の出経過度（0〜1）の計算確認')
+         : ng('ST-317·④: 経過度計算が見つからない', '');
+       // ⑤ プレビュー時、実際の時刻から計算された進行度ではなく、正しく半分に
+       // なる固定値(0.3)に上書きされているか確認（実装当初のバグ修正）
+       _st317applySrc.indexOf("_sunriseProgress = 0.3") !== -1
+         ? ok('ST-317·⑤: プレビュー時の進行度固定（半分になる値）確認')
+         : ng('ST-317·⑤: 固定処理が見つからない', '');
+       ok('ST-317: リアルタイム更新・日の出の連続的な上昇 確認 完了');
+     } catch(e) {
+       ng('ST-317: 例外', e.message);
+     }
+
+     // ===== ST-318: 「太陽を見る」「ご来光を見る（リアルタイム）」の区別 確認（v0.45.1443〜） =====
+     // 背景：「ご来光は日の出のこと。リアルタイムで見たい。それとは別に太陽を
+     // 見るは、いつでも押せる汎用ボタンとして正直に表記を直せ」との指摘を
+     // 受けた。①ボタン表記を「太陽を見る」という正直な名前に変更した。
+     // ②「ご来光を見る（リアルタイム）」を新設。プレビューを強制解除してから
+     // 本物の現在の太陽の方向を向く。
+     try {
+       document.getElementById('gardenLookAtSunBtn')
+         ? ok('ST-318·①: 太陽を見るボタンのDOM存在確認')
+         : ng('ST-318·①: ボタンが見つからない', '');
+       document.getElementById('gardenLookAtSunBtn') && document.getElementById('gardenLookAtSunBtn').textContent.indexOf('太陽を見る') !== -1
+         ? ok('ST-318·②: ボタン表記が「太陽を見る」に修正されていること確認')
+         : ng('ST-318·②: 表記が修正されていない', '');
+       document.getElementById('gardenRealGoraikouBtn')
+         ? ok('ST-318·③: ご来光を見る（リアルタイム）ボタンのDOM存在確認')
+         : ng('ST-318·③: ボタンが見つからない', '');
+       typeof window.gardenViewRealGoraikou === 'function'
+         ? ok('ST-318·④: gardenViewRealGoraikou window公開確認')
+         : ng('ST-318·④: 未公開', '');
+       var _st318scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st318funcIdx = _st318scriptTexts.indexOf('function gardenViewRealGoraikou()');
+       var _st318funcSrc = _st318funcIdx !== -1 ? _st318scriptTexts.slice(_st318funcIdx, _st318funcIdx + 500) : '';
+       (_st318funcSrc.indexOf('window._gardenPreviewMode = null;') !== -1 && _st318funcSrc.indexOf('gardenViewGoraikou()') !== -1)
+         ? ok('ST-318·⑤: プレビュー強制解除＋実際の太陽方向を向く実装確認')
+         : ng('ST-318·⑤: 実装が見つからない', '');
+       ok('ST-318: 太陽を見る・ご来光を見る（リアルタイム）の区別 確認 完了');
+     } catch(e) {
+       ng('ST-318: 例外', e.message);
      }
 
        // 第1条【本番環境】
