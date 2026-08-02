@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1474 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1475 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1474';
+    const APP_VERSION = 'v0.45.1475';
   const APP_LAST_UPDATED = '2026-08-02'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -35857,12 +35857,67 @@ async function cloudLoginRefreshStatus() {
     userArea.style.display = 'none';
   }
 }
+// v0.45.1475: パスワードを忘れた場合のリセットメール送信。
+// 【権威】2026-08-02、これが無いとパスワードを忘れたユーザーは二度とログインできず、
+// サービスとして成立しない。一般的なサービスでは必須の機能である。
+async function cloudSendPasswordReset() {
+  var emailInput = document.getElementById('cloudLoginEmail');
+  var btn = document.getElementById('cloudForgotPwBtn');
+  if (!emailInput || !window.supabaseClient) return;
+  var email = (emailInput.value || '').trim();
+  if (!email || email.indexOf('@') === -1) {
+    _cloudLoginSetStatus('⚠️ 先にメールアドレスを入力してください', 'error', 'cloudLoginEmail');
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = '送信中…'; }
+  try {
+    var r = await window.supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (r && r.error) {
+      var _re = _cloudTranslateAuthError(r.error.message);
+      _cloudLoginSetStatus('⚠️ ' + _re.msg, 'error', _re.field);
+    } else {
+      // 存在しないアドレスでも同じ文言を返す（アカウントの有無を外部に漏らさないため）
+      _cloudLoginSetStatus('📬 ' + email + ' にパスワード再設定用のメールを送りました。メール内のリンクを開いて新しいパスワードを設定してください。', 'success');
+    }
+  } catch(e) {
+    var _re2 = _cloudTranslateAuthError(e.message);
+    _cloudLoginSetStatus('⚠️ ' + _re2.msg, 'error', _re2.field);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'パスワードをお忘れですか？'; }
+}
+window.cloudSendPasswordReset = cloudSendPasswordReset;
 function openCloudLoginModal() {
   var ov = document.getElementById('cloudLoginOverlay');
   if (!ov) return;
   ov.style.display = 'flex';
   _cloudLoginSetStatus('');
   cloudLoginRefreshStatus();
+  // v0.45.1475: 未ログイン時はメールアドレス欄へ自動フォーカス（すぐ入力を始められる）。
+  // モバイルではキーボードが即座にせり上がると画面が狭くなるため、PC幅のみで実行する。
+  try {
+    var guest = document.getElementById('cloudLoginGuestArea');
+    var isGuestVisible = guest && guest.style.display !== 'none';
+    if (isGuestVisible && window.innerWidth >= 768) {
+      setTimeout(function() {
+        var em = document.getElementById('cloudLoginEmail');
+        if (em) em.focus();
+      }, 100);
+    }
+  } catch(e) {}
+}
+// v0.45.1475: Escキーでモーダルを閉じる（一般的なモーダルの標準挙動）。
+// 多重登録を避けるためフラグで一度だけ設置する。
+if (!window._cloudLoginEscBound) {
+  window._cloudLoginEscBound = true;
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    var ov = document.getElementById('cloudLoginOverlay');
+    if (ov && ov.style.display !== 'none' && ov.style.display !== '') {
+      closeCloudLoginModal();
+    }
+  });
 }
 function closeCloudLoginModal() {
   var ov = document.getElementById('cloudLoginOverlay');
@@ -35953,13 +36008,18 @@ async function cloudSignUpWithPassword() {
       _cloudLoginSetStatus('⚠️ ' + _e1.msg, 'error', _e1.field);
     } else if (r.data && r.data.user && !r.data.session) {
       // メール確認が必要な設定の場合
-      _cloudLoginSetStatus('📬 確認メールを送りました。メール内のリンクを開いて登録を完了してください。');
+      _cloudLoginSetStatus('📬 確認メールを送りました。メール内のリンクを開いて登録を完了してください。', 'success');
     } else {
-      _cloudLoginSetStatus('🎉 登録・ログインしました。');
+      _cloudLoginSetStatus('🎉 登録・ログインしました。', 'success');
       cloudLoginRefreshStatus();
+      // v0.45.1475: 成功したらパスワード欄を消し、少し余韻を置いてモーダルを閉じる
+      var _pwEl2 = document.getElementById('cloudLoginPassword');
+      if (_pwEl2) _pwEl2.value = '';
+      setTimeout(function() { if (typeof closeCloudLoginModal === 'function') closeCloudLoginModal(); }, 1200);
     }
   } catch(e) {
-    _cloudLoginSetStatus('⚠️ 登録に失敗しました: ' + e.message);
+    var _e1c = _cloudTranslateAuthError(e.message);
+    _cloudLoginSetStatus('⚠️ ' + _e1c.msg, 'error', _e1c.field);
   }
   if (btn) { btn.disabled = false; btn.textContent = 'アカウントを作成'; }
 }
@@ -35979,11 +36039,16 @@ async function cloudLoginWithPassword() {
       var _e2 = _cloudTranslateAuthError(r.error.message);
       _cloudLoginSetStatus('⚠️ ' + _e2.msg, 'error', _e2.field);
     } else {
-      _cloudLoginSetStatus('🎉 ログインしました。');
+      _cloudLoginSetStatus('🎉 ログインしました。', 'success');
       cloudLoginRefreshStatus();
+      // v0.45.1475: 成功したらパスワード欄を消し、少し余韻を置いてモーダルを閉じる
+      var _pwEl = document.getElementById('cloudLoginPassword');
+      if (_pwEl) _pwEl.value = '';
+      setTimeout(function() { if (typeof closeCloudLoginModal === 'function') closeCloudLoginModal(); }, 1200);
     }
   } catch(e) {
-    _cloudLoginSetStatus('⚠️ ログインに失敗しました: ' + e.message);
+    var _e2c = _cloudTranslateAuthError(e.message);
+    _cloudLoginSetStatus('⚠️ ' + _e2c.msg, 'error', _e2c.field);
   }
   if (btn) { btn.disabled = false; btn.textContent = 'ログイン'; }
 }
@@ -36009,6 +36074,9 @@ function switchCloudAuthTab(mode) {
   if (heading) heading.textContent = isSignUp ? '新規登録' : 'ログイン';
   if (switchLabel) switchLabel.textContent = isSignUp ? 'すでにアカウントをお持ちですか？' : 'アカウントをお持ちでないですか？';
   if (pwHint) pwHint.style.display = isSignUp ? '' : 'none';
+  // v0.45.1475: 「パスワードをお忘れですか？」はログイン画面のみに表示する
+  var forgotWrap = document.getElementById('cloudForgotPwWrap');
+  if (forgotWrap) forgotWrap.style.display = isSignUp ? 'none' : '';
   if (pwInput) pwInput.setAttribute('autocomplete', isSignUp ? 'new-password' : 'current-password');
   // v0.45.1473: 画面切替時はパスワードを再び伏せ字に戻す（表示したまま残さない）
   if (pwInput && pwInput.type === 'text') {
@@ -36038,7 +36106,8 @@ async function cloudSetPasswordForCurrentAccount() {
       if (pwInput) pwInput.value = '';
     }
   } catch(e) {
-    _cloudLoginSetStatus('⚠️ 設定に失敗しました: ' + e.message);
+    var _e3c = _cloudTranslateAuthError(e.message);
+    _cloudLoginSetStatus('⚠️ ' + _e3c.msg, 'error', _e3c.field);
   }
   if (btn) { btn.disabled = false; btn.textContent = 'このアカウントにパスワードを設定'; }
 }
@@ -49186,6 +49255,27 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-247·⑩: 未知の英語エラーも日本語化されることを確認')
            : ng('ST-247·⑩: 英語がそのまま残る', _engNg.join(', '));
        }
+       // v0.45.1475: パスワードリセット・フォーカス・自動クローズ・Escキー確認
+       (document.getElementById('cloudForgotPwBtn') && typeof window.cloudSendPasswordReset === 'function')
+         ? ok('ST-247·⑪: パスワードリセットのDOM・関数の存在確認')
+         : ng('ST-247·⑪: パスワードリセットが見つからない', '');
+       (function(){
+         var _srcReset = typeof cloudSendPasswordReset === 'function' ? cloudSendPasswordReset.toString() : '';
+         _srcReset.indexOf('resetPasswordForEmail') !== -1
+           ? ok('ST-247·⑫: resetPasswordForEmail呼び出しを確認')
+           : ng('ST-247·⑫: リセットAPI呼び出しが見つからない', '');
+         var _srcOpen = typeof openCloudLoginModal === 'function' ? openCloudLoginModal.toString() : '';
+         _srcOpen.indexOf('focus') !== -1
+           ? ok('ST-247·⑬: モーダル起動時のフォーカス制御を確認')
+           : ng('ST-247·⑬: フォーカス制御が見つからない', '');
+         var _srcLogin = typeof cloudLoginWithPassword === 'function' ? cloudLoginWithPassword.toString() : '';
+         _srcLogin.indexOf('closeCloudLoginModal') !== -1
+           ? ok('ST-247·⑭: ログイン成功時の自動クローズを確認')
+           : ng('ST-247·⑭: 自動クローズが見つからない', '');
+       })();
+       window._cloudLoginEscBound === true
+         ? ok('ST-247·⑮: Escキーでのモーダル閉鎖ハンドラ設置を確認')
+         : ng('ST-247·⑮: Escキー処理が未設置', '');
        ok('ST-247: メール＋パスワード認証 確認 完了');
      } catch(e) {
        ng('ST-247: 例外', e.message);
@@ -60893,6 +60983,9 @@ window.addMigration = addMigration;
       <div id="cloudAuthPwHint" style="display:none;font-size:0.75em;color:#8e8e8e;margin-top:7px;">8文字以上・英大文字・英小文字・数字を含む</div>
 
       <div id="cloudLoginStatus" style="display:none;font-size:0.84em;margin-top:12px;"></div>
+      <div id="cloudForgotPwWrap" style="text-align:right;margin-top:10px;">
+        <button type="button" id="cloudForgotPwBtn" onclick="cloudSendPasswordReset()" style="border:none;background:transparent;color:#0b5bb0;font-size:0.82em;cursor:pointer;padding:4px 2px;text-decoration:underline;">パスワードをお忘れですか？</button>
+      </div>
       <button id="cloudLoginPwSignInBtn" onclick="cloudLoginWithPassword()" style="width:100%;margin-top:16px;padding:14px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(11,107,203,0.28);">ログイン</button>
       <button id="cloudLoginPwSignUpBtn" onclick="cloudSignUpWithPassword()" style="display:none;width:100%;margin-top:16px;padding:14px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(11,107,203,0.28);">アカウントを作成</button>
 
