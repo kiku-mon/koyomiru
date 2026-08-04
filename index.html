@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1506 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1507 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1506';
+    const APP_VERSION = 'v0.45.1507';
   const APP_LAST_UPDATED = '2026-08-03'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33839,7 +33839,10 @@ async function _recordVisit() {
     try {
       if (window.self !== window.top) return;
     } catch(eFrame) { return; }   // クロスオリジンで参照できない＝埋め込みなのでスキップ
-    if (_isDeveloperVisitor()) return;   // v0.45.1504: 開発者本人の訪問は数えない
+    // v0.45.1507: 【権威】2026-08-04、開発者本人の訪問を丸ごと捨てていたが、それだと
+    // 「本当に誰も来なかった」のか「自分の分が消えた」のか区別できない。記録は残し、
+    // is_dev の印を付けて統計画面で分けて表示する方式に改める。
+    var _isDev = _isDeveloperVisitor();
     var visitorId = _getVisitorId();
     if (!visitorId) return;          // localStorage不可の環境では計測しない
 
@@ -33858,7 +33861,8 @@ async function _recordVisit() {
       source:       _getVisitSource(),
       is_first:     isFirst,
       is_logged_in: !!window._cloudIsLoggedIn,
-      app_version:  (typeof APP_VERSION !== 'undefined') ? APP_VERSION : null
+      app_version:  (typeof APP_VERSION !== 'undefined') ? APP_VERSION : null,
+      is_dev:       _isDev
     };
     // 同一端末・同一日の重複はUNIQUE制約で弾かれる。それは想定内なので無視する。
     var r = await window.supabaseClient.from('koyomiru_visits').insert(payload);
@@ -34111,13 +34115,15 @@ async function loadAdminVisitStats() {
       listEl.innerHTML = '<span style="color:#999;">まだ訪問記録がありません。</span>';
     } else {
       // 日付ごとに行を作り、経路の内訳を併記する
+      // v0.45.1507: 自分（is_dev）の分は人数に混ぜず、末尾に控えめに添える。
       var byDate = {};
       r.data.forEach(function(row) {
         var d = row.visit_date;
-        if (!byDate[d]) byDate[d] = { total: 0, first: 0, parts: [] };
-        byDate[d].total += row.visits;
-        byDate[d].first += row.first_visits;
-        byDate[d].parts.push((row.source || 'direct') + ' ' + row.visits);
+        if (!byDate[d]) byDate[d] = { total: 0, first: 0, dev: 0, parts: [] };
+        byDate[d].total += (row.visits || 0);
+        byDate[d].first += (row.first_visits || 0);
+        byDate[d].dev   += (row.dev_visits || 0);
+        if (row.visits > 0) byDate[d].parts.push((row.source || 'direct') + ' ' + row.visits);
       });
       var dates = Object.keys(byDate).sort().reverse();
       listEl.innerHTML = dates.map(function(d) {
@@ -34125,7 +34131,8 @@ async function loadAdminVisitStats() {
         return '<div style="margin-bottom:8px;">' +
           '<b style="color:#8ec5ff;">' + d + '</b>　' + v.total + '人' +
           (v.first > 0 ? '（新規' + v.first + '）' : '') +
-          '<br><span style="color:#999;font-size:0.92em;">' + v.parts.join('・') + '</span>' +
+          (v.parts.length > 0 ? '<br><span style="color:#999;font-size:0.92em;">' + v.parts.join('・') + '</span>' : '') +
+          (v.dev > 0 ? '<br><span style="color:#666;font-size:0.88em;">（自分 ' + v.dev + ' 件は除外済み）</span>' : '') +
         '</div>';
       }).join('');
     }
@@ -50101,6 +50108,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
              : ng('ST-320·⑤: 一般ユーザーまで除外されている（重大）', '');
            window._adminModeActive = _st320admSaved;
            window._cloudUserId = _st320uidSaved;
+           // v0.45.1506: 管理者モードを知る協力者まで除外していないことの確認（重大）
+           localStorage.removeItem('koyomiru_dev_visitor');
+           var _st320flagSaved = (allSettings.flags && allSettings.flags.adminMode) || false;
+           var _st320uid2 = window._cloudUserId;
+           if (allSettings.flags) allSettings.flags.adminMode = true;
+           window._adminModeActive = true;
+           window._cloudUserId = 'st320-helper-user';
+           window._isDeveloperVisitor() === false
+             ? ok('ST-320·⑦: 管理者モードを知る協力者が除外されないことを確認')
+             : ng('ST-320·⑦: 協力者まで除外されている（重大：実ユーザーが数えられない）', '');
+           if (allSettings.flags) allSettings.flags.adminMode = _st320flagSaved;
+           window._adminModeActive = _st320admSaved;
+           window._cloudUserId = _st320uid2;
+           // v0.45.1507: 除外ではなくis_dev印を付けて記録する方式になっていることの確認
+           var _st320recSrc = typeof _recordVisit === 'function' ? _recordVisit.toString() : '';
+           (_st320recSrc.indexOf('is_dev') !== -1 && _st320recSrc.indexOf('var _isDev') !== -1)
+             ? ok('ST-320·⑧: 開発者訪問をis_dev印付きで記録する方式を確認')
+             : ng('ST-320·⑧: is_dev記録が組み込まれていない', '');
          } catch(e320b) {
            ng('ST-320·④⑤: 例外', e320b.message);
          }
