@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1499 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1500 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,8 +53,8 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1499';
-  const APP_LAST_UPDATED = '2026-08-02'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.45.1500';
+  const APP_LAST_UPDATED = '2026-08-03'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
       // URLパラメータ ?deck=DCK1:xxx でデッキ自動追加
@@ -33966,11 +33966,71 @@ async function listMySharedCalendars() {
   if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); }
   return r;
 }
+// v0.45.1500: 【権威】2026-08-03、共有カレンダーは「作る・招待する・参加する」だけが
+// 実装されており、参加した後の手立て（誰がいるのか見る／名前を直す／抜ける／消す）が
+// 一切なかった。参加したら二度と抜けられない状態はサービスとして成立しないため、
+// 以下の管理系を追加する。RLSポリシーが未整備の場合はエラーを返すので、UI側で
+// 「操作できませんでした」と伝わるようにしている。
+
+// 共有カレンダーの実メンバー一覧をDBから取得する。
+// 注意：既存の getSharedCalendarMembers() はタスクの作成者から逆算する方式のため、
+// 「参加したがまだタスクを作っていない人」が現れない。メンバー表示にはこちらを使う。
+async function listSharedCalendarMembers(calendarId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
+  var r = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+    .select('user_id, display_name, joined_at')
+    .eq('calendar_id', calendarId)
+    .order('joined_at', { ascending: true });
+  if (r.error) console.error('[SharedCal] メンバー取得失敗:', r.error.message);
+  return r;
+}
+
+// 共有カレンダーの名前を変更する（オーナーのみ／RLSで制御）
+async function renameSharedCalendar(calendarId, newName) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient) return null;
+  var r = await window.supabaseClient.from('koyomiru_shared_calendars')
+    .update({ name: newName })
+    .eq('id', calendarId)
+    .select('id, name')
+    .single();
+  if (r.error) console.error('[SharedCal] 名前変更失敗:', r.error.message);
+  return r;
+}
+
+// 共有カレンダーから自分だけ抜ける（他のメンバーには影響しない）
+async function leaveSharedCalendar(calendarId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient || !window._cloudUserId) return null;
+  var r = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+    .delete()
+    .eq('calendar_id', calendarId)
+    .eq('user_id', window._cloudUserId);
+  if (r.error) console.error('[SharedCal] 退出失敗:', r.error.message);
+  return r;
+}
+
+// 共有カレンダーごと削除する（オーナーのみ／全メンバーから消える）
+async function deleteSharedCalendar(calendarId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient) return null;
+  var r = await window.supabaseClient.from('koyomiru_shared_calendars')
+    .delete()
+    .eq('id', calendarId);
+  if (r.error) console.error('[SharedCal] 削除失敗:', r.error.message);
+  return r;
+}
+
 // 第3条: window公開
 window.createSharedCalendar = createSharedCalendar;
 window.lookupInviteCode = lookupInviteCode;
 window.joinSharedCalendarByCode = joinSharedCalendarByCode;
 window.listMySharedCalendars = listMySharedCalendars;
+window.listSharedCalendarMembers = listSharedCalendarMembers;
+window.renameSharedCalendar = renameSharedCalendar;
+window.leaveSharedCalendar = leaveSharedCalendar;
+window.deleteSharedCalendar = deleteSharedCalendar;
 // v0.45.1408: 【権威】2026-07-25、開発者（管理者パネル）専用。自分がオーナーの
 // 共有カレンダーごとに、参加者の表示名・参加日時を一覧表示する。参加者側のUIには
 // 一切表示されない、開発者だけがアクセスする画面。
@@ -35631,70 +35691,170 @@ function closeSharedCalendarModal() {
   var ov = document.getElementById('sharedCalendarOverlay');
   if (ov) ov.style.display = 'none';
 }
-function _sharedCalSetStatus(msg) {
+// v0.45.1500: ログインモーダルと同じ基準で色分けする（成功=緑／エラー=赤）。
+// 従来は茶色の小さな文字を出すだけで、成功も失敗も見分けがつかなかった。
+function _sharedCalSetStatus(msg, type) {
   var el = document.getElementById('sharedCalendarStatus');
-  if (el) el.textContent = msg;
+  if (!el) return;
+  if (!msg) { el.textContent = ''; el.style.display = 'none'; return; }
+  if (!type) {
+    type = (msg.indexOf('⚠️') === 0) ? 'error'
+         : (msg.indexOf('✅') === 0 || msg.indexOf('🎉') === 0) ? 'success' : 'info';
+  }
+  var palette = {
+    error:   { color: '#b3261e', bg: '#fdeded', border: '#f5c2c0' },
+    success: { color: '#1b5e20', bg: '#edf7ee', border: '#c3e0c5' },
+    info:    { color: '#5a5a5a', bg: '#f5f5f5', border: '#e0e0e0' }
+  };
+  var p = palette[type] || palette.info;
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.color = p.color;
+  el.style.background = p.bg;
+  el.style.border = '1px solid ' + p.border;
+  el.style.borderRadius = '8px';
+  el.style.padding = '10px 12px';
+  el.style.lineHeight = '1.6';
 }
 window._sharedCalSetStatus = _sharedCalSetStatus;
 async function refreshSharedCalendarList() {
   var listEl = document.getElementById('sharedCalendarMyList');
+  var emptyEl = document.getElementById('sharedCalendarEmptyState');
+  var createEl = document.getElementById('sharedCalendarCreateBlock');
+  var joinEl = document.getElementById('sharedCalendarJoinBlock');
   if (!listEl) return;
-  listEl.textContent = '読み込み中…';
+  listEl.innerHTML = '<div style="font-size:0.8em;color:#8e8e8e;">読み込み中…</div>';
   var r = await listMySharedCalendars();
   if (!r || r.error) {
-    listEl.innerHTML = '<div style="font-size:0.78em;color:#c0392b;">一覧の取得に失敗しました。テーブルがまだ作られていない可能性があります。</div>';
+    listEl.innerHTML = '<div style="font-size:0.8em;color:#b3261e;background:#fdeded;border:1px solid #f5c2c0;border-radius:8px;padding:10px 12px;">一覧を取得できませんでした。通信状況を確認してもう一度お試しください。</div>';
     return;
   }
-  if (!r.data || r.data.length === 0) {
-    listEl.innerHTML = '<div style="font-size:0.78em;color:#999;">まだ参加している共有カレンダーはありません。</div>';
-    return;
+  var _hasAny = r.data && r.data.length > 0;
+  // v0.45.1500: カレンダーが1つも無い人に「作る」と「参加」を同時に迫らないよう、
+  // 空のときは作成だけを見せ、コード入力は隠す（招待は基本リンクから来るため）。
+  if (emptyEl) emptyEl.style.display = _hasAny ? 'none' : 'block';
+  if (createEl) createEl.style.display = 'block';
+  if (joinEl) joinEl.style.display = _hasAny ? 'block' : 'none';
+  if (!_hasAny) { listEl.innerHTML = ''; return; }
+
+  // 先に全カレンダーのメンバーを取得してから描画する（表示のちらつきを避ける）
+  var _memberMap = {};
+  for (var i = 0; i < r.data.length; i++) {
+    var mr = await listSharedCalendarMembers(r.data[i].id);
+    _memberMap[r.data[i].id] = (mr && !mr.error && mr.data) ? mr.data : null;
   }
-  // v0.45.1343: POPOPO方式（招待リンク＋QRコード＋OS標準共有シート＋コピー）に刷新。
-  // 【権威】2026-07-17、TimeTree・POPOPOの招待UXを調査した結果、
-  // 「コードを手入力させる」方式は一段劣ると判断し、リンクを開くだけで
-  // 参加できる方式に変更した。
+
   listEl.innerHTML = r.data.map(function(c) {
     var inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(c.invite_code);
     var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(inviteUrl);
     var safeId = 'sc_' + c.id.replace(/-/g, '');
-    // v0.45.1396: 【権威】2026-07-25、業界最高峰（Discord・Zoom・LINE等）の招待UXを
-    // 再調査した結果、「1つの明確な招待アクションを主役にし、他は控えめにする」
-    // という共通原則を発見した。従来のQR＋リンクコピー＋シェアの3点が横並びで
-    // 競合していた設計をやめ、「招待する」ボタン1つを主役にし、QR・リンクコピーは
-    // 折りたたみの補助にする。また「表示するメンバー」が管理者機能に見えるという
-    // 指摘を受け、<details>で折りたたみ、「あなた自身の画面にだけ影響する」旨を
-    // 明記して、他人の権限を操作するものではないことを明確にした。
-    var _members = (typeof getSharedCalendarMembers === 'function') ? getSharedCalendarMembers(c.id) : [];
-    var _others = _members.filter(function(m){ return !m.isMe; });
+    var _isOwner = c.owner_id === window._cloudUserId;
+    var _safeName = (c.name || '共有カレンダー').replace(/'/g, '');
+
+    // --- メンバー表示（共有カレンダーで最も知りたい情報なので常時表示する） ---
+    var _mem = _memberMap[c.id];
+    var _memberHtml;
+    if (!_mem) {
+      _memberHtml = '<div style="font-size:0.75em;color:#aaa;">メンバーを取得できませんでした</div>';
+    } else {
+      _memberHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + _mem.map(function(m) {
+        var _isMe = m.user_id === window._cloudUserId;
+        var _nm = m.display_name || '(名前未設定)';
+        return '<span style="font-size:0.75em;padding:3px 10px;border-radius:20px;background:' +
+          (_isMe ? '#e8f2fc' : '#f2f2f2') + ';color:' + (_isMe ? '#0b5bb0' : '#555') + ';">' +
+          _nm + (_isMe ? '（あなた）' : '') + '</span>';
+      }).join('') + '</div>' +
+      '<div style="font-size:0.7em;color:#aaa;margin-top:5px;">' + _mem.length + '人が参加中</div>';
+    }
+
+    // --- 表示フィルタ（自分の画面にだけ効く。相手の権限を操作するものではない） ---
+    var _localMembers = (typeof getSharedCalendarMembers === 'function') ? getSharedCalendarMembers(c.id) : [];
+    var _others = _localMembers.filter(function(m){ return !m.isMe; });
     var _mfList = (allSettings.ui.memberFilters && allSettings.ui.memberFilters[c.id]) || [];
-    var _memberFilterHtml = _others.length === 0 ? '' :
-      '<details style="margin-top:10px;">' +
-        '<summary style="font-size:0.75em;color:#888;cursor:pointer;">👁️ あなたの画面での表示設定</summary>' +
-        '<div style="font-size:0.68em;color:#aaa;margin:6px 0;">ここでの操作は、あなた自身の画面にだけ影響します。相手には影響しません。</div>' +
+    var _filterHtml = _others.length === 0 ? '' :
+      '<div style="margin-bottom:14px;">' +
+        '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:2px;">あなたの画面での表示</div>' +
+        '<div style="font-size:0.68em;color:#aaa;margin-bottom:6px;line-height:1.5;">チェックを外した人の予定は、あなたの画面にだけ表示されなくなります。相手には影響しません。</div>' +
         _others.map(function(m) {
           var _checked = _mfList.indexOf(m.userId) === -1;
           var _safeUid = m.userId.replace(/'/g, '');
-          return '<label style="display:flex;align-items:center;gap:6px;font-size:0.8em;padding:4px 0;cursor:pointer;">' +
+          return '<label style="display:flex;align-items:center;gap:7px;font-size:0.8em;padding:4px 0;cursor:pointer;">' +
             '<input type="checkbox" ' + (_checked ? 'checked' : '') + ' onchange="toggleMemberFilter(\'' + c.id + '\', \'' + _safeUid + '\')">' +
             (m.name || '(名前不明)') +
           '</label>';
         }).join('') +
+      '</div>';
+
+    // --- 管理メニュー（普段は畳んでおく：管理は詳細に、体験はシンプルに） ---
+    var _manageHtml =
+      '<details style="margin-top:12px;">' +
+        '<summary style="font-size:0.75em;color:#8e8e8e;cursor:pointer;">設定</summary>' +
+        '<div style="margin-top:10px;">' +
+          _filterHtml +
+          (_isOwner ?
+            '<div style="margin-bottom:12px;">' +
+              '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">カレンダー名</div>' +
+              '<div style="display:flex;gap:6px;">' +
+                '<input id="' + safeId + '_rename" type="text" value="' + (c.name || '').replace(/"/g, '&quot;') + '" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.85em;">' +
+                '<button onclick="renameSharedCalendarFromModal(\'' + c.id + '\', \'' + safeId + '\')" style="padding:8px 14px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;white-space:nowrap;">変更</button>' +
+              '</div>' +
+            '</div>' : '') +
+          '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">招待リンク</div>' +
+          '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
+            '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクをコピー</a>' +
+            '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
+          '</div>' +
+          '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
+            '<img src="' + qrUrl + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
+            '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' + (c.invite_code_expires_at ? new Date(c.invite_code_expires_at).toLocaleDateString('ja-JP') + 'まで有効' : '') + '</div>' +
+          '</div>' +
+          (_isOwner ?
+            '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\')" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
+            '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">参加している全員の画面から消えます。取り消せません。</div>'
+            :
+            '<button onclick="leaveSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\')" style="width:100%;padding:9px;border:1px solid #dcdcdc;border-radius:8px;background:#fff;color:#666;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーから抜ける</button>' +
+            '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">あなたの画面からだけ消えます。他の人には残ります。</div>') +
+        '</div>' +
       '</details>';
-    return '<div style="background:#f9f7f2;border-radius:12px;padding:14px;margin-bottom:10px;">' +
-      '<div style="font-size:0.9em;font-weight:600;margin-bottom:10px;">' + (c.name || '(無題)') + '</div>' +
-      '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + (c.name || '共有カレンダー').replace(/'/g,'') + '\')" style="width:100%;padding:11px;border:none;border-radius:8px;background:#4a7856;color:#fff;font-size:0.85em;font-weight:600;cursor:pointer;">📤 招待する</button>' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">' +
-        '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.72em;color:#7a8a75;cursor:pointer;text-decoration:underline;">🔗 リンクをコピー</a>' +
-        '<a onclick="document.getElementById(\'' + safeId + '_qr\').style.display = document.getElementById(\'' + safeId + '_qr\').style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.72em;color:#7a8a75;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
-      '</div>' +
-      '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-top:10px;">' +
-        '<img src="' + qrUrl + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
-        '<div style="font-size:0.65em;color:#999;margin-top:4px;">' + new Date(c.invite_code_expires_at).toLocaleDateString('ja-JP') + 'まで有効</div>' +
-      '</div>' +
-      _memberFilterHtml +
+
+    return '<div style="border:1px solid #eee;border-radius:14px;padding:16px;margin-bottom:12px;">' +
+      '<div style="font-size:0.95em;font-weight:700;color:#262626;margin-bottom:10px;">' + (c.name || '(無題)') + '</div>' +
+      _memberHtml +
+      '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + _safeName + '\')" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">招待する</button>' +
+      _manageHtml +
     '</div>';
   }).join('');
 }
+
+// v0.45.1500: 名前変更・退出・削除のUI側ハンドラ
+async function renameSharedCalendarFromModal(calendarId, safeId) {
+  var input = document.getElementById(safeId + '_rename');
+  if (!input) return;
+  var newName = (input.value || '').trim();
+  if (!newName) { _sharedCalSetStatus('⚠️ カレンダー名を入力してください', 'error'); return; }
+  var r = await renameSharedCalendar(calendarId, newName);
+  if (!r || r.error) { _sharedCalSetStatus('⚠️ 名前を変更できませんでした', 'error'); return; }
+  _sharedCalSetStatus('✅ 名前を変更しました', 'success');
+  refreshSharedCalendarList();
+}
+async function leaveSharedCalendarFromModal(calendarId, name) {
+  if (!confirm('「' + name + '」から抜けますか？\n\nあなたの画面からだけ消えます。他の人には残ります。')) return;
+  var r = await leaveSharedCalendar(calendarId);
+  if (!r || r.error) { _sharedCalSetStatus('⚠️ 抜けられませんでした', 'error'); return; }
+  _sharedCalSetStatus('✅ 「' + name + '」から抜けました', 'success');
+  refreshSharedCalendarList();
+}
+async function deleteSharedCalendarFromModal(calendarId, name) {
+  if (!confirm('「' + name + '」を削除しますか？\n\n参加している全員の画面から消えます。取り消せません。')) return;
+  var r = await deleteSharedCalendar(calendarId);
+  if (!r || r.error) { _sharedCalSetStatus('⚠️ 削除できませんでした', 'error'); return; }
+  _sharedCalSetStatus('✅ 「' + name + '」を削除しました', 'success');
+  refreshSharedCalendarList();
+}
+window.renameSharedCalendarFromModal = renameSharedCalendarFromModal;
+window.leaveSharedCalendarFromModal = leaveSharedCalendarFromModal;
+window.deleteSharedCalendarFromModal = deleteSharedCalendarFromModal;
+
 // 招待リンクをクリップボードにコピー
 function copySharedCalendarInvite(url) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -49401,6 +49561,30 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        document.getElementById('sharedCalendarMyList') && document.getElementById('sharedCalendarNewName') && document.getElementById('sharedCalendarJoinCode')
          ? ok('ST-237·DOM: 一覧・作成・参加の各要素存在確認')
          : ng('ST-237·DOM: 一部要素が欠落', '');
+       // v0.45.1500: 参加後の管理系（メンバー一覧・名前変更・退出・削除）の追加分
+       ['listSharedCalendarMembers','renameSharedCalendar','leaveSharedCalendar','deleteSharedCalendar',
+        'renameSharedCalendarFromModal','leaveSharedCalendarFromModal','deleteSharedCalendarFromModal']
+         .forEach(function(fn) {
+           typeof window[fn] === 'function'
+             ? ok('ST-237·' + fn + ': window公開確認')
+             : ng('ST-237·' + fn + ': 未公開', '');
+         });
+       document.getElementById('sharedCalendarEmptyState') && document.getElementById('sharedCalendarCreateBlock') && document.getElementById('sharedCalendarJoinBlock')
+         ? ok('ST-237·DOM: 空状態・作成・参加ブロックの存在確認')
+         : ng('ST-237·DOM: 新DOM要素が欠落', '');
+       (function(){
+         var _st237src = typeof refreshSharedCalendarList === 'function' ? refreshSharedCalendarList.toString() : '';
+         (_st237src.indexOf('listSharedCalendarMembers') !== -1 && _st237src.indexOf('人が参加中') !== -1)
+           ? ok('ST-237·⑤: メンバー一覧の常時表示を確認')
+           : ng('ST-237·⑤: メンバー表示が組み込まれていない', '');
+         (_st237src.indexOf('deleteSharedCalendarFromModal') !== -1 && _st237src.indexOf('leaveSharedCalendarFromModal') !== -1)
+           ? ok('ST-237·⑥: オーナー削除／参加者退出の導線を確認')
+           : ng('ST-237·⑥: 退出・削除の導線がない', '');
+         var _st237st = typeof _sharedCalSetStatus === 'function' ? _sharedCalSetStatus.toString() : '';
+         (_st237st.indexOf('#b3261e') !== -1 && _st237st.indexOf('#1b5e20') !== -1)
+           ? ok('ST-237·⑦: ステータス表示の色分け（成功／エラー）を確認')
+           : ng('ST-237·⑦: 色分けが未実装', '');
+       })();
        ok('ST-237: 共有カレンダー（フェーズ1） 確認 完了');
      } catch(e) {
        ng('ST-237: 例外', e.message);
@@ -50713,7 +50897,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-279·②: getSharedCalendarMembersがcloudCalendarIdキーに修正されている確認')
          : ng('ST-279·②: キー修正が反映されていない', '');
        var _st279listIdx = _st279scriptTexts.indexOf('async function refreshSharedCalendarList()');
-       var _st279listSrc = _st279listIdx !== -1 ? _st279scriptTexts.slice(_st279listIdx, _st279listIdx + 3500) : '';
+       // v0.45.1500: refreshSharedCalendarListにメンバー一覧・管理メニューを追加して
+       // 関数が長くなったため、検索範囲を3500→9000文字に拡大した。
+       var _st279listSrc = _st279listIdx !== -1 ? _st279scriptTexts.slice(_st279listIdx, _st279listIdx + 9000) : '';
        _st279listSrc.indexOf('toggleMemberFilter(') !== -1
          ? ok('ST-279·③: 共有カレンダーモーダルにメンバーフィルタUI組み込み確認')
          : ng('ST-279·③: UIが見つからない', '');
@@ -61582,31 +61768,38 @@ window.addMigration = addMigration;
 <div id="sharedCalendarOverlay" style="display:none;position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;padding:16px;box-sizing:border-box;">
   <div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:400px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.18);position:relative;">
     <button onclick="closeSharedCalendarModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:1.3em;color:#999;cursor:pointer;">✕</button>
-    <div style="font-size:1.1em;font-weight:700;margin-bottom:4px;">👨‍👩‍👧 共有カレンダー</div>
-    <div style="font-size:0.75em;color:#999;margin-bottom:18px;">招待した相手と、タスクを共有できます。</div>
+    <div style="font-size:1.15em;font-weight:700;color:#262626;margin-bottom:4px;">共有カレンダー</div>
+    <div style="font-size:0.78em;color:#8e8e8e;margin-bottom:20px;">招待した相手と、予定を共有できます。</div>
 
     <div id="sharedCalendarMyList" style="margin-bottom:18px;"></div>
 
-    <div style="border-top:1px solid #eee;padding-top:16px;margin-bottom:16px;">
-      <div style="font-size:0.85em;font-weight:600;margin-bottom:8px;">新しい共有カレンダーを作る</div>
-      <input id="sharedCalendarNewName" type="text" placeholder="例：太郎&花子暦" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
-      <button onclick="createSharedCalendarFromModal()" style="width:100%;padding:10px;border:none;border-radius:8px;background:#4a7856;color:#fff;font-size:0.85em;font-weight:600;cursor:pointer;">作成する</button>
+    <!-- v0.45.1500: カレンダーが1つも無い人向けの案内。空のリストだけを見せて
+         「何をすればいいか分からない」状態にしないための説明。 -->
+    <div id="sharedCalendarEmptyState" style="display:none;background:#f8f9fb;border-radius:12px;padding:16px;margin-bottom:18px;">
+      <div style="font-size:0.85em;font-weight:600;color:#262626;margin-bottom:6px;">まだ共有カレンダーがありません</div>
+      <div style="font-size:0.78em;color:#8e8e8e;line-height:1.7;">家族や友人と予定を分かち合うには、まずカレンダーを作って、招待リンクを送ります。</div>
     </div>
 
-    <div style="border-top:1px solid #eee;padding-top:16px;">
+    <div id="sharedCalendarCreateBlock" style="border-top:1px solid #eee;padding-top:18px;margin-bottom:16px;">
+      <div style="font-size:0.85em;font-weight:600;color:#262626;margin-bottom:8px;">新しく作る</div>
+      <input id="sharedCalendarNewName" type="text" placeholder="例：家族の暦" onfocus="this.style.borderColor='#0b6bcb';" onblur="this.style.borderColor='#dcdcdc';" style="width:100%;padding:11px;border:1px solid #dcdcdc;border-radius:10px;font-size:0.9em;box-sizing:border-box;margin-bottom:9px;outline:none;">
+      <button onclick="createSharedCalendarFromModal()" style="width:100%;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">作成する</button>
+    </div>
+
+    <div id="sharedCalendarJoinBlock" style="display:none;border-top:1px solid #eee;padding-top:16px;">
       <!-- v0.45.1404: 【権威】2026-07-25、「8桁のコードを手入力する人はまずいない」との
            指摘を受け、招待リンク（タップ一発で開く）を主役にし、この手入力欄は
            「リンクが使えない時の保険」として折りたたみの中に格下げする。 -->
       <details>
-        <summary style="font-size:0.8em;color:#999;cursor:pointer;">招待コードをお持ちの場合はこちら</summary>
+        <summary style="font-size:0.8em;color:#8e8e8e;cursor:pointer;">招待コードをお持ちの場合はこちら</summary>
         <div style="margin-top:10px;">
-          <input id="sharedCalendarJoinCode" type="text" placeholder="8桁のコード" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:0.9em;box-sizing:border-box;margin-bottom:8px;">
-          <button onclick="joinSharedCalendarFromModal()" style="width:100%;padding:10px;border:1px solid #4a7856;border-radius:8px;background:transparent;color:#4a7856;font-size:0.85em;font-weight:600;cursor:pointer;">参加する</button>
+          <input id="sharedCalendarJoinCode" type="text" placeholder="8桁のコード" style="width:100%;padding:11px;border:1px solid #dcdcdc;border-radius:10px;font-size:0.9em;box-sizing:border-box;margin-bottom:9px;">
+          <button onclick="joinSharedCalendarFromModal()" style="width:100%;padding:11px;border:1px solid #0b6bcb;border-radius:10px;background:#fff;color:#0b5bb0;font-size:0.85em;font-weight:600;cursor:pointer;">参加する</button>
         </div>
       </details>
     </div>
 
-    <div id="sharedCalendarStatus" style="font-size:0.78em;color:#7a6a54;margin-top:14px;min-height:1.2em;"></div>
+    <div id="sharedCalendarStatus" style="display:none;font-size:0.82em;margin-top:16px;"></div>
   </div>
 </div>
 <!-- ===== END v0.45.1342 共有カレンダーモーダル ===== -->
