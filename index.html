@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1502 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1503 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1502';
+    const APP_VERSION = 'v0.45.1503';
   const APP_LAST_UPDATED = '2026-08-03'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -7221,6 +7221,15 @@
           <div style="font-size:0.82em;font-weight:700;color:#a3c9a8;margin-bottom:8px;">👨‍👩‍👧 共有カレンダー参加者一覧</div>
           <button id="adminSharedCalMembersBtn" onclick="loadAdminSharedCalMembers()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7856;border-radius:8px;color:#a3c9a8;font-size:0.82em;cursor:pointer;margin-bottom:8px;">🔄 参加者一覧を読み込む</button>
           <div id="adminSharedCalMembersList" style="font-size:0.78em;color:#ccc;line-height:1.7;"></div>
+        </div>
+        <!-- v0.45.1503: 【権威】2026-08-04、流入計測（koyomiru_visits）の結果を
+             Supabaseダッシュボードを開かずにアプリ内で確認したいとの要望を受け追加。
+             生データは返さず集計値のみを取得する（訪問者IDを画面に出さないため）。
+             読み取りはDB側のSECURITY DEFINER関数で管理者本人に限定している。 -->
+        <div id="adminVisitStatsArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+          <div style="font-size:0.82em;font-weight:700;color:#8ec5ff;margin-bottom:8px;">📊 訪問統計（直近14日）</div>
+          <button id="adminVisitStatsBtn" onclick="loadAdminVisitStats()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;font-size:0.82em;cursor:pointer;margin-bottom:8px;">🔄 訪問統計を読み込む</button>
+          <div id="adminVisitStatsList" style="font-size:0.78em;color:#ccc;line-height:1.7;"></div>
         </div>
         <!-- v0.45.1413: 「自由帳のタブが謎に増殖している」との報告を受けた応急処置。
              既存の重複除去はインポート時にしか動かず、同期経由の重複には対応して
@@ -34048,6 +34057,49 @@ window.listSharedCalendarMembers = listSharedCalendarMembers;
 window.renameSharedCalendar = renameSharedCalendar;
 window.leaveSharedCalendar = leaveSharedCalendar;
 window.deleteSharedCalendar = deleteSharedCalendar;
+// v0.45.1503: 【権威】2026-08-04、訪問統計をアプリ内の管理者パネルで確認できるようにする。
+// koyomiru_visits はSELECTポリシーを持たない（生データを誰にも読ませない）ため、
+// DB側のSECURITY DEFINER関数 koyomiru_visit_stats() 経由で集計値だけを受け取る。
+// 関数側で呼び出し元が管理者本人かを検証しているので、他人が呼んでも結果は返らない。
+async function loadAdminVisitStats() {
+  var listEl = document.getElementById('adminVisitStatsList');
+  var btn = document.getElementById('adminVisitStatsBtn');
+  if (!listEl) return;
+  if (!window.supabaseClient || !window._cloudUserId) { listEl.textContent = '⚠️ ログインしていません'; return; }
+  if (btn) { btn.disabled = true; btn.textContent = '読み込み中…'; }
+  try {
+    var r = await window.supabaseClient.rpc('koyomiru_visit_stats');
+    if (r.error) {
+      listEl.innerHTML = '<span style="color:#ff9a9a;">取得できませんでした。DB側の関数が未作成か、管理者として認識されていない可能性があります。</span>';
+    } else if (!r.data || r.data.length === 0) {
+      listEl.innerHTML = '<span style="color:#999;">まだ訪問記録がありません。</span>';
+    } else {
+      // 日付ごとに行を作り、経路の内訳を併記する
+      var byDate = {};
+      r.data.forEach(function(row) {
+        var d = row.visit_date;
+        if (!byDate[d]) byDate[d] = { total: 0, first: 0, parts: [] };
+        byDate[d].total += row.visits;
+        byDate[d].first += row.first_visits;
+        byDate[d].parts.push((row.source || 'direct') + ' ' + row.visits);
+      });
+      var dates = Object.keys(byDate).sort().reverse();
+      listEl.innerHTML = dates.map(function(d) {
+        var v = byDate[d];
+        return '<div style="margin-bottom:8px;">' +
+          '<b style="color:#8ec5ff;">' + d + '</b>　' + v.total + '人' +
+          (v.first > 0 ? '（新規' + v.first + '）' : '') +
+          '<br><span style="color:#999;font-size:0.92em;">' + v.parts.join('・') + '</span>' +
+        '</div>';
+      }).join('');
+    }
+  } catch(e) {
+    listEl.innerHTML = '<span style="color:#ff9a9a;">取得に失敗しました</span>';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 訪問統計を読み込む'; }
+}
+window.loadAdminVisitStats = loadAdminVisitStats;
+
 // v0.45.1408: 【権威】2026-07-25、開発者（管理者パネル）専用。自分がオーナーの
 // 共有カレンダーごとに、参加者の表示名・参加日時を一覧表示する。参加者側のUIには
 // 一切表示されない、開発者だけがアクセスする画面。
