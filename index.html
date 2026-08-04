@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1507 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1508 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1507';
+    const APP_VERSION = 'v0.45.1508';
   const APP_LAST_UPDATED = '2026-08-03'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33911,6 +33911,30 @@ function clearDeveloperVisitorFlag() {
 }
 window.clearDeveloperVisitorFlag = clearDeveloperVisitorFlag;
 
+// v0.45.1508: 【権威】2026-08-04、支援リンク等の「押された回数」を記録する。
+// 訪問計測（koyomiru_visits）とは別テーブルにする理由は、あちらが「同一端末・同一日は
+// 1件」で人数を数える設計であり、同じ人が何度押したかを取りこぼすため。
+// 開発者本人のクリックは is_dev 印を付けて記録し、集計側で分けて見せる。
+async function _recordEvent(eventName) {
+  try {
+    if (!window.supabaseClient) return;
+    if (window._isTesting) return;   // 第39条：テスト実行時は本番データを汚さない
+    try { if (window.self !== window.top) return; } catch(eF) { return; }
+    var payload = {
+      visitor_id:  _getVisitorId(),
+      event:       eventName,
+      source:      _getVisitSource(),
+      app_version: (typeof APP_VERSION !== 'undefined') ? APP_VERSION : null,
+      is_dev:      _isDeveloperVisitor()
+    };
+    var r = await window.supabaseClient.from('koyomiru_events').insert(payload);
+    if (r && r.error) console.warn('[計測] イベントを記録できませんでした:', r.error.message);
+  } catch(e) {
+    console.warn('[計測] イベント例外:', e && e.message);
+  }
+}
+window._recordEvent = _recordEvent;
+
 // 起動から少し遅らせて実行（初期表示の描画を妨げない）
 if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded', function() {
@@ -34135,6 +34159,20 @@ async function loadAdminVisitStats() {
           (v.dev > 0 ? '<br><span style="color:#666;font-size:0.88em;">（自分 ' + v.dev + ' 件は除外済み）</span>' : '') +
         '</div>';
       }).join('');
+      // v0.45.1508: 支援リンク等のクリック回数を末尾に添える
+      try {
+        var er = await window.supabaseClient.rpc('koyomiru_event_stats');
+        if (er && !er.error && er.data && er.data.length > 0) {
+          listEl.innerHTML += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #333;">' +
+            '<div style="color:#ffcc66;font-weight:700;margin-bottom:4px;">🌱 支援リンクのクリック</div>' +
+            er.data.map(function(row) {
+              return '<div>' + row.event_date + '　' + row.clicks + '回' +
+                (row.dev_clicks > 0 ? '<span style="color:#666;">（自分 ' + row.dev_clicks + '）</span>' : '') +
+                '</div>';
+            }).join('') +
+          '</div>';
+        }
+      } catch(eEv) {}
     }
   } catch(e) {
     listEl.innerHTML = '<span style="color:#ff9a9a;">取得に失敗しました</span>';
@@ -53528,8 +53566,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // v0.45.1456: URLハッシュ #ofuse で、モーダルを経由せず直接OFUSEへリダイレクト
   // （メルマガ等からの「支援はこちら」CTA用・koyomiru.com/#ofuse で使用）
+  // v0.45.1508: 【権威】2026-08-04、支援リンクが何回押されたかを知りたいとの要望。
+  // 訪問計測（koyomiru_visits）は「同一端末・同一日は1件」の制約があるため、
+  // 既に訪問済みの人のクリックを取りこぼす。クリックは別テーブルに記録する。
+  // 記録の完了を待ってから遷移するが、失敗しても遷移は必ず行う（支援を妨げない）。
   if (window.location.hash === '#ofuse') {
-    window.location.href = 'https://ofuse.me/b9ca4c85';
+    (async function() {
+      try { await _recordEvent('ofuse_click'); } catch(e) {}
+      window.location.href = 'https://ofuse.me/b9ca4c85';
+    })();
   }
 
   // #terms / #privacy / #tokushoho ハッシュによる自動起動は廃止（v0.45.753〜）
