@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1503 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1506 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1503';
+    const APP_VERSION = 'v0.45.1506';
   const APP_LAST_UPDATED = '2026-08-03'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -33839,6 +33839,7 @@ async function _recordVisit() {
     try {
       if (window.self !== window.top) return;
     } catch(eFrame) { return; }   // クロスオリジンで参照できない＝埋め込みなのでスキップ
+    if (_isDeveloperVisitor()) return;   // v0.45.1504: 開発者本人の訪問は数えない
     var visitorId = _getVisitorId();
     if (!visitorId) return;          // localStorage不可の環境では計測しない
 
@@ -33870,6 +33871,41 @@ async function _recordVisit() {
   }
 }
 window._recordVisit = _recordVisit;
+
+// v0.45.1504: 【権威】2026-08-04、開発者本人の訪問が統計に混ざると、実際に何人が
+// 使ってくれているのか分からなくなる。開発中は日に何度も開くため影響が大きい。
+// ログイン復元が計測（起動2.5秒後）に間に合わない場合に備え、一度でも開発者と
+// 判定された端末には印を残し、以後はログイン状態に関わらず除外し続ける。
+var _KOYOMIRU_DEV_KEY = 'koyomiru_dev_visitor';
+var _KOYOMIRU_ADMIN_UID = 'fcef1c30-599c-4c05-9730-af3059832e0a';
+function _isDeveloperVisitor() {
+  try {
+    if (localStorage.getItem(_KOYOMIRU_DEV_KEY) === '1') return true;
+    // v0.45.1506: 【権威】2026-08-04、当初は管理者モードのON/OFFも判定材料にしていたが、
+    // 管理者モードの入り方を知っている協力者が複数いるため、実際に使ってくれている人まで
+    // 統計から消えてしまう。判定は開発者本人のアカウントIDのみに限定する。
+    if (window._cloudUserId === _KOYOMIRU_ADMIN_UID) {
+      localStorage.setItem(_KOYOMIRU_DEV_KEY, '1');
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+window._isDeveloperVisitor = _isDeveloperVisitor;
+// v0.45.1505: 【権威】2026-08-04、管理者モードはリロードのたびにOFFへ戻るため、
+// 計測（起動2.5秒後）の時点では常にOFFであり、その後にONにしても印が付かなかった。
+// 管理者モードをONにした瞬間・管理者アカウントでログインが確定した瞬間に、
+// この関数を呼んで印を残す。次回の起動から確実に除外されるようになる。
+function _markDeveloperVisitor() {
+  try { localStorage.setItem(_KOYOMIRU_DEV_KEY, '1'); } catch(e) {}
+}
+window._markDeveloperVisitor = _markDeveloperVisitor;
+// 印を消して、一般ユーザーとして計測させたい場合に使う（動作確認用）
+function clearDeveloperVisitorFlag() {
+  try { localStorage.removeItem(_KOYOMIRU_DEV_KEY); } catch(e) {}
+  if (typeof showToast === 'function') showToast('この端末の開発者フラグを解除しました');
+}
+window.clearDeveloperVisitorFlag = clearDeveloperVisitorFlag;
 
 // 起動から少し遅らせて実行（初期表示の描画を妨げない）
 if (typeof document !== 'undefined') {
@@ -36943,6 +36979,8 @@ try {
       // 外部キー制約違反（409 Conflict）でPushが常に失敗する重大バグがあった。
       // 全認証イベント共通でここに正しいユーザーIDを保持し、Push時に参照する。
       window._cloudUserId = (session && session.user && session.user.id) || null;
+      // v0.45.1505: 管理者アカウントでのログインを検知したら印を残す（次回起動から除外）
+      if (window._cloudUserId === _KOYOMIRU_ADMIN_UID && typeof _markDeveloperVisitor === 'function') _markDeveloperVisitor();
       _cloudSetNavRing(!!session);
       if (event === 'SIGNED_IN') {
         if (typeof window.showToast === 'function') window.showToast('🎉 ようこそ、王国へ！');
@@ -50042,6 +50080,38 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (document.body.innerHTML.indexOf('アクセス状況の記録') !== -1)
          ? ok('ST-320·⑥: プライバシーポリシーに計測の記載あり')
          : ng('ST-320·⑥: プライバシーポリシーに記載がない', '');
+       // v0.45.1504: 開発者本人の訪問を除外する仕組みの確認
+       if (typeof window._isDeveloperVisitor === 'function') {
+         var _st320saved = null;
+         try { _st320saved = localStorage.getItem('koyomiru_dev_visitor'); } catch(e320a) {}
+         try {
+           // 印が付いていれば、ログイン状態に関わらず除外されること
+           localStorage.setItem('koyomiru_dev_visitor', '1');
+           window._isDeveloperVisitor() === true
+             ? ok('ST-320·④: 開発者フラグ付き端末が除外されることを確認')
+             : ng('ST-320·④: フラグがあるのに除外されない', '');
+           // 印が無く、管理者でもない状態では除外されないこと
+           localStorage.removeItem('koyomiru_dev_visitor');
+           var _st320admSaved = window._adminModeActive;
+           var _st320uidSaved = window._cloudUserId;
+           window._adminModeActive = false;
+           window._cloudUserId = 'st320-normal-user';
+           window._isDeveloperVisitor() === false
+             ? ok('ST-320·⑤: 一般ユーザーは除外されないことを確認')
+             : ng('ST-320·⑤: 一般ユーザーまで除外されている（重大）', '');
+           window._adminModeActive = _st320admSaved;
+           window._cloudUserId = _st320uidSaved;
+         } catch(e320b) {
+           ng('ST-320·④⑤: 例外', e320b.message);
+         }
+         // テストで書き換えた印を元に戻す（第39条：本番状態を汚さない）
+         try {
+           if (_st320saved === null) localStorage.removeItem('koyomiru_dev_visitor');
+           else localStorage.setItem('koyomiru_dev_visitor', _st320saved);
+         } catch(e320c) {}
+       } else {
+         ng('ST-320·④: _isDeveloperVisitor未公開', '');
+       }
        ok('ST-320: アクセス計測 確認 完了');
      } catch(e) {
        ng('ST-320: 例外', e.message);
