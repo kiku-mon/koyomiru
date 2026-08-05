@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1512 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1513 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1512';
+    const APP_VERSION = 'v0.45.1513';
   const APP_LAST_UPDATED = '2026-08-05'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -17708,7 +17708,14 @@ function reviveBlueprint(id) {
       if (!_sidebarDateStr) return;
       var calId = (allSettings.calendar && allSettings.calendar.mainId) || (calendars[0] && calendars[0].id) || 'default';
       var newTask = {
-        id: 'task_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        // v0.45.1513: 【権威】2026-08-05、ここだけ 'task_'+時刻+乱数 という独自形式で
+        // IDを作っていたため、クラウド側（uuid型のカラム）に弾かれて
+        // 「invalid input syntax for type uuid」で同期が失敗していた。
+        // 月間サイドバーから追加した予定だけが他端末に反映されない状態だったので、
+        // 他の生成箇所と同じ generateTaskId()（UUID v7）に揃える。
+        id: (typeof generateTaskId === 'function')
+              ? generateTaskId()
+              : (crypto.randomUUID ? crypto.randomUUID() : 'task_' + Date.now()),
         text: text, date: _sidebarDateStr, done: false,
         section: 1, calendarId: calId,
         createdAt: new Date().toISOString()
@@ -20149,10 +20156,21 @@ function reviveBlueprint(id) {
     ];
     window.CALENDAR_SYMBOLS = CALENDAR_SYMBOLS;
 
+    // v0.45.1513: 【権威】2026-08-05、カレンダー記号が「−」のままになるとの報告。
+    // 起動時に名前から記号を補完する処理はあるが、その後のクラウド同期で
+    // 記号を持たないカレンダー一覧に上書きされると、また空に戻ってしまう。
+    // 保存値が空のときは、ここで既定の記号にフォールバックさせる。
+    // これで同期のタイミングに関係なく、記号が消えることがなくなる。
+    var CALENDAR_SYMBOL_DEFAULTS = {'仕事':'◎','学校':'○','プライベート':'♡','家族':'♥','趣味':'☆','メモ':'★'};
+    function getCalendarSymbolFor(cal) {
+      if (!cal) return '';
+      return cal.symbol || CALENDAR_SYMBOL_DEFAULTS[cal.name] || '';
+    }
+    window.getCalendarSymbolFor = getCalendarSymbolFor;
     function getCalendarSymbol(calendarId) {
       if (!allSettings.ui.showCalendarSymbol) return '';
       var cal = (calendars || []).find(function(c){ return c.id === calendarId; });
-      return (cal && cal.symbol) ? cal.symbol : '';
+      return getCalendarSymbolFor(cal);
     }
     window.getCalendarSymbol = getCalendarSymbol;
     // ===== カレンダー記号 ここまで =====
@@ -21680,6 +21698,29 @@ function reviveBlueprint(id) {
     // 同じ実績あるロジックを使い、対象種別だけ絞る）。新しい方を残すので、
     // 利用者が書き換えた内容が古い初期値で上書きされることはない。
     // タスク・日誌・雑記帳には一切触れない。
+    // v0.45.1513: 【権威】2026-08-05、月間サイドバーから追加した予定は
+    // 'task_1785888552778_7e92h' のような独自形式のIDを持っており、クラウド側の
+    // uuid型カラムに弾かれて同期できないまま端末に取り残されていた。
+    // 生成側は修正済みだが、すでに作られてしまったものは変換しないと直らない。
+    // UUIDとして妥当でないIDを持つタスクだけを、正しい形式に付け替える。
+    (function _migrateNonUuidTaskIds() {
+      try {
+        if (window._isTesting) return;   // 第39条：テスト実行時は本番データを汚さない
+        var _uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        var _fixed = 0;
+        (allTasks || []).forEach(function(t) {
+          if (!t || !t.id || typeof t.id !== 'string') return;
+          if (_uuidRe.test(t.id)) return;                 // 正しい形式はそのまま
+          if (typeof generateTaskId !== 'function') return;
+          t.id = generateTaskId();
+          _fixed++;
+        });
+        if (_fixed > 0) {
+          saveAllTasks();
+          console.info('[同期] 旧形式のIDを ' + _fixed + '件 変換しました（クラウドに送れるようになります）');
+        }
+      } catch(e) { console.warn('[同期] ID変換に失敗:', e && e.message); }
+    })();
     (function _autoPurgeSeedDuplicates() {
       try {
         if (window._isTesting) return;   // 第39条：テスト実行時は本番データを汚さない
@@ -26566,7 +26607,7 @@ function loadSettingsUI() {
         row.appendChild(colorInput);
         // 記号ピッカーボタン
         const symBtn = document.createElement('button');
-        symBtn.textContent = cal.symbol || '−';
+        symBtn.textContent = (typeof getCalendarSymbolFor === 'function' ? getCalendarSymbolFor(cal) : cal.symbol) || '−';
         symBtn.title = '記号を選択';
         symBtn.style.cssText = 'width:30px;height:30px;border:1.5px solid #ddd;border-radius:6px;background:#f9f9f9;font-size:1em;cursor:pointer;flex-shrink:0;padding:0;text-align:center;';
         symBtn.addEventListener('click', (function(_idx, _btn) {
