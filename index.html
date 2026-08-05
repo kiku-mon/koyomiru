@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1510 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1511 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1510';
+    const APP_VERSION = 'v0.45.1511';
   const APP_LAST_UPDATED = '2026-08-03'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9337,10 +9337,16 @@
       { name: '趣味',         color: '#ffcc80', shareable: true,  symbol: '☆' },
       { name: 'メモ',         color: '#b0bec5', shareable: false, symbol: '★' },
     ];    function createCalendarFromTemplate(tmpl) {
+      // v0.45.1511: 【権威】2026-08-04、カレンダー記号が「-」になるとの報告。
+      // CALENDAR_TEMPLATES には ◎○♡♥☆★ が定義されているのに、ここで symbol を
+      // 引き継いでいなかったため、初回セットアップで作ったカレンダーは記号なしで
+      // 生成されていた。起動時の記号補完は「次回起動」まで効かないため、
+      // 作った直後は記号が空のまま表示されていた。ここで引き継ぐのが本筋。
       return {
         id: (typeof generateTaskId === 'function') ? generateTaskId() : crypto.randomUUID(),
         name: tmpl.name,
         color: tmpl.color,
+        symbol: tmpl.symbol || '',
         visible: true,
         shareable: tmpl.shareable
       };
@@ -21657,6 +21663,38 @@ function reviveBlueprint(id) {
       if (_changed) saveCalendars();
     })();
     initStampDefs();
+    // v0.45.1511: 【権威】2026-08-04、まっさらな環境（プライベートウィンドウ）で
+    // 自由帳のページとスタンプが二重に現れるとの報告。プリセット投入と、個別の
+    // 初期ページ追加処理の二系統が同じものを入れているのが原因だが、発生タイミングが
+    // 込み入っており根本の一本化には時間がかかる。実害を今すぐ止めるため、起動のたびに
+    // ノートとスタンプだけ重複を畳む（判定は管理者パネルの purgeDuplicateContent と
+    // 同じ実績あるロジックを使い、対象種別だけ絞る）。新しい方を残すので、
+    // 利用者が書き換えた内容が古い初期値で上書きされることはない。
+    // タスク・日誌・雑記帳には一切触れない。
+    (function _autoPurgeSeedDuplicates() {
+      try {
+        if (window._isTesting) return;   // 第39条：テスト実行時は本番データを汚さない
+        var seen = {}, keep = {}, removed = [];
+        allTasks.slice().sort(function(a, b) {
+          var au = (a && (a.updatedAt || a.createdAt)) || '';
+          var bu = (b && (b.updatedAt || b.createdAt)) || '';
+          return bu.localeCompare(au);   // 新しい方を先に見る＝新しい方を残す
+        }).forEach(function(t) {
+          if (!t) return;
+          if (t.kind !== 'note' && t.kind !== 'stamp') { keep[t.id] = true; return; }
+          var key = (t.kind === 'note') ? 'note|' + (t.title || '')
+                                        : 'stamp|' + (t.name || '');
+          if (seen[key]) { removed.push(t.id); return; }
+          seen[key] = true;
+          keep[t.id] = true;
+        });
+        if (removed.length > 0) {
+          allTasks = allTasks.filter(function(t) { return t && keep[t.id]; });
+          saveAllTasks();
+          console.info('[初期データ] 重複していた自由帳・スタンプを ' + removed.length + '件 まとめました');
+        }
+      } catch(e) { console.warn('[初期データ] 重複整理に失敗:', e && e.message); }
+    })();
     window._dbgLog('【印章確認】STAMP SYSTEM ONLINE --- 印章ユニット、全基確認 / 異常なし');
     window._dbgLog('initStampDefs done');
     migrateToDisplayScope();
