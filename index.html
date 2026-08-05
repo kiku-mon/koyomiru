@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1519 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1520 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1519';
+    const APP_VERSION = 'v0.45.1520';
   const APP_LAST_UPDATED = '2026-08-05'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2106,6 +2106,24 @@
       color: #9c7c34;
       margin-top: 4px;
       line-height: 1.4;
+    }
+    /* v0.45.1520: サイドバーの暦情報。祝日・月齢・日の出日の入を一列に並べる。
+       節気（金茶）とは色を分け、補足情報だと一目で分かるようにする。 */
+    .monthly-sidebar-koyomi {
+      font-size: 11px;
+      color: #8e8e8e;
+      margin-top: 5px;
+      line-height: 1.7;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+    }
+    .monthly-sidebar-koyomi .msk-holiday {
+      color: #d93025;
+      font-weight: 700;
+    }
+    .monthly-sidebar-koyomi .msk-moon {
+      color: #7a6ab0;
     }
     .monthly-sidebar-close {
       background: #f5f5f5;
@@ -5877,6 +5895,12 @@
         <div>
           <div class="monthly-sidebar-date" id="monthlySidebarDate"></div>
           <div class="monthly-sidebar-sekki" id="monthlySidebarSekki"></div>
+          <!-- v0.45.1520: 【権威】2026-08-05、サイドバーには節気と候しか出ておらず、
+               月間グリッドには出ている月齢・祝日すら見えなかった。日付をタップして開く
+               この場所は「その日のすべてを見る」ための面であり、こよみるの強み
+               （月・暦・日の出）が最も活きるべき所。新しいビューは作らず（第56条）、
+               既存サイドバーのヘッダーを拡張して情報を集約する。 -->
+          <div class="monthly-sidebar-koyomi" id="monthlySidebarKoyomi"></div>
         </div>
         <button class="monthly-sidebar-close" onclick="closeMonthlySidebar()">✕</button>
       </div>
@@ -17748,6 +17772,46 @@ function reviveBlueprint(id) {
           var _ck = _getCKou && _getCKou(_d);
           _sekkiEl.textContent = _ck ? ('\u25c6' + _ck.sekkiName + '\u3000' + (_ck.icon||'') + _ck.name) : '';
         } catch(e) { _sekkiEl.textContent = ''; }
+      }
+      // v0.45.1520: その日の暦をヘッダーに集約する。
+      // 計算は一切新設せず、既に持っている資産をそのまま使う。
+      // 祝日=getHoliday（v0.45.1519で自動計算化）／月齢=calcMoonAgeNAOJ＋_phaseNames
+      // ／日の出日の入=_getSunData。いずれも第2条に従い存在確認してから呼ぶ。
+      var _koyomiEl = document.getElementById('monthlySidebarKoyomi');
+      if (_koyomiEl) {
+        var _parts = [];
+        try {
+          var _hol = (typeof getHoliday === 'function') ? getHoliday(dateStr) : null;
+          if (_hol) _parts.push('<span class="msk-holiday">' + _hol + '</span>');
+        } catch(e) {}
+        try {
+          if (typeof calcMoonAgeNAOJ === 'function') {
+            var _age = calcMoonAgeNAOJ(_d);
+            if (typeof _age === 'number' && isFinite(_age)) {
+              var _nm = '';
+              if (typeof _phaseNames !== 'undefined' && _phaseNames) {
+                var _raw = _phaseNames[Math.min(Math.floor(_age), _phaseNames.length - 1)] || '';
+                _nm = String(_raw).replace(/※.*$/, '').trim();   // 「※上弦」等の注記は落とす
+              }
+              _parts.push('<span class="msk-moon">' + _nm + ' 月齢' + _age.toFixed(1) + '</span>');
+            }
+          }
+        } catch(e) {}
+        try {
+          if (typeof _getSunData === 'function') {
+            var _sun = _getSunData(_d);
+            if (_sun && typeof _sun.rise === 'number' && typeof _sun.set === 'number') {
+              var _hm = function(h) {
+                var hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+                if (mm === 60) { hh += 1; mm = 0; }
+                return String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+              };
+              _parts.push('<span>日の出 ' + _hm(_sun.rise) + '／日の入 ' + _hm(_sun.set) + '</span>');
+            }
+          }
+        } catch(e) {}
+        _koyomiEl.innerHTML = _parts.join('');
+        _koyomiEl.style.display = _parts.length ? 'flex' : 'none';
       }
       var _input = document.getElementById('monthlySidebarInput');
       if (_input) _input.value = '';
@@ -50542,6 +50606,41 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-322: 祝日の完全自動計算 確認 完了');
      } catch(e) {
        ng('ST-322: 例外', e.message);
+     }
+
+     // ===== ST-323: 月間サイドバーの暦情報（v0.45.1520〜） =====
+     // 背景：日付をタップして開くサイドバーに節気と候しか出ておらず、
+     // 月間グリッドには出ている月齢・祝日すら見えなかった。こよみるの強みが
+     // 最も活きるべき面なので、祝日・月齢・日の出日の入を集約した。
+     try {
+       document.getElementById('monthlySidebarKoyomi')
+         ? ok('ST-323·①: 暦情報の表示領域DOM確認')
+         : ng('ST-323·①: monthlySidebarKoyomiが見つからない', '');
+
+       var _src323 = typeof openMonthlySidebar === 'function' ? openMonthlySidebar.toString() : '';
+       (_src323.indexOf('getHoliday') !== -1 && _src323.indexOf('calcMoonAgeNAOJ') !== -1 && _src323.indexOf('_getSunData') !== -1)
+         ? ok('ST-323·②: 祝日・月齢・日の出の3情報を組み込み確認')
+         : ng('ST-323·②: 暦情報の組み込みが不足', '');
+
+       // ③ 依存する既存関数が実在すること（第2条：呼ぶ前に存在を確かめる）
+       var _dep323 = [];
+       if (typeof getHoliday !== 'function') _dep323.push('getHoliday');
+       if (typeof calcMoonAgeNAOJ !== 'function') _dep323.push('calcMoonAgeNAOJ');
+       if (typeof _getSunData !== 'function') _dep323.push('_getSunData');
+       _dep323.length === 0
+         ? ok('ST-323·③: 依存する暦計算関数の実在を確認')
+         : ng('ST-323·③: 依存関数が見つからない', _dep323.join(', '));
+
+       // ④ 月の呼び名から「※上弦」等の注記が落ちること（挙動テスト）
+       if (typeof _phaseNames !== 'undefined' && _phaseNames && _phaseNames.length > 8) {
+         var _nm323 = String(_phaseNames[7] || '').replace(/※.*$/, '').trim();
+         _nm323.indexOf('※') === -1 && _nm323.length > 0
+           ? ok('ST-323·④: 月の呼び名の注記除去を確認（' + _nm323 + '）')
+           : ng('ST-323·④: 注記が残っている', _nm323);
+       }
+       ok('ST-323: 月間サイドバーの暦情報 確認 完了');
+     } catch(e) {
+       ng('ST-323: 例外', e.message);
      }
 
      // ===== ST-248: パスワード後付け登録機能 確認（v0.45.1355〜） =====
