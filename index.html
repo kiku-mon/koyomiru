@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1515 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1517 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1515';
+    const APP_VERSION = 'v0.45.1517';
   const APP_LAST_UPDATED = '2026-08-05'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -10228,6 +10228,36 @@ function renderTodoList() {
     }
     // マスターデータ保存
     function saveAllTasks(skipCloudSync) {
+      // v0.45.1517: 【権威】2026-08-05、月間サイドバーが独自形式のIDを作っていたため
+      // 「invalid input syntax for type uuid」でクラウド同期が失敗し、その予定だけが
+      // 他端末に永久に届かない状態が続いていた。静的な走査では見つけ切れない経路が
+      // 将来生まれても即座に気づけるよう、第4条の唯一の書き込み口であるここで
+      // ID形式を検査する。saveAllTasksを通らない書き込みは存在しないため、
+      // ここに置けば全経路を監視できる。
+      // 警告は1セッション1回・最初の3件までに抑え、通常利用の邪魔をしない。
+      try {
+        if (!window._isTesting && !window._smokeTestRunning && !window._uuidGuardWarned) {
+          var _uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          var _bad = (allTasks || []).filter(function(t) {
+            return t && t.id && typeof t.id === 'string' && !_uuidRe.test(t.id);
+          });
+          if (_bad.length > 0) {
+            window._uuidGuardWarned = true;
+            window._uuidGuardBad = _bad.map(function(t) {
+              return { id: t.id, kind: t.kind || 'task', text: (t.text || t.title || t.name || '') };
+            });
+            console.warn(
+              '[ID検査] UUID形式でないIDが ' + _bad.length + '件 あります。' +
+              'このレコードはクラウドに同期できません（uuid型カラムに弾かれます）。\n' +
+              '該当（最大3件）: ' +
+              window._uuidGuardBad.slice(0, 3).map(function(b) {
+                return b.kind + ':' + b.id + (b.text ? '（' + b.text.slice(0, 20) + '）' : '');
+              }).join(' / ') + '\n' +
+              '全件は window._uuidGuardBad で確認できます。再読み込みで自動変換されます。'
+            );
+          }
+        }
+      } catch(e) { /* 検査の失敗で保存自体を止めない */ }
       try {
         localStorage.setItem('allTasks', JSON.stringify(allTasks));
         // v0.45.1338: 無操作タイムアウト（Devise timeout_in相当）用に最終活動時刻を記録。
@@ -10579,7 +10609,7 @@ function renderTodoList() {
       var existing = allTasks.find(function(t){ return t.kind === 'deckHistory' && t.deckId === deck.deckId; });
       if (existing) return; // 重複はスキップ
       allTasks.push({
-        id: (typeof generateTaskId === 'function') ? generateTaskId() : ('dh_' + Date.now()),
+        id: (typeof generateTaskId === 'function') ? generateTaskId() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
         deckId: deck.deckId || ('manual_' + Date.now()),
         kind: 'deckHistory',
         title: deck.title || '名称不明のデッキ',
@@ -37692,7 +37722,7 @@ function _quizFinish() {
       rec.playCount = (rec.playCount || 0) + 1;
       if (score === total) rec.clearedAt = (typeof getLocalDateStr === 'function') ? getLocalDateStr(new Date()) : new Date().toISOString().slice(0,10);
     } else {
-      tasks.push({ id: (typeof generateTaskId === 'function' ? generateTaskId() : 'quiz_' + Date.now()), kind: 'quiz', lastScore: score, bestScore: score, playCount: 1, clearedAt: score === total ? new Date().toISOString().slice(0,10) : null, createdAt: new Date().toISOString() });
+      tasks.push({ id: (typeof generateTaskId === 'function' ? generateTaskId() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()))), kind: 'quiz', lastScore: score, bestScore: score, playCount: 1, clearedAt: score === total ? new Date().toISOString().slice(0,10) : null, createdAt: new Date().toISOString() });
     }
     if (typeof saveAllTasks === 'function') saveAllTasks();
     // 徳ポイント付与
@@ -50324,6 +50354,53 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-320: 例外', e.message);
      }
 
+     // ===== ST-321: レコードIDのUUID形式検査（v0.45.1517〜） =====
+     // 背景：月間サイドバーが 'task_'+時刻+乱数 という独自形式のIDを作っていたため、
+     // クラウドのuuid型カラムに弾かれ、その予定だけが他端末に届かなかった。
+     // 同じ事故を早期に検出するため、実データと実装の両面から検査する。
+     try {
+       var _uuidRe321 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+       // ① 検査ロジックが正しく判定できること（挙動テスト）
+       var _cases321 = [
+         { id: '019e2991-d37b-78eb-860e-6effffb54f57', expect: true,  label: 'UUID v7' },
+         { id: '0a233fb7-a96a-4eab-9c14-03f466cdef16', expect: true,  label: 'UUID v4' },
+         { id: 'task_1785888552778_7e92h',             expect: false, label: '旧task_形式' },
+         { id: 'dh_deck_74ffa9f6',                     expect: false, label: '旧dh_形式' },
+         { id: 'audio_1785888552778',                  expect: false, label: '旧audio_形式' }
+       ];
+       var _ng321 = _cases321.filter(function(c) { return _uuidRe321.test(c.id) !== c.expect; });
+       _ng321.length === 0
+         ? ok('ST-321·①: UUID判定ロジック確認（' + _cases321.length + '件全通過）')
+         : ng('ST-321·①: UUID判定ロジック', _ng321.map(function(c){ return c.label; }).join(', '));
+
+       // ② 保存時のガードが仕込まれていること
+       var _saveSrc321 = typeof saveAllTasks === 'function' ? saveAllTasks.toString() : '';
+       (_saveSrc321.indexOf('_uuidGuardWarned') !== -1 && _saveSrc321.indexOf('[ID検査]') !== -1)
+         ? ok('ST-321·②: saveAllTasks内のID形式ガード設置を確認')
+         : ng('ST-321·②: ID形式ガードが未設置', '');
+
+       // ③ 起動時の自動変換が仕込まれていること
+       var _bootSrc321 = _st279scriptTexts || '';
+       _bootSrc321.indexOf('_migrateNonUuidTaskIds') !== -1
+         ? ok('ST-321·③: 起動時の旧ID自動変換を確認')
+         : ng('ST-321·③: 起動時の自動変換が見つからない', '');
+
+       // ④ 実データに非UUIDが混ざっていないこと（本番データの健全性）
+       var _badReal321 = (allTasks || []).filter(function(t) {
+         if (!t || !t.id || typeof t.id !== 'string') return false;
+         if (String(t.id).indexOf('st') === 0 || String(t.id).indexOf('smoke') === 0) return false; // テスト残骸は除外
+         return !_uuidRe321.test(t.id);
+       });
+       _badReal321.length === 0
+         ? ok('ST-321·④: 全レコードのIDがUUID形式であることを確認（' + (allTasks || []).length + '件）')
+         : ng('ST-321·④: 非UUIDのIDが残っている（同期できません）',
+              _badReal321.slice(0, 3).map(function(t){ return (t.kind || 'task') + ':' + t.id; }).join(', '));
+
+       ok('ST-321: レコードIDのUUID形式検査 確認 完了');
+     } catch(e) {
+       ng('ST-321: 例外', e.message);
+     }
+
      // ===== ST-248: パスワード後付け登録機能 確認（v0.45.1355〜） =====
      // 背景：Discord等でログイン中のアカウントに、新しい別アカウントを
      // 作らせるのではなく、同じアカウントへパスワードを後付けし、
@@ -57090,7 +57167,7 @@ function _saveAudioBlob(blob) {
 
       // allTasks に kind:'audio' で登録（第29条：createTask経由不可のためSSoT直接登録）
       // ※ kind:'audio' は task でないので createTask 対象外・直接push許容
-      var id = typeof generateTaskId === 'function' ? generateTaskId() : ('audio_' + Date.now());
+      var id = typeof generateTaskId === 'function' ? generateTaskId() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
       var now = new Date().toISOString();
       var dateStr = now.slice(0, 10);
       var record = {
@@ -58120,7 +58197,7 @@ function _restoreAudiosFromFilesProcess(files) {
           });
         } else {
           // 新規：audioレコード作成
-          var newId = (typeof generateTaskId === 'function') ? generateTaskId() : ('audio_' + Date.now() + '_' + Math.random().toString(36).slice(2,8));
+          var newId = (typeof generateTaskId === 'function') ? generateTaskId() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
           var newAudio = {
             id: newId,
             kind: 'audio',
@@ -58330,7 +58407,7 @@ function _confirmAddVideoYouTube() {
   }
   var newId = (typeof generateTaskId === 'function')
     ? generateTaskId()
-    : ('video_' + Date.now() + '_' + Math.random().toString(36).slice(2,8));
+    : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
   var now = new Date().toISOString();
   // 第29条の精神：text/displayScope/section/calendarIdはタスクに準じた必須フィールド
   // 第11条：calendarIdはallSettings.calendar.listから取得
@@ -58403,7 +58480,7 @@ function _confirmAddVideoFile() {
   var _doSaveVideo = function() {
     var newId = (typeof generateTaskId === 'function')
       ? generateTaskId()
-      : ('video_' + Date.now() + '_' + Math.random().toString(36).slice(2,8));
+      : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
     var now = new Date().toISOString();
     if (window.showToast) window.showToast('💾 動画を保存中...');
     _idbPutVideo(newId, file, function(success) {
