@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1513 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1515 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1513';
+    const APP_VERSION = 'v0.45.1515';
   const APP_LAST_UPDATED = '2026-08-05'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -200,7 +200,14 @@
           dhArr.forEach(function(h) {
             var exists = allTasks.some(function(t){ return t.kind === 'deckHistory' && t.deckId === h.deckId; });
             if (!exists) {
-              allTasks.push(Object.assign({ id: 'dh_' + (h.deckId || Date.now()), createdAt: new Date().toISOString() }, h, { kind: 'deckHistory' }));
+              // v0.45.1515: 【権威】2026-08-05、ここは 'dh_'+deckId という独自形式で
+              // レコードIDを作っていた。allTasksに入る＝クラウドへ送られる対象であり、
+              // uuid型のカラムに弾かれて同期できない（月間サイドバーと同じ事故）。
+              // レコードIDはUUIDで統一する。deckIdは参照用の別フィールドなのでそのまま。
+              var _dhId = (typeof generateTaskId === 'function')
+                    ? generateTaskId()
+                    : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+              allTasks.push(Object.assign({ id: _dhId, createdAt: new Date().toISOString() }, h, { kind: 'deckHistory' }));
               changed = true;
             }
           });
@@ -17707,21 +17714,20 @@ function reviveBlueprint(id) {
       if (!text) { showToast('\u30bf\u30b9\u30af\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', {type:'warn'}); return; }
       if (!_sidebarDateStr) return;
       var calId = (allSettings.calendar && allSettings.calendar.mainId) || (calendars[0] && calendars[0].id) || 'default';
-      var newTask = {
-        // v0.45.1513: 【権威】2026-08-05、ここだけ 'task_'+時刻+乱数 という独自形式で
-        // IDを作っていたため、クラウド側（uuid型のカラム）に弾かれて
-        // 「invalid input syntax for type uuid」で同期が失敗していた。
-        // 月間サイドバーから追加した予定だけが他端末に反映されない状態だったので、
-        // 他の生成箇所と同じ generateTaskId()（UUID v7）に揃える。
-        id: (typeof generateTaskId === 'function')
-              ? generateTaskId()
-              : (crypto.randomUUID ? crypto.randomUUID() : 'task_' + Date.now()),
-        text: text, date: _sidebarDateStr, done: false,
-        section: 1, calendarId: calId,
-        createdAt: new Date().toISOString()
-      };
-      allTasks.push(newTask);
-      saveAllTasks();
+      // v0.45.1514: 【権威】2026-08-05、ここは第29条（タスク作成はcreateTask経由）に
+      // 違反しており、オブジェクトリテラルを直接pushしていた。そのためIDが
+      // 独自形式（'task_'+時刻+乱数）になり、クラウドのuuid型カラムに弾かれて
+      // 「invalid input syntax for type uuid」で同期が失敗していた。
+      // displayScope・instinct・updatedAt 等の必須フィールドも欠けていた。
+      // createTask()はpushとsaveAllTasksを内部で行うため、呼び出し側でpushしない。
+      var newTask = createTask({
+        text: text,
+        date: _sidebarDateStr,
+        section: 1,
+        calendarId: calId,
+        displayScope: 'daily_only'
+      });
+      if (!newTask) { showToast('\u8ffd\u52a0\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', {type:'warn'}); return; }
       input.value = '';
       renderMonthlySidebarTasks();
       typeof renderMonthlyView === 'function' && renderMonthlyView();
@@ -21713,6 +21719,9 @@ function reviveBlueprint(id) {
           if (_uuidRe.test(t.id)) return;                 // 正しい形式はそのまま
           if (typeof generateTaskId !== 'function') return;
           t.id = generateTaskId();
+          // 第61条：値を変更したら必ずupdatedAtも更新する。
+          // これを忘れると差分プッシュの対象から外れ、結局クラウドに上がらない。
+          t.updatedAt = new Date().toISOString();
           _fixed++;
         });
         if (_fixed > 0) {
@@ -21740,6 +21749,11 @@ function reviveBlueprint(id) {
         });
         if (removed.length > 0) {
           allTasks = allTasks.filter(function(t) { return t && keep[t.id]; });
+          // v0.45.1514: 第62条（削除操作は全kindでクラウド伝播を義務とする）。
+          // ローカルから消すだけでは、他端末に残った重複が同期で戻ってきてしまう。
+          removed.forEach(function(id) {
+            if (typeof _propagateDeletion === 'function') _propagateDeletion(id);
+          });
           saveAllTasks();
           console.info('[初期データ] 重複していた自由帳・スタンプを ' + removed.length + '件 まとめました');
         }
@@ -36055,10 +36069,10 @@ async function refreshSharedCalendarList() {
             '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' + (c.invite_code_expires_at ? new Date(c.invite_code_expires_at).toLocaleDateString('ja-JP') + 'まで有効' : '') + '</div>' +
           '</div>' +
           (_isOwner ?
-            '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\')" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
+            '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
             '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">参加している全員の画面から消えます。取り消せません。</div>'
             :
-            '<button onclick="leaveSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\')" style="width:100%;padding:9px;border:1px solid #dcdcdc;border-radius:8px;background:#fff;color:#666;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーから抜ける</button>' +
+            '<button onclick="leaveSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #dcdcdc;border-radius:8px;background:#fff;color:#666;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーから抜ける</button>' +
             '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">あなたの画面からだけ消えます。他の人には残ります。</div>') +
         '</div>' +
       '</details>';
@@ -36083,19 +36097,51 @@ async function renameSharedCalendarFromModal(calendarId, safeId) {
   _sharedCalSetStatus('✅ 名前を変更しました', 'success');
   refreshSharedCalendarList();
 }
-async function leaveSharedCalendarFromModal(calendarId, name) {
-  if (!confirm('「' + name + '」から抜けますか？\n\nあなたの画面からだけ消えます。他の人には残ります。')) return;
-  var r = await leaveSharedCalendar(calendarId);
-  if (!r || r.error) { _sharedCalSetStatus('⚠️ 抜けられませんでした', 'error'); return; }
-  _sharedCalSetStatus('✅ 「' + name + '」から抜けました', 'success');
-  refreshSharedCalendarList();
+// v0.45.1514: 【権威】2026-08-05、v0.45.1500でconfirm()を使ってしまっていたが、
+// これは第55条違反。アーティファクト環境（about:srcdoc）ではconfirm()がブロックされ、
+// ボタンを押しても何も起きないという最悪のUXになる。2クリック確認方式に改める。
+// 1回目：ボタンが赤くなり文言が変わる／3秒放置で元に戻る／2回目：実行。
+function _sharedCalConfirmButton(btn, confirmLabel, onConfirm) {
+  if (!btn) return;
+  if (btn.dataset.armed === '1') {
+    btn.dataset.armed = '0';
+    onConfirm();
+    return;
+  }
+  var _origText = btn.textContent;
+  var _origBg = btn.style.background;
+  var _origColor = btn.style.color;
+  var _origBorder = btn.style.border;
+  btn.dataset.armed = '1';
+  btn.textContent = confirmLabel;
+  btn.style.background = '#b3261e';
+  btn.style.color = '#fff';
+  btn.style.border = '1px solid #b3261e';
+  setTimeout(function() {
+    if (btn.dataset.armed === '1') {
+      btn.dataset.armed = '0';
+      btn.textContent = _origText;
+      btn.style.background = _origBg;
+      btn.style.color = _origColor;
+      btn.style.border = _origBorder;
+    }
+  }, 3000);
 }
-async function deleteSharedCalendarFromModal(calendarId, name) {
-  if (!confirm('「' + name + '」を削除しますか？\n\n参加している全員の画面から消えます。取り消せません。')) return;
-  var r = await deleteSharedCalendar(calendarId);
-  if (!r || r.error) { _sharedCalSetStatus('⚠️ 削除できませんでした', 'error'); return; }
-  _sharedCalSetStatus('✅ 「' + name + '」を削除しました', 'success');
-  refreshSharedCalendarList();
+async function leaveSharedCalendarFromModal(calendarId, name, btn) {
+  _sharedCalConfirmButton(btn, 'もう一度押すと抜けます', async function() {
+    var r = await leaveSharedCalendar(calendarId);
+    if (!r || r.error) { _sharedCalSetStatus('⚠️ 抜けられませんでした', 'error'); return; }
+    _sharedCalSetStatus('✅ 「' + name + '」から抜けました', 'success');
+    refreshSharedCalendarList();
+  });
+}
+async function deleteSharedCalendarFromModal(calendarId, name, btn) {
+  _sharedCalConfirmButton(btn, 'もう一度押すと全員から消えます', async function() {
+    var r = await deleteSharedCalendar(calendarId);
+    if (!r || r.error) { _sharedCalSetStatus('⚠️ 削除できませんでした', 'error'); return; }
+    _sharedCalSetStatus('✅ 「' + name + '」を削除しました', 'success');
+    refreshSharedCalendarList();
+  });
 }
 window.renameSharedCalendarFromModal = renameSharedCalendarFromModal;
 window.leaveSharedCalendarFromModal = leaveSharedCalendarFromModal;
