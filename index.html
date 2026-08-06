@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1534 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1535 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1534';
+    const APP_VERSION = 'v0.45.1535';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -36533,7 +36533,12 @@ async function refreshSharedCalendarList() {
   listEl.innerHTML = '<div style="font-size:0.8em;color:#8e8e8e;">読み込み中…</div>';
   var r = await listMySharedCalendars();
   if (!r || r.error) {
-    listEl.innerHTML = '<div style="font-size:0.8em;color:#b3261e;background:#fdeded;border:1px solid #f5c2c0;border-radius:8px;padding:10px 12px;">一覧を取得できませんでした。通信状況を確認してもう一度お試しください。</div>';
+    // v0.45.1535: 未ログインと通信不良は原因が違うので、伝える内容も分ける。
+    var _emsg = (r && r.error && r.error.message) ? r.error.message : '';
+    var _hint = !window._cloudIsLoggedIn
+      ? 'ログインすると、共有カレンダーを作ったり参加したりできます。右上のアカウントからどうぞ。'
+      : '通信状況を確認して、もう一度お試しください。';
+    listEl.innerHTML = '<div style="font-size:0.8em;color:#b3261e;background:#fdeded;border:1px solid #f5c2c0;border-radius:8px;padding:10px 12px;">' + _hint + '</div>';
     return;
   }
   var _hasAny = r.data && r.data.length > 0;
@@ -36790,11 +36795,24 @@ window.linkSharedCalendarToLocal = linkSharedCalendarToLocal;
 async function createSharedCalendarFromModal() {
   var input = document.getElementById('sharedCalendarNewName');
   var name = input ? input.value.trim() : '';
-  if (!name) { _sharedCalSetStatus('カレンダー名を入力してください。'); return; }
-  _sharedCalSetStatus('作成中…');
+  if (!name) { _sharedCalSetStatus('⚠️ カレンダー名を入力してください', 'error'); return; }
+  // v0.45.1535: 【権威】2026-08-06、未ログインで作成を試すと「不明なエラー」としか
+  // 出ず、何をすればよいか分からなかった。原因が分かっているものを「不明」と
+  // 呼ばないこと。共有カレンダーはアカウントに紐づくため、まずログインが要る。
+  if (!window._cloudIsLoggedIn) {
+    _sharedCalSetStatus('⚠️ 共有カレンダーを作るにはログインが必要です。右上のアカウントからログインしてください。', 'error');
+    return;
+  }
+  _sharedCalSetStatus('作成中…', 'info');
   var r = await createSharedCalendar(name);
   if (!r || r.error) {
-    _sharedCalSetStatus('⚠️ 作成に失敗しました: ' + (r && r.error ? r.error.message : '不明なエラー'));
+    var _msg = (r && r.error && r.error.message) ? r.error.message : '';
+    // 通信そのものが届かなかった場合は、原因が利用者側の環境にあることを伝える
+    if (!r || /fetch|network|load failed|postmessage|dataclone/i.test(_msg)) {
+      _sharedCalSetStatus('⚠️ 通信できませんでした。接続を確認してもう一度お試しください。', 'error');
+    } else {
+      _sharedCalSetStatus('⚠️ 作成できませんでした: ' + _msg, 'error');
+    }
     return;
   }
   // v0.45.1534: 作った本人の手元にもカレンダーを追加する。
@@ -36823,7 +36841,15 @@ async function joinSharedCalendarFromModal() {
   }
   var r = await joinSharedCalendarByCode(code);
   if (!r || r.error) {
-    _sharedCalSetStatus('⚠️ 参加に失敗しました: ' + (r && r.error ? r.error.message : '不明なエラー'));
+    // v0.45.1535: 作成側と同じ基準で、原因が分かるものは「不明」と呼ばない。
+    var _jmsg = (r && r.error && r.error.message) ? r.error.message : '';
+    if (!window._cloudIsLoggedIn) {
+      _sharedCalSetStatus('⚠️ 参加するにはログインが必要です。右上のアカウントからログインしてください。', 'error');
+    } else if (!r || /fetch|network|load failed|postmessage|dataclone/i.test(_jmsg)) {
+      _sharedCalSetStatus('⚠️ 通信できませんでした。接続を確認してもう一度お試しください。', 'error');
+    } else {
+      _sharedCalSetStatus('⚠️ 参加できませんでした: ' + _jmsg, 'error');
+    }
     return;
   }
   // v0.45.1392: 参加した共有カレンダーを、既存の「複数カレンダー管理」の
