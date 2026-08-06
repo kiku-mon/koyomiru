@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1527 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1528 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1527';
+    const APP_VERSION = 'v0.45.1528';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -36199,6 +36199,58 @@ async function unifiedPushTasks() {
 }
 
 // プル：自分の全カレンダー（個人＋共有）の最新タスクを取得し、id単位でマージ
+// v0.45.1528: 同期による再描画を、利用者の操作を邪魔しない時点まで遅らせる仕組み。
+// 【権威】2026-08-06、入力の途中で同期が走ると書きかけの内容が消えるとの報告。
+// リアルタイム更新の定石に沿い、①入力中は再描画しない ②入力を終えたらまとめて反映する。
+// 「同期を止める」のではなく「画面の描き直しだけを待たせる」のが要点。
+// データはこの時点で既に最新なので、失われるのは反映の即時性だけで済む。
+
+// いま文字を入力中か（書きかけを壊してはいけない状態か）を判定する。
+function _isUserTyping() {
+  try {
+    var el = document.activeElement;
+    if (!el) return false;
+    var tag = (el.tagName || '').toLowerCase();
+    if (tag === 'input') {
+      var t = (el.type || 'text').toLowerCase();   // ボタン・チェックボックス等は入力中ではない
+      return ['text','search','url','tel','email','password','number','date','time','datetime-local','month','week'].indexOf(t) !== -1;
+    }
+    if (tag === 'textarea') return true;
+    if (el.isContentEditable) return true;
+    return false;
+  } catch(e) { return false; }
+}
+window._isUserTyping = _isUserTyping;
+
+window._syncPendingRender = null;
+function _syncDeferredRender(renderFn) {
+  if (typeof renderFn !== 'function') return;
+  if (!_isUserTyping()) { renderFn(); return; }
+  // 入力中：最後の1件だけ覚えておく（何度届いても描き直すのは一度でよい）
+  window._syncPendingRender = renderFn;
+  if (typeof _syncLog === 'function') _syncLog('入力中のため画面の更新を保留（入力を終えたら反映します）');
+  if (!window._syncDeferBound) {
+    window._syncDeferBound = true;
+    // 入力欄から離れた時に、保留していた更新を流す
+    document.addEventListener('focusout', function() {
+      setTimeout(_syncFlushPendingRender, 60);   // 次の入力欄へ移った直後は流さない
+    }, true);
+  }
+}
+window._syncDeferredRender = _syncDeferredRender;
+
+function _syncFlushPendingRender() {
+  if (!window._syncPendingRender) return;
+  if (_isUserTyping()) return;   // まだ別の欄を触っている
+  var fn = window._syncPendingRender;
+  window._syncPendingRender = null;
+  try {
+    fn();
+    if (typeof _syncLog === 'function') _syncLog('保留していた画面の更新を反映しました');
+  } catch(e) { console.warn('[Sync] 保留更新の反映に失敗:', e && e.message); }
+}
+window._syncFlushPendingRender = _syncFlushPendingRender;
+
 async function unifiedPullTasks() {
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1340の教訓＋v0.45.1378多層防御
   if (!window.supabaseClient) return null;
@@ -36275,11 +36327,23 @@ async function unifiedPullTasks() {
       window._unifiedLastPushedSnapshot = _pullSnapshot;
     } catch(e) { console.warn('[Unified] プルスナップショット更新エラー:', e); }
     saveAllTasks(true); // v0.45.1333の教訓：ダウンロード経由の保存は再アップロード予約なし
-    renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
-    if (typeof _refreshCurrentViewForSync === 'function') _refreshCurrentViewForSync(); // v0.45.1328/1336の教訓
+    // v0.45.1528: 【権威】2026-08-06、入力の途中で同期が走ると、書きかけの内容が
+    // 再描画で消えるとの報告。データ損失であり最優先で直すべき不具合。
+    // リアルタイム更新の定石は「届いた更新を、利用者の操作を邪魔しない時点まで
+    // 遅らせる」こと。ここでは入力中かどうかを見て、そうなら再描画を保留し、
+    // 入力を終えた時点（blur）でまとめて反映する。
+    // データ自体（allTasks）は既に更新済みなので、失われるのは「画面への反映の即時性」
+    // だけであり、書きかけの文字は守られる。
+    _syncDeferredRender(function() {
+      renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
+      if (typeof _refreshCurrentViewForSync === 'function') _refreshCurrentViewForSync(); // v0.45.1328/1336の教訓
+    });
     if (typeof _syncLog === 'function') _syncLog('統一同期：プル→反映完了');
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル反映完了: allTasks=' + allTasks.length + '件に変化あり');
-    if (typeof window.showToast === 'function') window.showToast('☁️ 別端末の変更を自動反映しました');
+    // v0.45.1528: トーストは出さない。同期は日に何度も起きるため、そのたびに
+    // 画面を覆う通知が出るのは邪魔なだけで、利用者が取るべき行動も無い。
+    // 「気づかせる」のではなく「気づかせない」のが正しい同期の姿。
+    // 不具合調査用に、記録だけは上の_syncLog／_dbgLogに残している。
   }
   return r;
 }
@@ -51143,6 +51207,59 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-326: ナビタブの並び替え 確認 完了');
      } catch(e) {
        ng('ST-326: 例外', e.message);
+     }
+
+     // ===== ST-327: 入力中は同期の再描画を保留（v0.45.1528〜） =====
+     // 背景：入力の途中で同期が走ると、書きかけの内容が再描画で消えていた。
+     // データ損失にあたる重大な不具合。リアルタイム更新の定石に沿い、
+     // 「届いた更新を利用者の操作を邪魔しない時点まで遅らせる」方式に改めた。
+     try {
+       ['_isUserTyping', '_syncDeferredRender', '_syncFlushPendingRender'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-327·fn: ' + fn + ' window公開確認')
+           : ng('ST-327·fn: ' + fn + ' が未公開', '');
+       });
+       // ① 入力中でなければ即座に描画されること
+       if (typeof window._syncDeferredRender === 'function') {
+         var _ran327 = 0;
+         window._syncDeferredRender(function() { _ran327++; });
+         _ran327 === 1
+           ? ok('ST-327·①: 入力していない時は即座に反映')
+           : ng('ST-327·①: 即時反映されない', String(_ran327));
+       }
+       // ② 実際に入力欄へフォーカスした状態では保留されること（挙動テスト）
+       if (typeof window._syncDeferredRender === 'function') {
+         var _probe327 = document.createElement('input');
+         _probe327.type = 'text';
+         _probe327.style.cssText = 'position:fixed;left:-9999px;top:0;';
+         document.body.appendChild(_probe327);
+         var _prevFocus327 = document.activeElement;
+         _probe327.focus();
+         var _ran327b = 0;
+         window._syncDeferredRender(function() { _ran327b++; });
+         var _deferred327 = (_ran327b === 0 && !!window._syncPendingRender);
+         // 入力を終えたら反映されること
+         _probe327.blur();
+         if (_prevFocus327 && _prevFocus327.focus) { try { _prevFocus327.focus(); } catch(e327a) {} }
+         window._syncFlushPendingRender();
+         var _flushed327 = (_ran327b === 1);
+         _probe327.remove();
+         (_deferred327 && _flushed327)
+           ? ok('ST-327·②: 入力中は保留し、入力を終えたら反映することを確認')
+           : ng('ST-327·②: 保留または反映が働いていない', '保留=' + _deferred327 + ' 反映=' + _flushed327);
+       }
+       // ③ 同期完了のトーストを出していないこと（うるさいので廃止）
+       var _pullSrc327 = typeof unifiedPullTasks === 'function' ? unifiedPullTasks.toString() : '';
+       _pullSrc327.indexOf('別端末の変更を自動反映しました') === -1
+         ? ok('ST-327·③: 同期完了トーストが出ないことを確認')
+         : ng('ST-327·③: まだトーストを出している', '');
+       // ④ プルの反映が保留機構を通っていること
+       _pullSrc327.indexOf('_syncDeferredRender') !== -1
+         ? ok('ST-327·④: プル反映が保留機構を経由することを確認')
+         : ng('ST-327·④: 保留を経由せず直接描画している', '');
+       ok('ST-327: 入力中の再描画保留 確認 完了');
+     } catch(e) {
+       ng('ST-327: 例外', e.message);
      }
 
      // ===== ST-248: パスワード後付け登録機能 確認（v0.45.1355〜） =====
