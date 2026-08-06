@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1533 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1534 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1533';
+    const APP_VERSION = 'v0.45.1534';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -36551,6 +36551,17 @@ async function refreshSharedCalendarList() {
     _memberMap[r.data[i].id] = (mr && !mr.error && mr.data) ? mr.data : null;
   }
 
+  // v0.45.1534: v0.45.1533以前に作った共有カレンダーは、作成時にローカルへ
+  // 統合されておらず「クラウドにあるのに手元で使えない」状態で取り残されている。
+  // 一覧を開いたこの時点で補って、過去に作った分も使えるようにする。
+  var _repaired = 0;
+  r.data.forEach(function(c) {
+    if (linkSharedCalendarToLocal(c.id, c.name)) _repaired++;
+  });
+  if (_repaired > 0) {
+    console.info('[SharedCal] 手元に無かった共有カレンダー ' + _repaired + '件をカレンダー一覧に追加しました');
+  }
+
   listEl.innerHTML = r.data.map(function(c) {
     var inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(c.invite_code);
     var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(inviteUrl);
@@ -36738,6 +36749,44 @@ function shareSharedCalendarInvite(url, calendarName) {
 }
 window.copySharedCalendarInvite = copySharedCalendarInvite;
 window.shareSharedCalendarInvite = shareSharedCalendarInvite;
+// v0.45.1534: 【権威】2026-08-06、共有カレンダーを作っても手元に現れず、
+// カレンダーのチップにも設定にも出ないため予定を入れられない、との報告。
+// 原因は、参加した側にはローカルのカレンダーを作る処理があるのに、
+// 作った本人にはその処理が無かったこと。作成者だけが自分の作ったカレンダーを
+// 使えないという、あってはならない状態だった。
+// 参加時のコードをここに切り出し、作成時・参加時の両方から呼ぶ（第4条・唯一の処理）。
+// 戻り値：新しく追加したら true、既にあれば false。
+function linkSharedCalendarToLocal(cloudCalendarId, name, color) {
+  try {
+    if (!cloudCalendarId) return false;
+    if (!allSettings.calendar) allSettings.calendar = {};
+    if (!allSettings.calendar.list) allSettings.calendar.list = [];
+    var _already = allSettings.calendar.list.find(function(c) {
+      return c && c.cloudCalendarId === cloudCalendarId;
+    });
+    if (_already) return false;
+    allSettings.calendar.list.push({
+      id: (typeof generateTaskId === 'function') ? generateTaskId() : crypto.randomUUID(),
+      cloudCalendarId: cloudCalendarId,
+      name: name || '共有カレンダー',
+      color: color || '#e8a33d',
+      visible: true,
+      shareable: true,
+      isShared: true
+    });
+    calendars = allSettings.calendar.list;
+    saveAllSettings();
+    // チップと各ビューに即座に反映する（作った直後から使えるようにするため）
+    if (typeof renderCalendarFilter === 'function') renderCalendarFilter();
+    if (typeof renderAll === 'function') renderAll();
+    return true;
+  } catch(e) {
+    console.warn('[SharedCal] ローカル統合に失敗:', e && e.message);
+    return false;
+  }
+}
+window.linkSharedCalendarToLocal = linkSharedCalendarToLocal;
+
 async function createSharedCalendarFromModal() {
   var input = document.getElementById('sharedCalendarNewName');
   var name = input ? input.value.trim() : '';
@@ -36748,7 +36797,13 @@ async function createSharedCalendarFromModal() {
     _sharedCalSetStatus('⚠️ 作成に失敗しました: ' + (r && r.error ? r.error.message : '不明なエラー'));
     return;
   }
-  _sharedCalSetStatus('✅ 「' + name + '」を作成しました。招待コード: ' + r.data.invite_code);
+  // v0.45.1534: 作った本人の手元にもカレンダーを追加する。
+  // これが無いと、作成者は自分の作ったカレンダーに予定を入れられない。
+  var _linked = linkSharedCalendarToLocal(r.data.id, r.data.name || name);
+  _sharedCalSetStatus(
+    '✅ 「' + name + '」を作成しました。' +
+    (_linked ? 'カレンダー一覧に追加したので、すぐ予定を入れられます。' : '') +
+    '\n招待コード: ' + r.data.invite_code, 'success');
   if (input) input.value = '';
   refreshSharedCalendarList();
 }
@@ -36776,22 +36831,10 @@ async function joinSharedCalendarFromModal() {
   // 複数カレンダーが1つの統合ビューに表示される設計を踏襲し、大きな作り直し
   // なしで通常のタスク作成画面からそのまま使えるようにする。
   try {
-    if (!allSettings.calendar.list) allSettings.calendar.list = [];
     var _sharedCloudId = r.data;
-    var _already = allSettings.calendar.list.find(function(c){ return c.cloudCalendarId === _sharedCloudId; });
-    if (!_already && _sharedCloudId) {
-      allSettings.calendar.list.push({
-        id: generateTaskId(),
-        cloudCalendarId: _sharedCloudId,
-        name: lookup.data[0].calendar_name,
-        color: '#e8a33d',
-        visible: true,
-        shareable: true,
-        isShared: true
-      });
-      calendars = allSettings.calendar.list;
-      saveAllSettings();
-    }
+    // v0.45.1534: 統合処理は linkSharedCalendarToLocal に一本化した（第4条）。
+    // 作成時と参加時で同じ道を通るので、片方だけ直して片方が漏れることがなくなる。
+    if (_sharedCloudId) linkSharedCalendarToLocal(_sharedCloudId, lookup.data[0].calendar_name);
     // v0.45.1410: 【権威】2026-07-26、招待した側が「相手が参加したこと」を知る手段が
     // まだなかった。既存の通知基盤（フェーズA）を再利用し、'joined'という種別で
     // 記録する。相手が予定を追加・完了させれば気づけたが、参加した瞬間自体は
@@ -51273,6 +51316,46 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-328: 例外', e.message);
      }
 
+     // ===== ST-329: 共有カレンダーのローカル統合（v0.45.1534〜） =====
+     // 背景：共有カレンダーを作っても手元のカレンダー一覧に追加されず、
+     // 作成者本人が自分の作ったカレンダーに予定を入れられなかった。
+     // 参加時にはその処理があったのに、作成時だけ抜けていた。
+     try {
+       typeof window.linkSharedCalendarToLocal === 'function'
+         ? ok('ST-329·①: linkSharedCalendarToLocal window公開確認')
+         : ng('ST-329·①: 統合関数が未公開', '');
+
+       // ② 作成時にも統合処理を通ること
+       var _createSrc329 = typeof createSharedCalendarFromModal === 'function' ? createSharedCalendarFromModal.toString() : '';
+       _createSrc329.indexOf('linkSharedCalendarToLocal') !== -1
+         ? ok('ST-329·②: 作成時にローカル統合を通ることを確認')
+         : ng('ST-329·②: 作成しても手元に追加されない（作成者が使えない）', '');
+
+       // ③ 参加時も同じ関数を通ること（処理が二重化していないこと・第4条）
+       var _joinSrc329 = typeof joinSharedCalendarFromModal === 'function' ? joinSharedCalendarFromModal.toString() : '';
+       (_joinSrc329.indexOf('linkSharedCalendarToLocal') !== -1 && _joinSrc329.indexOf('isShared: true') === -1)
+         ? ok('ST-329·③: 参加時も同じ統合処理を通る（重複実装なし）')
+         : ng('ST-329·③: 参加側に別実装が残っている', '');
+
+       // ④ 二重登録されないこと（挙動テスト）
+       if (typeof window.linkSharedCalendarToLocal === 'function' && allSettings.calendar) {
+         var _listBak329 = (allSettings.calendar.list || []).slice();
+         var _testId329 = 'st329-' + Date.now();
+         var _first329  = window.linkSharedCalendarToLocal(_testId329, 'ST329テスト');
+         var _second329 = window.linkSharedCalendarToLocal(_testId329, 'ST329テスト');
+         (_first329 === true && _second329 === false)
+           ? ok('ST-329·④: 同じカレンダーを二重に追加しないことを確認')
+           : ng('ST-329·④: 二重登録される', '1回目=' + _first329 + ' 2回目=' + _second329);
+         // 第39条：テストで足したものを本番データに残さない
+         allSettings.calendar.list = _listBak329;
+         calendars = allSettings.calendar.list;
+         if (typeof saveAllSettings === 'function') saveAllSettings();
+       }
+       ok('ST-329: 共有カレンダーのローカル統合 確認 完了');
+     } catch(e) {
+       ng('ST-329: 例外', e.message);
+     }
+
      // ===== ST-327: 入力中は同期の再描画を保留（v0.45.1528〜） =====
      // 背景：入力の途中で同期が走ると、書きかけの内容が再描画で消えていた。
      // データ損失にあたる重大な不具合。リアルタイム更新の定石に沿い、
@@ -52171,8 +52254,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ④ joinSharedCalendarFromModal内にcalendar.list統合処理があるか
        var _st277joinIdx = _st277scriptTexts.indexOf('async function joinSharedCalendarFromModal()');
        var _st277joinSrc = _st277joinIdx !== -1 ? _st277scriptTexts.slice(_st277joinIdx, _st277joinIdx + 2000) : '';
-       _st277joinSrc.indexOf('isShared: true') !== -1
-         ? ok('ST-277·④: 参加時のcalendar.list統合処理確認')
+       // v0.45.1534: 統合処理は linkSharedCalendarToLocal に一本化したため、
+       // 「参加処理内に isShared: true が直接書かれているか」ではなく
+       // 「共通の統合関数を呼んでいるか」を見る形に改める。検査の意図は同じ。
+       (_st277joinSrc.indexOf('linkSharedCalendarToLocal') !== -1 && typeof window.linkSharedCalendarToLocal === 'function')
+         ? ok('ST-277·④: 参加時のcalendar.list統合処理確認（共通関数経由）')
          : ng('ST-277·④: 統合処理が見つからない', '');
        ok('ST-277: 共有カレンダーとローカルcalendar.listの統合 確認 完了');
      } catch(e) {
