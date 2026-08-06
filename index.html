@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1522 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1523 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,8 +53,8 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1522';
-  const APP_LAST_UPDATED = '2026-08-05'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.45.1523';
+  const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
       // URLパラメータ ?deck=DCK1:xxx でデッキ自動追加
@@ -26728,7 +26728,13 @@ function loadSettingsUI() {
       const navAvatar = document.getElementById('navAvatar');
       const navAvatarWrapper = document.getElementById('navAvatarWrapper');
       const navPlaceholder = document.getElementById('navAvatarPlaceholder');
-      if (savedAvatar) {
+      if (!navAvatarWrapper || !navPlaceholder) return;
+      // v0.45.1523: 【権威】2026-08-06、ログアウトしてもプロフィール画像が出たままで、
+      // 誰かがログインしているように見えるとの指摘。右上はアカウントの入口なので、
+      // 表示はログイン状態を正しく表すべき。画像そのものは消さず（再ログインで戻る）、
+      // ログアウト中は人型を出す。
+      const showAvatar = !!savedAvatar && !!window._cloudIsLoggedIn;
+      if (showAvatar) {
         navAvatar.src = savedAvatar;
         navAvatarWrapper.style.display = 'flex';
         navPlaceholder.style.display = 'none';
@@ -26737,6 +26743,7 @@ function loadSettingsUI() {
         navPlaceholder.style.display = 'inline';
       }
     }
+    window.updateNavAvatar = updateNavAvatar;
     // ===================================================
     // カレンダー管理UI
     // ===================================================
@@ -34451,26 +34458,38 @@ async function deleteSharedCalendar(calendarId) {
 }
 
 // v0.45.1522: 手元のカレンダー一覧からも共有カレンダーを取り除く。
-// これを忘れると、DBから消えてもカレンダーのチップが残り続け、
-// 「削除したのに消えない」という見え方になる。
-function _removeLocalSharedCalendar(cloudCalendarId) {
+// v0.45.1523: 【権威】2026-08-06、削除しても消えないとの再報告。原因は2つあった。
+//   ①ローカルのカレンダーが cloudCalendarId を持ったまま残るため、招待や同期の
+//     たびに共有カレンダーとして扱われ続ける（inviteToCalendarは cloudCalendarId が
+//     無ければ新規作成するので、紐付けを外さない限り復活し続ける）。
+//   ②DB側の削除が権限で弾かれて0件でも、ローカルは何も変わらない。
+// 対策として mode を設ける。
+//   'unlink' … カレンダー自体は残し、共有の紐付け（cloudCalendarId/inviteCode）だけ外す。
+//              仕事・家族など普段使いのカレンダーを消してしまわないため、こちらが既定。
+//   'remove' … カレンダーごと一覧から消す。
+function _removeLocalSharedCalendar(cloudCalendarId, mode) {
   try {
     if (!cloudCalendarId || typeof calendars === 'undefined' || !calendars) return 0;
-    var before = calendars.length;
-    var _removedIds = calendars.filter(function(c) {
+    var hit = calendars.filter(function(c) {
       return c && c.cloudCalendarId === cloudCalendarId;
-    }).map(function(c) { return c.id; });
-    if (_removedIds.length === 0) return 0;
-    calendars = calendars.filter(function(c) {
-      return !(c && c.cloudCalendarId === cloudCalendarId);
     });
+    if (hit.length === 0) return 0;
+    if (mode === 'remove') {
+      calendars = calendars.filter(function(c) {
+        return !(c && c.cloudCalendarId === cloudCalendarId);
+      });
+    } else {
+      hit.forEach(function(c) {
+        delete c.cloudCalendarId;
+        delete c.inviteCode;
+      });
+    }
     if (typeof saveCalendars === 'function') saveCalendars();
-    // 表示中のビューを描き直して、チップやフィルタからも消す
     if (typeof renderCalendarFilter === 'function') renderCalendarFilter();
     if (typeof renderAll === 'function') renderAll();
-    return before - calendars.length;
+    return hit.length;
   } catch(e) {
-    console.warn('[SharedCal] ローカル削除に失敗:', e && e.message);
+    console.warn('[SharedCal] ローカル側の解除に失敗:', e && e.message);
     return 0;
   }
 }
@@ -36384,12 +36403,15 @@ function _sharedCalConfirmButton(btn, confirmLabel, onConfirm) {
 async function leaveSharedCalendarFromModal(calendarId, name, btn) {
   _sharedCalConfirmButton(btn, 'もう一度押すと抜けます', async function() {
     var r = await leaveSharedCalendar(calendarId);
+    var _unlinkedL = (typeof _removeLocalSharedCalendar === 'function')
+      ? _removeLocalSharedCalendar(calendarId) : 0;
     if (!r || r.error) {
-      _sharedCalSetStatus('⚠️ ' + ((r && r.error && r.error.message) || '抜けられませんでした'), 'error');
+      _sharedCalSetStatus(
+        '⚠️ ' + ((r && r.error && r.error.message) || '抜けられませんでした') +
+        (_unlinkedL ? '（この端末の共有は解除しました）' : ''), 'error');
+      refreshSharedCalendarList();
       return;
     }
-    // v0.45.1522: 手元のカレンダー一覧からも取り除く。これをしないとチップが残り続ける。
-    if (typeof _removeLocalSharedCalendar === 'function') _removeLocalSharedCalendar(calendarId);
     _sharedCalSetStatus('✅ 「' + name + '」から抜けました', 'success');
     refreshSharedCalendarList();
   });
@@ -36397,12 +36419,18 @@ async function leaveSharedCalendarFromModal(calendarId, name, btn) {
 async function deleteSharedCalendarFromModal(calendarId, name, btn) {
   _sharedCalConfirmButton(btn, 'もう一度押すと全員から消えます', async function() {
     var r = await deleteSharedCalendar(calendarId);
+    // v0.45.1523: DB側が権限で弾かれても、この端末の共有だけは必ず解除する。
+    // そうしないと「削除できません」と出たまま、いつまでも共有カレンダーとして
+    // 一覧に残り続け、利用者は手の打ちようがなくなる。
+    var _unlinked = (typeof _removeLocalSharedCalendar === 'function')
+      ? _removeLocalSharedCalendar(calendarId) : 0;
     if (!r || r.error) {
-      _sharedCalSetStatus('⚠️ ' + ((r && r.error && r.error.message) || '削除できませんでした'), 'error');
+      _sharedCalSetStatus(
+        '⚠️ ' + ((r && r.error && r.error.message) || '削除できませんでした') +
+        (_unlinked ? '（この端末の共有は解除しました）' : ''), 'error');
+      refreshSharedCalendarList();
       return;
     }
-    // v0.45.1522: 手元のカレンダー一覧からも取り除く。これをしないとチップが残り続ける。
-    if (typeof _removeLocalSharedCalendar === 'function') _removeLocalSharedCalendar(calendarId);
     _sharedCalSetStatus('✅ 「' + name + '」を削除しました', 'success');
     refreshSharedCalendarList();
   });
@@ -37199,6 +37227,11 @@ async function cloudSetPasswordForCurrentAccount() {
 window.cloudSetPasswordForCurrentAccount = cloudSetPasswordForCurrentAccount;
 async function cloudLogoutFromModal() {
   await supabaseSignOut();
+  // v0.45.1523: ログアウトした瞬間に右上の表示を人型へ戻す。
+  // cloudLoginRefreshStatus経由の更新を待つと一拍遅れて見えるため、ここで即座に反映する。
+  window._cloudIsLoggedIn = false;
+  if (typeof _cloudSetNavRing === 'function') _cloudSetNavRing(false);
+  if (typeof window.updateNavAvatar === 'function') window.updateNavAvatar();
   _cloudLoginSetStatus('ログアウトしました。');
   cloudLoginRefreshStatus();
 }
@@ -37256,6 +37289,9 @@ async function cloudUpdateNavLoginIndicator() {
   } catch(e) {}
   window._cloudIsLoggedIn = loggedIn;
   _cloudSetNavRing(loggedIn);
+  // v0.45.1523: アバターの表示はログイン状態に依存するため、ここで描き直す。
+  // これが無いと、ログアウトしても次の再読み込みまで画像が出たままになる。
+  if (typeof window.updateNavAvatar === 'function') window.updateNavAvatar();
 }
 // v0.45.1312〜：Supabase Realtimeによる複数端末の即時同期
 // 背景：45秒ごとのポーリングでは「即座」の体感に届かないため、
