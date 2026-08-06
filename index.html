@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1544 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1545 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1544';
+    const APP_VERSION = 'v0.45.1545';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -26625,7 +26625,40 @@ function loadSettingsUI() {
     // ===================================================
     // カレンダー管理UI
     // ===================================================
-    function loadCalendarSettingsUI() {
+    
+// 共有をやめる。カレンダーと予定は残し、共有の紐付けだけを外す。
+// 「削除」とは別の操作として明示的に用意するのが標準（ACLを空にするのと同じ意味）。
+async function unshareCalendar(calId) {
+  var cal = (calendars || []).find(function(c) { return c && c.id === calId; });
+  if (!cal || !cal.cloudCalendarId) return null;
+  var cloudId = cal.cloudCalendarId;
+  var r = await deleteSharedCalendar(cloudId);   // オーナーなら共有そのものを畳む
+  try {
+    delete cal.cloudCalendarId;
+    delete cal.inviteCode;
+    delete cal.isShared;
+    if (typeof saveCalendars === 'function') saveCalendars();
+    // 予定は消さない。同期先だけ個人用へ戻す（手元には残り続ける）
+    var _back = 0;
+    (allTasks || []).forEach(function(t) {
+      if (!t || t.calendarId !== calId) return;
+      t.cloudCalendarId = window._personalCalendarId || null;
+      t.updatedAt = new Date().toISOString();
+      _back++;
+    });
+    if (_back > 0) saveAllTasks();
+    if (typeof unifiedRefreshMyCalendarIds === 'function') await unifiedRefreshMyCalendarIds();
+    if (typeof renderCalendarFilter === 'function') renderCalendarFilter();
+    if (typeof loadCalendarSettings === 'function') loadCalendarSettings();
+    if (typeof showToast === 'function') {
+      showToast('「' + cal.name + '」の共有をやめました（予定はそのまま残っています）');
+    }
+  } catch(e) { console.warn('[SharedCal] 共有解除に失敗:', e && e.message); }
+  return r;
+}
+window.unshareCalendar = unshareCalendar;
+
+function loadCalendarSettingsUI() {
       const list = document.getElementById('calendarSettingsList');
       if (!list) return;
       list.innerHTML = '';
@@ -26716,6 +26749,28 @@ function loadSettingsUI() {
         shareCheck.onchange = function() { updateCalendarField(idx, 'shareable', this.checked); };
         shareLabel.appendChild(shareCheck);
         shareLabel.appendChild(document.createTextNode('共有可'));
+        // v0.45.1545: 共有はカレンダーの属性なので、操作もカレンダーの行に置く。
+        // 既に共有中なら状態（人数の入口）を、そうでなければ共有を始めるボタンを出す。
+        const shareBtn = document.createElement('button');
+        const _isShared = !!cal.cloudCalendarId;
+        shareBtn.textContent = _isShared ? '👥 共有中' : '👥 共有する';
+        shareBtn.title = _isShared ? 'メンバーを確認・招待する' : 'このカレンダーを他の人と共有する';
+        shareBtn.style.cssText = 'flex-shrink:0;padding:5px 10px;border-radius:7px;font-size:0.76em;font-weight:600;cursor:pointer;white-space:nowrap;' +
+          (_isShared
+            ? 'border:1px solid #0b6bcb;background:#eaf3fc;color:#0b5bb0;'
+            : 'border:1px solid #dcdcdc;background:#fff;color:#666;');
+        shareBtn.onclick = (function(_idx, _shared) {
+          return function(e) {
+            e.stopPropagation();
+            if (_shared) {
+              // 既に共有中：メンバー確認・招待の画面へ
+              if (typeof openSharedCalendarModal === 'function') openSharedCalendarModal();
+            } else {
+              // まだ共有していない：既存のinviteToCalendarが共有カレンダーの作成まで行う
+              if (typeof inviteToCalendar === 'function') inviteToCalendar(_idx);
+            }
+          };
+        })(idx, _isShared);
         row.appendChild(handle);
         row.appendChild(colorInput);
         // 記号ピッカーボタン
@@ -26810,13 +26865,9 @@ function loadSettingsUI() {
         row.appendChild(nameInput);
         row.appendChild(visLabel);
         row.appendChild(shareLabel);
-        // v0.45.1401: 招待ボタン（そのカレンダーをそのまま招待できる）
-        var inviteBtn = document.createElement('button');
-        inviteBtn.textContent = '🔗';
-        inviteBtn.title = 'このカレンダーに招待する';
-        inviteBtn.style.cssText = 'width:30px;height:30px;border:1.5px solid #a3c9a8;border-radius:6px;background:#f4f9f5;font-size:0.95em;cursor:pointer;flex-shrink:0;padding:0;text-align:center;';
-        inviteBtn.addEventListener('click', (function(_idx){ return function(e){ e.stopPropagation(); inviteToCalendar(_idx); }; })(idx));
-        row.appendChild(inviteBtn);
+        // v0.45.1545: 🔗アイコンだけのボタンは「共有する／共有中」ボタンに統合した。
+        // 同じ役割の入口が2つあると、どちらを押せばよいか分からなくなるため（第31条）。
+        row.appendChild(shareBtn);
         // 削除ボタン（複数ある場合のみ）
         if (calendars.length > 1) {
           const delBtn = document.createElement('button');
@@ -26857,6 +26908,24 @@ function loadSettingsUI() {
         cal.cloudCalendarId = r.data.id;
         cal.inviteCode = r.data.invite_code;
         saveCalendars();
+        // v0.45.1545: 【権威】2026-08-06、業界標準では「カレンダーは器、共有はその器に
+        // 付ける属性」であり、既存のカレンダーをあとから共有に切り替えられるのが当たり前。
+        // ここはその処理にあたるが、配下の予定の同期先（cloudCalendarId）を
+        // 付け替えていなかったため、共有にしても「それまでの予定が相手に見えない」
+        // 状態になっていた。器を共有にしたら、中身も一緒に運ぶ。
+        try {
+          var _movedShare = 0;
+          (allTasks || []).forEach(function(t) {
+            if (!t || t.calendarId !== cal.id) return;
+            t.cloudCalendarId = r.data.id;
+            t.updatedAt = new Date().toISOString();   // 第61条：変更したら必ず更新（送信対象に載せる）
+            _movedShare++;
+          });
+          if (_movedShare > 0) {
+            saveAllTasks();
+            console.info('[SharedCal] 「' + cal.name + '」の予定 ' + _movedShare + '件を共有カレンダーへ移しました');
+          }
+        } catch(eMove) { console.warn('[SharedCal] 予定の付け替えに失敗:', eMove && eMove.message); }
         // v0.45.1407: 【権威】2026-07-25、参加した側には即時同期（unifiedRefreshMyCalendarIds
         // ＋unifiedPullTasks）を追加したが、作成した側（招待する側）にも同じ対応をしないと、
         // 新しく作った共有カレンダーがRealtime監視対象（_myCalendarIds）に反映されず、
