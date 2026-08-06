@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1540 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1542 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1540';
+    const APP_VERSION = 'v0.45.1542';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -158,9 +158,19 @@
               window.joinSharedCalendarFromModal();
             }
           } else {
+            // v0.45.1541: 招待リンクを踏んだのに未ログインだと、何をすればいいか
+            // 分からないまま終わる。ここが最も離脱しやすい場面なので、
+            // 何のために登録するのかを添えて、ログインの入口まで案内する。
+            // v0.45.1542: さらに、招待コードを預けておく。ログインが済んだ時点で
+            // 参加から画面遷移まで自動で再開されるので、利用者は何も覚えなくてよい。
+            if (typeof window._savePendingJoin === 'function') window._savePendingJoin(joinCode);
             if (typeof window._sharedCalSetStatus === 'function') {
-              window._sharedCalSetStatus('招待リンクから開きました。ログイン後、コードが入力済みなので「参加する」を押してください。');
+              window._sharedCalSetStatus(
+                '📩 招待リンクから開きました。ログインすると、このカレンダーの予定が見られるようになります。', 'info');
             }
+            setTimeout(function() {
+              if (typeof window.openCloudLoginModal === 'function') window.openCloudLoginModal();
+            }, 1200);
           }
         }
       }, 800); // アプリ初期化・ログイン状態確認を待つ
@@ -36601,12 +36611,72 @@ async function joinSharedCalendarFromModal() {
     if (typeof unifiedRefreshMyCalendarIds === 'function') await unifiedRefreshMyCalendarIds();
     if (typeof unifiedPullTasks === 'function') await unifiedPullTasks();
     if (typeof renderAllSections === 'function') renderAllSections();
-    _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！予定を取り込みました。');
+    _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！予定を取り込みました。', 'success');
+    // v0.45.1541: 【権威】2026-08-06、招待リンクを踏んで参加しても、モーダルが開いたままで
+    // 「どこに追加されたのか」が分からず、そのまま離脱してしまうとの指摘。
+    // 招待された人が見たいのは「その予定がいつ入っているか」なので、
+    // 参加できたら月間カレンダーまで連れて行く。ここまでやって初めて招待が成立する。
+    _goToJoinedCalendar(lookup.data[0].calendar_name);
   } catch(ePullAfterJoin) {
     console.warn('[SharedCal] 参加後の即時同期エラー:', ePullAfterJoin);
-    _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！（予定の取り込みは少し時間がかかる場合があります）');
+    _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！（予定の取り込みは少し時間がかかる場合があります）', 'success');
+    _goToJoinedCalendar(lookup.data[0].calendar_name);
   }
 }
+
+// v0.45.1542: 招待リンクを踏んだが未ログインだった人のために、招待コードを預かっておき、
+// ログインが済んだ時点で参加を再開する。Discordログインはページごと再読み込みされるため、
+// メモリ上の変数では消えてしまう。sessionStorageに置くのは、
+// タブを閉じたら自然に消えてほしい性質のもの（永続する必要がない）だから。
+var _KOYOMIRU_PENDING_JOIN = 'koyomiru_pending_join';
+function _savePendingJoin(code) {
+  try { if (code) sessionStorage.setItem(_KOYOMIRU_PENDING_JOIN, code); } catch(e) {}
+}
+function _clearPendingJoin() {
+  try { sessionStorage.removeItem(_KOYOMIRU_PENDING_JOIN); } catch(e) {}
+}
+function _getPendingJoin() {
+  try { return sessionStorage.getItem(_KOYOMIRU_PENDING_JOIN); } catch(e) { return null; }
+}
+window._savePendingJoin = _savePendingJoin;
+
+// ログイン完了時に呼ばれる。預かった招待コードがあれば、参加まで自動で進める。
+function _resumePendingJoin() {
+  var code = _getPendingJoin();
+  if (!code) return;
+  _clearPendingJoin();   // 何度も走らせない（失敗しても再試行はユーザー操作に委ねる）
+  setTimeout(function() {
+    try {
+      if (typeof window.openSharedCalendarModal !== 'function') return;
+      window.openSharedCalendarModal();
+      var input = document.getElementById('sharedCalendarJoinCode');
+      if (input) input.value = code;
+      if (typeof window._sharedCalSetStatus === 'function') {
+        window._sharedCalSetStatus('招待されたカレンダーに参加しています…', 'info');
+      }
+      if (typeof window.joinSharedCalendarFromModal === 'function') {
+        window.joinSharedCalendarFromModal();   // 成功すれば月間カレンダーまで案内される
+      }
+    } catch(e) { console.warn('[SharedCal] 参加の再開に失敗:', e && e.message); }
+  }, 900);   // ログイン直後の初期化・同期の立ち上がりを待つ
+}
+window._resumePendingJoin = _resumePendingJoin;
+
+// v0.45.1541: 参加した直後に、そのカレンダーが見える場所へ案内する。
+// 月間を選んだのは、共有カレンダーで最初に知りたいのが「いつ何があるか」の全体像だから。
+// 日次だと今日しか見えず、相手の予定がいつ入っているのか掴めない。
+function _goToJoinedCalendar(calName) {
+  try {
+    setTimeout(function() {
+      if (typeof closeSharedCalendarModal === 'function') closeSharedCalendarModal();
+      if (typeof switchView === 'function') switchView('monthly');
+      if (typeof showToast === 'function') {
+        showToast('🗓️ 「' + (calName || '共有カレンダー') + '」の予定が見られるようになりました');
+      }
+    }, 1400);   // 参加できた旨を読む時間を残してから移動する
+  } catch(e) { console.warn('[SharedCal] 参加後の画面遷移に失敗:', e && e.message); }
+}
+window._goToJoinedCalendar = _goToJoinedCalendar;
 window.openSharedCalendarModal = openSharedCalendarModal;
 window.closeSharedCalendarModal = closeSharedCalendarModal;
 window.refreshSharedCalendarList = refreshSharedCalendarList;
@@ -37601,6 +37671,13 @@ try {
         ];
         var _welcome = _welcomeMsgs[Math.floor(Math.random() * _welcomeMsgs.length)];
         if (typeof window.showToast === 'function') window.showToast(_welcome);
+        // v0.45.1542: 【権威】2026-08-06、招待リンクを踏んだ人が未ログインだった場合、
+        // ログインを促すところまでは案内できても、ログイン後に参加が再開されず、
+        // 「結局どうすればいいのか分からない」まま終わっていた。
+        // 特にDiscordログインはページごと再読み込みされるため、入力済みのコードも消える。
+        // 招待コードを保存しておき、ログインが完了した時点で参加から画面遷移まで
+        // 自動でやり切る。ここまで繋いで初めて「招待して使ってもらう」が成立する。
+        if (typeof window._resumePendingJoin === 'function') window._resumePendingJoin();
         _cloudLoginSetStatus('🎉 登録ありがとうございます。データは自動で保存されます。');
         // v0.45.1345: スモークテスト実行中（Supabase認証イベントが偶発的に発火した場合）は
         // localStorageへの書き込みを行わない（TPAGのlocalStorage汚染検知対策）。
@@ -37657,6 +37734,11 @@ try {
       }
       // v0.45.1312: 既存セッション復元時（INITIAL_SESSION）にも購読を開始する
       if (event === 'INITIAL_SESSION' && session && session.user) {
+        // v0.45.1542: Discordログインはページごと再読み込みされるため、復帰時に
+        // SIGNED_IN ではなく INITIAL_SESSION が発火する場合がある。
+        // 招待からの参加を取りこぼさないよう、こちらでも再開を試みる。
+        // （_resumePendingJoin は預かったコードを消してから動くので、二重には走らない）
+        if (typeof window._resumePendingJoin === 'function') window._resumePendingJoin();
         // v0.45.1344: 既存セッション復元時も統一エンジンを初期化する
         unifiedEnsurePersonalCalendarAndMigrate().then(function() {
           _unifiedStartRealtimeSubscription(session.user.id);
@@ -51146,6 +51228,54 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-331: カレンダー削除の3経路 確認 完了');
      } catch(e) {
        ng('ST-331: 例外', e.message);
+     }
+
+     // ===== ST-332: 招待リンクから参加までの導線（v0.45.1542〜） =====
+     // 背景：招待リンクを踏んだ人が未ログインだと、ログインを促すところまでは案内できても
+     // ログイン後に参加が再開されず、「結局どうすればいいか分からない」まま終わっていた。
+     // 特にDiscordログインはページごと再読み込みされ、入力済みのコードも消える。
+     // 招待コードを預かり、ログイン完了時に参加→月間カレンダーまで自動で繋ぐ。
+     try {
+       ['_savePendingJoin', '_resumePendingJoin', '_goToJoinedCalendar'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-332·fn: ' + fn + ' window公開確認')
+           : ng('ST-332·fn: ' + fn + ' が未公開', '');
+       });
+
+       // ① 参加後に月間カレンダーへ案内すること
+       var _gotoSrc332 = typeof _goToJoinedCalendar === 'function' ? _goToJoinedCalendar.toString() : '';
+       (_gotoSrc332.indexOf("switchView('monthly')") !== -1 && _gotoSrc332.indexOf('closeSharedCalendarModal') !== -1)
+         ? ok('ST-332·①: 参加後にモーダルを閉じて月間へ案内することを確認')
+         : ng('ST-332·①: 参加しても画面が変わらない（どこに追加されたか分からない）', '');
+
+       // ② ログイン完了時に参加が再開されること
+       var _resumeSrc332 = typeof _resumePendingJoin === 'function' ? _resumePendingJoin.toString() : '';
+       _resumeSrc332.indexOf('joinSharedCalendarFromModal') !== -1
+         ? ok('ST-332·②: ログイン後に参加を再開する実装を確認')
+         : ng('ST-332·②: ログインしても参加が再開されない', '');
+
+       // ③ 二重発火しないこと（SIGNED_IN と INITIAL_SESSION の両方から呼ばれるため）
+       _resumeSrc332.indexOf('_clearPendingJoin()') !== -1
+         ? ok('ST-332·③: 預かりを消してから動く（二重参加の防止）を確認')
+         : ng('ST-332·③: 二重に参加処理が走る危険', '');
+
+       // ④ 実挙動：預けて取り出すと消えること
+       if (typeof window._savePendingJoin === 'function') {
+         var _bak332 = null;
+         try { _bak332 = sessionStorage.getItem('koyomiru_pending_join'); } catch(e332a) {}
+         window._savePendingJoin('st332-testcode');
+         var _saved332 = null;
+         try { _saved332 = sessionStorage.getItem('koyomiru_pending_join'); } catch(e332b) {}
+         try { sessionStorage.removeItem('koyomiru_pending_join'); } catch(e332c) {}
+         // 第39条：テストで書き換えたものを元に戻す
+         try { if (_bak332 !== null) sessionStorage.setItem('koyomiru_pending_join', _bak332); } catch(e332d) {}
+         _saved332 === 'st332-testcode'
+           ? ok('ST-332·④: 招待コードを預けられることを実挙動で確認')
+           : ng('ST-332·④: 招待コードが保存されない', String(_saved332));
+       }
+       ok('ST-332: 招待リンクから参加までの導線 確認 完了');
+     } catch(e) {
+       ng('ST-332: 例外', e.message);
      }
 
      // ===== ST-327: 入力中は同期の再描画を保留（v0.45.1528〜） =====
