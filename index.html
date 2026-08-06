@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1532 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1533 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1532';
+    const APP_VERSION = 'v0.45.1533';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -14530,9 +14530,17 @@ function applyNavTabOrder() {
       var def = NAV_TAB_DEFS.filter(function(t) { return t.key === key; })[0];
       if (!def) return;
       var el = document.getElementById(def.id);
-      // v0.45.1531: 検索も並び替え対象になったため、末尾へ順に積み直す方式にする。
-      // アカウントは別のまとまり（親が違う）なので、この操作では動かない。
-      if (el && el.parentNode === parent) parent.appendChild(el);
+      // v0.45.1533: 【権威】2026-08-06、v0.45.1531で appendChild に変えたところ、
+      // ナビが右端に寄って壊れた。アカウント（navSettings）は別のまとまりではなく
+      // 同じ nav-tabs の中にあり、margin-left:auto で右端へ寄っている。
+      // その後ろに積むと、以降のタブがすべて右へ流れてしまう。
+      // 常に「アカウントの手前」に順に差し込むのが正しい。アカウントが見つからない
+      // 場合だけ末尾へ積む（DOM構造が変わっても破綻させないための保険）。
+      var _anchor = document.getElementById('navSettings');
+      if (el && el.parentNode === parent) {
+        if (_anchor && _anchor.parentNode === parent) parent.insertBefore(el, _anchor);
+        else parent.appendChild(el);
+      }
     });
   } catch(e) { console.warn('[ナビ] 並び替えに失敗:', e && e.message); }
 }
@@ -51223,6 +51231,46 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-326: ナビタブの並び替え 確認 完了');
      } catch(e) {
        ng('ST-326: 例外', e.message);
+     }
+
+     // ===== ST-328: ナビの並び順が壊れていないこと（v0.45.1533〜） =====
+     // 背景：v0.45.1531で並び替えを appendChild にしたところ、アカウント
+     // （navSettings・margin-left:autoで右端）の後ろにタブが積まれ、ナビ全体が
+     // 右へ流れて壊れた。同じ壊し方を繰り返さないよう、実DOMの並びを検査する。
+     try {
+       var _navParent328 = document.getElementById('navDaily') && document.getElementById('navDaily').parentNode;
+       var _acct328 = document.getElementById('navSettings');
+       if (!_navParent328 || !_acct328) {
+         ng('ST-328·①: ナビの要素が見つからない', '');
+       } else {
+         // ① アカウントは常に最後（これより後ろにタブがあると右流れが起きる）
+         var _kids328 = Array.prototype.filter.call(_navParent328.children, function(el) {
+           return el.id && el.id.indexOf('nav') === 0;
+         });
+         var _acctIdx328 = _kids328.indexOf(_acct328);
+         (_acctIdx328 === _kids328.length - 1)
+           ? ok('ST-328·①: アカウントがナビの最後にあることを確認')
+           : ng('ST-328·①: アカウントの後ろにタブがある（ナビが右へ流れます）',
+                _kids328.slice(_acctIdx328 + 1).map(function(e){ return e.id; }).join(','));
+         // ② 並び替え関数がアカウントを動かさないこと
+         var _src328 = typeof applyNavTabOrder === 'function' ? applyNavTabOrder.toString() : '';
+         (_src328.indexOf('navSettings') !== -1 && _src328.indexOf('insertBefore') !== -1)
+           ? ok('ST-328·②: アカウントの手前に差し込む実装を確認')
+           : ng('ST-328·②: アカウントを基準にしていない（右流れの危険）', '');
+         // ③ 並び替えを実行してもアカウントは最後のまま（実挙動）
+         if (typeof applyNavTabOrder === 'function') {
+           applyNavTabOrder();
+           var _kids328b = Array.prototype.filter.call(_navParent328.children, function(el) {
+             return el.id && el.id.indexOf('nav') === 0;
+           });
+           (_kids328b.indexOf(_acct328) === _kids328b.length - 1)
+             ? ok('ST-328·③: 並び替え実行後もアカウントが最後であることを確認')
+             : ng('ST-328·③: 並び替えでアカウントの位置が崩れた', '');
+         }
+       }
+       ok('ST-328: ナビの並び順 確認 完了');
+     } catch(e) {
+       ng('ST-328: 例外', e.message);
      }
 
      // ===== ST-327: 入力中は同期の再描画を保留（v0.45.1528〜） =====
