@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1521 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1522 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1521';
+    const APP_VERSION = 'v0.45.1522';
   const APP_LAST_UPDATED = '2026-08-05'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -34417,11 +34417,20 @@ async function renameSharedCalendar(calendarId, newName) {
 async function leaveSharedCalendar(calendarId) {
   if (window._isTesting || window._smokeTestRunning) return null;
   if (!window.supabaseClient || !window._cloudUserId) return null;
+  // v0.45.1522: 【権威】2026-08-05、削除しても消えないとの報告。
+  // Supabaseはポリシーで弾かれて0件しか消えなくても error を返さないため、
+  // 従来は「成功しました」と表示しつつ何も消えていなかった。
+  // .select() を付けて実際に消えた行を受け取り、0件なら失敗として扱う。
   var r = await window.supabaseClient.from('koyomiru_shared_calendar_members')
     .delete()
     .eq('calendar_id', calendarId)
-    .eq('user_id', window._cloudUserId);
+    .eq('user_id', window._cloudUserId)
+    .select('calendar_id');
   if (r.error) console.error('[SharedCal] 退出失敗:', r.error.message);
+  else if (!r.data || r.data.length === 0) {
+    console.warn('[SharedCal] 退出：削除された行が0件（権限設定を確認してください）');
+    return { error: { message: '権限がないため退出できませんでした' } };
+  }
   return r;
 }
 
@@ -34431,10 +34440,41 @@ async function deleteSharedCalendar(calendarId) {
   if (!window.supabaseClient) return null;
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
     .delete()
-    .eq('id', calendarId);
+    .eq('id', calendarId)
+    .select('id');
   if (r.error) console.error('[SharedCal] 削除失敗:', r.error.message);
+  else if (!r.data || r.data.length === 0) {
+    console.warn('[SharedCal] 削除：削除された行が0件（オーナー以外か、権限設定を確認してください）');
+    return { error: { message: 'オーナーのみ削除できます' } };
+  }
   return r;
 }
+
+// v0.45.1522: 手元のカレンダー一覧からも共有カレンダーを取り除く。
+// これを忘れると、DBから消えてもカレンダーのチップが残り続け、
+// 「削除したのに消えない」という見え方になる。
+function _removeLocalSharedCalendar(cloudCalendarId) {
+  try {
+    if (!cloudCalendarId || typeof calendars === 'undefined' || !calendars) return 0;
+    var before = calendars.length;
+    var _removedIds = calendars.filter(function(c) {
+      return c && c.cloudCalendarId === cloudCalendarId;
+    }).map(function(c) { return c.id; });
+    if (_removedIds.length === 0) return 0;
+    calendars = calendars.filter(function(c) {
+      return !(c && c.cloudCalendarId === cloudCalendarId);
+    });
+    if (typeof saveCalendars === 'function') saveCalendars();
+    // 表示中のビューを描き直して、チップやフィルタからも消す
+    if (typeof renderCalendarFilter === 'function') renderCalendarFilter();
+    if (typeof renderAll === 'function') renderAll();
+    return before - calendars.length;
+  } catch(e) {
+    console.warn('[SharedCal] ローカル削除に失敗:', e && e.message);
+    return 0;
+  }
+}
+window._removeLocalSharedCalendar = _removeLocalSharedCalendar;
 
 // 第3条: window公開
 window.createSharedCalendar = createSharedCalendar;
@@ -36344,7 +36384,12 @@ function _sharedCalConfirmButton(btn, confirmLabel, onConfirm) {
 async function leaveSharedCalendarFromModal(calendarId, name, btn) {
   _sharedCalConfirmButton(btn, 'もう一度押すと抜けます', async function() {
     var r = await leaveSharedCalendar(calendarId);
-    if (!r || r.error) { _sharedCalSetStatus('⚠️ 抜けられませんでした', 'error'); return; }
+    if (!r || r.error) {
+      _sharedCalSetStatus('⚠️ ' + ((r && r.error && r.error.message) || '抜けられませんでした'), 'error');
+      return;
+    }
+    // v0.45.1522: 手元のカレンダー一覧からも取り除く。これをしないとチップが残り続ける。
+    if (typeof _removeLocalSharedCalendar === 'function') _removeLocalSharedCalendar(calendarId);
     _sharedCalSetStatus('✅ 「' + name + '」から抜けました', 'success');
     refreshSharedCalendarList();
   });
@@ -36352,7 +36397,12 @@ async function leaveSharedCalendarFromModal(calendarId, name, btn) {
 async function deleteSharedCalendarFromModal(calendarId, name, btn) {
   _sharedCalConfirmButton(btn, 'もう一度押すと全員から消えます', async function() {
     var r = await deleteSharedCalendar(calendarId);
-    if (!r || r.error) { _sharedCalSetStatus('⚠️ 削除できませんでした', 'error'); return; }
+    if (!r || r.error) {
+      _sharedCalSetStatus('⚠️ ' + ((r && r.error && r.error.message) || '削除できませんでした'), 'error');
+      return;
+    }
+    // v0.45.1522: 手元のカレンダー一覧からも取り除く。これをしないとチップが残り続ける。
+    if (typeof _removeLocalSharedCalendar === 'function') _removeLocalSharedCalendar(calendarId);
     _sharedCalSetStatus('✅ 「' + name + '」を削除しました', 'success');
     refreshSharedCalendarList();
   });
@@ -36892,7 +36942,7 @@ function _renderAccountMenu() {
   }
 
   authEl.innerHTML = isIn
-    ? '<button onclick="closeAccountMenu(); cloudLogout();" style="width:100%;text-align:left;padding:11px 16px;border:none;background:none;font-size:0.87em;color:#8e8e8e;cursor:pointer;">ログアウト</button>'
+    ? '<button onclick="closeAccountMenu(); cloudLogoutFromModal();" style="width:100%;text-align:left;padding:11px 16px;border:none;background:none;font-size:0.87em;color:#8e8e8e;cursor:pointer;">ログアウト</button>'
     : '<div style="padding:2px 12px 0;">' +
         '<button onclick="closeAccountMenu(); openCloudLoginModal();" style="width:100%;padding:12px;border:none;border-radius:9px;background:#0b6bcb;color:#fff;font-size:0.89em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">ログイン / 新規登録</button>' +
         '<div style="font-size:0.72em;color:#8e8e8e;line-height:1.6;margin-top:8px;padding:0 2px 2px;">登録すると、スマホとパソコンで同じ暦を使えます。</div>' +
@@ -50771,6 +50821,49 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-324: 月間サイドバー編集フォーム 確認 完了');
      } catch(e) {
        ng('ST-324: 例外', e.message);
+     }
+
+     // ===== ST-325: onclickが呼ぶ関数の実在検査（v0.45.1522〜） =====
+     // 背景：アカウントメニューに cloudLogout() と書いたが、実在する関数名は
+     // cloudLogoutFromModal() であり、押しても何も起きなかった（第2条違反）。
+     // 目視では気づけないため、画面上のonclickが参照する関数が本当に在るかを機械的に検査する。
+     try {
+       var _els325 = document.querySelectorAll('#accountMenu [onclick], #monthlySidebarEditForm [onclick], #sharedCalendarOverlay [onclick]');
+       var _missing325 = [];
+       Array.prototype.forEach.call(_els325, function(el) {
+         var code = el.getAttribute('onclick') || '';
+         var names = code.match(/([a-zA-Z_$][\w$]*)\s*\(/g) || [];
+         names.forEach(function(raw) {
+           var fn = raw.replace(/\s*\($/, '');
+           if (['if','for','while','switch','catch','return','typeof','function'].indexOf(fn) !== -1) return;
+           var exists = false;
+           try { exists = (typeof window[fn] === 'function'); } catch(e2) {}
+           if (!exists) {
+             // window未公開でもスコープ内に在る場合があるので、定義の有無も見る
+             try { exists = new RegExp('function\\s+' + fn + '\\s*\\(').test(document.documentElement.innerHTML); } catch(e3) {}
+           }
+           if (!exists && _missing325.indexOf(fn) === -1) _missing325.push(fn);
+         });
+       });
+       _missing325.length === 0
+         ? ok('ST-325·①: 主要UIのonclickが参照する関数がすべて実在（' + _els325.length + '要素を検査）')
+         : ng('ST-325·①: 実在しない関数を呼んでいる（押しても無反応になります）', _missing325.join(', '));
+
+       // ② 共有カレンダー削除がローカル一覧からも取り除くこと
+       var _delSrc325 = typeof deleteSharedCalendarFromModal === 'function' ? deleteSharedCalendarFromModal.toString() : '';
+       _delSrc325.indexOf('_removeLocalSharedCalendar') !== -1
+         ? ok('ST-325·②: 削除時に手元のカレンダー一覧からも除去することを確認')
+         : ng('ST-325·②: ローカル一覧から消えず「削除しても残る」状態', '');
+
+       // ③ 0件削除を成功扱いにしないこと（RLSで弾かれた場合の検出）
+       var _dsSrc325 = typeof deleteSharedCalendar === 'function' ? deleteSharedCalendar.toString() : '';
+       (_dsSrc325.indexOf('.select(') !== -1 && _dsSrc325.indexOf('length === 0') !== -1)
+         ? ok('ST-325·③: 削除0件を失敗として扱う実装を確認')
+         : ng('ST-325·③: 0件でも成功と表示してしまう', '');
+
+       ok('ST-325: onclick関数の実在検査 確認 完了');
+     } catch(e) {
+       ng('ST-325: 例外', e.message);
      }
 
      // ===== ST-248: パスワード後付け登録機能 確認（v0.45.1355〜） =====
