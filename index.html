@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1524 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1525 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1524';
+    const APP_VERSION = 'v0.45.1525';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -182,7 +182,8 @@
       // dataVersionはallSettings.meta.dataVersionで管理（独立キー廃止）
     }
   })();
-      if (((window.allSettings||{}).ui||{}).gantEnabled === true) {
+      // v0.45.1525: 判定は isGantTabVisible() に一本化（管理者モード限定）
+      if (typeof window.isGantTabVisible === 'function' && window.isGantTabVisible()) {
         const gantBtn = document.getElementById('navGant');
         if (gantBtn) gantBtn.style.display = '';
       }
@@ -14401,6 +14402,24 @@ function openGouLogModal() {
   document.body.appendChild(overlay);
 }
 
+// v0.45.1525: 造営タブを表示してよいかの唯一の判断元（第4条・SSoT）。
+// 【権威】2026-08-06、造営（ガント／グランドビジョン）は概念が込み入っており、
+// 一般のお客さんには使いこなせないため、管理者モードのときだけ見せる方針とする。
+// 判定がアプリ内に散っていると片方だけ直して片方が漏れるので、ここに集約する。
+function isGantTabVisible() {
+  try {
+    if (!allSettings || !allSettings.ui) return false;
+    // 管理者モードでなければ、設定でONにしていても出さない
+    var _isAdmin = !!(allSettings.flags && allSettings.flags.adminMode) || window._adminModeActive === true;
+    if (!_isAdmin) return false;
+    var _km = (typeof KINGDOM_MODES !== 'undefined' && allSettings.ui.kingdomMode)
+      ? KINGDOM_MODES[allSettings.ui.kingdomMode] : null;
+    var _allowed = !_km || _km.gantEnabled !== false;
+    return allSettings.ui.gantEnabled === true && _allowed;
+  } catch(e) { return false; }
+}
+window.isGantTabVisible = isGantTabVisible;
+
 function applyVisibleTabsSettings() {
   if (!allSettings.ui.visibleTabs) allSettings.ui.visibleTabs = {};
   var vt = allSettings.ui.visibleTabs;
@@ -14421,12 +14440,11 @@ function applyVisibleTabsSettings() {
     el.style.display = visible ? '' : 'none';
   });
   // gantはgantEnabledとKINGDOM_MODESの両方を考慮
-  var _gantKm = (typeof KINGDOM_MODES !== 'undefined' && allSettings.ui.kingdomMode)
-    ? KINGDOM_MODES[allSettings.ui.kingdomMode] : null;
-  var _gantAllowed = !_gantKm || _gantKm.gantEnabled !== false;
-  var _gantEnabled = allSettings.ui.gantEnabled === true && _gantAllowed;
+  // v0.45.1525: 【権威】2026-08-06、造営（ガント／グランドビジョン）は概念が難しく、
+  // 一般のお客さんには使いこなせないため隠す方針。判定がアプリ内5箇所に散っていたので、
+  // ここを唯一の判断元（SSoT）とし、他はこの関数を呼ぶだけにする。
   var gantEl = document.getElementById('navGant');
-  if (gantEl) gantEl.style.display = _gantEnabled ? '' : 'none';
+  if (gantEl) gantEl.style.display = isGantTabVisible() ? '' : 'none';
   // prayerタブ（発願）: prayer.enabledで制御（SSOT: ここが唯一の制御箇所）
   var _prayerTab = document.getElementById('dailyTabPrayer');
   if (_prayerTab) {
@@ -15317,7 +15335,7 @@ function selectKingdomMode(mode) {
   applyVisibleTabsSettings();
   // 造営タブも反映
   var gantEl = document.getElementById('navGant');
-  if (gantEl) gantEl.style.display = def.gantEnabled ? '' : 'none';
+  if (gantEl) gantEl.style.display = (typeof isGantTabVisible === 'function' && isGantTabVisible()) ? '' : 'none';
   // SDFボタン（✦ 深考する）を制御
   var sdfBtn = document.getElementById('scratchSdfBtn');
   if (sdfBtn) sdfBtn.style.display = def.showSDF !== false ? '' : 'none';
@@ -15545,7 +15563,8 @@ function toggleGantEnabled(checked) {
       allSettings.ui.gantEnabled = checked;
       saveAllSettings();
       const gantBtn = document.getElementById('navGant');
-      if (gantBtn) gantBtn.style.display = checked ? '' : 'none';
+      // v0.45.1525: ONにしても管理者モードでなければ出さない（判定はisGantTabVisibleに一本化）
+      if (gantBtn) gantBtn.style.display = (typeof isGantTabVisible === 'function' && isGantTabVisible()) ? '' : 'none';
       if (!checked && currentView === 'gant') switchView('daily');
     }
     function setGantTimeScale(scale) {
@@ -24586,7 +24605,7 @@ function reviveBlueprint(id) {
       var _craftBtn = document.getElementById('navCraft');
       if (_craftBtn) _craftBtn.style.display = allSettings.ui.craftModeEnabled === true ? '' : 'none';
       var _gantBtn = document.getElementById('navGant');
-      if (_gantBtn) _gantBtn.style.display = allSettings.ui.gantEnabled === true ? '' : 'none';
+      if (_gantBtn) _gantBtn.style.display = (typeof isGantTabVisible === 'function' && isGantTabVisible()) ? '' : 'none';
       if (typeof applyVisibleTabsSettings === 'function') applyVisibleTabsSettings();
       // ナビタブ設定のチェックボックスを初期化
       var vt = allSettings.ui.visibleTabs || {};
@@ -37909,15 +37928,19 @@ try {
 
 
 // ===== 使い方クイズ =====
+// v0.45.1525: 【権威】2026-08-06、造営（グランドビジョン・志・手立て）とデッキは
+// 概念が込み入っており一般のお客さんには使いこなせないため隠す方針とした。
+// 隠した機能の場所を問う設問が残っていると、探しても見つからず不信感につながる。
+// こよみるの本筋（暦・七十二候・月齢・季節）を問う設問に差し替える。
 var _quizQuestions = [
   { q:'タスクを完了するには？', c:['タップ','長押し','スワイプ','ダブルタップ'], a:0, hint:'日次ビューのタスクをタップしてみよう', toku:10 },
   { q:'タスクを編集するには？', c:['タップ','長押し','スワイプ','ダブルタップ'], a:1, hint:'長押しで編集モーダルが開くよ', toku:10 },
   { q:'雑記帳はどのビューにある？', c:['月間','週間','日次','年間'], a:2, hint:'日次ビューの上のタブを見てみよう', toku:10 },
   { q:'徳ポイントは何で貯まる？', c:['ログイン','タスク完了','クイズ正解','デッキ受け取り'], a:1, hint:'タスクを完了するたびに徳が積まれる', toku:10 },
-  { q:'志（ビジョン）はどこで管理する？', c:['日次','月間','造営','設定'], a:2, hint:'造営ビューにグランドビジョン・志・手立て・タスクの4階層がある', toku:10 },
-  { q:'デッキコードは何で始まる？', c:['ACK1:','DCK1:','QRZ1:','GLD1:'], a:1, hint:'Deck → DCK1: だよ', toku:10 },
-  { q:'深考モードはどこから開ける？', c:['設定','図書館','雑記帳ヘッダー','造営'], a:2, hint:'雑記帳の日付の右を見てみよう', toku:10 },
-  { q:'招待コードを発行する目的は？', c:['バックアップ','徳を贈る','デッキを作る','設定を共有する'], a:1, hint:'コードを渡すと相手に徳が積まれる', toku:10 },
+  { q:'七十二候は、ひとつの候がおよそ何日？', c:['3日','5日','10日','15日'], a:1, hint:'二十四節気ひとつを3つに分けたのが七十二候だよ', toku:10 },
+  { q:'月齢15ごろの月は？', c:['新月','三日月','満月','細い月'], a:2, hint:'新月から数えて約15日で満ちるよ', toku:10 },
+  { q:'深考モードはどこから開ける？', c:['設定','図書館','雑記帳ヘッダー','ダッシュボード'], a:2, hint:'雑記帳の日付の右を見てみよう', toku:10 },
+  { q:'二十四節気は1年でいくつ？', c:['12','24','36','72'], a:1, hint:'名前のとおりだよ', toku:10 },
   { q:'貢献感は何の源泉？', c:['成長','幸福','創造','つながり'], a:1, hint:'アドラー心理学のキーワードだよ', toku:10 },
   { q:'こよみるのタグラインは？', c:['夢を叶えよう','季節と生きる、こよみる','毎日を楽しく','タスクを制す者が人生を制す'], a:1, hint:'図書館の「大切にしていること」を見てみよう', toku:10 }
 ];
