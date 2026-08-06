@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1545 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1547 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1545';
+    const APP_VERSION = 'v0.45.1547';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -151,11 +151,19 @@
           // 掛かる」との指摘を受けた。ログイン済みなら、その場で自動的に参加まで完了させる
           // （Discord/Zoomのようなワンタップ体験に近づける）。
           if (window._cloudIsLoggedIn) {
+            // v0.45.1546: 【権威】2026-08-06、従来はここで即座に参加まで済ませていたが、
+            // 「そのカレンダーでどう名乗るか」を選ぶ機会がなく、普段使いの名前が
+            // そのまま他の参加者に見えていた。場によって名乗りを変えたい人もいる
+            // （Discordのサーバー別ニックネームと同じ需要）ため、ここで一度止める。
+            // 名前は既に埋まっているので、押す手間が一つ増えるだけで済ませる。
+            try {
+              var _jn = document.getElementById('sharedCalendarJoinName');
+              if (_jn && !_jn.value) {
+                _jn.value = (window.allSettings && allSettings.profile && allSettings.profile.name) || '';
+              }
+            } catch(eJn) {}
             if (typeof window._sharedCalSetStatus === 'function') {
-              window._sharedCalSetStatus('招待リンクから参加しています…');
-            }
-            if (typeof window.joinSharedCalendarFromModal === 'function') {
-              window.joinSharedCalendarFromModal();
+              window._sharedCalSetStatus('📩 招待されています。表示名を確かめて「参加する」を押してください。', 'info');
             }
           } else {
             // v0.45.1541: 招待リンクを踏んだのに未ログインだと、何をすればいいか
@@ -34316,13 +34324,17 @@ async function lookupInviteCode(code) {
 }
 
 // 招待コードで参加する
-async function joinSharedCalendarByCode(code) {
+async function joinSharedCalendarByCode(code, displayName) {
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
   // v0.45.1408: 【権威】2026-07-25、開発者が「誰が参加したか」を管理者パネルで
-  // 把握できるようにするため、参加時に表示名も一緒に記録する。参加者側のUIは
-  // 変えず「参加しました」のみのシンプルな体験を維持する（TimeTree同様）。
-  var _displayName = (window.allSettings && allSettings.profile && allSettings.profile.name) || null;
+  // 把握できるようにするため、参加時に表示名も一緒に記録する。
+  // v0.45.1546: 【権威】2026-08-06、そのカレンダーでの表示名を参加時に指定できるようにした。
+  // 従来はプロフィール名をそのまま送っており、未設定だとnull＝「名前未設定」になっていた。
+  // 加えて、普段使いの名前がそのまま他人に見えるため、場によって名乗りを変えたい人が
+  // 困る（Discordのサーバー別ニックネームと同じ需要）。呼び出し側から受け取る形に改める。
+  var _displayName = (displayName && String(displayName).trim()) ||
+    (window.allSettings && allSettings.profile && allSettings.profile.name) || null;
   var r = await window.supabaseClient.rpc('koyomiru_join_by_invite', { code: code, p_display_name: _displayName });
   if (r.error) { console.error('[SharedCal] 参加失敗:', r.error.message); }
   else { console.log('[SharedCal] 参加OK。calendar_id=' + r.data); }
@@ -34362,6 +34374,31 @@ async function listSharedCalendarMembers(calendarId) {
   if (r.error) console.error('[SharedCal] メンバー取得失敗:', r.error.message);
   return r;
 }
+
+// v0.45.1547: 【権威】2026-08-06、共有カレンダーに参加したあと、そのカレンダーでの
+// 表示名を変える手段がなかった。DiscordやSlackがサーバー／ワークスペースごとの
+// ニックネームを後から変えられるのと同じで、名乗りは変えられて当然のもの。
+// 変えられるのは自分の名前だけにする（他人の名前を勝手に書き換えられてはならない）。
+// DB側もRLSで user_id = auth.uid() に限定しているため、二重に守られる。
+async function updateMyDisplayName(calendarId, name) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient || !window._cloudUserId) return null;
+  var _name = (name || '').trim();
+  if (!_name) return { error: { message: '表示名を入力してください' } };
+  var r = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+    .update({ display_name: _name })
+    .eq('calendar_id', calendarId)
+    .eq('user_id', window._cloudUserId)
+    .select('display_name');
+  if (r.error) console.error('[SharedCal] 表示名の変更失敗:', r.error.message);
+  else if (!r.data || r.data.length === 0) {
+    // 0件でもエラーにならないSupabaseの仕様。権限不足を見逃さない（v0.45.1522の教訓）
+    console.warn('[SharedCal] 表示名の変更：更新された行が0件');
+    return { error: { message: '変更できませんでした（権限設定を確認してください）' } };
+  }
+  return r;
+}
+window.updateMyDisplayName = updateMyDisplayName;
 
 // 共有カレンダーの名前を変更する（オーナーのみ／RLSで制御）
 async function renameSharedCalendar(calendarId, newName) {
@@ -36336,6 +36373,13 @@ window.unifiedPullSettings = unifiedPullSettings;
 
 // ===== v0.45.1342: 共有カレンダーモーダル制御 =====
 function openSharedCalendarModal() {
+  // v0.45.1546: 表示名に既定値を入れておく。気にしない人はそのまま押すだけで済む。
+  try {
+    var _nEl = document.getElementById('sharedCalendarJoinName');
+    if (_nEl && !_nEl.value) {
+      _nEl.value = (allSettings && allSettings.profile && allSettings.profile.name) || '';
+    }
+  } catch(e) {}
   var ov = document.getElementById('sharedCalendarOverlay');
   if (!ov) return;
   ov.style.display = 'flex';
@@ -36427,13 +36471,21 @@ async function refreshSharedCalendarList() {
 
     // --- メンバー表示（共有カレンダーで最も知りたい情報なので常時表示する） ---
     var _mem = _memberMap[c.id];
+    // v0.45.1547: 設定欄の初期値に使う「このカレンダーでの自分の表示名」
+    var _myName = '';
+    if (_mem) {
+      var _me = _mem.filter(function(m) { return m.user_id === window._cloudUserId; })[0];
+      _myName = (_me && _me.display_name) || '';
+    }
     var _memberHtml;
     if (!_mem) {
       _memberHtml = '<div style="font-size:0.75em;color:#aaa;">メンバーを取得できませんでした</div>';
     } else {
       _memberHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + _mem.map(function(m) {
         var _isMe = m.user_id === window._cloudUserId;
-        var _nm = m.display_name || '(名前未設定)';
+        // v0.45.1547: 名前が入っていない人の表示。自分なら設定で変えられると分かる文言、
+        // 他人なら「まだ決めていない」と分かる中立な言い方にする（「未設定」は冷たい）。
+        var _nm = m.display_name || (_isMe ? '名前を決める' : 'メンバー');
         return '<span style="font-size:0.75em;padding:3px 10px;border-radius:20px;background:' +
           (_isMe ? '#e8f2fc' : '#f2f2f2') + ';color:' + (_isMe ? '#0b5bb0' : '#555') + ';">' +
           _nm + (_isMe ? '（あなた）' : '') + '</span>';
@@ -36464,6 +36516,16 @@ async function refreshSharedCalendarList() {
       '<details style="margin-top:12px;">' +
         '<summary style="font-size:0.75em;color:#8e8e8e;cursor:pointer;">設定</summary>' +
         '<div style="margin-top:10px;">' +
+          // v0.45.1547: そのカレンダーでの自分の名乗りを、あとから変えられるようにする。
+          // 変えられるのは自分の名前だけ（他人の名前を書き換えられてはならない）。
+          '<div style="margin-bottom:14px;">' +
+            '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">このカレンダーでのあなたの表示名</div>' +
+            '<div style="display:flex;gap:6px;">' +
+              '<input id="' + safeId + '_myname" type="text" maxlength="20" value="' + (_myName || '').replace(/"/g, '&quot;') + '" placeholder="例：きくモン" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.85em;">' +
+              '<button onclick="renameMyDisplayNameFromModal(\'' + c.id + '\', \'' + safeId + '\')" style="padding:8px 14px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;white-space:nowrap;">変更</button>' +
+            '</div>' +
+            '<div style="font-size:0.68em;color:#aaa;margin-top:4px;line-height:1.5;">他の参加者にはこの名前で表示されます。</div>' +
+          '</div>' +
           _filterHtml +
           (_isOwner ?
             '<div style="margin-bottom:12px;">' +
@@ -36578,6 +36640,20 @@ async function deleteSharedCalendarFromModal(calendarId, name, btn) {
     refreshSharedCalendarList();
   });
 }
+async function renameMyDisplayNameFromModal(calendarId, safeId) {
+  var input = document.getElementById(safeId + '_myname');
+  if (!input) return;
+  var newName = (input.value || '').trim();
+  if (!newName) { _sharedCalSetStatus('⚠️ 表示名を入力してください', 'error'); return; }
+  var r = await updateMyDisplayName(calendarId, newName);
+  if (!r || r.error) {
+    _sharedCalSetStatus('⚠️ ' + ((r && r.error && r.error.message) || '表示名を変更できませんでした'), 'error');
+    return;
+  }
+  _sharedCalSetStatus('✅ 表示名を「' + newName + '」に変更しました', 'success');
+  refreshSharedCalendarList();
+}
+window.renameMyDisplayNameFromModal = renameMyDisplayNameFromModal;
 window.renameSharedCalendarFromModal = renameSharedCalendarFromModal;
 window.leaveSharedCalendarFromModal = leaveSharedCalendarFromModal;
 window.deleteSharedCalendarFromModal = deleteSharedCalendarFromModal;
@@ -36692,7 +36768,10 @@ async function joinSharedCalendarFromModal() {
     _sharedCalSetStatus('⚠️ このコードは有効期限が切れています。');
     return;
   }
-  var r = await joinSharedCalendarByCode(code);
+  // v0.45.1546: 入力された表示名を渡す（空ならプロフィール名にフォールバック）
+  var _nameEl = document.getElementById('sharedCalendarJoinName');
+  var _joinName = _nameEl ? (_nameEl.value || '').trim() : '';
+  var r = await joinSharedCalendarByCode(code, _joinName);
   if (!r || r.error) {
     // v0.45.1535: 作成側と同じ基準で、原因が分かるものは「不明」と呼ばない。
     var _jmsg = (r && r.error && r.error.message) ? r.error.message : '';
@@ -52671,10 +52750,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 折りたたみの中の保険に格下げした。
      try {
        var _st287scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       _st287scriptTexts.indexOf('window.joinSharedCalendarFromModal();') !== -1 &&
-       _st287scriptTexts.indexOf('if (window._cloudIsLoggedIn) {') !== -1
-         ? ok('ST-287·①: 招待リンクのログイン済み自動参加ロジック確認')
-         : ng('ST-287·①: 自動参加ロジックが見つからない', '');
+       // v0.45.1546: 招待リンクを開いた瞬間の「自動参加」はやめ、表示名を確かめてから
+       // 押してもらう形に改めた（そのカレンダーでの名乗りを選べるようにするため）。
+       // 検査も「コードと表示名が整った状態でモーダルが開くこと」に変える。
+       (_st287scriptTexts.indexOf('if (window._cloudIsLoggedIn) {') !== -1 &&
+        !!document.getElementById('sharedCalendarJoinName'))
+         ? ok('ST-287·①: 招待リンクで参加準備（コード＋表示名）が整うことを確認')
+         : ng('ST-287·①: 招待リンクの参加準備が見つからない', '');
        document.getElementById('sharedCalendarJoinCode')
          ? ok('ST-287·②: sharedCalendarJoinCode DOM存在確認（折りたたみ後も残存）')
          : ng('ST-287·②: 手入力欄が消えている', '');
@@ -63335,6 +63417,15 @@ window.addMigration = addMigration;
         <summary style="font-size:0.8em;color:#8e8e8e;cursor:pointer;">招待コードをお持ちの場合はこちら</summary>
         <div style="margin-top:10px;">
           <input id="sharedCalendarJoinCode" type="text" placeholder="8桁のコード" style="width:100%;padding:11px;border:1px solid #dcdcdc;border-radius:10px;font-size:0.9em;box-sizing:border-box;margin-bottom:9px;">
+          <!-- v0.45.1546: 【権威】2026-08-06、共有カレンダーでの表示名を、参加するその場で
+               決められるようにする。DiscordやSlackがサーバー／ワークスペースごとに
+               ニックネームを持てるのと同じ考え方で、人は場によって名乗りを変えてよい。
+               プロフィール名を初期値に入れてあるので、気にしない人はそのまま押すだけ。
+               ここで尋ねないと、プロフィール名が未設定の人が全員「名前未設定」になり、
+               誰の予定か分からない共有カレンダーができてしまう（実際にそうなっていた）。 -->
+          <label style="display:block;font-size:0.76em;color:#8e8e8e;margin-bottom:4px;">このカレンダーでの表示名</label>
+          <input id="sharedCalendarJoinName" type="text" placeholder="例：きくモン" maxlength="20" style="width:100%;padding:11px;border:1px solid #dcdcdc;border-radius:10px;font-size:0.9em;box-sizing:border-box;margin-bottom:4px;">
+          <div style="font-size:0.72em;color:#aaa;line-height:1.6;margin-bottom:9px;">一緒に使う人に、この名前で表示されます。あとから変えられます。</div>
           <button onclick="joinSharedCalendarFromModal()" style="width:100%;padding:11px;border:1px solid #0b6bcb;border-radius:10px;background:#fff;color:#0b5bb0;font-size:0.85em;font-weight:600;cursor:pointer;">参加する</button>
         </div>
       </details>
