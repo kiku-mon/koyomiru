@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1525 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1526 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1525';
+    const APP_VERSION = 'v0.45.1526';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -7606,6 +7606,15 @@
       <div class="settings-section" id="settingsNavTabSection">
         <h3 style="margin: 0 0 15px 0; color: #262626; font-size: 1.05em; font-weight: 600; border-bottom: 1px solid #efefef; padding-bottom: 12px;">🗂️ タブ表示</h3>
         <p style="margin:0 0 12px 0;font-size:0.8em;color:#888;">表示するタブを選択できます。🔍・⚙️は常時表示。</p>
+        <!-- v0.45.1526: 【権威】2026-08-06、「月間を左に持ってきたい」との要望。
+             使う頻度は人によって違うため、並び順を変えられるようにする。
+             新しい設定画面は作らず（第56条）、既存のタブ設定セクションに並べる。 -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.85em;font-weight:700;color:#333;margin-bottom:4px;">並び順</div>
+          <p style="margin:0 0 8px 0;font-size:0.78em;color:#888;">よく使うタブを左（上）へ動かせます。</p>
+          <div id="navTabOrderList" style="display:flex;flex-direction:column;gap:6px;"></div>
+          <button onclick="resetNavTabOrder()" style="margin-top:8px;padding:7px 14px;border:1px solid #dcdcdc;border-radius:8px;background:#fff;color:#666;font-size:0.8em;cursor:pointer;">既定の順に戻す</button>
+        </div>
         <div style="display:flex;flex-direction:column;gap:10px;">
           <label id="settingsLabelDaily" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <input type="checkbox" id="visTabDaily" onchange="toggleVisibleTab('daily',this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
@@ -8848,6 +8857,11 @@
           yearly: true, notebook: true, craft: true,
           dashboard: true,
         },
+        // v0.45.1526: ナビタブの並び順。null＝既定（HTMLの記述順）。
+        // 【権威】2026-08-06、「月間を左に持ってきたい」等、使う頻度は人によって違うため
+        // 並び替えを可能にする。keyの配列で保持し、ここに無いタブは末尾に回す。
+        // そうしておけば、将来タブが増えても既存ユーザーの設定が壊れない（第48条）。
+        tabOrder: null,
         memberFilters: {} // v0.45.1393: 共有カレンダー内メンバー表示フィルタ（calendarId→非表示ユーザーIDの配列）
       },
       occasionCategoryOrder: null,
@@ -14420,6 +14434,99 @@ function isGantTabVisible() {
 }
 window.isGantTabVisible = isGantTabVisible;
 
+// v0.45.1526: ナビタブの定義（表示制御と並び替えの唯一の元・第4条）。
+// 並び替えの対象にするタブだけをここに置く。🔍検索・⚙️アカウントは常時表示かつ
+// 位置が固定なので含めない（利用者が迷子にならないための固定席）。
+var NAV_TAB_DEFS = [
+  { id: 'navDaily',      key: 'daily',     label: '📅 日次' },
+  { id: 'navWeekly',     key: 'weekly',    label: '📊 週間' },
+  { id: 'navMonthly',    key: 'monthly',   label: '🗓️ 月間' },
+  { id: 'navYearly',     key: 'yearly',    label: '📆 年間' },
+  { id: 'navGant',       key: 'gant',      label: '🏗️ 造営' },
+  { id: 'navNotebook',   key: 'notebook',  label: '📓 自由帳' },
+  { id: 'navJournal',    key: 'journal',   label: '📖 日誌' },
+  { id: 'navPhoto',      key: 'photo',     label: '📸 写真館' },
+  { id: 'navDashboard',  key: 'dashboard', label: '📈 ダッシュボード' },
+  { id: 'navGarden',     key: 'garden',    label: '🌳 庭' }
+];
+window.NAV_TAB_DEFS = NAV_TAB_DEFS;
+
+// 設定された並び順を返す。未設定・欠けているタブは既定の順で末尾に補う。
+// こうしておけば、将来タブが増えても既存ユーザーの設定が壊れない（第48条）。
+function getNavTabOrder() {
+  var saved = (allSettings && allSettings.ui) ? allSettings.ui.tabOrder : null;
+  var defKeys = NAV_TAB_DEFS.map(function(t) { return t.key; });
+  if (!Array.isArray(saved) || saved.length === 0) return defKeys.slice();
+  var valid = saved.filter(function(k) { return defKeys.indexOf(k) !== -1; });
+  defKeys.forEach(function(k) { if (valid.indexOf(k) === -1) valid.push(k); });
+  return valid;
+}
+window.getNavTabOrder = getNavTabOrder;
+
+// 並び順をDOMに反映する。既存の並びを組み替えるだけで、新しい要素は作らない（第56条）。
+function applyNavTabOrder() {
+  try {
+    var first = document.getElementById('navDaily');
+    if (!first || !first.parentNode) return;
+    var parent = first.parentNode;
+    getNavTabOrder().forEach(function(key) {
+      var def = NAV_TAB_DEFS.filter(function(t) { return t.key === key; })[0];
+      if (!def) return;
+      var el = document.getElementById(def.id);
+      // 検索・アカウントは固定席なので、その手前に順に差し込む
+      if (el && el.parentNode === parent) parent.insertBefore(el, document.getElementById('navSearch'));
+    });
+  } catch(e) { console.warn('[ナビ] 並び替えに失敗:', e && e.message); }
+}
+window.applyNavTabOrder = applyNavTabOrder;
+
+// v0.45.1526: 設定画面の並び替えUI。ドラッグは指の操作が難しい環境（PC・スマホ双方）で
+// 取りこぼしが起きやすいため、上下ボタンの明示操作にする。押した分だけ確実に動く。
+function renderNavTabOrderUI() {
+  var wrap = document.getElementById('navTabOrderList');
+  if (!wrap || typeof getNavTabOrder !== 'function') return;
+  var order = getNavTabOrder();
+  wrap.innerHTML = order.map(function(key, i) {
+    var def = NAV_TAB_DEFS.filter(function(t) { return t.key === key; })[0];
+    if (!def) return '';
+    // 非表示のタブは薄く見せる（並びは保持されるが今は出ていない、と伝える）
+    var hidden = (key === 'gant')
+      ? !(typeof isGantTabVisible === 'function' && isGantTabVisible())
+      : (allSettings.ui.visibleTabs && allSettings.ui.visibleTabs[key] === false);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #eee;border-radius:8px;background:' + (hidden ? '#fafafa' : '#fff') + ';">' +
+      '<span style="flex:1;font-size:0.88em;color:' + (hidden ? '#bbb' : '#333') + ';">' + def.label + (hidden ? '（非表示）' : '') + '</span>' +
+      '<button onclick="moveNavTab(' + i + ',-1)" ' + (i === 0 ? 'disabled' : '') +
+        ' style="width:32px;height:32px;border:1px solid #dcdcdc;border-radius:7px;background:#fff;color:' + (i === 0 ? '#ddd' : '#555') + ';cursor:' + (i === 0 ? 'default' : 'pointer') + ';font-size:0.9em;">↑</button>' +
+      '<button onclick="moveNavTab(' + i + ',1)" ' + (i === order.length - 1 ? 'disabled' : '') +
+        ' style="width:32px;height:32px;border:1px solid #dcdcdc;border-radius:7px;background:#fff;color:' + (i === order.length - 1 ? '#ddd' : '#555') + ';cursor:' + (i === order.length - 1 ? 'default' : 'pointer') + ';font-size:0.9em;">↓</button>' +
+    '</div>';
+  }).join('');
+}
+window.renderNavTabOrderUI = renderNavTabOrderUI;
+
+function moveNavTab(index, dir) {
+  var order = getNavTabOrder();
+  var to = index + dir;
+  if (to < 0 || to >= order.length) return;
+  var tmp = order[index];
+  order[index] = order[to];
+  order[to] = tmp;
+  allSettings.ui.tabOrder = order;
+  saveAllSettings();
+  applyNavTabOrder();
+  renderNavTabOrderUI();
+}
+window.moveNavTab = moveNavTab;
+
+function resetNavTabOrder() {
+  allSettings.ui.tabOrder = null;
+  saveAllSettings();
+  applyNavTabOrder();
+  renderNavTabOrderUI();
+  if (typeof showToast === 'function') showToast('タブの並びを既定に戻しました');
+}
+window.resetNavTabOrder = resetNavTabOrder;
+
 function applyVisibleTabsSettings() {
   if (!allSettings.ui.visibleTabs) allSettings.ui.visibleTabs = {};
   var vt = allSettings.ui.visibleTabs;
@@ -14445,6 +14552,9 @@ function applyVisibleTabsSettings() {
   // ここを唯一の判断元（SSoT）とし、他はこの関数を呼ぶだけにする。
   var gantEl = document.getElementById('navGant');
   if (gantEl) gantEl.style.display = isGantTabVisible() ? '' : 'none';
+  // v0.45.1526: 表示・非表示を決めたあとに並び順を反映する。
+  // 順序を先に当てると、後から display を変えたタブが元の位置に見えてしまう。
+  applyNavTabOrder();
   // prayerタブ（発願）: prayer.enabledで制御（SSOT: ここが唯一の制御箇所）
   var _prayerTab = document.getElementById('dailyTabPrayer');
   if (_prayerTab) {
@@ -26538,6 +26648,8 @@ var OFFICIAL_DECKS = [
 function loadSettingsUI() {
       // モードに応じた設定セクション表示制御
       if (typeof applySettingsSectionVisibility === 'function') applySettingsSectionVisibility();
+      // v0.45.1526: ナビタブの並び替えUIを描く（開くたびに現在の並びを反映する）
+      if (typeof renderNavTabOrderUI === 'function') renderNavTabOrderUI();
       // スマホナビ配置ラジオボタンを反映
       var _mnp = allSettings.ui.mobileNavPosition || 'top';
       document.querySelectorAll('input[name="mobileNavPosition"]').forEach(function(r) {
@@ -50936,6 +51048,48 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-325: onclick関数の実在検査 確認 完了');
      } catch(e) {
        ng('ST-325: 例外', e.message);
+     }
+
+     // ===== ST-326: ナビタブの並び替え（v0.45.1526〜） =====
+     // 背景：タブは表示/非表示しか変えられず、よく使うタブを左へ持ってこられなかった。
+     // 並び順を allSettings.ui.tabOrder（keyの配列）で保持する。第48条に従い、
+     // 将来タブが増えても既存ユーザーの設定が壊れない作りになっているかを検証する。
+     try {
+       ['getNavTabOrder', 'applyNavTabOrder', 'moveNavTab', 'resetNavTabOrder', 'renderNavTabOrderUI'].forEach(function(fn) {
+         typeof window[fn] === 'function'
+           ? ok('ST-326·fn: ' + fn + ' window公開確認')
+           : ng('ST-326·fn: ' + fn + ' が未公開', '');
+       });
+       document.getElementById('navTabOrderList')
+         ? ok('ST-326·DOM: 並び替えUIの領域確認')
+         : ng('ST-326·DOM: navTabOrderListが見つからない', '');
+
+       if (typeof window.getNavTabOrder === 'function' && typeof NAV_TAB_DEFS !== 'undefined') {
+         var _saved326 = allSettings.ui.tabOrder;
+         var _defLen326 = NAV_TAB_DEFS.length;
+         // ① 未設定なら既定の順
+         allSettings.ui.tabOrder = null;
+         var _o1 = window.getNavTabOrder();
+         (_o1.length === _defLen326 && _o1[0] === NAV_TAB_DEFS[0].key)
+           ? ok('ST-326·①: 未設定時は既定の順を返す')
+           : ng('ST-326·①: 既定の順にならない', _o1.join(','));
+         // ② 一部だけ保存されていても全タブが揃う（第48条：将来タブが増えても壊れない）
+         allSettings.ui.tabOrder = ['monthly'];
+         var _o2 = window.getNavTabOrder();
+         (_o2[0] === 'monthly' && _o2.length === _defLen326)
+           ? ok('ST-326·②: 保存分を先頭に、残りは既定順で補完')
+           : ng('ST-326·②: 補完されない', _o2.join(','));
+         // ③ 壊れた値でも落ちない
+         allSettings.ui.tabOrder = 'broken';
+         var _o3 = window.getNavTabOrder();
+         (_o3.length === _defLen326)
+           ? ok('ST-326·③: 不正な値でも既定に戻して復旧')
+           : ng('ST-326·③: 不正値で壊れる', String(_o3));
+         allSettings.ui.tabOrder = _saved326;   // 第39条：本番の設定を汚さない
+       }
+       ok('ST-326: ナビタブの並び替え 確認 完了');
+     } catch(e) {
+       ng('ST-326: 例外', e.message);
      }
 
      // ===== ST-248: パスワード後付け登録機能 確認（v0.45.1355〜） =====
