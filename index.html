@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1549 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1551 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1549';
+    const APP_VERSION = 'v0.45.1551';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6058,6 +6058,9 @@
         <button class="monthly-sidebar-save" onclick="saveMonthlySidebarTask()">追加</button>
       </div>
       <!-- タスク一覧 -->
+      <!-- v0.45.1551: どのカレンダーに入るかを、押す前に見せる。
+           これが見えないまま入力させると「入れたのに出てこない」が繰り返される。 -->
+      <div id="monthlySidebarTarget" style="font-size:11px;color:#8e8e8e;padding:0 16px 8px;"></div>
       <div class="monthly-sidebar-tasks" id="monthlySidebarTasks"></div>
       <!-- インライン編集フォーム（タスクタップで表示） -->
       <div id="monthlySidebarEditForm" class="monthly-sidebar-edit-form" style="display:none;">
@@ -18044,6 +18047,20 @@ function reviveBlueprint(id) {
         _koyomiEl.innerHTML = _parts.join('');
         _koyomiEl.style.display = _parts.length ? 'flex' : 'none';
       }
+      // v0.45.1551: 投入先のカレンダーを表示する（押す前にどこへ入るか分かるように）
+      try {
+        var _tgtEl = document.getElementById('monthlySidebarTarget');
+        if (_tgtEl && typeof _monthlySidebarTargetCalId === 'function') {
+          var _tid = _monthlySidebarTargetCalId();
+          var _tcal = (calendars || []).filter(function(c) { return c && c.id === _tid; })[0];
+          var _tname = (_tcal && _tcal.name) || '';
+          var _shared = !!(_tcal && _tcal.cloudCalendarId);
+          _tgtEl.innerHTML = _tname
+            ? ('追加先：<b style="color:#555;">' + _tname + '</b>' +
+               (_shared ? '<span style="color:#0b6bcb;"> 👥 共有中</span>' : ''))
+            : '';
+        }
+      } catch(eTgt) {}
       var _input = document.getElementById('monthlySidebarInput');
       if (_input) _input.value = '';
       closeMsbEdit();
@@ -18064,13 +18081,33 @@ function reviveBlueprint(id) {
       closeMsbEdit();
     }
 
-    function saveMonthlySidebarTask() {
+    // v0.45.1551: 月間サイドバーから追加した予定を、どのカレンダーへ入れるか。
+// 絞り込みが1つに定まっているなら、その文脈に従う（見ているカレンダーに入る）。
+// 絞り込みが無い／複数なら、メインカレンダーへ。判断を1箇所に集約する（第4条）。
+function _monthlySidebarTargetCalId() {
+  try {
+    if (typeof activeCalendarIds !== 'undefined' && activeCalendarIds && activeCalendarIds.size === 1) {
+      var _only = Array.from(activeCalendarIds)[0];
+      if ((calendars || []).some(function(c) { return c && c.id === _only; })) return _only;
+    }
+  } catch(e) {}
+  return (allSettings.calendar && allSettings.calendar.mainId) || (calendars[0] && calendars[0].id) || 'default';
+}
+window._monthlySidebarTargetCalId = _monthlySidebarTargetCalId;
+
+function saveMonthlySidebarTask() {
       var input = document.getElementById('monthlySidebarInput');
       if (!input) return;
       var text = input.value.trim();
       if (!text) { showToast('\u30bf\u30b9\u30af\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044', {type:'warn'}); return; }
       if (!_sidebarDateStr) return;
-      var calId = (allSettings.calendar && allSettings.calendar.mainId) || (calendars[0] && calendars[0].id) || 'default';
+      // v0.45.1551: 【権威】2026-08-06、月間で特定のカレンダーだけに絞り込んでいるのに、
+      // 追加した予定がメインカレンダーへ入ってしまうとの指摘。
+      // 「このカレンダーを見ている」という文脈があるのに別の場所へ入るのは裏切りであり、
+      // しかも入れた予定がその場に現れないため、利用者は何が起きたか分からない。
+      // 絞り込みが1つに定まっているときは、その文脈に従う。
+      // 絞り込みが無い／複数のときは、従来どおりメインカレンダーへ入れる。
+      var calId = _monthlySidebarTargetCalId();
       // v0.45.1514: 【権威】2026-08-05、ここは第29条（タスク作成はcreateTask経由）に
       // 違反しており、オブジェクトリテラルを直接pushしていた。そのためIDが
       // 独自形式（'task_'+時刻+乱数）になり、クラウドのuuid型カラムに弾かれて
@@ -18082,7 +18119,12 @@ function reviveBlueprint(id) {
         date: _sidebarDateStr,
         section: 1,
         calendarId: calId,
-        displayScope: 'daily_only'
+        // v0.45.1550: 【権威】2026-08-06、月間サイドバーから追加した予定が
+        // 月間カレンダーの升目に描かれないとの報告。原因は v0.45.1514 で
+        // displayScope に 'daily_only' を指定したこと。第10条が名指しで警告している
+        // 「サイレントな表示漏れ」そのもので、日次ビューにしか出ない設定だった。
+        // 月間から入れた予定は月間に見えなければ意味がないので 'both' にする。
+        displayScope: 'both'
       });
       if (!newTask) { showToast('\u8ffd\u52a0\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', {type:'warn'}); return; }
       input.value = '';
@@ -22097,6 +22139,73 @@ function reviveBlueprint(id) {
           console.info('[共有] 同期先がずれていた予定 ' + _fixed + '件を正しい共有カレンダーへ結び直しました');
         }
       } catch(e) { console.warn('[共有] 同期先の修復に失敗:', e && e.message); }
+    })();
+    // v0.45.1550: 【権威】2026-08-06、v0.45.1514〜1549の間に月間サイドバーから
+    // 追加した予定は displayScope='daily_only' で作られており、月間の升目に
+    // 描かれないまま取り残されている。第10条が警告する「サイレントな表示漏れ」。
+    // カレンダーを指定して入れた予定は月間で見たいのが自然なので 'both' に直す。
+    // 「入れたのに見えない」状態を放置するほうが害が大きい。
+    (function _repairMonthlyInvisibleTasks() {
+      try {
+        if (window._isTesting || window._smokeTestRunning) return;
+        var _fixedIds2 = [], _n2 = 0;
+        (allTasks || []).forEach(function(t) {
+          if (!t || (t.kind && t.kind !== 'task')) return;
+          if (t.displayScope !== 'daily_only') return;
+          if (!t.calendarId || t.calendarId === 'default') return;   // カレンダー指定なしは対象外
+          t.displayScope = 'both';
+          t.updatedAt = new Date().toISOString();   // 第61条：変更したら必ず更新
+          _fixedIds2.push(t.id);
+          _n2++;
+        });
+        if (_n2 > 0) {
+          saveAllTasks();
+          try {
+            var _snap2 = window._unifiedLastPushedSnapshot;
+            if (_snap2) _fixedIds2.forEach(function(id) { delete _snap2[id]; });
+          } catch(eS) {}
+          console.info('[表示] 月間に出ていなかった予定 ' + _n2 + '件を月間にも表示するようにしました');
+        }
+      } catch(e) { console.warn('[表示] 月間表示の修復に失敗:', e && e.message); }
+    })();
+    // v0.45.1551: 【権威】2026-08-06、診断で参照切れの予定が51件見つかった。
+    // カレンダーIDは端末ごとに別々に作られるのに、タスクと一緒に同期されるため、
+    // 別端末で作った予定や、作り直される前のカレンダーを指した予定が、
+    // どのチップにも乗らず絞り込みからも漏れる迷子になっていた。
+    // 結び直しの手がかりは cloudCalendarId（全端末で共通）。それも無ければ
+    // メインカレンダーへ寄せる。予定そのものは絶対に消さない。
+    (function _repairOrphanCalendarRefs() {
+      try {
+        if (window._isTesting || window._smokeTestRunning) return;
+        var _cl = (allSettings.calendar && allSettings.calendar.list) || [];
+        if (_cl.length === 0) return;
+        var _known = {}, _byCloud = {};
+        _cl.forEach(function(c) {
+          if (!c || !c.id) return;
+          _known[c.id] = true;
+          if (c.cloudCalendarId) _byCloud[c.cloudCalendarId] = c.id;
+        });
+        var _mainId = (allSettings.calendar && allSettings.calendar.mainId) || (_cl[0] && _cl[0].id) || null;
+        if (!_mainId) return;
+        var _n = 0, _ids = [];
+        (allTasks || []).forEach(function(t) {
+          if (!t || !t.calendarId) return;
+          if (_known[t.calendarId]) return;                 // 正しく紐づいている
+          var _dest = (t.cloudCalendarId && _byCloud[t.cloudCalendarId]) || _mainId;
+          t.calendarId = _dest;
+          t.updatedAt = new Date().toISOString();           // 第61条：変更したら必ず更新
+          _ids.push(t.id);
+          _n++;
+        });
+        if (_n > 0) {
+          saveAllTasks();
+          try {
+            var _sn = window._unifiedLastPushedSnapshot;
+            if (_sn) _ids.forEach(function(id) { delete _sn[id]; });
+          } catch(eS) {}
+          console.info('[カレンダー] 迷子になっていた予定 ' + _n + '件を、正しいカレンダーに結び直しました');
+        }
+      } catch(e) { console.warn('[カレンダー] 参照切れの修復に失敗:', e && e.message); }
     })();
     initStampDefs();
     // v0.45.1511: 【権威】2026-08-04、まっさらな環境（プライベートウィンドウ）で
@@ -36242,6 +36351,18 @@ async function unifiedPullTasks() {
     if (deletedIds.has(row.id)) return;
     var incoming = row.data;
     incoming.cloudCalendarId = row.calendar_id;
+    // v0.45.1551: 【権威】2026-08-06、診断でタスクの参照切れが51件見つかった。
+    // 原因は、カレンダーIDが端末ごとに別々に作られるのに、タスクと一緒に
+    // 同期されていること。別端末で作った予定は、こちらに存在しないカレンダーを
+    // 指したまま届き、チップにも絞り込みにも乗らない迷子になる。
+    // クラウドのカレンダーIDは全端末で共通なので、それを手がかりに
+    // 「この端末での」カレンダーへ結び直す。これで端末をまたいでも所属が揃う。
+    try {
+      var _localCal = (calendars || []).filter(function(c) {
+        return c && c.cloudCalendarId === row.calendar_id;
+      })[0];
+      if (_localCal) incoming.calendarId = _localCal.id;
+    } catch(eMap) {}
     // v0.45.1393: 【メンバー表示フィルタ】row.created_by（実際のユーザーID・
     // t.ownerIdの端末IDとは別物）をタスクオブジェクトにも埋め込む。共有カレンダーで
     // 「誰が作ったタスクか」をローカルの表示フィルタで判定できるようにするため。
