@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1547 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1548 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1547';
+    const APP_VERSION = 'v0.45.1548';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -26640,11 +26640,22 @@ async function unshareCalendar(calId) {
   var cal = (calendars || []).find(function(c) { return c && c.id === calId; });
   if (!cal || !cal.cloudCalendarId) return null;
   var cloudId = cal.cloudCalendarId;
-  var r = await deleteSharedCalendar(cloudId);   // オーナーなら共有そのものを畳む
+  // v0.45.1548: オーナーは共有そのものを畳み、参加者は自分が抜ける。
+  // 参加者が deleteSharedCalendar を呼んでも権限で弾かれるだけなので、正しく呼び分ける。
+  var _isOwner = (cal.sharedOwner !== false);
+  var r = _isOwner ? await deleteSharedCalendar(cloudId) : await leaveSharedCalendar(cloudId);
   try {
-    delete cal.cloudCalendarId;
-    delete cal.inviteCode;
-    delete cal.isShared;
+    if (_isOwner) {
+      // オーナー：自分のカレンダーなので器は残す。共有の紐付けだけ外す
+      delete cal.cloudCalendarId;
+      delete cal.inviteCode;
+      delete cal.isShared;
+      delete cal.sharedOwner;
+    } else {
+      // 参加者：もともと相手のカレンダーなので、手元に残しても意味がない。一覧から消す
+      var _ci = calendars.indexOf(cal);
+      if (_ci !== -1) calendars.splice(_ci, 1);
+    }
     if (typeof saveCalendars === 'function') saveCalendars();
     // 予定は消さない。同期先だけ個人用へ戻す（手元には残り続ける）
     var _back = 0;
@@ -26779,6 +26790,44 @@ function loadCalendarSettingsUI() {
             }
           };
         })(idx, _isShared);
+        // v0.45.1548: 共有中のカレンダーには「共有をやめる」を並べる。
+        // 業界標準では「共有をやめる（器は残る）」と「カレンダーを削除（器ごと消える）」は
+        // 別の操作。利用者に選ばせるべきものを自動で決めてはいけない。
+        // オーナーなら共有そのものを畳み、参加者なら自分が抜ける（操作の意味が違う）。
+        var unshareBtn = null;
+        if (_isShared) {
+          var _isOwnerCal = (cal.sharedOwner !== false);   // 記録が無い古いものはオーナー扱い
+          unshareBtn = document.createElement('button');
+          unshareBtn.textContent = _isOwnerCal ? '共有をやめる' : '抜ける';
+          unshareBtn.title = _isOwnerCal
+            ? '共有を終了します。カレンダーと予定は手元に残ります'
+            : 'この共有カレンダーから抜けます。相手の予定には影響しません';
+          unshareBtn.style.cssText = 'flex-shrink:0;padding:5px 9px;border:1px solid #dcdcdc;border-radius:7px;background:#fff;color:#888;font-size:0.74em;cursor:pointer;white-space:nowrap;';
+          unshareBtn.onclick = (function(_calId, _btn, _owner, _name) {
+            return function(e) {
+              e.stopPropagation();
+              // 第55条：confirmは使わず2クリック方式で確かめる
+              if (_btn.dataset.armed === '1') {
+                _btn.dataset.armed = '0';
+                if (typeof unshareCalendar === 'function') unshareCalendar(_calId);
+                return;
+              }
+              _btn.dataset.armed = '1';
+              var _orig = _btn.textContent;
+              _btn.textContent = 'もう一度押すと' + (_owner ? '共有終了' : '退出');
+              _btn.style.borderColor = '#b3261e';
+              _btn.style.color = '#b3261e';
+              setTimeout(function() {
+                if (_btn.dataset.armed === '1') {
+                  _btn.dataset.armed = '0';
+                  _btn.textContent = _orig;
+                  _btn.style.borderColor = '#dcdcdc';
+                  _btn.style.color = '#888';
+                }
+              }, 3000);
+            };
+          })(cal.id, unshareBtn, _isOwnerCal, cal.name);
+        }
         row.appendChild(handle);
         row.appendChild(colorInput);
         // 記号ピッカーボタン
@@ -26876,6 +26925,7 @@ function loadCalendarSettingsUI() {
         // v0.45.1545: 🔗アイコンだけのボタンは「共有する／共有中」ボタンに統合した。
         // 同じ役割の入口が2つあると、どちらを押せばよいか分からなくなるため（第31条）。
         row.appendChild(shareBtn);
+        if (unshareBtn) row.appendChild(unshareBtn);
         // 削除ボタン（複数ある場合のみ）
         if (calendars.length > 1) {
           const delBtn = document.createElement('button');
@@ -26915,6 +26965,10 @@ function loadCalendarSettingsUI() {
         }
         cal.cloudCalendarId = r.data.id;
         cal.inviteCode = r.data.invite_code;
+        // v0.45.1548: 自分が共有を始めた＝このカレンダーのオーナー。
+        // 共有をやめるとき、オーナーなら「共有そのものを畳む」、参加者なら「自分が抜ける」と
+        // 操作が変わるため、どちらなのかを手元に残しておく。
+        cal.sharedOwner = true;
         saveCalendars();
         // v0.45.1545: 【権威】2026-08-06、業界標準では「カレンダーは器、共有はその器に
         // 付ける属性」であり、既存のカレンダーをあとから共有に切り替えられるのが当たり前。
@@ -36702,6 +36756,7 @@ function linkSharedCalendarToLocal(cloudCalendarId, name, color) {
     allSettings.calendar.list.push({
       id: (typeof generateTaskId === 'function') ? generateTaskId() : crypto.randomUUID(),
       cloudCalendarId: cloudCalendarId,
+      sharedOwner: false,   // v0.45.1548: 招待されて参加した側。抜けることはできるが削除はできない
       name: name || '共有カレンダー',
       color: color || '#e8a33d',
       visible: true,
