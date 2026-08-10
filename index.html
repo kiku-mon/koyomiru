@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1557 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1558 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1557';
+    const APP_VERSION = 'v0.45.1558';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6055,7 +6055,19 @@
         </div>
         <button class="monthly-sidebar-close" onclick="closeMonthlySidebar()">✕</button>
       </div>
-      <!-- クイック追加 -->
+      <!-- v0.45.1558: 【権威】2026-08-06、スマホで日付をタップすると、入力欄が
+           真っ先に目に入るため「新規作成が始まった」ように見えるとの指摘。
+           日付のタップは「見る」ためのものであり、作成は明示的な操作であるべき。
+           定石でも、作成は＋ボタン（FAB）から始め、日付のタップは閲覧に使う
+           切り分けが採られている（Googleカレンダーも同じ形）。
+           入力エリアは既定で畳み、＋を押したときだけ開く。 -->
+      <div class="monthly-sidebar-addbar" style="display:flex;justify-content:flex-end;padding:0 16px 8px;">
+        <button id="monthlySidebarAddBtn" onclick="toggleMonthlySidebarAdd()"
+          style="display:flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:20px;background:#0b6bcb;color:#fff;font-size:0.82em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);font-family:inherit;">
+          <span style="font-size:1.1em;line-height:1;">＋</span>予定を追加
+        </button>
+      </div>
+      <div id="monthlySidebarAddArea" style="display:none;">
       <div class="monthly-sidebar-input-wrap">
         <input class="monthly-sidebar-input" id="monthlySidebarInput"
           type="text" placeholder="今日のやることを書く…"
@@ -6071,6 +6083,7 @@
       <div id="monthlySidebarTargetRow" style="display:flex;align-items:center;gap:6px;padding:0 16px 10px;">
         <span style="font-size:11px;color:#9c9c9c;flex-shrink:0;">追加先</span>
         <select id="monthlySidebarCalSelect" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #e0e0e0;border-radius:7px;font-size:12px;background:#fff;color:#333;font-family:inherit;"></select>
+      </div>
       </div>
       <div class="monthly-sidebar-tasks" id="monthlySidebarTasks"></div>
       <!-- インライン編集フォーム（タスクタップで表示） -->
@@ -18072,7 +18085,32 @@ function reviveBlueprint(id) {
     }
     window.startSidebarInlineEdit = startSidebarInlineEdit;
 
-    function openMonthlySidebar(dateStr) {
+    // v0.45.1558: ＋ボタンで入力エリアを開閉する。
+// 日付のタップは「見る」、作成は明示的な操作、という切り分けを守るための仕組み。
+function toggleMonthlySidebarAdd(forceClose) {
+  try {
+    var area = document.getElementById('monthlySidebarAddArea');
+    var btn  = document.getElementById('monthlySidebarAddBtn');
+    if (!area) return;
+    var willOpen = (forceClose === true) ? false : (area.style.display === 'none' || !area.style.display);
+    area.style.display = willOpen ? 'block' : 'none';
+    if (btn) btn.innerHTML = willOpen
+      ? '<span style="font-size:1.1em;line-height:1;">×</span>閉じる'
+      : '<span style="font-size:1.1em;line-height:1;">＋</span>予定を追加';
+    if (willOpen) {
+      // 開いたときだけ入力に移る。スマホでキーボードがせり上がるのは
+      // 「書くと決めた」あとなので、ここでは邪魔にならない。
+      var inp = document.getElementById('monthlySidebarInput');
+      if (inp) setTimeout(function() { try { inp.focus(); } catch(e) {} }, 60);
+    }
+  } catch(e) { console.warn('[月間] 入力エリアの開閉に失敗:', e && e.message); }
+}
+window.toggleMonthlySidebarAdd = toggleMonthlySidebarAdd;
+
+function openMonthlySidebar(dateStr) {
+      // v0.45.1558: 開いた直後は必ず「見る」状態から始める。
+      // 前回開いたまま残っていると、また新規作成に見えてしまう。
+      if (typeof toggleMonthlySidebarAdd === 'function') toggleMonthlySidebarAdd(true);
       _sidebarDateStr = dateStr;
       var sb = document.getElementById('monthlySidebar');
       if (!sb) return;
@@ -18219,6 +18257,8 @@ function saveMonthlySidebarTask() {
       });
       if (!newTask) { showToast('\u8ffd\u52a0\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', {type:'warn'}); return; }
       input.value = '';
+      // v0.45.1558: 追加できたら畳んで「見る」状態に戻す（続けて書くときは再度＋を押す）
+      if (typeof toggleMonthlySidebarAdd === 'function') toggleMonthlySidebarAdd(true);
       renderMonthlySidebarTasks();
       typeof renderMonthlyView === 'function' && renderMonthlyView();
       // v0.45.1552: どのカレンダーに入ったかを必ず伝える。
