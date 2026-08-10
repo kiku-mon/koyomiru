@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1552 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1553 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1552';
+    const APP_VERSION = 'v0.45.1553';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -172,6 +172,11 @@
             // v0.45.1542: さらに、招待コードを預けておく。ログインが済んだ時点で
             // 参加から画面遷移まで自動で再開されるので、利用者は何も覚えなくてよい。
             if (typeof window._savePendingJoin === 'function') window._savePendingJoin(joinCode);
+            // v0.45.1553: 【権威】2026-08-06、招待された人が未ログインのままログイン画面を
+            // 閉じると、普通のアプリ画面に取り残される。共有カレンダーは当然見えないので
+            // 「無い」と混乱する。しかも自分の予定は入力できてしまうため、余計に紛らわしい。
+            // 招待されている事実を画面上部に残し、いつでもログインに戻れるようにする。
+            _showInviteBanner();
             if (typeof window._sharedCalSetStatus === 'function') {
               window._sharedCalSetStatus(
                 '📩 招待リンクから開きました。ログインすると、このカレンダーの予定が見られるようになります。', 'info');
@@ -27279,6 +27284,20 @@ function loadCalendarSettingsUI() {
         };
         bar.appendChild(allBtn);
       }
+      // v0.45.1553: 【権威】2026-08-06、未ログインのまま月間カレンダーを開けてしまうため、
+      // 招待された人が「共有カレンダーが無い」と混乱する。カレンダーの並びの中に
+      // 「ログインすると共有カレンダーが使える」ことを置き、探す前に気づけるようにする。
+      // ログイン済みなら出さない（用の無い案内は雑音にしかならない）。
+      if (!window._cloudIsLoggedIn) {
+        var loginChip = document.createElement('button');
+        loginChip.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px dashed #0b6bcb;background:#eaf3fc;color:#0b5bb0;';
+        loginChip.textContent = '👥 共有カレンダーを使う';
+        loginChip.title = 'ログインすると、招待された共有カレンダーが見られます';
+        loginChip.onclick = function() {
+          if (typeof openCloudLoginModal === 'function') openCloudLoginModal();
+        };
+        bar.appendChild(loginChip);
+      }
       // 💰支払いのみフィルタボタン（月間カレンダー専用）
       if (containerId === 'monthlyCalendarFilter') {
         var finBtn = document.createElement('button');
@@ -37048,6 +37067,33 @@ async function joinSharedCalendarFromModal() {
 // メモリ上の変数では消えてしまう。sessionStorageに置くのは、
 // タブを閉じたら自然に消えてほしい性質のもの（永続する必要がない）だから。
 var _KOYOMIRU_PENDING_JOIN = 'koyomiru_pending_join';
+// v0.45.1553: 招待されている事実を画面に残す帯。
+// ログイン画面を閉じても文脈が消えないようにするためのもので、
+// ログインが済めば自動で消える（参加まで自動で進むため役目を終える）。
+function _showInviteBanner() {
+  try {
+    if (document.getElementById('koyomiruInviteBanner')) return;
+    var b = document.createElement('div');
+    b.id = 'koyomiruInviteBanner';
+    b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9997;' +
+      'background:#0b6bcb;color:#fff;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));' +
+      'display:flex;align-items:center;gap:10px;box-shadow:0 -2px 12px rgba(0,0,0,0.18);font-size:0.84em;';
+    b.innerHTML =
+      '<span style="flex:1;line-height:1.5;">📩 共有カレンダーに招待されています。<br>' +
+      '<span style="opacity:0.85;font-size:0.92em;">ログインすると予定が見られるようになります</span></span>' +
+      '<button onclick="openCloudLoginModal()" style="flex-shrink:0;padding:9px 16px;border:none;border-radius:8px;background:#fff;color:#0b5bb0;font-weight:700;font-size:0.95em;cursor:pointer;font-family:inherit;">ログイン</button>';
+    document.body.appendChild(b);
+  } catch(e) { console.warn('[SharedCal] 招待バナーの表示に失敗:', e && e.message); }
+}
+function _hideInviteBanner() {
+  try {
+    var b = document.getElementById('koyomiruInviteBanner');
+    if (b) b.remove();
+  } catch(e) {}
+}
+window._showInviteBanner = _showInviteBanner;
+window._hideInviteBanner = _hideInviteBanner;
+
 function _savePendingJoin(code) {
   try { if (code) sessionStorage.setItem(_KOYOMIRU_PENDING_JOIN, code); } catch(e) {}
 }
@@ -37063,6 +37109,7 @@ window._savePendingJoin = _savePendingJoin;
 function _resumePendingJoin() {
   var code = _getPendingJoin();
   if (!code) return;
+  _hideInviteBanner();   // 役目を終えたので消す
   _clearPendingJoin();   // 何度も走らせない（失敗しても再試行はユーザー操作に委ねる）
   setTimeout(function() {
     try {
@@ -37841,6 +37888,12 @@ async function cloudUpdateNavLoginIndicator() {
   } catch(e) {}
   window._cloudIsLoggedIn = loggedIn;
   _cloudSetNavRing(loggedIn);
+  // v0.45.1553: ログイン状態が変われば、未ログイン向けの案内チップも出し入れする。
+  // 描き直さないと、ログイン後も「共有カレンダーを使う」が残って紛らわしい。
+  if (loggedIn && typeof window._hideInviteBanner === 'function') window._hideInviteBanner();
+  if (typeof renderCalendarFilter === 'function') {
+    try { renderCalendarFilter('monthlyCalendarFilter'); } catch(e) {}
+  }
   // v0.45.1523: アバターの表示はログイン状態に依存するため、ここで描き直す。
   // これが無いと、ログアウトしても次の再読み込みまで画像が出たままになる。
   if (typeof window.updateNavAvatar === 'function') window.updateNavAvatar();
