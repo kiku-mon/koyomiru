@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1553 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1554 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1553';
+    const APP_VERSION = 'v0.45.1554';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -26895,7 +26895,20 @@ function loadCalendarSettingsUI() {
         nameInput.value = cal.name;
         nameInput.maxLength = 20;
         nameInput.style.cssText = 'flex:1;min-width:0;padding:6px 8px;border:1.5px solid #eee;border-radius:8px;font-size:0.88em;';
-        nameInput.onchange = function() { updateCalendarField(idx, 'name', this.value); };
+        // v0.45.1554: 【権威】2026-08-06、共有カレンダーの名前は作った本人だけが
+        // 変えられるべき。ここは手元の表示名を書き換えるだけで相手には伝わらないが、
+        // 参加者が自由に書き換えられると「相手が付けた名前と食い違う」状態になり、
+        // 同じカレンダーの話をしているのに話が噛み合わなくなる。
+        // オーナーは共有カレンダーの設定から変更でき、そちらは全員に反映される。
+        var _sharedNotOwner = !!cal.cloudCalendarId && (cal.sharedOwner === false);
+        if (_sharedNotOwner) {
+          nameInput.readOnly = true;
+          nameInput.title = 'このカレンダーの名前は、作成した人だけが変更できます';
+          nameInput.style.background = '#f7f7f7';
+          nameInput.style.color = '#888';
+        } else {
+          nameInput.onchange = function() { updateCalendarField(idx, 'name', this.value); };
+        }
         // 表示チェック
         const visLabel = document.createElement('label');
         visLabel.style.cssText = 'display:flex;align-items:center;gap:3px;font-size:0.78em;color:#555;cursor:pointer;flex-shrink:0;';
@@ -27079,9 +27092,20 @@ function loadCalendarSettingsUI() {
           delBtn.style.cssText = 'background:none;border:none;color:#ccc;font-size:1.1em;cursor:pointer;padding:0 2px;flex-shrink:0;transition:color 0.15s;';
           delBtn.onmouseover = function(){ this.style.color='#e53935'; };
           delBtn.onmouseout  = function(){ this.style.color='#ccc'; };
-          delBtn.addEventListener('click', (function(cId) {
-            return function() { removeCalendar(cId); };
-          })(cal.id));
+          // v0.45.1554: 参加者がここで×を押すと、共有カレンダーが黙って手元から
+          // 消えるだけで、退出したのかどうかも分からない。しかも予定は消えても
+          // 相手の手元には残っており、状態が食い違う。
+          // 参加中の共有カレンダーは「抜ける」処理へ回し、意味の通る操作にする。
+          delBtn.title = _sharedNotOwner ? 'この共有カレンダーから抜ける' : 'このカレンダーを削除する';
+          delBtn.addEventListener('click', (function(cId, _leave) {
+            return function() {
+              if (_leave) {
+                if (typeof unshareCalendar === 'function') unshareCalendar(cId);
+              } else {
+                removeCalendar(cId);
+              }
+            };
+          })(cal.id, _sharedNotOwner));
           row.appendChild(delBtn);
         }
         list.appendChild(row);
