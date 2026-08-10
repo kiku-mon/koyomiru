@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1551 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1552 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1551';
+    const APP_VERSION = 'v0.45.1552';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6058,9 +6058,15 @@
         <button class="monthly-sidebar-save" onclick="saveMonthlySidebarTask()">追加</button>
       </div>
       <!-- タスク一覧 -->
-      <!-- v0.45.1551: どのカレンダーに入るかを、押す前に見せる。
-           これが見えないまま入力させると「入れたのに出てこない」が繰り返される。 -->
-      <div id="monthlySidebarTarget" style="font-size:11px;color:#8e8e8e;padding:0 16px 8px;"></div>
+      <!-- v0.45.1552: 【権威】2026-08-06、テスターが予定を追加しても、どのカレンダーに
+           入ったのか分からないまま操作していた。v0.45.1551で「追加先：〜」と文字で
+           示したが、見えるだけで変えられないため、間違いに気づいても直せない。
+           Google Calendarが予定作成時に投入先のドロップダウンを常に見せているのと同じく、
+           押す前に選べる状態にする。既定は絞り込み中のカレンダー（見ている文脈）。 -->
+      <div id="monthlySidebarTargetRow" style="display:flex;align-items:center;gap:6px;padding:0 16px 10px;">
+        <span style="font-size:11px;color:#9c9c9c;flex-shrink:0;">追加先</span>
+        <select id="monthlySidebarCalSelect" style="flex:1;min-width:0;padding:6px 8px;border:1px solid #e0e0e0;border-radius:7px;font-size:12px;background:#fff;color:#333;font-family:inherit;"></select>
+      </div>
       <div class="monthly-sidebar-tasks" id="monthlySidebarTasks"></div>
       <!-- インライン編集フォーム（タスクタップで表示） -->
       <div id="monthlySidebarEditForm" class="monthly-sidebar-edit-form" style="display:none;">
@@ -18047,18 +18053,19 @@ function reviveBlueprint(id) {
         _koyomiEl.innerHTML = _parts.join('');
         _koyomiEl.style.display = _parts.length ? 'flex' : 'none';
       }
-      // v0.45.1551: 投入先のカレンダーを表示する（押す前にどこへ入るか分かるように）
+      // v0.45.1552: 投入先を選べるようにする。既定は絞り込み中のカレンダー。
+      // 共有中のものには印を付け、「これは相手にも見える」と分かるようにする。
       try {
-        var _tgtEl = document.getElementById('monthlySidebarTarget');
-        if (_tgtEl && typeof _monthlySidebarTargetCalId === 'function') {
-          var _tid = _monthlySidebarTargetCalId();
-          var _tcal = (calendars || []).filter(function(c) { return c && c.id === _tid; })[0];
-          var _tname = (_tcal && _tcal.name) || '';
-          var _shared = !!(_tcal && _tcal.cloudCalendarId);
-          _tgtEl.innerHTML = _tname
-            ? ('追加先：<b style="color:#555;">' + _tname + '</b>' +
-               (_shared ? '<span style="color:#0b6bcb;"> 👥 共有中</span>' : ''))
-            : '';
+        var _selEl = document.getElementById('monthlySidebarCalSelect');
+        if (_selEl && typeof _monthlySidebarTargetCalId === 'function') {
+          var _defId = _monthlySidebarTargetCalId();
+          _selEl.innerHTML = (calendars || []).filter(function(c) {
+            return c && c.visible !== false;
+          }).map(function(c) {
+            var _label = c.name + (c.cloudCalendarId ? '　👥 共有中' : '');
+            return '<option value="' + c.id + '"' + (c.id === _defId ? ' selected' : '') + '>' +
+                   _label.replace(/</g, '&lt;') + '</option>';
+          }).join('');
         }
       } catch(eTgt) {}
       var _input = document.getElementById('monthlySidebarInput');
@@ -18107,7 +18114,15 @@ function saveMonthlySidebarTask() {
       // しかも入れた予定がその場に現れないため、利用者は何が起きたか分からない。
       // 絞り込みが1つに定まっているときは、その文脈に従う。
       // 絞り込みが無い／複数のときは、従来どおりメインカレンダーへ入れる。
-      var calId = _monthlySidebarTargetCalId();
+      // v0.45.1552: 利用者が選んだ投入先を最優先する（選べる以上、その選択に従う）
+      var calId = null;
+      try {
+        var _sel = document.getElementById('monthlySidebarCalSelect');
+        if (_sel && _sel.value && (calendars || []).some(function(c) { return c && c.id === _sel.value; })) {
+          calId = _sel.value;
+        }
+      } catch(eSel) {}
+      if (!calId) calId = _monthlySidebarTargetCalId();
       // v0.45.1514: 【権威】2026-08-05、ここは第29条（タスク作成はcreateTask経由）に
       // 違反しており、オブジェクトリテラルを直接pushしていた。そのためIDが
       // 独自形式（'task_'+時刻+乱数）になり、クラウドのuuid型カラムに弾かれて
@@ -18130,7 +18145,17 @@ function saveMonthlySidebarTask() {
       input.value = '';
       renderMonthlySidebarTasks();
       typeof renderMonthlyView === 'function' && renderMonthlyView();
-      showToast('\u8ffd\u52a0\u3057\u307e\u3057\u305f', {type:'ok'});
+      // v0.45.1552: どのカレンダーに入ったかを必ず伝える。
+      // 「追加しました」だけでは、意図と違う場所に入っても気づけない。
+      // 共有中なら「相手にも見える」ことまで伝える（公開範囲は毎回意識されるべき）。
+      try {
+        var _addedCal = (calendars || []).filter(function(c) { return c && c.id === calId; })[0];
+        var _addedName = (_addedCal && _addedCal.name) || '';
+        showToast(_addedName
+          ? ('\u300c' + _addedName + '\u300d\u306b\u8ffd\u52a0\u3057\u307e\u3057\u305f' +
+             (_addedCal && _addedCal.cloudCalendarId ? '\uff08\u5171\u6709\u4e2d\u30fb\u76f8\u624b\u306b\u3082\u898b\u3048\u307e\u3059\uff09' : ''))
+          : '\u8ffd\u52a0\u3057\u307e\u3057\u305f', {type:'ok'});
+      } catch(eT) { showToast('\u8ffd\u52a0\u3057\u307e\u3057\u305f', {type:'ok'}); }
       input.focus();
     }
 
