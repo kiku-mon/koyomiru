@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1559 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1560 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1559';
+    const APP_VERSION = 'v0.45.1560';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -5279,6 +5279,10 @@
     <div style="border-top:1px solid #f0f0f0;padding:8px 0;">
       <button class="account-menu-item" onclick="closeAccountMenu(); openSharedCalendarModal();"><span>👥</span>共有カレンダー</button>
       <button class="account-menu-item" onclick="closeAccountMenu(); openOshiraseModal();"><span>📣</span>お知らせ</button>
+      <button class="account-menu-item" id="accountMenuHelp" onclick="closeAccountMenu(); showTutorial();"
+        ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
+        ontouchend="clearTimeout(this._t)"
+        ontouchcancel="clearTimeout(this._t)"><span>❓</span>使い方</button>
     </div>
     <div id="accountMenuAuthArea" style="border-top:1px solid #f0f0f0;padding:8px 0 10px;"></div>
   </div>
@@ -18099,6 +18103,40 @@ function reviveBlueprint(id) {
 
     // v0.45.1558: ＋ボタンで入力エリアを開閉する。
 // 日付のタップは「見る」、作成は明示的な操作、という切り分けを守るための仕組み。
+// v0.45.1560: 右下の＋から予定を追加する。
+// 大事なのは「日付を選ばせない」こと。押した時点で日付は決まっている：
+//   ・その日のサイドバーが開いていれば → その日
+//   ・開いていなければ → 今日
+// Googleカレンダーの＋も、今見ている日付が最初から入った状態で開く。
+// 日付を選ぶ手間が増えるなら、常設の＋は「タップして書く」より不便になってしまう。
+function openQuickAddFromFab() {
+  try {
+    var _view = localStorage.getItem('currentView') || 'daily';
+    // 月間以外では、まず月間へ移ってから開く（＋は日付に予定を入れる操作なので）
+    if (_view !== 'monthly' && typeof switchView === 'function') {
+      switchView('monthly');
+    }
+    var _target = (typeof _sidebarDateStr !== 'undefined' && _sidebarDateStr)
+      ? _sidebarDateStr
+      : ((typeof getLocalDateStr === 'function') ? getLocalDateStr(new Date()) : null);
+    if (!_target) return;
+    var _sb = document.getElementById('monthlySidebar');
+    var _isOpen = _sb && _sb.classList.contains('open');
+    if (!_isOpen && typeof openMonthlySidebar === 'function') {
+      openMonthlySidebar(_target);
+    }
+    // 開いた直後は畳まれた状態なので、入力エリアを開いて書ける状態にする
+    setTimeout(function() {
+      if (typeof toggleMonthlySidebarAdd === 'function') {
+        var area = document.getElementById('monthlySidebarAddArea');
+        var _closed = !area || area.style.display === 'none' || !area.style.display;
+        if (_closed) toggleMonthlySidebarAdd();
+      }
+    }, _isOpen ? 0 : 120);
+  } catch(e) { console.warn('[月間] ＋からの追加に失敗:', e && e.message); }
+}
+window.openQuickAddFromFab = openQuickAddFromFab;
+
 function toggleMonthlySidebarAdd(forceClose) {
   try {
     var area = document.getElementById('monthlySidebarAddArea');
@@ -63579,10 +63617,12 @@ window.addMigration = addMigration;
   <div style="text-align:center;padding:8px;font-size:0.72em;color:#ddd;flex-shrink:0;letter-spacing:0.06em;position:relative;z-index:1;">保存すると雑記帳に追加されます</div>
 </div>
 
-<button id="tutorialHelpBtn" onclick="showTutorial()" style="display:block;position:fixed;bottom:24px;right:20px;width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#4facfe,#00f2fe);border:none;color:#fff;font-size:1.3em;font-weight:bold;cursor:pointer;box-shadow:0 4px 15px rgba(79,172,254,0.5);z-index:99990;line-height:42px;text-align:center;"
-  ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
-  ontouchend="clearTimeout(this._t)"
-  ontouchcancel="clearTimeout(this._t)">?</button>
+<!-- v0.45.1560: 【権威】2026-08-06、右下は毎日何度も押す「予定の追加」に譲る。
+     指が最も届く場所は、最もよく使うものに与えるのが原則（Googleカレンダーも右下は＋）。
+     使い方（？）は最初の数回しか押さないため、アカウントメニューへ移した。
+     長押しでデバッグログを開く隠し機能も、移設先に引き継いでいる。 -->
+<button id="koyomiruAddFab" onclick="openQuickAddFromFab()" title="予定を追加"
+  style="display:block;position:fixed;bottom:24px;right:20px;width:56px;height:56px;border-radius:50%;background:#0b6bcb;border:none;color:#fff;font-size:1.7em;font-weight:300;cursor:pointer;box-shadow:0 4px 16px rgba(11,107,203,0.45);z-index:99990;line-height:56px;text-align:center;padding:0;">＋</button>
 
 
 <!-- 印刷処理（beforeprint / afterprint） -->
