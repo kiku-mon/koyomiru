@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1548 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1549 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1548';
+    const APP_VERSION = 'v0.45.1549';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -22074,7 +22074,7 @@ function reviveBlueprint(id) {
         if (_cl.length === 0) return;
         var _map = {};
         _cl.forEach(function(c) { if (c && c.id) _map[c.id] = c.cloudCalendarId || null; });
-        var _fixed = 0;
+        var _fixed = 0, _fixedIds = [];
         (allTasks || []).forEach(function(t) {
           if (!t || !t.calendarId) return;
           if (!(t.calendarId in _map)) return;          // 参照切れは触らない（表示側で救済済み）
@@ -22083,10 +22083,17 @@ function reviveBlueprint(id) {
           if (t.cloudCalendarId === _should) return;     // 既に正しい
           t.cloudCalendarId = _should;
           t.updatedAt = new Date().toISOString();        // 第61条：変更したら必ず更新（送信対象に載せる）
+          _fixedIds.push(t.id);
           _fixed++;
         });
         if (_fixed > 0) {
           saveAllTasks();
+          // v0.45.1549: 修復したものが確実にクラウドへ届くよう、送信済みの印を外す。
+          // 印が残っていると差分プッシュの対象から漏れ、直したのに相手へ届かない。
+          try {
+            var _snap = window._unifiedLastPushedSnapshot;
+            if (_snap) _fixedIds.forEach(function(id) { delete _snap[id]; });
+          } catch(eSnap) {}
           console.info('[共有] 同期先がずれていた予定 ' + _fixed + '件を正しい共有カレンダーへ結び直しました');
         }
       } catch(e) { console.warn('[共有] 同期先の修復に失敗:', e && e.message); }
@@ -36270,10 +36277,19 @@ async function unifiedPullTasks() {
     // 差分プッシュのスナップショットにも反映しておく。反映しないと、次のプッシュ時に
     // 「ローカルの方が新しい（実際はクラウド由来のデータそのもの）」と誤検知され、
     // クラウドから受け取ったデータをそのまま送り返す無駄が発生する。
+    // v0.45.1549: 【権威】2026-08-06、共有カレンダーに入れたはずの予定が相手に
+    // 届かない件を追ったところ、ここが真因だった。allTasks全件に「送信済み」の印を
+    // 付けていたため、プルより前に手元で加えた変更（起動時の同期先修復など）まで
+    // 送信済み扱いになり、二度と送られなくなっていた。
+    // 印を付けてよいのは「今クラウドから受け取ったもの」だけである。
     try {
       var _pullSnapshot = window._unifiedLastPushedSnapshot || {};
+      var _pulledIds = {};
+      r.data.forEach(function(row) { if (row && row.id) _pulledIds[row.id] = true; });
       allTasks.forEach(function(t) {
-        if (t && t.id) _pullSnapshot[t.id] = t.updatedAt || t.createdAt || '';
+        if (!t || !t.id) return;
+        if (!_pulledIds[t.id]) return;   // 手元だけにある変更は「未送信」のまま残す
+        _pullSnapshot[t.id] = t.updatedAt || t.createdAt || '';
       });
       window._unifiedLastPushedSnapshot = _pullSnapshot;
     } catch(e) { console.warn('[Unified] プルスナップショット更新エラー:', e); }
