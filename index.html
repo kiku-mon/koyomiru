@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1558 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1559 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1558';
+    const APP_VERSION = 'v0.45.1559';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -12158,6 +12158,11 @@ function myDeckApply(idx) {
 
       try {
       const calendar = document.getElementById('monthlyCalendar');
+      // v0.45.1559: 描き直しでスクロール位置を失わないよう、先に控えておく。
+      // 器（.monthly-scroll-area）は残るが、中身が入れ替わる過程で
+      // 位置が詰められることがあるため、明示的に戻す。
+      var _msArea = document.querySelector('.monthly-scroll-area');
+      var _msTop = _msArea ? _msArea.scrollTop : 0;
       calendar.innerHTML = '';
       // カレンダーフィルター描画
       renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
@@ -12626,6 +12631,13 @@ function myDeckApply(idx) {
       // 月齢を即時＋遅延で埋める（関数定義が後にある場合のフォールバック）
       fillMoonAges && fillMoonAges();
       setTimeout(function(){ fillMoonAges && fillMoonAges(); }, 300);
+      // v0.45.1559: 控えておいたスクロール位置を戻す。
+      // 読んでいた場所を奪わないための処置で、同期のたびに先頭へ戻る不満の元だった。
+      if (_msArea && _msTop) {
+        _msArea.scrollTop = _msTop;
+        // 高さが確定した直後にもう一度当てる（描画途中だと戻りきらないことがある）
+        requestAnimationFrame(function() { try { if (_msArea.isConnected) _msArea.scrollTop = _msTop; } catch(e) {} });
+      }
       } catch(e) {
         console.error("[renderMonthlyView]", e);
         showToast && showToast('renderMonthlyView エラー: ' + e.message, {type:'error'});
@@ -36609,8 +36621,14 @@ async function unifiedPullTasks() {
     // データ自体（allTasks）は既に更新済みなので、失われるのは「画面への反映の即時性」
     // だけであり、書きかけの文字は守られる。
     _syncDeferredRender(function() {
-      renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
-      if (typeof _refreshCurrentViewForSync === 'function') _refreshCurrentViewForSync(); // v0.45.1328/1336の教訓
+      // v0.45.1559: 同期による描き直しで、読んでいた場所を奪わない。
+      // 同期は日に何度も起きるので、そのたびに先頭へ戻されると使い物にならない。
+      var _render = function() {
+        renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null); // v0.45.1336の教訓
+        if (typeof _refreshCurrentViewForSync === 'function') _refreshCurrentViewForSync(); // v0.45.1328/1336の教訓
+      };
+      if (typeof _withScrollPreserved === 'function') _withScrollPreserved(_render);
+      else _render();
     });
     if (typeof _syncLog === 'function') _syncLog('統一同期：プル→反映完了');
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル反映完了: allTasks=' + allTasks.length + '件に変化あり');
@@ -37314,6 +37332,43 @@ function _syncWarn(intent, detail) {
 // v0.45.1328: クラウド同期後、現在表示中のビューを正しく再描画するディスパッチャー。
 // renderAllSections()は日次（マトリクス）ビュー専用のため、それ以外のビューを
 // 見ている最中に同期が来ても画面に反映されない問題を解消する。
+// v0.45.1559: 【権威】2026-08-06、スマホで操作するたびに画面が先頭へ戻って
+// 面倒だとの報告。原因は、同期や操作のたびにビュー全体を描き直しており、
+// その際にスクロール位置が失われること。リアルタイム更新の定石でも、
+// 更新が利用者の操作を邪魔するとスクロールが飛ぶと明記されている。
+// 描き直しの前後で位置を控えて戻す。読んでいた場所を奪わないための仕組み。
+function _withScrollPreserved(fn) {
+  if (typeof fn !== 'function') return;
+  var _targets = [];
+  try {
+    // スクロールしうる器を集める（存在するものだけ）
+    ['monthlyScrollArea', 'weeklyContainer', 'yearlyContainer', 'journalContainer'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) _targets.push({ el: el, top: el.scrollTop, left: el.scrollLeft });
+    });
+    document.querySelectorAll('.monthly-scroll-area, .monthly-sidebar-tasks').forEach(function(el) {
+      _targets.push({ el: el, top: el.scrollTop, left: el.scrollLeft });
+    });
+  } catch(e) {}
+  var _winY = 0, _winX = 0;
+  try { _winY = window.scrollY || window.pageYOffset || 0; _winX = window.scrollX || 0; } catch(e) {}
+
+  fn();
+
+  // 描き直しの直後に戻す。DOMが差し替わっている場合があるので、
+  // 同じ器が残っているものだけ復元する（消えた器に触れて落とさない）。
+  try {
+    _targets.forEach(function(t) {
+      if (t.el && t.el.isConnected) {
+        if (t.top) t.el.scrollTop = t.top;
+        if (t.left) t.el.scrollLeft = t.left;
+      }
+    });
+    if (_winY || _winX) window.scrollTo(_winX, _winY);
+  } catch(e) {}
+}
+window._withScrollPreserved = _withScrollPreserved;
+
 function _refreshCurrentViewForSync() {
   try {
     var view = localStorage.getItem('currentView') || 'daily';
