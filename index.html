@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1554 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1555 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1554';
+    const APP_VERSION = 'v0.45.1555';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -7687,6 +7687,21 @@
       <div class="settings-section" id="settingsNavTabSection">
         <h3 style="margin: 0 0 15px 0; color: #262626; font-size: 1.05em; font-weight: 600; border-bottom: 1px solid #efefef; padding-bottom: 12px;">🗂️ タブ表示</h3>
         <p style="margin:0 0 12px 0;font-size:0.8em;color:#888;">表示するタブを選択できます。右上のアカウントは常に表示されます。</p>
+        <!-- v0.45.1555: 【権威】2026-08-06、仕事が日曜始まりの文化のため選べるようにしたいとの要望。
+             業種によって週の区切りは違い、どちらが正しいというものでもないので設定で選ばせる。
+             月間・週間の両方に効く。 -->
+        <div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #f0f0f0;">
+          <div style="font-size:0.85em;font-weight:700;color:#333;margin-bottom:4px;">週の始まり</div>
+          <p style="margin:0 0 8px 0;font-size:0.78em;color:#888;">月間・週間カレンダーの左端に来る曜日です。</p>
+          <div style="display:flex;gap:8px;">
+            <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:1px solid #dcdcdc;border-radius:9px;cursor:pointer;font-size:0.85em;">
+              <input type="radio" name="weekStartsOn" value="1" onchange="setWeekStartsOn(1)"> 月曜から
+            </label>
+            <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:1px solid #dcdcdc;border-radius:9px;cursor:pointer;font-size:0.85em;">
+              <input type="radio" name="weekStartsOn" value="0" onchange="setWeekStartsOn(0)"> 日曜から
+            </label>
+          </div>
+        </div>
         <!-- v0.45.1526: 【権威】2026-08-06、「月間を左に持ってきたい」との要望。
              使う頻度は人によって違うため、並び順を変えられるようにする。
              新しい設定画面は作らず（第56条）、既存のタブ設定セクションに並べる。 -->
@@ -8855,6 +8870,10 @@
           yearly: true, notebook: true, craft: true,
           dashboard: true,
         },
+        // v0.45.1555: 週の始まりの曜日。0=日曜, 1=月曜。既定は月曜（日本の暦の慣習）。
+        // 【権威】2026-08-06、仕事が日曜始まりの文化のため選べるようにしたいとの要望。
+        // 業種によって週の区切りは違い、どちらが正しいというものではないので設定で選ばせる。
+        weekStartsOn: 1,
         // v0.45.1526: ナビタブの並び順。null＝既定（HTMLの記述順）。
         // 【権威】2026-08-06、「月間を左に持ってきたい」等、使う頻度は人によって違うため
         // 並び替えを可能にする。keyの配列で保持し、ここに無いタブは末尾に回す。
@@ -11530,11 +11549,12 @@ function myDeckApply(idx) {
       const container = document.getElementById('weeklyContainer');
       container.innerHTML = '';
       renderCalendarFilter('weeklyCalendarFilter', renderWeeklyView);
-      // ── 月曜日算出 ────────────────────────────────────
+      // ── 週の初日を算出 ────────────────────────────────
+      // v0.45.1555: 週の始まりを設定に従わせる。変数名は monday のままだが、
+      // 日曜始まりの設定なら日曜が入る（呼び出し側の書き換えを最小に留めるため）。
       const baseDate = new Date(currentWeekDate);
-      const dow = baseDate.getDay();
       const monday = new Date(baseDate);
-      monday.setDate(baseDate.getDate() + (dow === 0 ? -6 : 1 - dow));
+      monday.setDate(baseDate.getDate() - getWeekColumnIndex(baseDate.getDay()));
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
       document.getElementById('weeklyTitle').textContent =
@@ -11544,7 +11564,7 @@ function myDeckApply(idx) {
       if (weeklyEraLabelEl && typeof getKingdomEraLabel === 'function') {
         weeklyEraLabelEl.textContent = getKingdomEraLabel();
       }
-      const weekdays = ['月','火','水','木','金','土','日'];
+      const weekdays = getWeekdayLabels();   // v0.45.1555: 設定に従う
       const todayStr = getLocalDateStr(new Date());
       const now      = new Date();
       const nowHour  = now.getHours();
@@ -12157,20 +12177,21 @@ function myDeckApply(idx) {
         monthlyEraLabelEl.textContent = getKingdomEraLabel();
       }
       // 曜日ヘッダー
-      const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
+      // v0.45.1555: 週の始まりを設定に従わせる。土日の色分けも、並びが変われば
+      // 位置が変わるので、決め打ちの列番号ではなく曜日そのもので判定する。
+      const weekdays = getWeekdayLabels();
       weekdays.forEach((day, index) => {
         const header = document.createElement('div');
         header.className = 'monthly-weekday-header';
-        if (index === 5) header.classList.add('saturday');
-        if (index === 6) header.classList.add('sunday');
+        if (day === '土') header.classList.add('saturday');
+        if (day === '日') header.classList.add('sunday');
         header.textContent = day;
         calendar.appendChild(header);
       });
       // 月の最初の日
       const firstDay = new Date(year, month, 1);
-      // 月曜始まりに調整（0=日曜 → 6, 1=月曜 → 0, ...）
-      let startDayOfWeek = firstDay.getDay();
-      startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+      // v0.45.1555: 週の始まりの設定に従って、1日が何列目に来るかを求める
+      let startDayOfWeek = getWeekColumnIndex(firstDay.getDay());
       // 月の最後の日
       const lastDay = new Date(year, month + 1, 0);
       const daysInMonth = lastDay.getDate();
@@ -14551,6 +14572,43 @@ function resetNavTabOrder() {
   if (typeof showToast === 'function') showToast('タブの並びを既定に戻しました');
 }
 window.resetNavTabOrder = resetNavTabOrder;
+
+// v0.45.1555: 週の始まりの曜日を返す（0=日曜, 1=月曜）。
+// 月間・週間の両方が同じ元を見るように、判断をここへ集約する（第4条）。
+function getWeekStartsOn() {
+  try {
+    var v = allSettings && allSettings.ui ? allSettings.ui.weekStartsOn : 1;
+    return (v === 0) ? 0 : 1;   // 想定外の値は月曜に倒す
+  } catch(e) { return 1; }
+}
+window.getWeekStartsOn = getWeekStartsOn;
+
+// その並びでの曜日ラベル（左端から順に）
+function getWeekdayLabels() {
+  return getWeekStartsOn() === 0
+    ? ['日','月','火','水','木','金','土']
+    : ['月','火','水','木','金','土','日'];
+}
+window.getWeekdayLabels = getWeekdayLabels;
+
+// 日付が、その週の何列目に来るか（0〜6）
+function getWeekColumnIndex(dayOfWeek) {
+  return getWeekStartsOn() === 0 ? dayOfWeek : (dayOfWeek + 6) % 7;
+}
+window.getWeekColumnIndex = getWeekColumnIndex;
+
+// v0.45.1555: 週の始まりを保存し、開いているビューに即座に反映する。
+function setWeekStartsOn(v) {
+  try {
+    allSettings.ui.weekStartsOn = (v === 0 || v === '0') ? 0 : 1;
+    saveAllSettings();
+    if (typeof renderAll === 'function') renderAll();
+    if (typeof showToast === 'function') {
+      showToast(allSettings.ui.weekStartsOn === 0 ? '日曜始まりにしました' : '月曜始まりにしました');
+    }
+  } catch(e) { console.warn('[設定] 週の始まりの保存に失敗:', e && e.message); }
+}
+window.setWeekStartsOn = setWeekStartsOn;
 
 function applyVisibleTabsSettings() {
   if (!allSettings.ui.visibleTabs) allSettings.ui.visibleTabs = {};
@@ -26538,6 +26596,13 @@ function loadSettingsUI() {
       if (typeof applySettingsSectionVisibility === 'function') applySettingsSectionVisibility();
       // v0.45.1526: ナビタブの並び替えUIを描く（開くたびに現在の並びを反映する）
       if (typeof renderNavTabOrderUI === 'function') renderNavTabOrderUI();
+      // v0.45.1555: 週の始まりの選択に、現在の設定を反映する
+      try {
+        var _ws = (typeof getWeekStartsOn === 'function') ? getWeekStartsOn() : 1;
+        document.querySelectorAll('input[name="weekStartsOn"]').forEach(function(r) {
+          r.checked = (parseInt(r.value, 10) === _ws);
+        });
+      } catch(eWs) {}
       // スマホナビ配置ラジオボタンを反映
       var _mnp = allSettings.ui.mobileNavPosition || 'top';
       document.querySelectorAll('input[name="mobileNavPosition"]').forEach(function(r) {
