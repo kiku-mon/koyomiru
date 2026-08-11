@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1563 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1564 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1563';
+    const APP_VERSION = 'v0.45.1564';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2215,7 +2215,8 @@
     }
     .monthly-sidebar-task-item {
       display: flex;
-      align-items: center;
+      /* v0.45.1564: メモで行が伸びるため、上揃えにする（中央だとチェックが下がる） */
+      align-items: flex-start;
       gap: 10px;
       padding: 10px 16px;
       font-size: 14px;
@@ -18020,6 +18021,31 @@ function showAllCalendarsInSidebar() {
 }
 window.showAllCalendarsInSidebar = showAllCalendarsInSidebar;
 
+// v0.45.1564: 【権威】2026-08-06、コミュニティで調整さんを使っており、
+// そのURLを予定に貼って開けるようにしたいとの要望。既に定着している道具を
+// 置き換えるのではなく、繋げる方針。移行を強いないのが正しい。
+// メモ欄は既にあるので、そこに貼ったURLをリンクとして開けるようにする。
+// HTMLとして流し込む以上、まず必ずエスケープしてからリンク化する。
+// 順序を逆にすると、メモに書いた文字がそのままHTMLとして解釈されてしまう。
+function _escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function linkifyText(s) {
+  var esc = _escapeHtml(s);
+  // http/https のみを対象にする（javascript: などを開かせないため）
+  return esc.replace(/(https?:\/\/[^\s<>"']+)/g, function(url) {
+    // 末尾の句読点はURLに含めない（「…です。」のような書き方への配慮）
+    var tail = '';
+    var m = url.match(/[)\]｝」』。、．，!?！？]+$/);
+    if (m) { tail = m[0]; url = url.slice(0, -tail.length); }
+    return '<a href="' + url + '" target="_blank" rel="noopener noreferrer" ' +
+           'style="color:#0b6bcb;text-decoration:underline;word-break:break-all;">' + url + '</a>' + tail;
+  });
+}
+window.linkifyText = linkifyText;
+
 function renderMonthlySidebarTasks() {
       var el = document.getElementById('monthlySidebarTasks');
       if (!el || !_sidebarDateStr) return;
@@ -18076,6 +18102,27 @@ function renderMonthlySidebarTasks() {
         txt.textContent = t.text;
         txt.style.cssText = 'flex:1;text-decoration:' + (done?'line-through':'none') + ';color:' + (done?'#9ca3af':'#374151') + ';cursor:pointer;font-size:14px;line-height:1.4;word-break:break-all;';
         txt.onclick = function(e) { e && e.stopPropagation(); startSidebarInlineEdit(taskId); };
+        // v0.45.1564: メモを予定名の下に出す。調整さんのURLなどを貼って、
+        // ここから直接開けるようにするため。URLはリンクになる。
+        // 予定名とメモを縦に並べたいので、両者を包む器を作る。
+        var _body = document.createElement('div');
+        _body.style.cssText = 'flex:1;min-width:0;';
+        _body.appendChild(txt);
+        txt.style.flex = 'none';
+        txt.style.display = 'block';
+        if (t.memo && String(t.memo).trim()) {
+          var _memoEl = document.createElement('div');
+          _memoEl.className = 'msb-task-memo';
+          _memoEl.style.cssText = 'font-size:12px;color:#8e8e8e;line-height:1.6;margin-top:3px;white-space:pre-wrap;word-break:break-all;';
+          _memoEl.innerHTML = (typeof linkifyText === 'function') ? linkifyText(t.memo) : _escapeHtml(t.memo);
+          // リンクを押したときに、行の編集が始まらないようにする
+          _memoEl.onclick = function(e) {
+            if (e && e.target && e.target.tagName === 'A') { e.stopPropagation(); return; }
+            e && e.stopPropagation();
+            startSidebarInlineEdit(taskId);
+          };
+          _body.appendChild(_memoEl);
+        }
         // ⚙️ 詳細編集ボタン（既存モーダルを開く）
         var detailBtn = document.createElement('button');
         detailBtn.innerHTML = '&#9881;';
@@ -18107,7 +18154,7 @@ function renderMonthlySidebarTasks() {
           }
         };
         item.appendChild(chk);
-        item.appendChild(txt);
+        item.appendChild(_body);   // v0.45.1564: 予定名＋メモを包んだ器を入れる
         item.appendChild(detailBtn);
         item.appendChild(del);
         el.appendChild(item);
