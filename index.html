@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1560 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1561 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1560';
+    const APP_VERSION = 'v0.45.1561';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -17988,12 +17988,37 @@ function reviveBlueprint(id) {
     var _msbEditingId   = '';
     var _msbCalId       = 'default';
 
-    function renderMonthlySidebarTasks() {
+    // v0.45.1561: 絞り込みを一時的に外して、その日の全カレンダーの予定を見る。
+// チップの設定そのものは変えない（見たいのはこの日のことだけなので）。
+// サイドバーを開き直せば元の絞り込みに戻る。
+window._sidebarShowAllCalendars = false;
+function showAllCalendarsInSidebar() {
+  window._sidebarShowAllCalendars = true;
+  if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks();
+}
+window.showAllCalendarsInSidebar = showAllCalendarsInSidebar;
+
+function renderMonthlySidebarTasks() {
       var el = document.getElementById('monthlySidebarTasks');
       if (!el || !_sidebarDateStr) return;
-      var tasks = allTasks.filter(function(t) { return t.date === _sidebarDateStr && !t.deleted; });
+      var allOfDay = allTasks.filter(function(t) { return t.date === _sidebarDateStr && !t.deleted; });
+      // v0.45.1561: 【権威】2026-08-06、月間でコピキャカレンダーだけを選んでいるのに、
+      // サイドバーには全カレンダーの予定が出るとの指摘。同じ日の同じデータを、
+      // 升目とサイドバーで違う基準で見せており、どちらが本当か分からない状態だった。
+      // チップの絞り込みに従わせる。ただし絞り込みで隠れたものは件数だけ知らせ、
+      // 押せば全部見えるようにする。「一致」と「見落とさない」を両立させるため。
+      var tasks = allOfDay.filter(function(t) {
+        if (window._sidebarShowAllCalendars) return true;
+        return (typeof isCalendarVisible === 'function') ? isCalendarVisible(t.calendarId) : true;
+      });
+      var _hiddenCount = allOfDay.length - tasks.length;
+      var _hiddenHtml = (_hiddenCount > 0 && !window._sidebarShowAllCalendars)
+        ? '<div style="padding:10px 16px;"><button onclick="showAllCalendarsInSidebar()" ' +
+          'style="width:100%;padding:9px;border:1px dashed #cfd6e0;border-radius:9px;background:#fafbfc;color:#7a8698;font-size:0.78em;cursor:pointer;font-family:inherit;">' +
+          '表示していないカレンダーに ' + _hiddenCount + '件</button></div>'
+        : '';
       if (!tasks.length) {
-        el.innerHTML = '<div class="monthly-sidebar-empty">\u30bf\u30b9\u30af\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093</div>';
+        el.innerHTML = '<div class="monthly-sidebar-empty">\u30bf\u30b9\u30af\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093</div>' + _hiddenHtml;
         return;
       }
       el.innerHTML = '';
@@ -18071,6 +18096,9 @@ function reviveBlueprint(id) {
     function startSidebarInlineEdit(taskId) {
       var item = document.querySelector('.monthly-sidebar-task-item[data-id="' + taskId + '"]');
       var task = allTasks.find(function(x){ return x.id === taskId; });
+      // v0.45.1561: 絞り込みで隠れているものがあれば、件数を末尾に添える。
+      // 「無い」のか「隠れている」のかが分からないと、探し続けることになる。
+      if (_hiddenHtml) el.insertAdjacentHTML('beforeend', _hiddenHtml);
       if (!item || !task) return;
       if (item.querySelector('.msb-inline-input')) return;
       var txt = item.querySelector('.msb-task-text');
@@ -18158,6 +18186,9 @@ function toggleMonthlySidebarAdd(forceClose) {
 window.toggleMonthlySidebarAdd = toggleMonthlySidebarAdd;
 
 function openMonthlySidebar(dateStr) {
+      // v0.45.1561: 開き直したら絞り込みに戻す。前の日で「全部見る」にしたまま
+      // 引きずると、チップと合っていない状態がまた生まれる。
+      window._sidebarShowAllCalendars = false;
       // v0.45.1558: 開いた直後は必ず「見る」状態から始める。
       // 前回開いたまま残っていると、また新規作成に見えてしまう。
       if (typeof toggleMonthlySidebarAdd === 'function') toggleMonthlySidebarAdd(true);
@@ -63617,12 +63648,15 @@ window.addMigration = addMigration;
   <div style="text-align:center;padding:8px;font-size:0.72em;color:#ddd;flex-shrink:0;letter-spacing:0.06em;position:relative;z-index:1;">保存すると雑記帳に追加されます</div>
 </div>
 
-<!-- v0.45.1560: 【権威】2026-08-06、右下は毎日何度も押す「予定の追加」に譲る。
-     指が最も届く場所は、最もよく使うものに与えるのが原則（Googleカレンダーも右下は＋）。
+<!-- v0.45.1561: 【権威】2026-08-06、予定の追加ボタンは左下に置く。
+     一般には右下が定石だが、こよみるでは右下に「閉じる」など押すと困る操作が
+     集まっており、毎日押す＋を隣に置くと取り違えの危険がある。
+     左下ならそれらと競合しない。「遠いから誤爆しない場所」に破壊的な操作を、
+     「近いが競合しない場所」に日常の操作を、という住み分けにする。
      使い方（？）は最初の数回しか押さないため、アカウントメニューへ移した。
      長押しでデバッグログを開く隠し機能も、移設先に引き継いでいる。 -->
 <button id="koyomiruAddFab" onclick="openQuickAddFromFab()" title="予定を追加"
-  style="display:block;position:fixed;bottom:24px;right:20px;width:56px;height:56px;border-radius:50%;background:#0b6bcb;border:none;color:#fff;font-size:1.7em;font-weight:300;cursor:pointer;box-shadow:0 4px 16px rgba(11,107,203,0.45);z-index:99990;line-height:56px;text-align:center;padding:0;">＋</button>
+  style="display:block;position:fixed;bottom:24px;left:20px;width:56px;height:56px;border-radius:50%;background:#0b6bcb;border:none;color:#fff;font-size:1.7em;font-weight:300;cursor:pointer;box-shadow:0 4px 16px rgba(11,107,203,0.45);z-index:99990;line-height:56px;text-align:center;padding:0;">＋</button>
 
 
 <!-- 印刷処理（beforeprint / afterprint） -->
