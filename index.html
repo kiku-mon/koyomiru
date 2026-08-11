@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1565 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1566 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1565';
+    const APP_VERSION = 'v0.45.1566';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6106,6 +6106,8 @@
       </div>
       </div>
       <div class="monthly-sidebar-tasks" id="monthlySidebarTasks"></div>
+      <!-- v0.45.1566: 予定ごとのコメント。予定を選ぶと、その予定の会話がここに出る。 -->
+      <div id="msbCommentArea" style="display:none;flex-shrink:0;max-height:45%;overflow-y:auto;"></div>
       <!-- インライン編集フォーム（タスクタップで表示） -->
       <div id="monthlySidebarEditForm" class="monthly-sidebar-edit-form" style="display:none;">
         <!-- v0.45.1521: TimeTree同様、保存を上部に常時見える位置へ置く。
@@ -18110,6 +18112,20 @@ function renderMonthlySidebarTasks() {
         txt.textContent = t.text;
         txt.style.cssText = 'flex:1;text-decoration:' + (done?'line-through':'none') + ';color:' + (done?'#9ca3af':'#374151') + ';cursor:pointer;font-size:14px;line-height:1.4;word-break:break-all;';
         txt.onclick = function(e) { e && e.stopPropagation(); startSidebarInlineEdit(taskId); };
+        // v0.45.1566: 💬でこの予定の会話を開く。
+        // 予定名タップは編集のままにして、会話は明示的な操作にする
+        // （書き換えるつもりが会話を開く、の取り違えを避けるため）。
+        var cmtBtn = document.createElement('button');
+        cmtBtn.innerHTML = '&#128172;';
+        cmtBtn.title = 'この予定について話す';
+        cmtBtn.style.cssText = 'background:none;border:none;font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;opacity:.55;';
+        cmtBtn.onclick = (function(_tid) {
+          return function(e) {
+            e && e.stopPropagation();
+            if (window._openCommentTaskId === _tid) { closeTaskComments(); return; }
+            openTaskComments(_tid);
+          };
+        })(taskId);
         // v0.45.1564: メモを予定名の下に出す。調整さんのURLなどを貼って、
         // ここから直接開けるようにするため。URLはリンクになる。
         // 予定名とメモを縦に並べたいので、両者を包む器を作る。
@@ -18163,6 +18179,7 @@ function renderMonthlySidebarTasks() {
         };
         item.appendChild(chk);
         item.appendChild(_body);   // v0.45.1564: 予定名＋メモを包んだ器を入れる
+        item.appendChild(cmtBtn);
         item.appendChild(detailBtn);
         item.appendChild(del);
         el.appendChild(item);
@@ -34935,6 +34952,179 @@ async function updateMyDisplayName(calendarId, name) {
 }
 window.updateMyDisplayName = updateMyDisplayName;
 
+// ===== v0.45.1566: 予定ごとのコメント =====
+// 【権威】2026-08-06、LINEのグループでは重要な情報が雑談に流されてしまい、
+// 「11時だと思ったら14時だった」という取りこぼしが起きる、との課題。
+// 原因は情報量ではなく「文脈が場所を持たない」こと。予定について話したことが
+// その予定の中に残れば、遅れて見た人も予定を開くだけで全部わかり、遡る必要がなくなる。
+// TimeTreeが予定ごとのチャットを中核に据えているのも同じ理由。
+//
+// メモとの違い：メモは1人が書くもの、コメントは全員が積むもの。
+// 実装はタスク本体とは別テーブルにする。タスクは差分同期の対象で頻繁に上書きされるため、
+// 会話をその中に持たせると、同時編集でどちらかの発言が消えかねない。
+// 会話は「追記しかされない」性質なので、独立させたほうが安全で単純になる。
+
+// 予定ごとのコメント欄を開く／閉じる。開いている予定のIDを覚えておき、
+// Realtimeで届いたときに「今開いているものか」を判定できるようにする。
+window._openCommentTaskId = null;
+function openTaskComments(taskId) {
+  try {
+    var host = document.getElementById('msbCommentArea');
+    if (!host) return;
+    window._openCommentTaskId = taskId;
+    host.style.display = 'block';
+    host.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:#9c9c9c;">読み込み中…</div>';
+    renderTaskComments(taskId);
+  } catch(e) { console.warn('[Comment] 表示に失敗:', e && e.message); }
+}
+window.openTaskComments = openTaskComments;
+
+function closeTaskComments() {
+  window._openCommentTaskId = null;
+  var host = document.getElementById('msbCommentArea');
+  if (host) { host.style.display = 'none'; host.innerHTML = ''; }
+}
+window.closeTaskComments = closeTaskComments;
+
+async function renderTaskComments(taskId) {
+  var host = document.getElementById('msbCommentArea');
+  if (!host || window._openCommentTaskId !== taskId) return;
+  var task = (allTasks || []).find(function(t) { return t && t.id === taskId; });
+  var _calId = task ? (task.cloudCalendarId || null) : null;
+  if (!window._cloudIsLoggedIn) {
+    host.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:#9c9c9c;line-height:1.7;">' +
+      'ログインすると、この予定について皆で話せます。<br>' +
+      '「14時に変更」のような大事な連絡が、この予定の中に残ります。</div>';
+    return;
+  }
+  var r = await listTaskComments(taskId);
+  if (window._openCommentTaskId !== taskId) return;   // 待っている間に閉じられていたら描かない
+  var rows = (r && !r.error && r.data) ? r.data : [];
+  var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+  var _lnk = (typeof linkifyText === 'function') ? linkifyText : _esc;
+  var listHtml = rows.length === 0
+    ? '<div style="padding:10px 16px;font-size:12px;color:#b9b9b9;">まだコメントはありません</div>'
+    : rows.map(function(c) {
+        var _mine = c.user_id === window._cloudUserId;
+        var _when = '';
+        try {
+          var dt = new Date(c.created_at);
+          _when = (dt.getMonth()+1) + '/' + dt.getDate() + ' ' +
+                  String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+        } catch(e) {}
+        return '<div style="padding:8px 16px;border-bottom:1px solid #f5f5f5;">' +
+          '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">' +
+            '<span style="font-size:11px;font-weight:700;color:' + (_mine ? '#0b6bcb' : '#6b7280') + ';">' +
+              _esc(c.display_name || 'メンバー') + '</span>' +
+            '<span style="font-size:10px;color:#c0c0c0;">' + _when + '</span>' +
+            (_mine ? '<button onclick="removeTaskCommentFromUI(\'' + c.id + '\')" style="margin-left:auto;background:none;border:none;color:#ccc;font-size:12px;cursor:pointer;padding:0 2px;">✕</button>' : '') +
+          '</div>' +
+          '<div style="font-size:13px;color:#374151;line-height:1.6;white-space:pre-wrap;word-break:break-all;">' +
+            _lnk(c.body) + '</div>' +
+        '</div>';
+      }).join('');
+  host.innerHTML =
+    '<div style="border-top:1px solid #eee;background:#fafbfc;">' +
+      '<div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:#8e8e8e;">💬 この予定について（' + rows.length + '）</div>' +
+      listHtml +
+      '<div style="display:flex;gap:6px;padding:10px 16px 12px;">' +
+        '<input id="msbCommentInput" type="text" placeholder="コメントを書く…" maxlength="500" ' +
+          'onkeydown="if(event.key===\'Enter\'&&!event.isComposing)postTaskCommentFromUI()" ' +
+          'style="flex:1;min-width:0;padding:8px 10px;border:1px solid #e0e0e0;border-radius:18px;font-size:13px;font-family:inherit;">' +
+        '<button onclick="postTaskCommentFromUI()" style="flex-shrink:0;padding:8px 14px;border:none;border-radius:18px;background:#0b6bcb;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">送信</button>' +
+      '</div>' +
+    '</div>';
+}
+window.renderTaskComments = renderTaskComments;
+
+async function postTaskCommentFromUI() {
+  var taskId = window._openCommentTaskId;
+  if (!taskId) return;
+  var inp = document.getElementById('msbCommentInput');
+  if (!inp) return;
+  var body = (inp.value || '').trim();
+  if (!body) return;
+  var task = (allTasks || []).find(function(t) { return t && t.id === taskId; });
+  inp.value = '';   // 送る前に空にする（二重送信と、待ち時間の不安を減らすため）
+  var r = await addTaskComment(taskId, body, task ? task.cloudCalendarId : null);
+  if (!r || r.error) {
+    if (typeof showToast === 'function') showToast((r && r.error && r.error.message) || 'コメントできませんでした', {type:'error'});
+    inp.value = body;   // 失敗したら書いたものを戻す（消えるのが一番つらい）
+    return;
+  }
+  renderTaskComments(taskId);
+}
+window.postTaskCommentFromUI = postTaskCommentFromUI;
+
+async function removeTaskCommentFromUI(commentId) {
+  var r = await deleteTaskComment(commentId);
+  if (!r || r.error) {
+    if (typeof showToast === 'function') showToast((r && r.error && r.error.message) || '削除できませんでした', {type:'error'});
+    return;
+  }
+  if (window._openCommentTaskId) renderTaskComments(window._openCommentTaskId);
+}
+window.removeTaskCommentFromUI = removeTaskCommentFromUI;
+
+async function listTaskComments(taskId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient || !taskId) return null;
+  var r = await window.supabaseClient.from('koyomiru_task_comments')
+    .select('id, task_id, user_id, display_name, body, created_at')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+  if (r.error) console.error('[Comment] 取得失敗:', r.error.message);
+  return r;
+}
+window.listTaskComments = listTaskComments;
+
+async function addTaskComment(taskId, body, calendarId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient || !window._cloudUserId) {
+    return { error: { message: 'コメントするにはログインが必要です' } };
+  }
+  var _body = (body || '').trim();
+  if (!_body) return { error: { message: 'コメントを入力してください' } };
+  // 表示名は、そのカレンダーでの名乗りを優先する（v0.45.1546の考え方に合わせる）
+  var _name = '';
+  try {
+    if (calendarId && window._sharedMemberNames && window._sharedMemberNames[calendarId]) {
+      _name = window._sharedMemberNames[calendarId];
+    }
+  } catch(e) {}
+  if (!_name) _name = (allSettings.profile && allSettings.profile.name) || '';
+  var r = await window.supabaseClient.from('koyomiru_task_comments')
+    .insert({
+      task_id: taskId,
+      calendar_id: calendarId || null,
+      user_id: window._cloudUserId,
+      display_name: _name || null,
+      body: _body
+    })
+    .select('id, task_id, user_id, display_name, body, created_at')
+    .single();
+  if (r.error) console.error('[Comment] 投稿失敗:', r.error.message);
+  return r;
+}
+window.addTaskComment = addTaskComment;
+
+// 自分のコメントだけ消せる（他人の発言を消せてはならない。DB側もRLSで守る）
+async function deleteTaskComment(commentId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient || !window._cloudUserId) return null;
+  var r = await window.supabaseClient.from('koyomiru_task_comments')
+    .delete()
+    .eq('id', commentId)
+    .eq('user_id', window._cloudUserId)
+    .select('id');
+  if (r.error) console.error('[Comment] 削除失敗:', r.error.message);
+  else if (!r.data || r.data.length === 0) {
+    return { error: { message: '自分のコメントだけ削除できます' } };
+  }
+  return r;
+}
+window.deleteTaskComment = deleteTaskComment;
+
 // 共有カレンダーの名前を変更する（オーナーのみ／RLSで制御）
 async function renameSharedCalendar(calendarId, newName) {
   if (window._isTesting || window._smokeTestRunning) return null;
@@ -38316,6 +38506,21 @@ function _unifiedStartRealtimeSubscription(userId) {
           if (typeof _syncLog === 'function') _syncLog('統一同期：Realtimeイベント受信', 'calendar_id=' + calId);
           unifiedPullTasks();
         } catch(e2) { console.warn('[Unified] Realtimeイベント処理エラー:', e2); }
+      })
+      // v0.45.1566: 予定ごとのコメントもリアルタイムで届ける。
+      // カレンダー本体と同じチャンネルに相乗りさせる（設定同期と同じ考え方）。
+      // 会話は「今まさに話している」ものなので、遅れて届くと意味が薄れる。
+      // 開いている予定のコメントだけ描き直す（関係ない予定の更新で画面を揺らさない）。
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'koyomiru_task_comments' }, function(payload) {
+        try {
+          if (window._isTesting) return;
+          if (window._unifiedRealtimeChannel !== myChannel) return;   // 現役でなければ無視（v0.45.1357）
+          var _tid = (payload.new && payload.new.task_id) || (payload.old && payload.old.task_id);
+          if (!_tid) return;
+          if (window._openCommentTaskId !== _tid) return;   // 開いていない予定は描き直さない
+          if (typeof _syncLog === 'function') _syncLog('コメント：Realtime受信', 'task=' + String(_tid).slice(0, 8));
+          if (typeof renderTaskComments === 'function') renderTaskComments(_tid);
+        } catch(e3) { console.warn('[Comment] Realtime処理エラー:', e3); }
       })
       // v0.45.1368: オールセッティングス同期のRealtime監視。タスクと同じチャンネルに
       // 相乗りさせる（1ユーザーにつきチャンネルは1本で足りるため）。
