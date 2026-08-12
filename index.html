@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1590 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1591 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1590';
+    const APP_VERSION = 'v0.45.1591';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6167,6 +6167,14 @@
         <textarea class="monthly-sidebar-input" id="monthlySidebarMemo" rows="2"
           placeholder="メモ・URL（調整さんのリンクなど）"
           style="margin-top:8px;resize:vertical;min-height:44px;"></textarea>
+        <!-- v0.45.1591: 【権威】2026-08-13、新規作成に終了日が無く、
+             作ってから編集で足す二度手間になっていた。ここで指定できるようにする。
+             空なら1日だけの予定なので、普段の使い方は変わらない。 -->
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <span style="font-size:13px;color:#9c9c9c;flex-shrink:0;">終了日</span>
+          <input type="date" id="monthlySidebarEndDate" class="monthly-sidebar-input"
+            style="flex:1;min-width:0;margin:0;">
+        </div>
         <button class="monthly-sidebar-save" onclick="saveMonthlySidebarTask()">追加</button>
       </div>
       <!-- タスク一覧 -->
@@ -6208,6 +6216,13 @@
           <label class="msb-label">日付</label>
           <input id="msbEditDate" type="date" class="msb-input-sm">
         </div>
+        <!-- v0.45.1591: 【権威】2026-08-13、終了日が定員の下にあってキーボードに隠れ、
+             届かないとの指摘。日付を決めた流れでそのまま入れられるよう直後に置く。
+             空なら1日だけの予定。今までの使い方は何も変わらない。 -->
+        <div class="msb-edit-row">
+          <label class="msb-label">終了日</label>
+          <input id="msbEditEndDate" type="date" class="msb-input-sm">
+        </div>
         <div class="msb-edit-row" id="msbEditTimeRow">
           <label class="msb-label">開始</label>
           <input id="msbEditTime" type="time" class="msb-input-sm">
@@ -6227,12 +6242,6 @@
              象限（section）の選択であり、カレンダー（calendarId）とは無関係だった。
              名前だけカレンダーに見えるので、選んでも所属は変わらない——最悪の食い違い。
              実際のカレンダー一覧から選ぶ、本物の選択に置き換える。 -->
-        <!-- v0.45.1590: 複数日にまたがる予定（8/11〜8/16 展示会 など）。
-             空なら1日だけの予定。今までの使い方は何も変わらない。 -->
-        <div class="msb-edit-row">
-          <label class="msb-label">終了日</label>
-          <input id="msbEditEndDate" class="msb-input-sm" type="date">
-        </div>
         <div class="msb-edit-row">
           <label class="msb-label">カレンダー</label>
           <select id="msbEditCalendar" class="msb-input-sm"></select>
@@ -18697,12 +18706,24 @@ function saveMonthlySidebarTask() {
       // これが無いと、URLを貼るのに追加してから開き直すことになる。
       var _memoEl = document.getElementById('monthlySidebarMemo');
       var _memo = _memoEl ? (_memoEl.value || '').trim() : '';
+      // v0.45.1591: 終了日。開始日より後でなければ無効（逆転を許すと表示が壊れる）
+      var _endD = null;
+      try {
+        var _edEl2 = document.getElementById('monthlySidebarEndDate');
+        var _ev = _edEl2 ? _edEl2.value : '';
+        if (_ev && _ev > _sidebarDateStr) _endD = _ev;
+        else if (_ev && _ev <= _sidebarDateStr) {
+          showToast('終了日は開始日より後にしてください', {type:'warn'});
+          return;
+        }
+      } catch(eEd3) {}
       var newTask = createTask({
         text: text,
         date: _sidebarDateStr,
         section: 1,
         calendarId: calId,
         memo: _memo,
+        endDate: _endD,
         // v0.45.1550: 【権威】2026-08-06、月間サイドバーから追加した予定が
         // 月間カレンダーの升目に描かれないとの報告。原因は v0.45.1514 で
         // displayScope に 'daily_only' を指定したこと。第10条が名指しで警告している
@@ -18713,6 +18734,7 @@ function saveMonthlySidebarTask() {
       if (!newTask) { showToast('\u8ffd\u52a0\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f', {type:'warn'}); return; }
       input.value = '';
       if (_memoEl) _memoEl.value = '';   // v0.45.1565: メモも空にする（次の入力に持ち越さない）
+      try { var _e2 = document.getElementById('monthlySidebarEndDate'); if (_e2) _e2.value = ''; } catch(e) {}
       // v0.45.1558: 追加できたら畳んで「見る」状態に戻す（続けて書くときは再度＋を押す）
       if (typeof toggleMonthlySidebarAdd === 'function') toggleMonthlySidebarAdd(true);
       renderMonthlySidebarTasks();
