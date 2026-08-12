@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1596 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1597 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1596';
+    const APP_VERSION = 'v0.45.1597';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8136,7 +8136,7 @@
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
           <label style="font-weight: 600; color: #262626; font-size: 0.9em;">スタンプモード</label>
           <label style="position: relative; display: inline-block; width: 50px; height: 26px; cursor: pointer;">
-            <input type="checkbox" id="simpleModeToggle" style="opacity: 0; width: 0; height: 0;"
+            <input type="checkbox" id="stampModeToggle" style="opacity: 0; width: 0; height: 0;"
               onchange="toggleSimpleModePreview(this.checked)">
             <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; border-radius: 26px; transition: 0.3s;"
               id="simpleToggleSlider"></span>
@@ -8969,7 +8969,7 @@
         dailyViewMode:    'matrix',
         matrixQuadTab:    1, // v0.45.1265: マトリクス象限タブ（スマホ）現在選択中の象限
         lastCalendarId:   '', // v0.45.1269: タスク作成モーダルで最後に選んだカレンダー（TimeTree参考・前回選択の記憶）
-        simpleMode:       'off',
+        stampMode:        'off',
         showCalendarSymbol: true,
         monthlyMode:      'fixed',
         monthlyRowH:      130,
@@ -9307,7 +9307,11 @@
       // ui
       var iv = localStorage.getItem('initialView');    if (iv) s.ui.initialView = iv;
       var dv = localStorage.getItem('dailyViewMode');  if (dv) s.ui.dailyViewMode = dv;
-      var sm = localStorage.getItem('simpleMode');     if (sm) s.ui.simpleMode = sm;
+      // v0.45.1597: 【権威】2026-08-13、「シンプルモード」では何をするか分からないため
+      // 内部の名前も stampMode に改めた。旧キー（simpleMode）で保存されている設定は
+      // ここで引き継ぐ。使っている人はまだ少ないが、消える理由がないので拾う（第48条）。
+      var sm = localStorage.getItem('simpleMode');     if (sm) s.ui.stampMode = sm;
+      var sm2 = localStorage.getItem('stampMode');     if (sm2) s.ui.stampMode = sm2;
       var mm = localStorage.getItem('monthlyMode');    if (mm) s.ui.monthlyMode = mm;
       var wd = localStorage.getItem('weeklyDays');     if (wd) s.ui.weeklyDays = wd;
       var wrh = localStorage.getItem('weeklyRowH');    if (wrh) s.ui.weeklyRowH = parseFloat(wrh);
@@ -12535,7 +12539,7 @@ function myDeckApply(idx) {
           });
         }
         // シンプルモード：スタンプ表示（複数対応）
-        const isSimple = allSettings.ui.simpleMode === 'on';
+        const isSimple = allSettings.ui.stampMode === 'on';
         if (isSimple) {
           const dayInfo = getDayInfo(dateStr);
           const stampIds = (dayInfo && dayInfo.stampIds) ? dayInfo.stampIds : [];
@@ -12826,7 +12830,7 @@ function myDeckApply(idx) {
           // サイドバーが開いている時はセルクリックを無視
           var _sb = document.getElementById('monthlySidebar');
           if (_sb && _sb.classList.contains('open')) return;
-          const isSimple = allSettings.ui.simpleMode === 'on';
+          const isSimple = allSettings.ui.stampMode === 'on';
           // 追加情報要素（節気・候・月齢）はpointer-events:noneだが念のためcurrentTargetで判定
           const _tgt = e.target;
           const _onCell = _tgt === cell || _tgt === dayNum || _tgt.classList.contains('monthly-holiday-name') || (_tgt.closest && _tgt.closest('.monthly-day-cell') === cell && _tgt.style && _tgt.style.pointerEvents === 'none');
@@ -18096,7 +18100,7 @@ function reviveBlueprint(id) {
           const isToday = dateStr === todayStr;
           const isHoliday = getHoliday(dateStr); // getHoliday()で母の日・父の日も検出
           // その日のタスク数をカウント（kind:'stamp'/'dailyStatus'除く）
-          const isSimpleY = allSettings.ui.simpleMode === 'on';
+          const isSimpleY = allSettings.ui.stampMode === 'on';
           const dayTasks = allTasks.filter(t => t.date === dateStr && t.kind !== 'stamp');
           const taskCount = isSimpleY
             ? dayTasks.filter(t => t.kind !== 'dailyStatus').length
@@ -23032,6 +23036,20 @@ function saveMsbEdit() {
         }
       } catch(e) { console.warn('[カレンダー] 参照切れの修復に失敗:', e && e.message); }
     })();
+// v0.45.1597: allSettings.ui.simpleMode（旧名）を stampMode へ移す。
+    // localStorageの旧キーとは別に、設定オブジェクト内にも残っているため。
+    try {
+      if (allSettings && allSettings.ui) {
+        if (allSettings.ui.simpleMode !== undefined && allSettings.ui.stampMode === undefined) {
+          allSettings.ui.stampMode = allSettings.ui.simpleMode;
+        }
+        if (allSettings.ui.simpleMode !== undefined) {
+          delete allSettings.ui.simpleMode;   // 第31条：旧名は残さない
+          saveAllSettings();
+          console.info('[移行] シンプルモード → スタンプモード に引き継ぎました');
+        }
+      }
+    } catch(e) { console.warn('[移行] スタンプモードの引き継ぎに失敗:', e && e.message); }
     initStampDefs();
     // v0.45.1511: 【権威】2026-08-04、まっさらな環境（プライベートウィンドウ）で
     // 自由帳のページとスタンプが二重に現れるとの報告。プリセット投入と、個別の
@@ -27425,13 +27443,13 @@ function loadSettingsUI() {
         radio.checked = (radio.value === dailyMode);
       });
       // シンプルモード
-      const simpleMode = allSettings.ui.simpleMode === 'on';
-      const simpleToggle = document.getElementById('simpleModeToggle');
-      if (simpleToggle) simpleToggle.checked = simpleMode;
-      updateSimpleToggleUI(simpleMode);
+      const stampMode = allSettings.ui.stampMode === 'on';
+      const simpleToggle = document.getElementById('stampModeToggle');
+      if (simpleToggle) simpleToggle.checked = stampMode;
+      updateSimpleToggleUI(stampMode);
       const stampArea = document.getElementById('stampSettingsArea');
-      if (stampArea) stampArea.style.display = simpleMode ? 'block' : 'none';
-      if (simpleMode) loadStampSettingsUI();
+      if (stampArea) stampArea.style.display = stampMode ? 'block' : 'none';
+      if (stampMode) loadStampSettingsUI();
       // プロフィール
       const savedName = allSettings.profile.name || '';
       // 性別設定の初期化
@@ -28209,8 +28227,8 @@ function loadCalendarSettingsUI() {
         var _dm = document.querySelector('input[name="dailyViewMode"]:checked');
         if (_dm) allSettings.ui.dailyViewMode = _dm.value; saveAllSettings();
         // シンプルモード
-        var simpleToggle = document.getElementById('simpleModeToggle');
-        if (simpleToggle) allSettings.ui.simpleMode = simpleToggle.checked ? 'on' : 'off'; saveAllSettings();
+        var simpleToggle = document.getElementById('stampModeToggle');
+        if (simpleToggle) allSettings.ui.stampMode = simpleToggle.checked ? 'on' : 'off'; saveAllSettings();
         // スタンプ設定
         saveStampSettings();
         // プロフィール名
@@ -31383,7 +31401,7 @@ function renderDashboardView() {
     }
     // シンプルモードON/OFF
     function applySimpleMode() {
-      const isSimple = allSettings.ui.simpleMode === 'on';
+      const isSimple = allSettings.ui.stampMode === 'on';
       const navDaily = document.getElementById('navDaily');
       const navWeekly = document.getElementById('navWeekly');
       const navYearly = document.getElementById('navYearly');
@@ -40168,7 +40186,7 @@ function showDebugLog(_initOnly) {
     var as = localStorage.getItem('allSettings');
     var asObj = as ? JSON.parse(as) : null;
     if (asObj) {
-      lsInfo.push('simpleMode: ' + (asObj.ui&&asObj.ui.simpleMode));
+      lsInfo.push('stampMode: ' + (asObj.ui&&asObj.ui.stampMode));
       lsInfo.push('craftMode: ' + (asObj.ui&&asObj.ui.craftModeEnabled));
       lsInfo.push('gantEnabled: ' + (asObj.ui&&asObj.ui.gantEnabled));
       lsInfo.push('dataVersion: ' + (asObj.meta&&asObj.meta.dataVersion));
