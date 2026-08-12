@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1589 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1590 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1589';
+    const APP_VERSION = 'v0.45.1590';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6227,6 +6227,12 @@
              象限（section）の選択であり、カレンダー（calendarId）とは無関係だった。
              名前だけカレンダーに見えるので、選んでも所属は変わらない——最悪の食い違い。
              実際のカレンダー一覧から選ぶ、本物の選択に置き換える。 -->
+        <!-- v0.45.1590: 複数日にまたがる予定（8/11〜8/16 展示会 など）。
+             空なら1日だけの予定。今までの使い方は何も変わらない。 -->
+        <div class="msb-edit-row">
+          <label class="msb-label">終了日</label>
+          <input id="msbEditEndDate" class="msb-input-sm" type="date">
+        </div>
         <div class="msb-edit-row">
           <label class="msb-label">カレンダー</label>
           <select id="msbEditCalendar" class="msb-input-sm"></select>
@@ -9495,7 +9501,35 @@
       // 設定のvisible=trueのもの
       return new Set(calendars.filter(c => c.visible).map(c => c.id));
     }
-    function isCalendarVisible(calendarId) {
+    // v0.45.1590: 【権威】2026-08-13、複数日にまたがる予定を扱えるようにしたい（TimeTree準拠）。
+// 「8/11〜8/16 展示会」のような、始まりと終わりのある予定。
+//
+// 設計：新しい概念は増やさず、既存の endDate を通常の予定にも使う。
+//   date    … 始まりの日（既存のまま。全ビューがこれを見ている）
+//   endDate … 終わりの日（未設定なら1日だけの予定。今までと同じ）
+// endDate は造営（gantt/blueprint）で既に使われているが、kind が違うので衝突しない。
+//
+// 判定をここに集約する。月間・週間・日次がそれぞれ別の式を書くと、
+// 「月間には出るのに週間には出ない」という食い違いが必ず生まれる（第4条）。
+function isTaskOnDate(t, dateStr) {
+  if (!t || !dateStr) return false;
+  if (!t.date) return false;
+  if (t.date === dateStr) return true;           // 始まりの日（1日だけの予定もここ）
+  if (!t.endDate) return false;                  // 終わりが無ければ1日だけ
+  return t.date < dateStr && dateStr <= t.endDate;   // 途中の日・最終日
+}
+window.isTaskOnDate = isTaskOnDate;
+
+// その日が、またぎ予定のどの位置にあたるか（見た目を変えるために使う）
+function getSpanPosition(t, dateStr) {
+  if (!t || !t.endDate || t.endDate === t.date) return 'single';
+  if (t.date === dateStr) return 'start';
+  if (t.endDate === dateStr) return 'end';
+  return 'middle';
+}
+window.getSpanPosition = getSpanPosition;
+
+function isCalendarVisible(calendarId) {
       if (!calendarId || calendarId === 'default') return true; // フォールバック
       // v0.45.1512: 【権威】2026-08-05、「月間にタスクが描画されない」との報告。
       // カレンダーIDは端末ごとに生成されるため、別端末で作られた予定を同期すると
@@ -12539,7 +12573,8 @@ function myDeckApply(idx) {
         var _tombG;
         try { _tombG = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
         catch(eT) { _tombG = new Set(); }
-        let dayTasks = allTasks.filter(t => t.date === dateStr && (t.kind || 'task') === 'task'
+        // v0.45.1590: またぎ予定は、始まりの日だけでなく途中の日にも出す
+        let dayTasks = allTasks.filter(t => isTaskOnDate(t, dateStr) && (t.kind || 'task') === 'task'
           && !t.deleted && !_tombG.has(t.id) && isCalendarVisible(t.calendarId));
         // 💰支払いのみフィルタ
         if (_monthlyFinanceFilterActive) {
@@ -12624,7 +12659,23 @@ function myDeckApply(idx) {
           // v0.45.1576: 担当者がいれば頭に出す。升目は狭いので、名前は最初の2文字まで。
           // 開かなくても「誰の仕事か」が分かることに意味がある。
           var _asgMark = task.assigneeName ? ('[' + String(task.assigneeName).slice(0, 2) + '] ') : '';
-          taskText.textContent = (_sym3 ? _sym3+' ' : '') + _asgMark + (task.time ? `${task.time} ${task.text}` : task.text);
+          // v0.45.1590: またぎ予定は帯のように見せる。
+          // 途中の日に毎回タイトルを出すと升目が埋まるので、始まりの日にだけ出す。
+          // 途中の日は帯だけを引いて「続いている」ことを示す（TimeTreeと同じ考え方）。
+          var _span = (typeof getSpanPosition === 'function') ? getSpanPosition(task, dateStr) : 'single';
+          if (_span === 'middle' || _span === 'end') {
+            taskText.textContent = '';
+            taskDiv.style.opacity = '0.85';
+          } else {
+            taskText.textContent = (_sym3 ? _sym3+' ' : '') + _asgMark + (task.time ? `${task.time} ${task.text}` : task.text);
+          }
+          if (_span !== 'single') {
+            // 帯として繋がって見えるよう、角と余白を整える
+            taskDiv.style.borderRadius =
+              _span === 'start' ? '4px 0 0 4px' : (_span === 'end' ? '0 4px 4px 0' : '0');
+            taskDiv.style.marginLeft  = (_span === 'start') ? '' : '-4px';
+            taskDiv.style.marginRight = (_span === 'end')   ? '' : '-4px';
+          }
           taskText.style.flex = '1';
           taskText.style.overflow = 'hidden';
           taskText.style.textOverflow = 'ellipsis';
@@ -18212,7 +18263,9 @@ function renderMonthlySidebarTasks() {
       try { _tomb = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
       catch(e) { _tomb = new Set(); }
       var allOfDay = allTasks.filter(function(t) {
-        if (!t || t.date !== _sidebarDateStr || t.deleted) return false;
+        // v0.45.1590: またぎ予定は途中の日にも出す（升目と同じ基準・第4条）
+        if (!t || t.deleted) return false;
+        if (!isTaskOnDate(t, _sidebarDateStr)) return false;
         if ((t.kind || 'task') !== 'task') return false;
         if (_tomb.has(t.id)) return false;   // 消したはずのものが戻ってきていても出さない
         return true;
@@ -18688,6 +18741,11 @@ function saveMonthlySidebarTask() {
       var _endEl = document.getElementById('msbEditEndTime');
       if (_endEl) _endEl.value = task.endTime || '';
       document.getElementById('msbEditMemo').value    = task.memo || '';
+      // v0.45.1590: 終了日を反映
+      try {
+        var _edEl = document.getElementById('msbEditEndDate');
+        if (_edEl) _edEl.value = task.endDate || '';
+      } catch(eEd) {}
       // v0.45.1583: 定員を反映
       try {
         var _capEl = document.getElementById('msbEditCapacity');
@@ -18795,6 +18853,17 @@ function saveMonthlySidebarTask() {
         var _cp = document.getElementById('msbEditCapacity');
         _capacity = (_cp && _cp.value) ? (parseInt(_cp.value, 10) || null) : null;
       } catch(eCp2) {}
+      // v0.45.1590: 終了日。開始日より前なら無効として扱う（逆転を許すと表示が壊れる）
+      var _endDate = null;
+      try {
+        var _ed = document.getElementById('msbEditEndDate');
+        var _v = _ed ? _ed.value : '';
+        if (_v && date && _v > date) _endDate = _v;
+        else if (_v && date && _v <= date) {
+          showToast('終了日は開始日より後にしてください', {type:'warn'});
+          return;
+        }
+      } catch(eEd2) {}
       var repEl    = document.getElementById('msbEditRepeat');
       var repeat   = repEl ? repEl.value : 'none';
       var repEndEl = document.getElementById('msbEditRepeatEnd');
@@ -18808,6 +18877,7 @@ function saveMonthlySidebarTask() {
           // 共有カレンダーへ移せばそのまま相手にも届く（v0.45.1544）。
           displayScope: scope, calendarId: _newCalId || _msbCalId || 'default',
           capacity: _capacity,
+          endDate: _endDate,
           repeat: repeat !== 'none' ? repeat : null,
           repeatEnd: repEnd,
           repeatGroupId: repeat !== 'none' ? id : null
