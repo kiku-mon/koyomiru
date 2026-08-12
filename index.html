@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1572 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1574 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1572';
+    const APP_VERSION = 'v0.45.1574';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2121,6 +2121,66 @@
       border-bottom: 1px solid #f0f0f0;
       flex-shrink: 0;
       background: #fff;
+    }
+    /* v0.45.1573: 【権威】2026-08-06、＋と？で大きさも色も揃っておらず、
+       しかも？が水色のグラデーションで光っていて、主役の＋より目立っていた。
+       毎日押すものと、たまに押すものは、同じ重みに見せてはいけない。
+       ＋は56pxで主役のまま、？は44pxに落として白地にする。
+       44pxにするのは、指で押せる最小の大きさ（Appleの指針）を下回らないため。
+       小さくしても押しにくくならない下限にあたる。 */
+    .koyomiru-fab, .koyomiru-help-fab {
+      position: fixed;
+      bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      text-align: center;
+      z-index: 99990;
+      font-family: inherit;
+      /* コメント欄が開いたときに沈める（下記 .cmt-open）。動きは控えめに。 */
+      transition: transform .22s cubic-bezier(.4,0,.2,1), opacity .18s ease;
+    }
+    .koyomiru-fab {
+      left: 20px;
+      width: 56px;
+      height: 56px;
+      line-height: 56px;
+      font-size: 1.7em;
+      font-weight: 300;
+      background: #0b6bcb;
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(11,107,203,0.45);
+    }
+    .koyomiru-fab:active {
+      background: #094e96;
+    }
+    /* v0.45.1574: 【権威】2026-08-06、44pxの白地にしたところ「浮いて見える」との指摘。
+       同じ場所に並ぶものは、揃っていないと単に不統一に見えるだけだった。
+       ＋と同じ56pxに揃え、色も元の水色に戻す。
+       役割の差は、大きさではなく置き場所（左右）と色味の違いで足りる。 */
+    .koyomiru-help-fab {
+      right: 20px;
+      width: 56px;
+      height: 56px;
+      line-height: 56px;
+      font-size: 1.5em;
+      font-weight: 700;
+      background: linear-gradient(135deg,#4facfe,#00f2fe);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(79,172,254,0.5);
+    }
+    .koyomiru-help-fab:active {
+      filter: brightness(.92);
+    }
+    /* v0.45.1573: コメント欄を開いている間は、両方とも下へ沈める。
+       その場面ではどちらも使わないうえ、入力欄に被って邪魔になるだけ。
+       消すのではなく沈めるのは、閉じれば戻ると分かるようにするため。 */
+    body.cmt-open .koyomiru-fab,
+    body.cmt-open .koyomiru-help-fab {
+      transform: translateY(120px);
+      opacity: 0;
+      pointer-events: none;
     }
     .monthly-sidebar-date {
       font-size: 18px;
@@ -18416,6 +18476,12 @@ function openMonthlySidebar(dateStr) {
     }
 
     function closeMonthlySidebar() {
+      // v0.45.1573: サイドバーごと閉じたら、コメント欄の状態も解く。
+      // これが無いと、ボタンが沈んだまま戻ってこない。
+      try {
+        window._openCommentTaskId = null;
+        document.body.classList.remove('cmt-open');
+      } catch(e) {}
       var sb = document.getElementById('monthlySidebar');
       if (sb) sb.classList.remove('open');
       var ov = document.getElementById('monthlySidebarOverlay');
@@ -34987,6 +35053,9 @@ function openTaskComments(taskId) {
     if (!host) return;
     window._openCommentTaskId = taskId;
     host.style.display = 'block';
+    // v0.45.1573: コメント欄が入力欄まで含めてせり上がるので、
+    // ＋と？を下へ沈める。この場面ではどちらも使わない。
+    try { document.body.classList.add('cmt-open'); } catch(e) {}
     host.innerHTML = '<div style="padding:12px 16px;font-size:12px;color:#9c9c9c;">読み込み中…</div>';
     renderTaskComments(taskId);
   } catch(e) { console.warn('[Comment] 表示に失敗:', e && e.message); }
@@ -34995,6 +35064,7 @@ window.openTaskComments = openTaskComments;
 
 function closeTaskComments() {
   window._openCommentTaskId = null;
+  try { document.body.classList.remove('cmt-open'); } catch(e) {}
   var host = document.getElementById('msbCommentArea');
   if (host) { host.style.display = 'none'; host.innerHTML = ''; }
 }
@@ -64030,13 +64100,11 @@ window.addMigration = addMigration;
      「近いが競合しない場所」に日常の操作を、という住み分けにする。
      使い方（？）は最初の数回しか押さないため、アカウントメニューへ移した。
      長押しでデバッグログを開く隠し機能も、移設先に引き継いでいる。 -->
-<button id="koyomiruAddFab" onclick="openQuickAddFromFab()" title="予定を追加"
-  style="display:block;position:fixed;bottom:24px;left:20px;width:56px;height:56px;border-radius:50%;background:#0b6bcb;border:none;color:#fff;font-size:1.7em;font-weight:300;cursor:pointer;box-shadow:0 4px 16px rgba(11,107,203,0.45);z-index:99990;line-height:56px;text-align:center;padding:0;">＋</button>
+<button id="koyomiruAddFab" class="koyomiru-fab" onclick="openQuickAddFromFab()" title="予定を追加">＋</button>
 <!-- v0.45.1568: 【権威】2026-08-06、？ボタンをアカウントメニューへ移したが、
      いずれ整備して機能させる予定のものなので、入口は右下に残す。
      ＋は左下にしたので、両者は競合しない。長押しのデバッグ機能も従来通り。 -->
-<button id="tutorialHelpBtn" onclick="showTutorial()" title="使い方"
-  style="display:block;position:fixed;bottom:24px;right:20px;width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#4facfe,#00f2fe);border:none;color:#fff;font-size:1.3em;font-weight:bold;cursor:pointer;box-shadow:0 4px 15px rgba(79,172,254,0.5);z-index:99990;line-height:42px;text-align:center;padding:0;"
+<button id="tutorialHelpBtn" class="koyomiru-help-fab" onclick="showTutorial()" title="使い方"
   ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
   ontouchend="clearTimeout(this._t)"
   ontouchcancel="clearTimeout(this._t)">?</button>
