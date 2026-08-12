@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1574 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1576 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1574';
+    const APP_VERSION = 'v0.45.1576';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -12584,7 +12584,10 @@ function myDeckApply(idx) {
           const taskText = document.createElement('span');
           taskText.className = 'monthly-task-text';
           var _sym3 = (typeof getCalendarSymbol==='function') ? getCalendarSymbol(task.calendarId) : '';
-          taskText.textContent = (_sym3 ? _sym3+' ' : '') + (task.time ? `${task.time} ${task.text}` : task.text);
+          // v0.45.1576: 担当者がいれば頭に出す。升目は狭いので、名前は最初の2文字まで。
+          // 開かなくても「誰の仕事か」が分かることに意味がある。
+          var _asgMark = task.assigneeName ? ('[' + String(task.assigneeName).slice(0, 2) + '] ') : '';
+          taskText.textContent = (_sym3 ? _sym3+' ' : '') + _asgMark + (task.time ? `${task.time} ${task.text}` : task.text);
           taskText.style.flex = '1';
           taskText.style.overflow = 'hidden';
           taskText.style.textOverflow = 'ellipsis';
@@ -13534,6 +13537,10 @@ function myDeckApply(idx) {
             const _wasDone = t.completed;
             t.completed = !t.completed;
             t.done = t.completed; // 造営(gantt)のdoneと同期
+            // v0.45.1575: 【権威】2026-08-06、完了トグルでupdatedAtを更新しておらず、
+            // 差分プッシュの対象から漏れてクラウドへ届いていなかった（第61条）。
+            // 共有カレンダーでは「相手が完了にしたのにこちらは未完了のまま」になる。
+            t.updatedAt = new Date().toISOString();
             saveAllTasks();
             if (typeof recalcAll === 'function') recalcAll(t.id);
             if (!_wasDone && t.completed) {
@@ -16844,6 +16851,7 @@ function toggleGantEnabled(checked) {
       if (!t) return;
       t.done = !t.done;
       t.completed = t.done; // 日次ビューのcompletedと双方向同期
+      t.updatedAt = new Date().toISOString();   // v0.45.1575: 第61条。更新しないと同期されない
       saveAllTasks();
       if (typeof recalcAll === 'function') recalcAll(tid);
       // 手立て（gantt）完了時に次ステップを自動解放
@@ -18173,7 +18181,12 @@ function renderMonthlySidebarTasks() {
             toggleTaskById(taskId);
           } else {
             var _t = allTasks.find(function(x){ return x.id === taskId; });
-            if (_t) { _t.done = !_t.done; _t.completed = _t.done; saveAllTasks(); }
+            if (_t) {
+              _t.done = !_t.done;
+              _t.completed = _t.done;
+              _t.updatedAt = new Date().toISOString();   // v0.45.1575: 第61条
+              saveAllTasks();
+            }
           }
           renderMonthlySidebarTasks();
           typeof renderMonthlyView === 'function' && renderMonthlyView();
@@ -18208,6 +18221,22 @@ function renderMonthlySidebarTasks() {
         _body.appendChild(txt);
         txt.style.flex = 'none';
         txt.style.display = 'block';
+        // v0.45.1576: 共有カレンダーの予定には担当者を出す。
+        // 共有していないカレンダーでは出さない（1人しかいないので意味がない）。
+        if (t.cloudCalendarId) {
+          var _asg = document.createElement('button');
+          var _asgName = t.assigneeName || '';
+          _asg.textContent = _asgName ? ('👤 ' + _asgName) : '＋ 担当者';
+          _asg.title = '担当者を決める';
+          _asg.style.cssText = 'margin-top:4px;padding:3px 9px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit;' +
+            (_asgName
+              ? 'border:1px solid #cfe0f5;background:#eef5fd;color:#0b5bb0;'
+              : 'border:1px dashed #dcdcdc;background:transparent;color:#b0b0b0;');
+          _asg.onclick = (function(_tid) {
+            return function(e) { e && e.stopPropagation(); openAssigneePicker(_tid, _asg); };
+          })(taskId);
+          _body.appendChild(_asg);
+        }
         if (t.memo && String(t.memo).trim()) {
           var _memoEl = document.createElement('div');
           _memoEl.className = 'msb-task-memo';
@@ -34996,6 +35025,91 @@ async function listMySharedCalendars() {
 // 共有カレンダーの実メンバー一覧をDBから取得する。
 // 注意：既存の getSharedCalendarMembers() はタスクの作成者から逆算する方式のため、
 // 「参加したがまだタスクを作っていない人」が現れない。メンバー表示にはこちらを使う。
+// v0.45.1576: 【権威】2026-08-06、共有カレンダーを業務でも使えるようにするため、
+// 予定に担当者を持たせる。既にメンバー情報（user_id・display_name）は取れているので、
+// それを選べるようにするだけで足りる。新しい仕組みは作らない。
+// 「誰がやるか」が入るだけで、共有カレンダーは仕事で回るようになる。
+// 担当者は task.assigneeId / task.assigneeName に持つ。名前も一緒に持つのは、
+// メンバーが抜けたあとも「誰がやることだったか」が残るようにするため。
+window._sharedMemberCache = {};   // calendarId → [{user_id, display_name}]
+// 担当者を選ぶ。メンバーの一覧をその場に出して、押すだけで決まる。
+// 別画面へ飛ばさないのは、担当を決めるのは一瞬の判断で、
+// 画面が切り替わると「今どの予定の話だったか」を見失うため。
+async function openAssigneePicker(taskId, anchorBtn) {
+  try {
+    var task = (allTasks || []).find(function(t) { return t && t.id === taskId; });
+    if (!task || !task.cloudCalendarId) return;
+    var old = document.getElementById('assigneePicker');
+    if (old) old.remove();
+    var members = await loadSharedMembersForPicker(task.cloudCalendarId);
+    var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+    var box = document.createElement('div');
+    box.id = 'assigneePicker';
+    box.style.cssText = 'position:fixed;z-index:99995;background:#fff;border:1px solid #e0e0e0;border-radius:12px;' +
+      'box-shadow:0 8px 24px rgba(0,0,0,0.16);padding:6px;min-width:170px;max-height:50vh;overflow-y:auto;';
+    var rows = members.map(function(m) {
+      var _nm = m.display_name || 'メンバー';
+      var _me = (m.user_id === window._cloudUserId) ? '（自分）' : '';
+      return '<button onclick="setTaskAssignee(\'' + taskId + '\',\'' + m.user_id + '\',\'' +
+             _esc(_nm).replace(/'/g, '&#39;') + '\')" ' +
+             'style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:none;' +
+             'font-size:13px;color:#333;cursor:pointer;border-radius:8px;font-family:inherit;">👤 ' +
+             _esc(_nm) + '<span style="color:#aaa;font-size:11px;">' + _me + '</span></button>';
+    }).join('');
+    box.innerHTML = (rows || '<div style="padding:10px 12px;font-size:12px;color:#aaa;">メンバーがいません</div>') +
+      '<div style="border-top:1px solid #f0f0f0;margin-top:4px;padding-top:4px;">' +
+      '<button onclick="setTaskAssignee(\'' + taskId + '\',null,null)" ' +
+      'style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:none;' +
+      'font-size:13px;color:#999;cursor:pointer;border-radius:8px;font-family:inherit;">担当をはずす</button></div>';
+    document.body.appendChild(box);
+    // 押したボタンの近くに出す（画面からはみ出さないよう寄せる）
+    try {
+      var r = anchorBtn.getBoundingClientRect();
+      var top = Math.min(r.bottom + 6, window.innerHeight - box.offsetHeight - 12);
+      var left = Math.min(r.left, window.innerWidth - box.offsetWidth - 12);
+      box.style.top = Math.max(12, top) + 'px';
+      box.style.left = Math.max(12, left) + 'px';
+    } catch(e) { box.style.top = '30%'; box.style.left = '20px'; }
+    setTimeout(function() {
+      document.addEventListener('click', function _close() {
+        var b = document.getElementById('assigneePicker');
+        if (b) b.remove();
+        document.removeEventListener('click', _close);
+      }, { once: true });
+    }, 10);
+  } catch(e) { console.warn('[担当者] 選択の表示に失敗:', e && e.message); }
+}
+window.openAssigneePicker = openAssigneePicker;
+
+function setTaskAssignee(taskId, userId, name) {
+  try {
+    var box = document.getElementById('assigneePicker');
+    if (box) box.remove();
+    // updateTask を通すので updatedAt が入り、そのままクラウドへ届く（第61条）
+    if (typeof updateTask === 'function') {
+      updateTask(taskId, { assigneeId: userId || null, assigneeName: name || null });
+    }
+    if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks();
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+    if (typeof showToast === 'function') {
+      showToast(name ? ('担当を「' + name + '」にしました') : '担当をはずしました');
+    }
+  } catch(e) { console.warn('[担当者] 設定に失敗:', e && e.message); }
+}
+window.setTaskAssignee = setTaskAssignee;
+
+async function loadSharedMembersForPicker(cloudCalendarId) {
+  try {
+    if (!cloudCalendarId) return [];
+    if (window._sharedMemberCache[cloudCalendarId]) return window._sharedMemberCache[cloudCalendarId];
+    var r = await listSharedCalendarMembers(cloudCalendarId);
+    var rows = (r && !r.error && r.data) ? r.data : [];
+    window._sharedMemberCache[cloudCalendarId] = rows;
+    return rows;
+  } catch(e) { return []; }
+}
+window.loadSharedMembersForPicker = loadSharedMembersForPicker;
+
 async function listSharedCalendarMembers(calendarId) {
   if (window._isTesting || window._smokeTestRunning) return null;
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
