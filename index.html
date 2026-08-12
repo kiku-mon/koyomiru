@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1576 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1577 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1576';
+    const APP_VERSION = 'v0.45.1577';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -5350,7 +5350,10 @@
     <div style="border-top:1px solid #f0f0f0;padding:8px 0;">
       <button class="account-menu-item" onclick="closeAccountMenu(); openSharedCalendarModal();"><span>👥</span>共有カレンダー</button>
       <button class="account-menu-item" onclick="closeAccountMenu(); openOshiraseModal();"><span>📣</span>お知らせ</button>
-      <!-- v0.45.1568: 使い方は右下の？に戻したので、メニューからは外す（入口は1つに） -->
+      <button class="account-menu-item" id="accountMenuHelp" onclick="closeAccountMenu(); showTutorial();"
+        ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
+        ontouchend="clearTimeout(this._t)"
+        ontouchcancel="clearTimeout(this._t)"><span>❓</span>使い方</button>
     </div>
     <div id="accountMenuAuthArea" style="border-top:1px solid #f0f0f0;padding:8px 0 10px;"></div>
   </div>
@@ -7797,6 +7800,14 @@
             </label>
           </div>
         </div>
+        <!-- v0.45.1577: 右下の？の出し入れ。試して比べられるようにしておく。 -->
+        <div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #f0f0f0;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="showHelpFabCheck" onchange="setShowHelpFab(this.checked)" style="width:16px;height:16px;">
+            <span style="font-size:0.85em;font-weight:700;color:#333;">右下に「？」を出す</span>
+          </label>
+          <p style="margin:6px 0 0 24px;font-size:0.78em;color:#888;">隠していても、アカウント →「使い方」から開けます。</p>
+        </div>
         <!-- v0.45.1526: 【権威】2026-08-06、「月間を左に持ってきたい」との要望。
              使う頻度は人によって違うため、並び順を変えられるようにする。
              新しい設定画面は作らず（第56条）、既存のタブ設定セクションに並べる。 -->
@@ -8965,6 +8976,9 @@
           yearly: true, notebook: true, craft: true,
           dashboard: true,
         },
+        // v0.45.1577: 右下の？ボタンを出すか。既定は出さない（浮くボタンは＋だけにする）。
+        // 出したくなったら設定で戻せる。試して比べられるようにしておくための設定。
+        showHelpFab: false,
         // v0.45.1555: 週の始まりの曜日。0=日曜, 1=月曜。既定は月曜（日本の暦の慣習）。
         // 【権威】2026-08-06、仕事が日曜始まりの文化のため選べるようにしたいとの要望。
         // 業種によって週の区切りは違い、どちらが正しいというものではないので設定で選ばせる。
@@ -14763,6 +14777,29 @@ function setWeekStartsOn(v) {
   } catch(e) { console.warn('[設定] 週の始まりの保存に失敗:', e && e.message); }
 }
 window.setWeekStartsOn = setWeekStartsOn;
+
+// v0.45.1577: ？ボタンの表示を設定に従わせる。
+function applyHelpFabVisibility() {
+  try {
+    var btn = document.getElementById('tutorialHelpBtn');
+    if (!btn) return;
+    var show = !!(allSettings && allSettings.ui && allSettings.ui.showHelpFab);
+    btn.style.display = show ? 'block' : 'none';
+  } catch(e) {}
+}
+window.applyHelpFabVisibility = applyHelpFabVisibility;
+
+function setShowHelpFab(v) {
+  try {
+    allSettings.ui.showHelpFab = !!v;
+    saveAllSettings();
+    applyHelpFabVisibility();
+    if (typeof showToast === 'function') {
+      showToast(v ? '右下に「？」を出しました' : '右下の「？」を隠しました（アカウントから開けます）');
+    }
+  } catch(e) {}
+}
+window.setShowHelpFab = setShowHelpFab;
 
 function applyVisibleTabsSettings() {
   if (!allSettings.ui.visibleTabs) allSettings.ui.visibleTabs = {};
@@ -26978,6 +27015,11 @@ function loadSettingsUI() {
       if (typeof applySettingsSectionVisibility === 'function') applySettingsSectionVisibility();
       // v0.45.1526: ナビタブの並び替えUIを描く（開くたびに現在の並びを反映する）
       if (typeof renderNavTabOrderUI === 'function') renderNavTabOrderUI();
+      // v0.45.1577: ？ボタンの設定を反映
+      try {
+        var _hfEl = document.getElementById('showHelpFabCheck');
+        if (_hfEl) _hfEl.checked = !!(allSettings.ui && allSettings.ui.showHelpFab);
+      } catch(eHf) {}
       // v0.45.1555: 週の始まりの選択に、現在の設定を反映する
       try {
         var _ws = (typeof getWeekStartsOn === 'function') ? getWeekStartsOn() : 1;
@@ -52380,6 +52422,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          // ③ 並び替えを実行してもアカウントは最後のまま（実挙動）
          if (typeof applyNavTabOrder === 'function') {
            applyNavTabOrder();
+    if (typeof applyHelpFabVisibility === 'function') applyHelpFabVisibility();   // v0.45.1577
            var _kids328b = Array.prototype.filter.call(_navParent328.children, function(el) {
              return el.id && el.id.indexOf('nav') === 0;
            });
@@ -64215,10 +64258,13 @@ window.addMigration = addMigration;
      使い方（？）は最初の数回しか押さないため、アカウントメニューへ移した。
      長押しでデバッグログを開く隠し機能も、移設先に引き継いでいる。 -->
 <button id="koyomiruAddFab" class="koyomiru-fab" onclick="openQuickAddFromFab()" title="予定を追加">＋</button>
-<!-- v0.45.1568: 【権威】2026-08-06、？ボタンをアカウントメニューへ移したが、
-     いずれ整備して機能させる予定のものなので、入口は右下に残す。
-     ＋は左下にしたので、両者は競合しない。長押しのデバッグ機能も従来通り。 -->
-<button id="tutorialHelpBtn" class="koyomiru-help-fab" onclick="showTutorial()" title="使い方"
+<!-- v0.45.1577: 【権威】2026-08-06、画面の色数が多く「うるさい」との指摘。
+     浮いているボタンが2つあると、それだけで色が2色増える。
+     ？は最初の数回しか押さないので、アカウントメニューへ戻す。
+     残るのは＋だけになり、浮いているものは青一色に収まる。
+     機能は失われていない（メニューから開ける・長押しのデバッグも引き継ぎ）。
+     いずれ？を整備する段になったら、その時に見せ方を改めて考える。 -->
+<button id="tutorialHelpBtn" class="koyomiru-help-fab" style="display:none;" onclick="showTutorial()" title="使い方"
   ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
   ontouchend="clearTimeout(this._t)"
   ontouchcancel="clearTimeout(this._t)">?</button>
