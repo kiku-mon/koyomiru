@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1579 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1581 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1579';
+    const APP_VERSION = 'v0.45.1581';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -6208,16 +6208,14 @@
           <label class="msb-label">メモ</label>
           <textarea id="msbEditMemo" class="msb-textarea" rows="2" placeholder="メモ・URL（任意）"></textarea>
         </div>
+        <!-- v0.45.1581: 【権威】2026-08-06、予定のカレンダーを変える手段が無いとの指摘。
+             ここは「カテゴリ」という名でカレンダー名を固定で並べていたが、実体は
+             象限（section）の選択であり、カレンダー（calendarId）とは無関係だった。
+             名前だけカレンダーに見えるので、選んでも所属は変わらない——最悪の食い違い。
+             実際のカレンダー一覧から選ぶ、本物の選択に置き換える。 -->
         <div class="msb-edit-row">
-          <label class="msb-label">カテゴリ</label>
-          <select id="msbEditSection" class="msb-input-sm">
-            <option value="1">仕事</option>
-            <option value="2">時間割</option>
-            <option value="3">プライベート</option>
-            <option value="4">家族</option>
-            <option value="5">趣味</option>
-            <option value="6">メモ</option>
-          </select>
+          <label class="msb-label">カレンダー</label>
+          <select id="msbEditCalendar" class="msb-input-sm"></select>
         </div>
         <div class="msb-edit-row">
           <label class="msb-label">繰り返し</label>
@@ -12517,7 +12515,12 @@ function myDeckApply(idx) {
           }
         }
         // この日のタスクを表示（dailyStatusは除外）
-        let dayTasks = allTasks.filter(t => t.date === dateStr && (t.kind || 'task') === 'task' && isCalendarVisible(t.calendarId));
+        // v0.45.1580: 削除したものは升目にも出さない（シートと同じ基準・第4条）
+        var _tombG;
+        try { _tombG = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
+        catch(eT) { _tombG = new Set(); }
+        let dayTasks = allTasks.filter(t => t.date === dateStr && (t.kind || 'task') === 'task'
+          && !t.deleted && !_tombG.has(t.id) && isCalendarVisible(t.calendarId));
         // 💰支払いのみフィルタ
         if (_monthlyFinanceFilterActive) {
         }
@@ -18182,8 +18185,17 @@ function renderMonthlySidebarTasks() {
       // 見ているものが違うと「升目にあるのにシートに無い（逆もある）」が起きる。
       // 升目と同じ基準に揃える。ここは「その日の予定」を見る場所であって、
       // 日誌や自由帳はそれぞれのビューで見るもの。
+      // v0.45.1580: 削除したものは、何があっても描かない。
+      // クラウド側の伝播が失敗していても、この端末で消したものは消えたままにする。
+      // 墓石（deletedTaskIds）は削除の意思そのものなので、表示の最終判断に使う。
+      var _tomb;
+      try { _tomb = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
+      catch(e) { _tomb = new Set(); }
       var allOfDay = allTasks.filter(function(t) {
-        return t && t.date === _sidebarDateStr && !t.deleted && (t.kind || 'task') === 'task';
+        if (!t || t.date !== _sidebarDateStr || t.deleted) return false;
+        if ((t.kind || 'task') !== 'task') return false;
+        if (_tomb.has(t.id)) return false;   // 消したはずのものが戻ってきていても出さない
+        return true;
       });
       // v0.45.1561: 【権威】2026-08-06、月間でコピキャカレンダーだけを選んでいるのに、
       // サイドバーには全カレンダーの予定が出るとの指摘。同じ日の同じデータを、
@@ -18656,7 +18668,23 @@ function saveMonthlySidebarTask() {
       var _endEl = document.getElementById('msbEditEndTime');
       if (_endEl) _endEl.value = task.endTime || '';
       document.getElementById('msbEditMemo').value    = task.memo || '';
-      document.getElementById('msbEditSection').value = task.section || '1';
+      // v0.45.1581: カレンダー一覧から選べるようにする。
+      // 共有中のものには印を付け、切り替えたときに何が起きるか分かるようにする。
+      try {
+        var _calSel = document.getElementById('msbEditCalendar');
+        if (_calSel) {
+          _calSel.innerHTML = (calendars || []).map(function(c) {
+            var _lbl = c.name + (c.cloudCalendarId ? '　👥 共有中' : '');
+            return '<option value="' + c.id + '"' + (c.id === task.calendarId ? ' selected' : '') + '>' +
+                   _lbl.replace(/</g, '&lt;') + '</option>';
+          }).join('');
+          // 参照切れ（今の一覧に無いカレンダーを指している）ときは、選べないままにせず知らせる
+          if (task.calendarId && !(calendars || []).some(function(c) { return c && c.id === task.calendarId; })) {
+            _calSel.insertAdjacentHTML('afterbegin',
+              '<option value="" selected>（カレンダー未設定・選び直してください）</option>');
+          }
+        }
+      } catch(eCal) { console.warn('[編集] カレンダー一覧の作成に失敗:', eCal && eCal.message); }
       var allDayEl = document.getElementById('msbEditAllDay');
       if (allDayEl) allDayEl.checked = !task.time;
       msbAllDayChange();
@@ -18724,7 +18752,14 @@ function saveMonthlySidebarTask() {
       var _endInput = document.getElementById('msbEditEndTime');
       var endTime  = (_endInput && _endInput.value) ? _endInput.value : null;
       var memo     = document.getElementById('msbEditMemo').value.trim() || null;
-      var section  = parseInt(document.getElementById('msbEditSection').value) || 1;
+      // v0.45.1581: 象限（section）は編集画面から変えない。元の値を保つ。
+      // ここで変えていたのは「カテゴリ」という名の別物で、利用者の意図と無関係だった。
+      var section  = _t.section || 1;
+      var _newCalId = null;
+      try {
+        var _cs = document.getElementById('msbEditCalendar');
+        if (_cs && _cs.value) _newCalId = _cs.value;
+      } catch(eCs) {}
       var repEl    = document.getElementById('msbEditRepeat');
       var repeat   = repEl ? repEl.value : 'none';
       var repEndEl = document.getElementById('msbEditRepeatEnd');
@@ -18733,7 +18768,10 @@ function saveMonthlySidebarTask() {
       if (typeof updateTask === 'function') {
         updateTask(id, {
           text: text, date: date, time: time, endTime: endTime, memo: memo, section: section,
-          displayScope: scope, calendarId: _msbCalId || 'default',
+          // v0.45.1581: 編集画面で選んだカレンダーを使う。
+          // updateTask 側が cloudCalendarId（同期先）も追従させるので、
+          // 共有カレンダーへ移せばそのまま相手にも届く（v0.45.1544）。
+          displayScope: scope, calendarId: _newCalId || _msbCalId || 'default',
           repeat: repeat !== 'none' ? repeat : null,
           repeatEnd: repEnd,
           repeatGroupId: repeat !== 'none' ? id : null
@@ -57529,10 +57567,27 @@ function _propagateDeletion(id) {
     }
   } catch(e) { console.warn('[_propagateDeletion] 墓石記録エラー:', e); }
   if (window._cloudIsLoggedIn && !window._isTesting && window.supabaseClient) {
+    // v0.45.1580: 【権威】2026-08-06、削除しても相手の画面から消えないとの報告が続く。
+    // 原因が2つあった。
+    //   ① deleted_at だけ立てて updated_at を触っていなかったため、受け取る側の
+    //      「クラウドの方が新しいか」の判定に載らず、無視されることがあった。
+    //   ② 0件更新（対象が無い・権限で弾かれる）でもエラーにならないため、
+    //      届いていないことに誰も気づけなかった。
+    // updated_at も同時に進め、更新された行数を確かめる。
+    var _now = new Date().toISOString();
     window.supabaseClient.from('koyomiru_shared_tasks')
-      .update({ deleted_at: new Date().toISOString() })
+      .update({ deleted_at: _now, updated_at: _now })
       .eq('id', id)
-      .then(function(r){ if (r && r.error) console.warn('[Unified] 削除の伝播エラー:', r.error.message); })
+      .select('id')
+      .then(function(r){
+        if (r && r.error) { console.warn('[Unified] 削除の伝播エラー:', r.error.message); return; }
+        if (!r || !r.data || r.data.length === 0) {
+          // まだクラウドに無いタスク（作ってすぐ消した等）はここに来る。異常ではない。
+          console.info('[Unified] 削除の伝播：対象なし id=' + String(id).slice(0, 8));
+          return;
+        }
+        console.info('[Unified] 削除を伝播しました id=' + String(id).slice(0, 8));
+      })
       .catch(function(e){ console.warn('[Unified] 削除の伝播エラー:', e); });
   }
 }
