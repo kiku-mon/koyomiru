@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1571 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1572 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1571';
+    const APP_VERSION = 'v0.45.1572';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -10380,6 +10380,11 @@ function renderTodoList() {
     function removeTaskFromMaster(id) {
       const index = allTasks.findIndex(t => t.id === id);
       if (index !== -1) {
+        // v0.45.1572: 【権威】2026-08-06、削除したのに消えないとの報告。
+        // ここは削除の共通処理でありながら、クラウドへ伝播していなかったため、
+        // 次の同期で元のデータが戻り、消したはずの予定が復活していた。
+        // 第62条が名指しで戒めている状態。ここに入れれば全ての呼び出し元が守られる（第4条）。
+        if (typeof _propagateDeletion === 'function') _propagateDeletion(id);
         allTasks.splice(index, 1);
         saveAllTasks();
         return true;
@@ -18175,7 +18180,15 @@ function renderMonthlySidebarTasks() {
           e.stopPropagation();
           if (del.dataset.confirm === '1') {
             var _t = allTasks.find(function(x){ return x.id === taskId; });
-            if (_t) { _t.deleted = true; saveAllTasks(); }
+            if (_t) {
+              _t.deleted = true;
+              _t.updatedAt = new Date().toISOString();   // 第61条：変更したら必ず更新
+              // v0.45.1572: 【権威】2026-08-06、削除したのに消えないとの報告。
+              // 手元で印を付けるだけでクラウドへ伝播しておらず、次の同期で復活していた。
+              // 第62条が名指しで戒めている「削除したはずのものが戻ってくる」そのもの。
+              if (typeof _propagateDeletion === 'function') _propagateDeletion(taskId);
+              saveAllTasks();
+            }
             renderMonthlySidebarTasks();
             typeof renderMonthlyView === 'function' && renderMonthlyView();
             typeof showToast === 'function' && showToast('\u524a\u9664\u3057\u307e\u3057\u305f', {type:'ok'});
@@ -18608,7 +18621,13 @@ function saveMonthlySidebarTask() {
         return;
       }
       var t = allTasks.find(function(x){ return x.id === id; });
-      if (t) { t.deleted = true; saveAllTasks(); }
+      if (t) {
+        t.deleted = true;
+        t.updatedAt = new Date().toISOString();   // 第61条：変更したら必ず更新
+        // v0.45.1572: 第62条。ローカルだけ消しても次の同期でクラウドから復活する。
+        if (typeof _propagateDeletion === 'function') _propagateDeletion(t.id);
+        saveAllTasks();
+      }
       closeMsbEdit();
       renderMonthlySidebarTasks();
       typeof renderMonthlyView === 'function' && renderMonthlyView();
