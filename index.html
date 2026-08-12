@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1577 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1579 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1577';
+    const APP_VERSION = 'v0.45.1579';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -18176,7 +18176,15 @@ window.linkifyText = linkifyText;
 function renderMonthlySidebarTasks() {
       var el = document.getElementById('monthlySidebarTasks');
       if (!el || !_sidebarDateStr) return;
-      var allOfDay = allTasks.filter(function(t) { return t.date === _sidebarDateStr && !t.deleted; });
+      // v0.45.1579: 【権威】2026-08-06、月間の升目に見えている予定が、日付を開いた
+      // ボトムシートに出ないとの報告。升目は kind==='task' で予定だけを表示するのに、
+      // ここは kind を見ておらず、日誌・自由帳・スタンプまで混ざっていた。
+      // 見ているものが違うと「升目にあるのにシートに無い（逆もある）」が起きる。
+      // 升目と同じ基準に揃える。ここは「その日の予定」を見る場所であって、
+      // 日誌や自由帳はそれぞれのビューで見るもの。
+      var allOfDay = allTasks.filter(function(t) {
+        return t && t.date === _sidebarDateStr && !t.deleted && (t.kind || 'task') === 'task';
+      });
       // v0.45.1561: 【権威】2026-08-06、月間でコピキャカレンダーだけを選んでいるのに、
       // サイドバーには全カレンダーの予定が出るとの指摘。同じ日の同じデータを、
       // 升目とサイドバーで違う基準で見せており、どちらが本当か分からない状態だった。
@@ -18187,10 +18195,13 @@ function renderMonthlySidebarTasks() {
         return (typeof isCalendarVisible === 'function') ? isCalendarVisible(t.calendarId) : true;
       });
       var _hiddenCount = allOfDay.length - tasks.length;
+      // v0.45.1579: 隠れているものがあることを、はっきり分かる形で出す。
+      // 従来は薄い点線のボタンだったため「無い」と思われ、探し続ける原因になっていた。
+      // 実際に「消したい予定が出ない」という声が上がったので、目立たせる。
       var _hiddenHtml = (_hiddenCount > 0 && !window._sidebarShowAllCalendars)
         ? '<div style="padding:10px 16px;"><button onclick="showAllCalendarsInSidebar()" ' +
-          'style="width:100%;padding:9px;border:1px dashed #cfd6e0;border-radius:9px;background:#fafbfc;color:#7a8698;font-size:0.78em;cursor:pointer;font-family:inherit;">' +
-          '表示していないカレンダーに ' + _hiddenCount + '件</button></div>'
+          'style="width:100%;padding:11px;border:1px solid #f0c86a;border-radius:9px;background:#fffaf0;color:#8a6d1f;font-size:0.82em;font-weight:600;cursor:pointer;font-family:inherit;">' +
+          '👁 表示していないカレンダーに ' + _hiddenCount + '件あります（押すと表示）</button></div>'
         : '';
       if (!tasks.length) {
         el.innerHTML = '<div class="monthly-sidebar-empty">\u30bf\u30b9\u30af\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093</div>' + _hiddenHtml;
@@ -30711,7 +30722,12 @@ function renderDashboardView() {
       if (existing.stampIds.length === 0 && !existing.workMemo && !existing.privateMemo) {
         // スタンプもメモもなければ削除
         const ti = allTasks.findIndex(t => t.kind === 'dailyStatus' && t.date === date);
-        if (ti !== -1) allTasks.splice(ti, 1);
+        if (ti !== -1) {
+          // v0.45.1578: 【権威】2026-08-06、スタンプを消しても復活するとの報告。
+          // 0件になって行ごと消すとき、クラウドへ伝播していなかった（第62条）。
+          if (typeof _propagateDeletion === 'function') _propagateDeletion(allTasks[ti].id);
+          allTasks.splice(ti, 1);
+        }
       } else {
         existing.updatedAt = new Date().toISOString();
       }
@@ -30827,7 +30843,13 @@ function renderDashboardView() {
       const stampBadges = defs.map(d =>
         `<span style="display:inline-flex;align-items:center;gap:4px;background:${d.color};color:${d.textColor||'#333'};padding:3px 8px;border-radius:12px;font-size:0.82em;font-weight:600;margin:2px;">` +
         `${d.name}` +
-        `<button onclick="(function(){var di=window._currentDayInfo;if(!di)return;var idx=di.stampIds.indexOf('${d.id}');if(idx!==-1){di.stampIds.splice(idx,1);saveAllTasks();renderMonthlyView();}var modal=document.getElementById('dayInfoModal');if(modal){modal.remove();if(di.stampIds.length>0)openDayInfoModal('${dateStr}');}})();" ` +
+        `<button onclick="(function(){var di=window._currentDayInfo;if(!di)return;` +
+        /* v0.45.1578: ここは stampIds を直接いじって saveAllTasks するだけで、
+           updatedAt も伝播も無く、消しても次の同期で復活していた。
+           同じ削除の処理が2つあること自体が誤りなので、共通の
+           removeStampFromDate（updatedAt更新・伝播つき）に寄せる（第4条）。 */
+        `if(typeof removeStampFromDate==='function'){removeStampFromDate('${dateStr}','${d.id}');renderMonthlyView();}` +
+        `var modal=document.getElementById('dayInfoModal');if(modal){modal.remove();if(di.stampIds&&di.stampIds.length>0)openDayInfoModal('${dateStr}');}})();" ` +
         `style="background:none;border:none;cursor:pointer;color:${d.textColor||'#333'};font-size:0.9em;padding:0 0 0 2px;line-height:1;opacity:0.7;" title="外す">✕</button>` +
         `</span>`
       ).join('');
