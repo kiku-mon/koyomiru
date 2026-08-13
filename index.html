@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1602 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1604 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1602';
+    const APP_VERSION = 'v0.45.1604';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -10055,7 +10055,22 @@ function isCalendarVisible(calendarId) {
             return (_matched && _matched.cloudCalendarId) || null;
           })() || window._personalCalendarId || null, // v0.45.1344: 統一同期エンジンの所属先
         instinct:     instinct,   // 本能マトリクス（null|survival|renewal|sleep|recognition）
-        owner:        allSettings.profile.name || null,
+        // v0.45.1603: 共有カレンダーに入れる予定は、そのカレンダーでの名乗りを使う。
+        // カレンダーごとに表示名を決められるようにしたので（v0.45.1546）、
+        // ここでプロフィール名を使うと、決めた名前と食い違ってしまう。
+        owner:        (function() {
+          try {
+            var _cc = (function() {
+              var _cl2 = (allSettings.calendar && allSettings.calendar.list) || [];
+              var _m2 = _cl2.find(function(c){ return c && c.id === calendarId; });
+              return (_m2 && _m2.cloudCalendarId) || null;
+            })();
+            if (_cc && window._sharedMemberNames && window._sharedMemberNames[_cc]) {
+              return window._sharedMemberNames[_cc];
+            }
+          } catch(e) {}
+          return allSettings.profile.name || null;
+        })(),
         ownerId:      getOrCreateDeviceId(),
         createdBy:    window._cloudUserId || null, // v0.45.1393: メンバー表示フィルタの判定キー
         createdAt:    new Date().toISOString(),
@@ -18552,6 +18567,33 @@ function renderMonthlySidebarTasks() {
         _body.appendChild(txt);
         txt.style.flex = 'none';
         txt.style.display = 'block';
+        // v0.45.1603: 【権威】2026-08-13、共有カレンダーが増えてきたので
+        // 「どのカレンダーの、誰の予定か」を知りたい、との要望。
+        // 情報（calendarId・owner）は作成時から持っているので、表示するだけで足りる。
+        // 利用者に手間はかけない。
+        // ただし出すのは共有カレンダーの予定だけ。自分だけのカレンダーで
+        // 「きくモン」と毎行に出ても意味がなく、雑音になる。
+        if (t.cloudCalendarId) {
+          var _meta = document.createElement('div');
+          _meta.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:#9aa3af;flex-wrap:wrap;';
+          var _cal = (calendars || []).filter(function(c) { return c && c.id === t.calendarId; })[0];
+          var _esc2 = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+          var _parts = [];
+          if (_cal) {
+            // カレンダーの色を小さな丸で添える。名前だけより、ひと目で見分けがつく。
+            _parts.push('<span style="display:inline-flex;align-items:center;gap:4px;">' +
+              '<span style="width:8px;height:8px;border-radius:50%;background:' + (_cal.color || '#ccc') + ';flex-shrink:0;"></span>' +
+              _esc2(_cal.name) + '</span>');
+          }
+          if (t.owner) {
+            var _mine2 = (t.createdBy && t.createdBy === window._cloudUserId);
+            _parts.push('<span>' + (_mine2 ? '自分' : _esc2(t.owner)) + '</span>');
+          }
+          if (_parts.length) {
+            _meta.innerHTML = _parts.join('<span style="color:#d5d9df;">·</span>');
+            _body.appendChild(_meta);
+          }
+        }
         // v0.45.1576: 共有カレンダーの予定には担当者を出す。
         // 共有していないカレンダーでは出さない（1人しかいないので意味がない）。
         if (t.cloudCalendarId) {
@@ -35526,6 +35568,13 @@ async function createSharedCalendar(name) {
     var mr = await window.supabaseClient.from('koyomiru_shared_calendar_members')
       .insert({ calendar_id: r.data.id, user_id: u.data.user.id, display_name: (window.allSettings && allSettings.profile && allSettings.profile.name) || null });
     if (mr.error) console.warn('[SharedCal] 作成者自身のメンバー登録エラー:', mr.error.message);
+    // v0.45.1604: 作ったカレンダーでの自分の名乗りを控える。
+    // 作った直後に予定を入れると、名前が付かないまま作られてしまうため。
+    try {
+      if (!window._sharedMemberNames) window._sharedMemberNames = {};
+      var _ownName = (window.allSettings && allSettings.profile && allSettings.profile.name) || null;
+      if (_ownName) window._sharedMemberNames[r.data.id] = _ownName;
+    } catch(eOw) {}
   } catch(eMember) { console.warn('[SharedCal] 作成者自身のメンバー登録エラー:', eMember); }
   return r;
 }
@@ -35660,9 +35709,31 @@ async function loadSharedMembersForPicker(cloudCalendarId) {
     var r = await listSharedCalendarMembers(cloudCalendarId);
     var rows = (r && !r.error && r.data) ? r.data : [];
     window._sharedMemberCache[cloudCalendarId] = rows;
+    // v0.45.1603: そのカレンダーでの自分の名乗りを控えておく。
+    // 参照する場所（予定の作成・コメント・参加表明）は既にあったが、
+    // どこも書き込んでいなかったため、ずっと空のままだった。
+    try {
+      if (!window._sharedMemberNames) window._sharedMemberNames = {};
+      var _me3 = rows.filter(function(m) { return m.user_id === window._cloudUserId; })[0];
+      if (_me3 && _me3.display_name) window._sharedMemberNames[cloudCalendarId] = _me3.display_name;
+    } catch(eN) {}
     return rows;
   } catch(e) { return []; }
 }
+
+// v0.45.1603: 参加している共有カレンダーの、自分の名乗りをまとめて控える。
+// 予定を作るときに毎回問い合わせるわけにはいかないので、起動時に一度だけ集める。
+async function preloadSharedMemberNames() {
+  try {
+    if (window._isTesting || window._smokeTestRunning) return;
+    if (!window._cloudIsLoggedIn) return;
+    var shared = (calendars || []).filter(function(c) { return c && c.cloudCalendarId; });
+    for (var i = 0; i < shared.length; i++) {
+      await loadSharedMembersForPicker(shared[i].cloudCalendarId);
+    }
+  } catch(e) { console.warn('[共有] 表示名の先読みに失敗:', e && e.message); }
+}
+window.preloadSharedMemberNames = preloadSharedMemberNames;
 window.loadSharedMembersForPicker = loadSharedMembersForPicker;
 
 async function listSharedCalendarMembers(calendarId) {
@@ -38351,6 +38422,16 @@ async function renameMyDisplayNameFromModal(calendarId, safeId) {
     _sharedCalSetStatus('⚠️ ' + ((r && r.error && r.error.message) || '表示名を変更できませんでした'), 'error');
     return;
   }
+  // v0.45.1604: 【権威】2026-08-13、表示名まわりを洗ってほしいとの依頼で発見。
+  // 変えてもキャッシュが古いままで、次に作る予定に古い名前が付いていた。
+  // 変えた瞬間に手元も揃える。ここを忘れると、画面では変わったのに
+  // 実際に作られるものは古い、という食い違いが残る。
+  try {
+    if (!window._sharedMemberNames) window._sharedMemberNames = {};
+    window._sharedMemberNames[calendarId] = newName;
+    // メンバー一覧のキャッシュも捨てる（次に開いたとき取り直させる）
+    if (window._sharedMemberCache) delete window._sharedMemberCache[calendarId];
+  } catch(eN2) {}
   _sharedCalSetStatus('✅ 表示名を「' + newName + '」に変更しました', 'success');
   refreshSharedCalendarList();
 }
@@ -38492,6 +38573,15 @@ async function joinSharedCalendarFromModal() {
   // なしで通常のタスク作成画面からそのまま使えるようにする。
   try {
     var _sharedCloudId = r.data;
+    // v0.45.1604: 参加のときに入力した名前を、その場で控える。
+    // これが無いと、参加直後に作った予定に「決めたはずの名前」が付かない。
+    // 次に一覧を開くまで反映されない、という分かりにくい遅れが生まれる。
+    try {
+      if (_joinName && _sharedCloudId) {
+        if (!window._sharedMemberNames) window._sharedMemberNames = {};
+        window._sharedMemberNames[_sharedCloudId] = _joinName;
+      }
+    } catch(eJn) {}
     // v0.45.1534: 統合処理は linkSharedCalendarToLocal に一本化した（第4条）。
     // 作成時と参加時で同じ道を通るので、片方だけ直して片方が漏れることがなくなる。
     if (_sharedCloudId) linkSharedCalendarToLocal(_sharedCloudId, lookup.data[0].calendar_name);
@@ -39680,6 +39770,11 @@ try {
         // 招待コードを保存しておき、ログインが完了した時点で参加から画面遷移まで
         // 自動でやり切る。ここまで繋いで初めて「招待して使ってもらう」が成立する。
         if (typeof window._resumePendingJoin === 'function') window._resumePendingJoin();
+        // v0.45.1603: 共有カレンダーでの自分の名乗りを先に控えておく。
+        // 予定を作るときに使うので、作る前に揃っている必要がある。
+        if (typeof window.preloadSharedMemberNames === 'function') {
+          setTimeout(window.preloadSharedMemberNames, 600);
+        }
         _cloudLoginSetStatus('🎉 登録ありがとうございます。データは自動で保存されます。');
         // v0.45.1345: スモークテスト実行中（Supabase認証イベントが偶発的に発火した場合）は
         // localStorageへの書き込みを行わない（TPAGのlocalStorage汚染検知対策）。
