@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1606 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1607 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1606';
+    const APP_VERSION = 'v0.45.1607';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39171,6 +39171,80 @@ async function cloudLoginRefreshStatus() {
 // v0.45.1475: パスワードを忘れた場合のリセットメール送信。
 // 【権威】2026-08-02、これが無いとパスワードを忘れたユーザーは二度とログインできず、
 // サービスとして成立しない。一般的なサービスでは必須の機能である。
+// v0.45.1607: 再設定メールのリンクから戻ってきたときに出す画面。
+// ここが無かったため、メールは届くのに新しいパスワードを設定できなかった。
+function openPasswordResetForm() {
+  try {
+    var old = document.getElementById('pwResetOverlay');
+    if (old) old.remove();
+    var ov = document.createElement('div');
+    ov.id = 'pwResetOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.45);' +
+      'display:flex;align-items:center;justify-content:center;padding:20px;';
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:16px;padding:24px 20px;max-width:380px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.25);">' +
+        '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:6px;">新しいパスワードを設定</div>' +
+        '<div style="font-size:0.82em;color:#8e8e8e;line-height:1.7;margin-bottom:16px;">' +
+          'これからは、このパスワードでログインできます。</div>' +
+        '<input id="pwResetNew" type="password" placeholder="新しいパスワード" autocomplete="new-password" ' +
+          'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;box-sizing:border-box;margin-bottom:8px;font-family:inherit;">' +
+        '<input id="pwResetConfirm" type="password" placeholder="もう一度入力" autocomplete="new-password" ' +
+          'onkeydown="if(event.key===\'Enter\')submitPasswordReset()" ' +
+          'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;box-sizing:border-box;margin-bottom:6px;font-family:inherit;">' +
+        '<div style="font-size:0.75em;color:#8e8e8e;line-height:1.6;margin-bottom:14px;">8文字以上・英大文字・英小文字・数字を含む</div>' +
+        '<div id="pwResetStatus" style="display:none;font-size:0.8em;line-height:1.6;margin-bottom:12px;"></div>' +
+        '<button onclick="submitPasswordReset()" ' +
+          'style="width:100%;padding:13px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;">設定する</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    setTimeout(function() {
+      var el = document.getElementById('pwResetNew');
+      if (el) { try { el.focus(); } catch(e) {} }
+    }, 80);
+  } catch(e) { console.warn('[Auth] 再設定画面の作成に失敗:', e && e.message); }
+}
+window.openPasswordResetForm = openPasswordResetForm;
+
+function _pwResetStatus(msg, type) {
+  var el = document.getElementById('pwResetStatus');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg;
+  el.style.color = (type === 'error') ? '#b3261e' : '#2e7d32';
+}
+
+async function submitPasswordReset() {
+  var a = document.getElementById('pwResetNew');
+  var b = document.getElementById('pwResetConfirm');
+  if (!a || !b) return;
+  var pw = a.value || '', pw2 = b.value || '';
+  if (pw !== pw2) { _pwResetStatus('2つのパスワードが一致しません', 'error'); return; }
+  // 登録時と同じ強さを求める（ここだけ緩いと、弱いパスワードに戻せてしまう）
+  if (pw.length < 8 || !/[A-Z]/.test(pw) || !/[a-z]/.test(pw) || !/[0-9]/.test(pw)) {
+    _pwResetStatus('8文字以上・英大文字・英小文字・数字を含めてください', 'error');
+    return;
+  }
+  if (!window.supabaseClient) { _pwResetStatus('通信できませんでした', 'error'); return; }
+  _pwResetStatus('設定しています…', 'info');
+  try {
+    var r = await window.supabaseClient.auth.updateUser({ password: pw });
+    if (r && r.error) {
+      _pwResetStatus((typeof _cloudTranslateAuthError === 'function'
+        ? _cloudTranslateAuthError(r.error.message).msg : r.error.message), 'error');
+      return;
+    }
+    _pwResetStatus('✅ 設定しました', 'success');
+    setTimeout(function() {
+      var ov = document.getElementById('pwResetOverlay');
+      if (ov) ov.remove();
+      if (typeof showToast === 'function') showToast('パスワードを変更しました');
+    }, 900);
+  } catch(e) {
+    _pwResetStatus('設定できませんでした。もう一度お試しください', 'error');
+  }
+}
+window.submitPasswordReset = submitPasswordReset;
+
 async function cloudSendPasswordReset() {
   var emailInput = document.getElementById('cloudLoginEmail');
   var btn = document.getElementById('cloudForgotPwBtn');
@@ -39814,6 +39888,18 @@ try {
       // v0.45.1505: 管理者アカウントでのログインを検知したら印を残す（次回起動から除外）
       if (window._cloudUserId === _KOYOMIRU_ADMIN_UID && typeof _markDeveloperVisitor === 'function') _markDeveloperVisitor();
       _cloudSetNavRing(!!session);
+      // v0.45.1607: 【権威】2026-08-13、新規の方がパスワードを忘れて何度も失敗し離脱、との報告。
+      // 調べたところ、再設定メールは送れるのに、リンクを開いた後の画面が無かった。
+      // Supabaseはリンクから戻ると PASSWORD_RECOVERY を発火させるが、
+      // それを受け取っていなかったため、案内どおりに進めても何も起きない。
+      // 「新しいパスワードを設定してください」と書いておいて設定できないのは、
+      // 離脱して当然の作りだった。
+      if (event === 'PASSWORD_RECOVERY') {
+        try {
+          if (typeof window.openPasswordResetForm === 'function') window.openPasswordResetForm();
+        } catch(ePr) { console.warn('[Auth] 再設定画面の表示に失敗:', ePr); }
+        return;
+      }
       if (event === 'SIGNED_IN') {
         // v0.45.1530: 【権威】2026-08-06、「王国」はやることクラフト時代の名残で、
         // 暦のアプリであるこよみるの世界観と噛み合わない。初めてログインした人が
@@ -39945,6 +40031,27 @@ async function cloudLoginWithDiscord() {
 // 第3条: window公開
 window.cloudLoginWithDiscord = cloudLoginWithDiscord;
 // ===== END v0.45.1242 Discordログイン =====
+
+// ===== v0.45.1607: Googleログイン =====
+// 【権威】2026-08-13、新規の方がパスワードを忘れて離脱した。Gmailを使っていたので、
+// Googleでそのまま入れれば、パスワードを覚える必要も忘れる余地もない。
+// Discordと同じリダイレクト方式で、既存の流れに乗せる（新しい仕組みは作らない）。
+async function cloudLoginWithGoogle() {
+  if (!window.supabaseClient) { _cloudLoginSetStatus('⚠️ 接続の初期化に失敗しています', 'error'); return; }
+  var btn = document.getElementById('cloudLoginGoogleBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Googleへ移動中…'; }
+  var r = await window.supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin + window.location.pathname }
+  });
+  if (r && r.error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Googleでログイン'; }
+    _cloudLoginSetStatus('⚠️ Googleログインに失敗: ' + r.error.message, 'error');
+  }
+  // 成功時はGoogleへページ遷移するため、ここには戻らない
+}
+window.cloudLoginWithGoogle = cloudLoginWithGoogle;
+// ===== END v0.45.1607 Googleログイン =====
 </script>
 <script>// ===== チュートリアル =====
 // ===== こよみるスタートデッキ =====
@@ -65299,6 +65406,11 @@ window.addMigration = addMigration;
     <div style="font-size:1.25em;font-weight:bold;margin-bottom:2px;">こよみる</div>
     <div id="cloudAuthHeading" style="font-size:0.82em;color:#8e8e8e;margin-bottom:20px;">ログイン</div>
     <div id="cloudLoginGuestArea">
+      <!-- v0.45.1607: 【権威】2026-08-13、新規の方がパスワードを忘れて何度も失敗し離脱。
+           Gmailの方だったので、Googleでそのまま入れれば覚える必要も忘れる余地もない。
+           Discordより上に置くのは、こよみるの外から来る人のほとんどがGoogleを持っているため。
+           Googleのブランドガイドラインに沿い、公式の4色ロゴと白背景・グレー枠にする。 -->
+      <button id="cloudLoginGoogleBtn" onclick="cloudLoginWithGoogle()" style="width:100%;padding:13px;border:1px solid #dadce0;border-radius:10px;background:#fff;color:#3c4043;font-size:0.92em;font-weight:600;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:9px;font-family:inherit;"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Googleでログイン</button>
       <!-- v0.45.1465: 【権威】2026-08-02、Discord公式ブランドガイドラインは4種のボタン
            スタイル（Blurple/Light/Dark/Flexible）を定め、ロゴとその色を改変しないことを
            求めている。白背景では塗りつぶしのBlurple(#5865F2)が正しい実装であり、
