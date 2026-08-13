@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1604 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1605 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1604';
+    const APP_VERSION = 'v0.45.1605';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2313,6 +2313,21 @@
     .msb-dt-time { max-width: 130px; }
     /* 「詳しく」の開閉。押せると分かる見た目にしつつ、主役を邪魔しない。 */
     /* v0.45.1602: 閉じる。押しやすく、かつ保存と間違えない大きさと位置に。 */
+    /* v0.45.1605: どこに入るかは最も重要な情報。共有カレンダーなら色を付けて、
+       「これは相手にも見える」と入力前に伝わるようにする。 */
+    .msb-row-cal select {
+      font-weight: 700;
+    }
+    .msb-row-cal.is-shared select {
+      border-color: #0b6bcb;
+      background: #f4f9ff;
+      color: #0b5bb0;
+    }
+    /* 下端に余白を持たせ、最後の項目が画面の縁に貼りつかないようにする。
+       キーボードが出たときも、送信ボタンや選択肢に指が届く。 */
+    .monthly-sidebar-edit-form {
+      padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    }
     .msb-form-close {
       width: 40px;
       height: 40px;
@@ -6323,6 +6338,14 @@
           <span class="msb-form-title" id="msbFormTitle">予定の編集</span>
           <button class="msb-form-save" onclick="saveMsbEdit()">保存</button>
         </div>
+        <!-- v0.45.1605: 【権威】2026-08-13、どのカレンダーに入るかを確かめたいのに
+             選択が下にあって見切れる、間違えると諍いになりうる、との指摘。
+             共有カレンダーでは「どこに入るか」は最も重要な情報なので、最上部に置く。
+             書き始める前に目に入り、書き終えてから探す必要がなくなる。 -->
+        <div class="msb-edit-row msb-row-cal">
+          <label class="msb-label">カレンダー</label>
+          <select id="msbEditCalendar" class="msb-input-sm"></select>
+        </div>
         <div class="msb-edit-row msb-row-title">
           <label class="msb-label">タイトル</label>
           <input id="msbEditText" type="text" placeholder="予定を入力">
@@ -6355,10 +6378,6 @@
             <input id="msbEditEndDate" type="date" class="msb-input-sm">
             <input id="msbEditEndTime" type="time" class="msb-input-sm msb-dt-time">
           </div>
-        </div>
-        <div class="msb-edit-row">
-          <label class="msb-label">カレンダー</label>
-          <select id="msbEditCalendar" class="msb-input-sm"></select>
         </div>
         <div class="msb-edit-row">
           <label class="msb-label">メモ</label>
@@ -19058,6 +19077,17 @@ function openSidebarEditForm(item, task) {
             return '<option value="' + c.id + '"' + (c.id === task.calendarId ? ' selected' : '') + '>' +
                    _lbl.replace(/</g, '&lt;') + '</option>';
           }).join('');
+          // v0.45.1605: 共有カレンダーを選んでいるときは色を変える。
+          // 「相手にも見える」ことが、書き始める前に分かる。
+          var _row = _calSel.closest ? _calSel.closest('.msb-row-cal') : null;
+          function _markShared() {
+            try {
+              var _sel = (calendars || []).filter(function(c) { return c && c.id === _calSel.value; })[0];
+              if (_row) _row.classList.toggle('is-shared', !!(_sel && _sel.cloudCalendarId));
+            } catch(e) {}
+          }
+          _markShared();
+          _calSel.onchange = _markShared;
           // 参照切れ（今の一覧に無いカレンダーを指している）ときは、選べないままにせず知らせる
           if (task.calendarId && !(calendars || []).some(function(c) { return c && c.id === task.calendarId; })) {
             _calSel.insertAdjacentHTML('afterbegin',
@@ -19103,10 +19133,22 @@ function msbAllDayChange() {
       // 行ごとではなく時刻の入力欄そのものを出し入れする。
       // 終日なら時刻は使わないので隠す。OFFにしたときだけ現れるので、
       // 「ここは時刻を入れる場所だ」と文脈で伝わる。
+      // v0.45.1605: 【権威】2026-08-13、時刻を打ちたいのに欄が無い、との指摘。
+      // 終日ONで時刻欄を隠していたが、新規作成では終日が既定でONになるため、
+      // 開いた瞬間から時刻欄が無い状態だった。「時刻を入れたい」と思っても、
+      // 終日をOFFにすれば出ると気づけない。
+      // 隠すのをやめ、終日のときは薄く見せる。そこに欄があると分かれば、
+      // 「打ちたければ終日をOFFにすればいい」と繋がる。
       var _t1 = document.getElementById('msbEditTime');
       var _t2 = document.getElementById('msbEditEndTime');
-      if (_t1) _t1.style.display = allDayEl.checked ? 'none' : '';
-      if (_t2) _t2.style.display = allDayEl.checked ? 'none' : '';
+      var _dim = allDayEl.checked;
+      [_t1, _t2].forEach(function(el) {
+        if (!el) return;
+        el.style.display = '';
+        el.disabled = _dim;
+        el.style.opacity = _dim ? '0.4' : '';
+        el.style.background = _dim ? '#f5f6f8' : '';
+      });
       if (allDayEl.checked) {
         var timeEl = document.getElementById('msbEditTime');
         if (timeEl) timeEl.value = '';
@@ -19180,13 +19222,23 @@ function saveMsbEdit() {
         var _ed = document.getElementById('msbEditEndDate');
         var _v = _ed ? _ed.value : '';
         if (_v && date) {
-          var _startAt = date + 'T' + (time || '00:00');
-          var _endAt   = _v   + 'T' + (endTime || (_v > date ? '23:59' : '00:00'));
-          if (_endAt > _startAt) {
-            // 同じ日で時刻だけ後なら、またぎではないので終了日は持たせない
-            _endDate = (_v > date) ? _v : null;
+          // v0.45.1605: 【権威】2026-08-13、終日の予定を保存しようとすると
+          // 「終了は開始より後に」と出て保存できない、との報告。
+          // 開始と終了が同じ日（＝1日だけの予定）は、まったく普通の状態であって
+          // 誤りではない。時刻がなければ 00:00 同士の比較になり、
+          // 「後ではない」と判定して弾いていた。
+          // 同じ日は素通しにして、本当に逆転している場合だけ止める。
+          if (_v === date) {
+            // 同じ日。時刻があるなら順序だけ確かめる
+            if (time && endTime && endTime <= time) {
+              showToast('終了は開始より後にしてください', {type:'warn'});
+              return;
+            }
+            _endDate = null;   // またぎではないので終了日は持たせない
+          } else if (_v > date) {
+            _endDate = _v;     // 日をまたぐ予定
           } else {
-            showToast('終了は開始より後にしてください', {type:'warn'});
+            showToast('終了日は開始日より後にしてください', {type:'warn'});
             return;
           }
         }
