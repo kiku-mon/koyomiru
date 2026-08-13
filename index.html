@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1597 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1602 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1597';
+    const APP_VERSION = 'v0.45.1602';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -278,7 +278,13 @@
   }
     // ===== iOS viewport高さ対策（キーボード表示時のモーダル拡大バグ防止） =====
     function setVhVar() {
-      var vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight) * 0.01;
+      // v0.45.1598: 【権威】2026-08-13、設定画面の下に大きな余白ができるとの報告。
+      // 原因は visualViewport.height を使っていたこと。この値はキーボードが出ると縮み、
+      // 閉じたあとも --vh に短い値が残るため、画面がその分だけ足りなくなる。
+      // 画面そのものの高さは innerHeight で取り、キーボードの影響を受けないようにする。
+      // （もともとキーボード表示時のモーダル拡大を防ぐ目的だったが、
+      //   その対処が別の崩れを生んでいた。）
+      var vh = window.innerHeight * 0.01;
       document.documentElement.style.setProperty('--vh', vh + 'px');
     }
     // iOSセーフエリア（ステータスバー）の高さをJSで取得してnavに適用
@@ -308,6 +314,87 @@
       }
     }
     setVhVar();
+    // v0.45.1598: 画面の大きさが変わったら取り直す。起動時の1回だけだと、
+    // 画面の回転・窓のリサイズ・アドレスバーの出入りで実際の高さとずれ、
+    // 足りない分が余白として残る。キーボードの開閉では動かさない
+    // （innerHeightはキーボードで変わらないので、そもそも影響を受けない）。
+    window.addEventListener('resize', setVhVar);
+    // v0.45.1599: 【権威】2026-08-13、入力欄が打ちにくいことがある、との指摘。
+    // 調べたところ、iOSではキーボードが出てもレイアウトの高さは縮まず、
+    // 見えている範囲（visualViewport）だけが縮む。そのため画面下寄りの入力欄が
+    // キーボードの下に隠れる。メタタグの interactive-widget=resizes-content は
+    // Safariに未実装（WebKitのバグとして追跡中）なので、JSで対処するしかない。
+    //
+    // 方針：入力欄に触れたら、その欄が見える位置まで運ぶ。
+    // 画面全体を動かすのではなく、隠れている場合だけ必要な分だけ動かす。
+    // 何も起きていないのに勝手にスクロールすると、かえって使いにくくなる。
+    (function _bindKeyboardAvoidance() {
+      if (!window.visualViewport) return;   // 対応していない環境では何もしない
+      var _pending = null;
+      // v0.45.1600: キーボードが出ているかを body のクラスで表す。
+      // 出ている間は＋と？を沈め、ボトムシートをキーボードの分だけ縮める。
+      // 入力中にこの2つのボタンを使うことはないので、画面を明け渡してよい。
+      function _syncKeyboardState() {
+        try {
+          // v0.45.1601: PCでは何も隠さない。物理キーボードは画面を覆わないので、
+          // 隠す理由がない。むしろ操作の手がかりを奪うことになる。
+          if (window.innerWidth > 600) {
+            document.body.classList.remove('kb-open');
+            document.documentElement.style.setProperty('--kb-h', '0px');
+            return;
+          }
+          var vv = window.visualViewport;
+          var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+          var open = kb > 120;   // 120px以下は予測変換バーなどの誤検知を避ける
+          document.documentElement.style.setProperty('--kb-h', (open ? kb : 0) + 'px');
+          document.body.classList.toggle('kb-open', open);
+        } catch(e) {}
+      }
+      window.visualViewport.addEventListener('resize', _syncKeyboardState);
+      window.visualViewport.addEventListener('scroll', _syncKeyboardState);
+      document.addEventListener('focusout', function() {
+        // 閉じきってから戻す（次の入力欄へ移った直後にちらつかせない）
+        setTimeout(_syncKeyboardState, 80);
+      });
+      function _ensureVisible(el) {
+        try {
+          if (!el || !el.getBoundingClientRect) return;
+          var vv = window.visualViewport;
+          var r  = el.getBoundingClientRect();
+          var keyboardTop = vv.height + vv.offsetTop;
+          var margin = 16;   // 欄のすぐ下に少し余白を残す
+          var hidden = (r.bottom + margin) - keyboardTop;
+          if (hidden <= 0) return;   // 見えているなら動かさない
+          // 入力欄が入っている、スクロールできる親を探して、その中だけを動かす。
+          // 画面全体を動かすと、開いているシートごとずれてしまう。
+          var sc = el.parentElement;
+          while (sc && sc !== document.body) {
+            var st = getComputedStyle(sc);
+            if (/(auto|scroll)/.test(st.overflowY) && sc.scrollHeight > sc.clientHeight) break;
+            sc = sc.parentElement;
+          }
+          if (sc && sc !== document.body) sc.scrollTop += hidden;
+          else window.scrollBy(0, hidden);
+        } catch(e) {}
+      }
+      document.addEventListener('focusin', function(e) {
+        var el = e.target;
+        if (!el || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+        // キーボードが出きってから測る。出る途中で測ると位置がずれる。
+        clearTimeout(_pending);
+        _pending = setTimeout(function() { _ensureVisible(el); }, 320);
+      });
+      // キーボードの高さが変わったとき（言語切替・予測変換の出入り）にも合わせ直す
+      window.visualViewport.addEventListener('resize', function() {
+        var el = document.activeElement;
+        if (!el || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+        clearTimeout(_pending);
+        _pending = setTimeout(function() { _ensureVisible(el); }, 120);
+      });
+    })();
+    window.addEventListener('orientationchange', function() {
+      setTimeout(setVhVar, 120);   // 回転しきってから測る
+    });
     // v0.45.1241: リサイズ時にナビ高さ実測を再適用
     window.addEventListener('resize', function(){ setTimeout(applyNavSafeArea, 0); });
     // v0.45.1265: 画面回転・リサイズでPC⇔スマホが切り替わった時にマトリクスタブモードも追従
@@ -316,13 +403,12 @@
         if (typeof window.applyMatrixQuadTabMode === 'function') window.applyMatrixQuadTabMode();
       }, 0);
     });
+    // v0.45.1599: setVhVar は上で window.resize に登録済み（innerHeight を使うため
+    // キーボードの開閉では動かす必要がない）。ここで visualViewport にも登録すると
+    // キーボードのたびに走り、v0.45.1598で直した余白の再発につながるので登録しない。
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', setVhVar);
-      window.visualViewport.addEventListener('scroll', setVhVar);
-      // v0.45.1246: Safariのアドレスバー出現/消失（フルスクリーンスクロール）でナビ位置がズレる対策
+      // v0.45.1246: Safariのアドレスバー出現/消失でナビ位置がズレる対策（こちらは必要）
       window.visualViewport.addEventListener('resize', function(){ setTimeout(applyNavSafeArea, 0); });
-    } else {
-      window.addEventListener('resize', setVhVar);
     }
     document.addEventListener('DOMContentLoaded', function() {
       document.title = 'こよみる - ' + APP_VERSION;
@@ -2177,10 +2263,30 @@
        その場面ではどちらも使わないうえ、入力欄に被って邪魔になるだけ。
        消すのではなく沈めるのは、閉じれば戻ると分かるようにするため。 */
     body.cmt-open .koyomiru-fab,
-    body.cmt-open .koyomiru-help-fab {
+    body.cmt-open .koyomiru-help-fab,
+    body.kb-open .koyomiru-fab,
+    body.kb-open .koyomiru-help-fab {
       transform: translateY(120px);
       opacity: 0;
       pointer-events: none;
+    }
+    /* v0.45.1601: 【権威】2026-08-13、画面ごとに「何をさせたいか」を定めて
+       それに沿って作り直す、との方針。
+       入力中にさせたいことは「書ききること」だけ。
+       ならば、書くのに使わないものは全部どけて、画面を明け渡す。
+         ・＋と？   … 文字を打っている間は押さない
+         ・上部のナビ … 画面を移る操作。書いている最中には使わない
+       どれも消すのではなく、下（上）へずらして隠す。閉じれば戻ってくるので、
+       「無くなった」と探されることがない。 */
+    /* v0.45.1602: 【権威】2026-08-13、上部ナビを隠したのは誤り。
+       ナビは画面を移るためだけのものではなく、行き詰まったときの逃げ道でもある。
+       「書くのに使わない」という理由で外したが、使わないことと、
+       あってはいけないことは別だった。戻す。 */
+    body.kb-open .monthly-sidebar.open {
+      /* キーボードの分だけシートを縮め、下が埋もれないようにする。
+         ナビを隠した分、上にも伸ばせるので、書ける面積を最大にする。 */
+      height: calc(100% - var(--kb-h, 0px)) !important;
+      max-height: none;
     }
     /* v0.45.1589: 【権威】2026-08-12、編集を開くとiPhoneの画面が拡大して崩れるとの報告。
        iOSは入力欄の文字が16px未満だと、自動で画面を拡大する仕様がある。
@@ -2206,6 +2312,20 @@
     }
     .msb-dt-time { max-width: 130px; }
     /* 「詳しく」の開閉。押せると分かる見た目にしつつ、主役を邪魔しない。 */
+    /* v0.45.1602: 閉じる。押しやすく、かつ保存と間違えない大きさと位置に。 */
+    .msb-form-close {
+      width: 40px;
+      height: 40px;
+      border: none;
+      background: none;
+      color: #8e9aab;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+      font-family: inherit;
+    }
+    .msb-form-close:active { color: #333; }
     .msb-more-toggle {
       width: 100%;
       padding: 12px 4px;
@@ -2433,6 +2553,8 @@
       margin-bottom: 6px;
     }
     .msb-form-title {
+      flex: 1;
+      text-align: center;
       font-size: 13px;
       font-weight: 700;
       color: #262626;
@@ -6193,6 +6315,11 @@
         <!-- v0.45.1521: TimeTree同様、保存を上部に常時見える位置へ置く。
              入力の途中でも保存の存在が視界に入り、下までスクロールせずに済む。 -->
         <div class="msb-form-header">
+          <!-- v0.45.1602: 【権威】2026-08-13、フォームを開いたあと閉じる手段が無く、
+               「タスクを入力してください」と出て逃げられなくなるとの報告。
+               やめる道が無いのは、それだけで閉じ込めになる。閉じるを必ず置く。
+               左に置くのは、右上の保存と押し間違えないため。 -->
+          <button class="msb-form-close" onclick="closeMsbEdit()" title="閉じる">✕</button>
           <span class="msb-form-title" id="msbFormTitle">予定の編集</span>
           <button class="msb-form-save" onclick="saveMsbEdit()">保存</button>
         </div>
@@ -6219,7 +6346,7 @@
           <label class="msb-label">開始</label>
           <div class="msb-dt-pair">
             <input id="msbEditDate" type="date" class="msb-input-sm">
-            <input id="msbEditTime" type="time" class="msb-input-sm msb-dt-time">
+            <input id="msbEditTime" type="time" class="msb-input-sm msb-dt-time" placeholder="時刻">
           </div>
         </div>
         <div class="msb-edit-row msb-dt-row">
@@ -18710,6 +18837,10 @@ function openMonthlySidebar(dateStr) {
       try {
         window._openCommentTaskId = null;
         document.body.classList.remove('cmt-open');
+        // v0.45.1600: キーボードの状態も解く。シートを閉じたのにボタンが
+        // 沈んだままだと、押せないまま気づけない。
+        document.body.classList.remove('kb-open');
+        document.documentElement.style.setProperty('--kb-h', '0px');
       } catch(e) {}
       var sb = document.getElementById('monthlySidebar');
       if (sb) sb.classList.remove('open');
@@ -18849,6 +18980,15 @@ function openSidebarEditForm(item, task) {
       var _endEl = document.getElementById('msbEditEndTime');
       if (_endEl) _endEl.value = task.endTime || '';
       document.getElementById('msbEditMemo').value    = task.memo || '';
+      // v0.45.1602: 終日の状態を時刻欄に反映する。
+      // これが無いと、終日ONなのに時刻欄が残って「何を入れるのか」が分からなくなる。
+      try {
+        var _adEl = document.getElementById('msbEditAllDay');
+        if (_adEl) {
+          _adEl.checked = !task.time;   // 時刻が無ければ終日として扱う
+          if (typeof msbAllDayChange === 'function') msbAllDayChange();
+        }
+      } catch(eAd) {}
       // v0.45.1592: 「詳しく」は畳んだ状態から始める。
       // ただし繰り返しや定員が既に設定されている予定は、開いた状態で見せる。
       // 設定済みのものが隠れていると「消えた」と誤解される。
@@ -18910,14 +19050,21 @@ function openSidebarEditForm(item, task) {
       });
     }
 
-    function msbAllDayChange() {
+    // v0.45.1602: 【権威】2026-08-13、時刻欄が空だと何を入れる場所か分からない、との指摘。
+// 日付欄は「2026/08/13」と入っているので分かるが、時刻は空白なので手がかりがない。
+// 終日がONなら時刻は使わないので、そもそも隠す。OFFにしたときだけ出せば、
+// 「これは時刻を入れる場所だ」と文脈で分かる。空欄に説明を足すより確実。
+function msbAllDayChange() {
       var allDayEl = document.getElementById('msbEditAllDay');
-      var timeRow  = document.getElementById('msbEditTimeRow');
-      if (!allDayEl || !timeRow) return;
-      timeRow.style.display = allDayEl.checked ? 'none' : 'flex';
-      // v0.45.1521: 終日なら終了時刻の行も一緒に隠す（開始だけ消えるのは不整合）
-      var endRow = document.getElementById('msbEditEndTimeRow');
-      if (endRow) endRow.style.display = allDayEl.checked ? 'none' : 'flex';
+      if (!allDayEl) return;
+      // v0.45.1602: フォームを組み直して開始・終了が対になったため、
+      // 行ごとではなく時刻の入力欄そのものを出し入れする。
+      // 終日なら時刻は使わないので隠す。OFFにしたときだけ現れるので、
+      // 「ここは時刻を入れる場所だ」と文脈で伝わる。
+      var _t1 = document.getElementById('msbEditTime');
+      var _t2 = document.getElementById('msbEditEndTime');
+      if (_t1) _t1.style.display = allDayEl.checked ? 'none' : '';
+      if (_t2) _t2.style.display = allDayEl.checked ? 'none' : '';
       if (allDayEl.checked) {
         var timeEl = document.getElementById('msbEditTime');
         if (timeEl) timeEl.value = '';
