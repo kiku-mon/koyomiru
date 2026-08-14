@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1608 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1609 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1608';
+    const APP_VERSION = 'v0.45.1609';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39903,6 +39903,19 @@ try {
         } catch(ePr) { console.warn('[Auth] 再設定画面の表示に失敗:', ePr); }
         return;
       }
+      // v0.45.1609: 連携から戻ってきたら、手元のデータを今のアカウントへ引き継ぐ。
+      // これが無いと「連携したのに予定が別々のまま」になり、連携した意味がない。
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+        try {
+          var _lp = sessionStorage.getItem('koyomiruLinkPending');
+          if (_lp) {
+            sessionStorage.removeItem('koyomiruLinkPending');   // 先に消して二重実行を防ぐ
+            setTimeout(function() {
+              if (typeof window._takeOverAfterLink === 'function') window._takeOverAfterLink();
+            }, 1200);
+          }
+        } catch(eLp) {}
+      }
       if (event === 'SIGNED_IN') {
         // v0.45.1530: 【権威】2026-08-06、「王国」はやることクラフト時代の名残で、
         // 暦のアプリであるこよみるの世界観と噛み合わない。初めてログインした人が
@@ -40086,16 +40099,64 @@ async function openLinkMethodModal() {
         '<div style="font-size:0.82em;color:#8e8e8e;line-height:1.7;margin-bottom:14px;">' +
           '連携しておくと、どの方法でログインしても同じ予定が見られます。</div>' +
         rows +
+        // v0.45.1609: 自動の引き継ぎが失敗したときのための手動実行。
+        // 「連携したのに予定が見えない」まま放置されないよう、自分で直せる道を残す。
+        '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #f2f2f2;">' +
+          '<button onclick="_takeOverAfterLink()" ' +
+            'style="width:100%;padding:11px;border:1px dashed #cfd6e0;border-radius:9px;background:#fafbfc;color:#7a8698;font-size:13px;cursor:pointer;font-family:inherit;">' +
+            'この端末の予定を、今のアカウントに揃える</button>' +
+          '<div style="font-size:11px;color:#b9b9b9;line-height:1.6;margin-top:6px;">' +
+            '連携したのに予定が見えないときに押してください。</div>' +
+        '</div>' +
       '</div>';
     document.body.appendChild(ov);
   } catch(e) { console.warn('[Auth] 連携画面の表示に失敗:', e && e.message); }
 }
 window.openLinkMethodModal = openLinkMethodModal;
 
+// v0.45.1609: 【権威】2026-08-13、連携したら全部引き継がれるようにしてほしい、との要望。
+// 連携しただけでは、別のログイン方法で作られたクラウド上のデータは取り残される。
+// 同じ人が使っているのに、入り口が違うだけでデータが分かれるのは筋が通らない。
+//
+// 連携が済んだ時点で、手元にあるものを「今のアカウントのもの」として送り直す。
+// 手元（localStorage）が本体なので、これで内容は完全に揃う。
+// 送信済みの印を消すと、差分プッシュが全件を送り直してくれる（v0.45.1549の仕組み）。
+async function _takeOverAfterLink() {
+  try {
+    if (window._isTesting || window._smokeTestRunning) return;
+    if (!window._cloudIsLoggedIn) return;
+    // 手元のタスクを全部「まだ送っていない」状態に戻す
+    window._unifiedLastPushedSnapshot = {};
+    try { localStorage.removeItem('unifiedLastPushedSnapshot'); } catch(e) {}
+    // 個人カレンダーを今のアカウントで作り直す（無ければ作られる）
+    if (typeof unifiedEnsurePersonalCalendarAndMigrate === 'function') {
+      await unifiedEnsurePersonalCalendarAndMigrate();
+    }
+    // 手元のタスクを全部送る
+    if (typeof unifiedPushTasks === 'function') {
+      await unifiedPushTasks();
+    }
+    // 共有カレンダーの名乗りも取り直す
+    if (typeof preloadSharedMemberNames === 'function') {
+      await preloadSharedMemberNames();
+    }
+    console.info('[連携] 手元のデータを今のアカウントに引き継ぎました');
+    if (typeof showToast === 'function') {
+      showToast('連携しました。予定も引き継がれています', {type:'ok'});
+    }
+  } catch(e) {
+    console.warn('[連携] 引き継ぎに失敗:', e && e.message);
+  }
+}
+window._takeOverAfterLink = _takeOverAfterLink;
+
 async function linkLoginMethod(provider) {
   if (!window.supabaseClient) { showToast('接続の初期化に失敗しています', {type:'error'}); return; }
   if (!window._cloudIsLoggedIn) { showToast('先にログインしてください', {type:'warn'}); return; }
   try {
+    // v0.45.1609: 連携から戻ってきたことが分かるよう、印を残す。
+    // OAuthはページを離れるので、戻った後に「連携直後だ」と判断する手がかりが要る。
+    try { sessionStorage.setItem('koyomiruLinkPending', provider); } catch(e) {}
     var r = await window.supabaseClient.auth.linkIdentity({
       provider: provider,
       options: { redirectTo: window.location.origin + window.location.pathname }
