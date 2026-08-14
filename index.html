@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1607 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1608 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1607';
+    const APP_VERSION = 'v0.45.1608';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -5525,6 +5525,9 @@
     </div>
     <div style="border-top:1px solid #f0f0f0;padding:8px 0;">
       <button class="account-menu-item" onclick="closeAccountMenu(); openSharedCalendarModal();"><span>👥</span>共有カレンダー</button>
+      <!-- v0.45.1608: ログイン方法の連携。同じ人が別の方法で入ると別人扱いになるため、
+           ここで紐づけておけば、どちらで入っても同じデータが見える。 -->
+      <button class="account-menu-item" id="accountMenuLink" onclick="closeAccountMenu(); openLinkMethodModal();"><span>🔗</span>ログイン方法</button>
       <button class="account-menu-item" onclick="closeAccountMenu(); openOshiraseModal();"><span>📣</span>お知らせ</button>
       <button class="account-menu-item" id="accountMenuHelp" onclick="closeAccountMenu(); showTutorial();"
         ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
@@ -40031,6 +40034,100 @@ async function cloudLoginWithDiscord() {
 // 第3条: window公開
 window.cloudLoginWithDiscord = cloudLoginWithDiscord;
 // ===== END v0.45.1242 Discordログイン =====
+
+// ===== v0.45.1608: ログイン方法の連携 =====
+// 【権威】2026-08-13、Discordで作った共有カレンダーが、Googleでログインすると見えない、との報告。
+// これは仕様で、Supabaseはログイン方法ごとに別のユーザーとして扱う。
+// 同じ人でも、Discord（Yahooのメール）とGoogle（Gmail）ではメールが違うため、
+// 自動で結びつけることもできない。
+// 一般的なサービス（Firebase等）も同じで、利用者が明示的に連携する操作を用意している。
+// ログイン中に linkIdentity を呼ぶと、いま入っているアカウントに別の方法を紐づけられる。
+// 以後はどちらで入っても同じデータが見える。
+// v0.45.1608: 連携の画面。いま何で入っているかを見せ、足りない方法を足せるようにする。
+async function openLinkMethodModal() {
+  try {
+    var old = document.getElementById('linkMethodOverlay');
+    if (old) old.remove();
+    if (!window._cloudIsLoggedIn) {
+      if (typeof showToast === 'function') showToast('先にログインしてください', {type:'warn'});
+      return;
+    }
+    var ids = await listLinkedIdentities();
+    var has = {};
+    ids.forEach(function(i) { if (i && i.provider) has[i.provider] = true; });
+    var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+    var rows = [
+      { id: 'google',  name: 'Google'  },
+      { id: 'discord', name: 'Discord' },
+      { id: 'email',   name: 'メールアドレス' }
+    ].map(function(p) {
+      var linked = !!has[p.id];
+      // メールは linkIdentity では足せないので、状態だけ見せる
+      var btn = (p.id === 'email')
+        ? (linked ? '<span style="font-size:12px;color:#2e7d32;">連携済み</span>'
+                  : '<span style="font-size:12px;color:#b9b9b9;">未連携</span>')
+        : (linked ? '<span style="font-size:12px;color:#2e7d32;">連携済み</span>'
+                  : '<button onclick="linkLoginMethod(\'' + p.id + '\')" ' +
+                    'style="padding:7px 14px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">連携する</button>');
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 0;border-bottom:1px solid #f2f2f2;">' +
+             '<span style="font-size:15px;color:#333;">' + _esc(p.name) + '</span>' + btn + '</div>';
+    }).join('');
+    var ov = document.createElement('div');
+    ov.id = 'linkMethodOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.45);' +
+      'display:flex;align-items:center;justify-content:center;padding:20px;';
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:16px;padding:22px 20px;max-width:400px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.25);">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<span style="font-size:1.05em;font-weight:700;color:#262626;">ログイン方法</span>' +
+          '<button onclick="document.getElementById(\'linkMethodOverlay\').remove()" ' +
+            'style="border:none;background:none;font-size:20px;color:#9aa3af;cursor:pointer;padding:4px 8px;">✕</button>' +
+        '</div>' +
+        '<div style="font-size:0.82em;color:#8e8e8e;line-height:1.7;margin-bottom:14px;">' +
+          '連携しておくと、どの方法でログインしても同じ予定が見られます。</div>' +
+        rows +
+      '</div>';
+    document.body.appendChild(ov);
+  } catch(e) { console.warn('[Auth] 連携画面の表示に失敗:', e && e.message); }
+}
+window.openLinkMethodModal = openLinkMethodModal;
+
+async function linkLoginMethod(provider) {
+  if (!window.supabaseClient) { showToast('接続の初期化に失敗しています', {type:'error'}); return; }
+  if (!window._cloudIsLoggedIn) { showToast('先にログインしてください', {type:'warn'}); return; }
+  try {
+    var r = await window.supabaseClient.auth.linkIdentity({
+      provider: provider,
+      options: { redirectTo: window.location.origin + window.location.pathname }
+    });
+    if (r && r.error) {
+      var _m = r.error.message || '';
+      // 既に他のアカウントで使われている場合は、その旨を伝える
+      if (/already|exists|registered/i.test(_m)) {
+        showToast('この' + (provider === 'google' ? 'Google' : 'Discord') +
+                  'は別のアカウントで使われています', {type:'error'});
+      } else {
+        showToast('連携できませんでした：' + _m, {type:'error'});
+      }
+      return;
+    }
+    // 成功時は認証画面へ遷移するため、ここには戻らない
+  } catch(e) {
+    showToast('連携できませんでした', {type:'error'});
+  }
+}
+window.linkLoginMethod = linkLoginMethod;
+
+// いま紐づいているログイン方法を調べる
+async function listLinkedIdentities() {
+  try {
+    if (!window.supabaseClient || !window._cloudIsLoggedIn) return [];
+    var r = await window.supabaseClient.auth.getUserIdentities();
+    return (r && r.data && r.data.identities) ? r.data.identities : [];
+  } catch(e) { return []; }
+}
+window.listLinkedIdentities = listLinkedIdentities;
+// ===== END v0.45.1608 ログイン方法の連携 =====
 
 // ===== v0.45.1607: Googleログイン =====
 // 【権威】2026-08-13、新規の方がパスワードを忘れて離脱した。Gmailを使っていたので、
