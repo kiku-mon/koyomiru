@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1612 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1613 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1612';
+    const APP_VERSION = 'v0.45.1613';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -18826,9 +18826,11 @@ function renderMonthlySidebarTasks() {
           var _parts = [];
           if (_cal) {
             // カレンダーの色を小さな丸で添える。名前だけより、ひと目で見分けがつく。
+            // v0.45.1613: 名前を隠しているときは色の丸だけにする。
+            // 色があれば「別のカレンダー」だとは分かるので、見分けは失われない。
             _parts.push('<span style="display:inline-flex;align-items:center;gap:4px;">' +
               '<span style="width:8px;height:8px;border-radius:50%;background:' + (_cal.color || '#ccc') + ';flex-shrink:0;"></span>' +
-              _esc2(_cal.name) + '</span>');
+              (window._calChipsHidden ? '' : _esc2(_cal.name)) + '</span>');
           }
           if (t.owner) {
             var _mine2 = (t.createdBy && t.createdBy === window._cloudUserId);
@@ -28565,10 +28567,42 @@ function loadCalendarSettingsUI() {
       loadCalendarSettingsUI();
       renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
       renderCalendarFilter('weeklyCalendarFilter', renderWeeklyView);
-    }    function renderCalendarFilter(containerId, onChangeCallback) {
+    }    // v0.45.1613: カレンダー名の表示を切り替える。
+// 隠すのは「名前」だけで、予定そのものは見せたまま。
+// 絞り込みの状態は変えないので、隠しても表示中の予定は変わらない。
+window._calChipsHidden = false;
+function toggleCalendarChips() {
+  window._calChipsHidden = !window._calChipsHidden;
+  try {
+    document.body.classList.toggle('cal-names-hidden', window._calChipsHidden);
+    ['monthlyCalendarFilter', 'weeklyCalendarFilter', 'dailyCalendarFilter'].forEach(function(id) {
+      if (document.getElementById(id)) renderCalendarFilter(id);
+    });
+    if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks();
+    if (typeof showToast === 'function') {
+      showToast(window._calChipsHidden ? 'カレンダー名を隠しました' : 'カレンダー名を表示しました');
+    }
+  } catch(e) { console.warn('[表示] 切り替えに失敗:', e && e.message); }
+}
+window.toggleCalendarChips = toggleCalendarChips;
+
+function renderCalendarFilter(containerId, onChangeCallback) {
       const bar = document.getElementById(containerId);
       if (!bar) return;
       bar.innerHTML = '';
+      // v0.45.1613: 【権威】2026-08-16、画面を友人に見せるとき、
+      // 「きくまおかれんだー」「ご神業予定」など、相手に説明の要る名前を隠したい、との要望。
+      // 予定そのものは見せたいので、隠すのはカレンダーの名前だけでよい。
+      // 設定として残さず、その場の切り替えにする。写真を撮るときだけ畳めればよく、
+      // 次に開いたときまで隠れたままだと、絞り込みを見失う。
+      if (window._calChipsHidden) {
+        var _showBtn = document.createElement('button');
+        _showBtn.style.cssText = 'padding:3px 12px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px dashed #ccc;background:#fff;color:#999;';
+        _showBtn.textContent = '👁 カレンダーを表示';
+        _showBtn.onclick = function() { toggleCalendarChips(); };
+        bar.appendChild(_showBtn);
+        return;
+      }
       calendars.filter(c => c.visible).forEach(cal => {
         const btn = document.createElement('button');
         const isOn = activeCalendarIds === null || activeCalendarIds.has(cal.id);
@@ -28640,6 +28674,13 @@ function loadCalendarSettingsUI() {
         };
         bar.appendChild(loginChip);
       }
+      // v0.45.1613: 畳むボタン。名前を隠して画面を見せられるようにする。
+      var _hideBtn = document.createElement('button');
+      _hideBtn.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;cursor:pointer;border:1.5px solid #e5e5e5;background:#fff;color:#b0b0b0;';
+      _hideBtn.textContent = '🙈';
+      _hideBtn.title = 'カレンダー名を隠す（人に見せるとき用）';
+      _hideBtn.onclick = function() { toggleCalendarChips(); };
+      bar.appendChild(_hideBtn);
       // 💰支払いのみフィルタボタン（月間カレンダー専用）
       if (containerId === 'monthlyCalendarFilter') {
         var finBtn = document.createElement('button');
