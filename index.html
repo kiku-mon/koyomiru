@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1613 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1614 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1613';
+    const APP_VERSION = 'v0.45.1614';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -12629,6 +12629,19 @@ function myDeckApply(idx) {
           'background:' + (isSelected ? bgColor : '#fff') + ';' +
           'color:' + (isSelected ? txColor : '#bbb') + ';';
         btn.textContent = cal.name;
+        // v0.45.1614: 【権威】2026-08-16、共有カレンダーかどうかを一目で分かるようにしたい、との要望。
+        // 名前を読んで判断させるのではなく、印を見れば分かる形にする。
+        // 第五人格のお知らせなどと同じく、右上に小さな丸を置く方式を採る。
+        // 「👥」を文字で足すと名前が押し出されて読みにくくなるが、丸なら場所を取らない。
+        if (cal.cloudCalendarId) {
+          btn.style.position = 'relative';
+          btn.style.overflow = 'visible';
+          var _dot = document.createElement('span');
+          _dot.style.cssText = 'position:absolute;top:-2px;right:-2px;width:9px;height:9px;' +
+            'border-radius:50%;background:#2e7d32;border:1.5px solid #fff;box-sizing:content-box;';
+          _dot.title = '共有カレンダー';
+          btn.appendChild(_dot);
+        }
         btn.onclick = function() {
           onSelect(cal.id);
           renderCalendarSelector(containerId, cal.id, onSelect);
@@ -28596,9 +28609,36 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       // 設定として残さず、その場の切り替えにする。写真を撮るときだけ畳めればよく、
       // 次に開いたときまで隠れたままだと、絞り込みを見失う。
       if (window._calChipsHidden) {
+        // v0.45.1614: 名前は隠すが、色の丸だけは並べる。
+        // 全部消すと「どれをOFFにしていたか」が分からなくなり、
+        // 戻したときに絞り込みを見失う。色があれば数と状態は読み取れる。
+        calendars.filter(function(c) { return c.visible; }).forEach(function(cal) {
+          var _on = (activeCalendarIds === null || activeCalendarIds.has(cal.id));
+          var dot = document.createElement('button');
+          dot.title = (cal.cloudCalendarId ? '共有カレンダー・' : '') + (_on ? '表示中' : '非表示');
+          if (cal.cloudCalendarId) {
+            // 共有は二重丸にする。名前を隠していても、共有かどうかは分かる。
+            dot.style.boxShadow = '0 0 0 2px #fff, 0 0 0 3.5px #2e7d32';
+          }
+          dot.style.cssText = 'width:22px;height:22px;border-radius:50%;cursor:pointer;padding:0;flex-shrink:0;' +
+            'border:2px solid ' + (cal.color || '#ccc') + ';' +
+            'background:' + (_on ? (cal.color || '#ccc') : 'transparent') + ';' +
+            'opacity:' + (_on ? '1' : '0.5') + ';';
+          dot.onclick = function() {
+            // 隠している間も、絞り込みは変えられる
+            if (activeCalendarIds === null) {
+              activeCalendarIds = new Set(calendars.filter(function(c){ return c.visible; }).map(function(c){ return c.id; }));
+            }
+            if (activeCalendarIds.has(cal.id)) activeCalendarIds.delete(cal.id);
+            else activeCalendarIds.add(cal.id);
+            renderCalendarFilter(containerId, onChangeCallback);
+            if (onChangeCallback) onChangeCallback();
+          };
+          bar.appendChild(dot);
+        });
         var _showBtn = document.createElement('button');
-        _showBtn.style.cssText = 'padding:3px 12px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px dashed #ccc;background:#fff;color:#999;';
-        _showBtn.textContent = '👁 カレンダーを表示';
+        _showBtn.style.cssText = 'padding:3px 12px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px dashed #ccc;background:#fff;color:#999;margin-left:4px;';
+        _showBtn.textContent = '👁 名前を表示';
         _showBtn.onclick = function() { toggleCalendarChips(); };
         bar.appendChild(_showBtn);
         return;
@@ -28631,6 +28671,17 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           transition:all 0.15s;
         `;
         btn.textContent = cal.name;
+        // v0.45.1614: 共有カレンダーには右上に緑の丸を付ける。
+        // 名前を読まなくても、印だけで「これは相手にも見える」と分かる。
+        if (cal.cloudCalendarId) {
+          btn.style.position = 'relative';
+          btn.style.overflow = 'visible';
+          var _shDot = document.createElement('span');
+          _shDot.style.cssText = 'position:absolute;top:-2px;right:-2px;width:9px;height:9px;' +
+            'border-radius:50%;background:#2e7d32;border:1.5px solid #fff;box-sizing:content-box;';
+          _shDot.title = '共有カレンダー';
+          btn.appendChild(_shDot);
+        }
         btn.onclick = () => {
           if (activeCalendarIds === null) {
             activeCalendarIds = new Set(calendars.filter(c => c.visible).map(c => c.id));
