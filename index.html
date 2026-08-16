@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1615 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1616 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1615';
+    const APP_VERSION = 'v0.45.1616';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2353,6 +2353,44 @@
       cursor: pointer;
     }
     .msb-more-toggle:active { color: #0b6bcb; }
+    /* v0.45.1616: 【権威】2026-08-16、スライダーのつまみが白くて見えず、
+       そこが操作できる場所だと気づけないとの指摘。
+       accent-colorだけでは、つまみは環境によって白いままになる。
+       つまみ自体に色と影を与え、「つまめる」と分かる形にする。
+       大きさも指で掴める24pxにする（従来の既定は16px前後で小さい）。 */
+    #monthlyRowHSlider::-webkit-slider-thumb,
+    #monthlyWidthSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #fff;
+      border: 3px solid #f472b6;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.22);
+      cursor: grab;
+      margin-top: -10px;
+    }
+    #monthlyWidthSlider::-webkit-slider-thumb {
+      border-color: #60a5fa;
+    }
+    #monthlyRowHSlider::-webkit-slider-thumb:active,
+    #monthlyWidthSlider::-webkit-slider-thumb:active {
+      cursor: grabbing;
+      transform: scale(1.1);
+    }
+    #monthlyRowHSlider::-moz-range-thumb,
+    #monthlyWidthSlider::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #fff;
+      border: 3px solid #f472b6;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.22);
+      cursor: grab;
+    }
+    #monthlyWidthSlider::-moz-range-thumb {
+      border-color: #60a5fa;
+    }
     .monthly-sidebar-date {
       font-size: 22px;
       font-weight: 700;
@@ -9835,25 +9873,33 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
   // v0.45.1612: 【権威】2026-08-16、帯が日付や暦の上に乗ってしまうとの報告。
   // 34pxは決め打ちだったため、暦の行数や文字の大きさが変われば必ずずれる。
   // 升目の中身（日付・節気・候・月齢）の実際の高さを測って、その下から始める。
+  // v0.45.1616: 【権威】2026-08-16、帯が前の週にはみ出すとの報告。
+  // 前版は「最初の升目」を測っていたが、それは前月の日で暦の情報が無く、
+  // 高さが足りないまま全体に適用していた。しかも升目ごとに中身の高さは違うので、
+  // 1つ測っても全体には合わない。
+  //
+  // 測る対象を変える。「暦の情報を持っている升目」＝当月の升目のうち、
+  // 最も背の高いものを基準にする。これなら、どの升目でも暦の下に収まる。
   var BAND_H = 20, BAND_GAP = 2;
   var TOP_OFFSET = 34;
   try {
-    // 最初の升目から、暦の情報の下端を測る
-    var _probe = calendar.querySelector('.monthly-day-cell');
-    if (_probe) {
-      var _cellTop = _probe.getBoundingClientRect().top;
-      var _bottom = 0;
-      // クラス名に頼らず、升目の直下の子要素すべてから下端を測る。
-      // 暦の要素はクラスが付いていないものもあり、名前で拾うと取りこぼす。
-      // 予定（monthly-task-item）は帯の下に来るので、測る対象から外す。
-      Array.prototype.forEach.call(_probe.children, function(el) {
+    var _cellsAll = calendar.querySelectorAll('.monthly-day-cell');
+    var _bottom = 0;
+    // 全升目を見て、暦の情報の下端が最も深いものを探す
+    Array.prototype.forEach.call(_cellsAll, function(cell) {
+      if (cell.classList.contains('other-month')) return;   // 前月・翌月は暦が無いので除く
+      var _top = cell.getBoundingClientRect().top;
+      Array.prototype.forEach.call(cell.children, function(el) {
         if (el.classList && el.classList.contains('monthly-task-item')) return;
-        var b = el.getBoundingClientRect().bottom - _cellTop;
+        var b = el.getBoundingClientRect().bottom - _top;
         if (b > _bottom) _bottom = b;
       });
-      if (_bottom > 0) TOP_OFFSET = Math.ceil(_bottom) + 3;
-    }
+    });
+    if (_bottom > 0) TOP_OFFSET = Math.ceil(_bottom) + 4;
   } catch(eProbe) {}
+  // 升目の高さを超えて帯が溢れないよう、上限を設ける。
+  // 行を低くしたときに、帯が下の週へはみ出すのを防ぐ。
+  if (TOP_OFFSET + BAND_H > rowH - 4) TOP_OFFSET = Math.max(4, rowH - BAND_H - 4);
   var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
 
   segs.forEach(function(seg) {
@@ -13437,6 +13483,13 @@ function myDeckApply(idx) {
           cell.style.height = v + 'px';
           cell.style.maxHeight = v + 'px';
         });
+        // v0.45.1616: 【権威】2026-08-16、スライダーとの連動を確かめてほしいとの依頼で判明。
+        // 升目の高さだけ変えて帯を描き直していなかったため、
+        // 行を伸縮させると帯だけが元の位置に取り残されていた。
+        // 高さが変われば帯の行寸法も変わるので、必ず描き直す。
+        try {
+          if (typeof renderMonthlyView === 'function') renderMonthlyView();
+        } catch(eSl) {}
       }
       var sl = document.getElementById('monthlyRowHSlider');
       if (sl) { sl.value = v; var pct = ((v-130)/(500-130)*100).toFixed(1); sl.style.background='linear-gradient(to right,#f472b6 '+pct+'%,#e5e7eb '+pct+'%)'; }
