@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1616 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1617 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1616';
+    const APP_VERSION = 'v0.45.1617';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9954,7 +9954,36 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
     for (var c = 0; c < 7; c++) {
       var idx = (parseInt(w, 10) * 7) + c;
       var cell = cells[idx];
-      if (cell) cell.style.paddingTop = (5 + need) + 'px';   // 5pxは元の余白
+      if (!cell) continue;
+      cell.style.paddingTop = (5 + need) + 'px';   // 5pxは元の余白
+      // v0.45.1617: 帯のぶん場所が減るので、入りきらない予定を畳み直す。
+      // 帯を描く前に決めた件数のままだと、帯に押されて升目から溢れる。
+      try {
+        var _items = cell.querySelectorAll('.monthly-task-item');
+        var _avail = cell.clientHeight - TOP_OFFSET - need - 18;
+        var _fit = Math.max(1, Math.floor(_avail / 20));
+        if (_items.length > _fit) {
+          var _hid = 0;
+          for (var k = _fit; k < _items.length; k++) { _items[k].style.display = 'none'; _hid++; }
+          // 既にある「+N件」に足すか、無ければ作る
+          var _more = cell.querySelector('.monthly-more-count');
+          var _prev = _more ? (parseInt(_more.dataset.n, 10) || 0) : 0;
+          if (!_more) {
+            _more = document.createElement('div');
+            _more.className = 'monthly-more-count';
+            _more.style.cssText = 'font-size:11px;color:#8e8e8e;padding:1px 4px;cursor:pointer;font-weight:600;';
+            _more.onclick = (function(_ds) {
+              return function(e) {
+                e.stopPropagation();
+                if (typeof openMonthlySidebar === 'function') openMonthlySidebar(_ds);
+              };
+            })(cell.dataset.date || '');
+            cell.appendChild(_more);
+          }
+          _more.dataset.n = String(_prev + _hid);
+          _more.textContent = '+' + (_prev + _hid) + '件';
+        }
+      } catch(eFit) {}
     }
   });
 }
@@ -13054,7 +13083,17 @@ function myDeckApply(idx) {
         // 💰支払いのみフィルタ
         if (_monthlyFinanceFilterActive) {
         }
-        dayTasks.forEach(task => {
+        // v0.45.1617: 【権威】2026-08-16、業界標準では升目に出す予定は2〜3件までで、
+        // 溢れた分は「+N件」に畳む。こよみるは全件を描いていたため、
+        // 予定が多い日は升目からはみ出していた。帯を入れたことで場所がさらに減り、
+        // 悪化している。升目の高さから入る件数を求めて、超えた分は畳む。
+        var _cellH = _mRowH;
+        var _usedTop = 34;   // 日付・暦のぶん（帯があればさらに下がるが、後で調整される）
+        var _itemH = 20;     // 予定1件ぶんの高さ
+        var _maxItems = Math.max(1, Math.floor((_cellH - _usedTop - 18) / _itemH));  // 18は「+N件」の行
+        var _overflow = Math.max(0, dayTasks.length - _maxItems);
+        var _shown = _overflow > 0 ? dayTasks.slice(0, _maxItems) : dayTasks;
+        _shown.forEach(task => {
           const taskDiv = document.createElement('div');
           taskDiv.className = 'monthly-task-item';
           taskDiv.dataset.taskId = task.id;
@@ -13199,6 +13238,22 @@ function myDeckApply(idx) {
           taskDiv.appendChild(iconContainer);
           cell.appendChild(taskDiv);
         });
+        // v0.45.1617: 溢れた分は「+N件」で畳む。押せばその日のシートが開き、全部読める。
+        // 数を出すのは「まだある」と分かるようにするため。隠すだけでは気づけない。
+        if (_overflow > 0) {
+          var _moreEl = document.createElement('div');
+          _moreEl.className = 'monthly-more-count';   // 帯の描画時に見つけて足せるように
+          _moreEl.dataset.n = String(_overflow);
+          _moreEl.textContent = '+' + _overflow + '件';
+          _moreEl.style.cssText = 'font-size:11px;color:#8e8e8e;padding:1px 4px;cursor:pointer;font-weight:600;';
+          _moreEl.onclick = (function(_ds) {
+            return function(e) {
+              e.stopPropagation();
+              if (typeof openMonthlySidebar === 'function') openMonthlySidebar(_ds);
+            };
+          })(dateStr);
+          cell.appendChild(_moreEl);
+        }
         // ドラッグオーバー（PC用 - タスク移動のみ）
         cell.addEventListener('dragover', (e) => {
           e.preventDefault();
