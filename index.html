@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1614 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1615 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1614';
+    const APP_VERSION = 'v0.45.1615';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -28608,41 +28608,11 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       // 予定そのものは見せたいので、隠すのはカレンダーの名前だけでよい。
       // 設定として残さず、その場の切り替えにする。写真を撮るときだけ畳めればよく、
       // 次に開いたときまで隠れたままだと、絞り込みを見失う。
-      if (window._calChipsHidden) {
-        // v0.45.1614: 名前は隠すが、色の丸だけは並べる。
-        // 全部消すと「どれをOFFにしていたか」が分からなくなり、
-        // 戻したときに絞り込みを見失う。色があれば数と状態は読み取れる。
-        calendars.filter(function(c) { return c.visible; }).forEach(function(cal) {
-          var _on = (activeCalendarIds === null || activeCalendarIds.has(cal.id));
-          var dot = document.createElement('button');
-          dot.title = (cal.cloudCalendarId ? '共有カレンダー・' : '') + (_on ? '表示中' : '非表示');
-          if (cal.cloudCalendarId) {
-            // 共有は二重丸にする。名前を隠していても、共有かどうかは分かる。
-            dot.style.boxShadow = '0 0 0 2px #fff, 0 0 0 3.5px #2e7d32';
-          }
-          dot.style.cssText = 'width:22px;height:22px;border-radius:50%;cursor:pointer;padding:0;flex-shrink:0;' +
-            'border:2px solid ' + (cal.color || '#ccc') + ';' +
-            'background:' + (_on ? (cal.color || '#ccc') : 'transparent') + ';' +
-            'opacity:' + (_on ? '1' : '0.5') + ';';
-          dot.onclick = function() {
-            // 隠している間も、絞り込みは変えられる
-            if (activeCalendarIds === null) {
-              activeCalendarIds = new Set(calendars.filter(function(c){ return c.visible; }).map(function(c){ return c.id; }));
-            }
-            if (activeCalendarIds.has(cal.id)) activeCalendarIds.delete(cal.id);
-            else activeCalendarIds.add(cal.id);
-            renderCalendarFilter(containerId, onChangeCallback);
-            if (onChangeCallback) onChangeCallback();
-          };
-          bar.appendChild(dot);
-        });
-        var _showBtn = document.createElement('button');
-        _showBtn.style.cssText = 'padding:3px 12px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px dashed #ccc;background:#fff;color:#999;margin-left:4px;';
-        _showBtn.textContent = '👁 名前を表示';
-        _showBtn.onclick = function() { toggleCalendarChips(); };
-        bar.appendChild(_showBtn);
-        return;
-      }
+      // v0.45.1615: 【権威】2026-08-16、前版は丸に「ON/OFF」「共有かどうか」の
+      // 3つの意味を詰め込み、見た人が解読を強いられる作りだった。
+      // 隠したいのは名前だけなので、チップの形はそのままに、文字だけ伏せる。
+      // 位置も並びも変わらないので、どれが何番目かは目で追える。
+      // 意味を足さない。ただ名前が見えなくなるだけ。
       calendars.filter(c => c.visible).forEach(cal => {
         const btn = document.createElement('button');
         const isOn = activeCalendarIds === null || activeCalendarIds.has(cal.id);
@@ -28670,7 +28640,11 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           color:${isOn ? textColor : '#bbb'};
           transition:all 0.15s;
         `;
-        btn.textContent = cal.name;
+        // v0.45.1615: 隠しているときは、名前の代わりに「・・・」を出す。
+        // チップの大きさや並びは変えないので、位置で見分けがつく。
+        // 意味を持つ記号ではないので、読み解く必要がない。
+        btn.textContent = window._calChipsHidden ? '・・・' : cal.name;
+        if (window._calChipsHidden) btn.style.minWidth = '58px';
         // v0.45.1614: 共有カレンダーには右上に緑の丸を付ける。
         // 名前を読まなくても、印だけで「これは相手にも見える」と分かる。
         if (cal.cloudCalendarId) {
@@ -28726,10 +28700,14 @@ function renderCalendarFilter(containerId, onChangeCallback) {
         bar.appendChild(loginChip);
       }
       // v0.45.1613: 畳むボタン。名前を隠して画面を見せられるようにする。
+      // v0.45.1615: 押せば隠れ、もう一度押せば戻る。それだけのボタン。
+      // 状態が見た目で分かるよう、隠しているときは色を変える。
       var _hideBtn = document.createElement('button');
-      _hideBtn.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;cursor:pointer;border:1.5px solid #e5e5e5;background:#fff;color:#b0b0b0;';
-      _hideBtn.textContent = '🙈';
-      _hideBtn.title = 'カレンダー名を隠す（人に見せるとき用）';
+      var _hid = !!window._calChipsHidden;
+      _hideBtn.style.cssText = 'padding:5px 12px;border-radius:14px;font-size:0.75em;font-weight:600;cursor:pointer;' +
+        (_hid ? 'border:2px solid #0b6bcb;background:#eaf3fc;color:#0b5bb0;'
+              : 'border:2px solid #e5e5e5;background:#fff;color:#b0b0b0;');
+      _hideBtn.textContent = _hid ? '👁 名前を出す' : '🙈 名前を隠す';
       _hideBtn.onclick = function() { toggleCalendarChips(); };
       bar.appendChild(_hideBtn);
       // 💰支払いのみフィルタボタン（月間カレンダー専用）
