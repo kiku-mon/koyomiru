@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1610 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1611 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1610';
+    const APP_VERSION = 'v0.45.1611';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9710,6 +9710,187 @@ function getSpanPosition(t, dateStr) {
 }
 window.getSpanPosition = getSpanPosition;
 
+// ===== v0.45.1611: 複数日にまたがる予定を帯で描く =====
+// 【権威】2026-08-16、TimeTreeのように「8/10から8/16まで」を一本の帯で見せたい、との要望。
+// 現状は日ごとの升目に分かれるため、期間として読み取れなかった。
+//
+// 調べたところ、業界の標準は「週ごとに切って、段に詰める」方式。
+// CSS Gridの grid-column で列をまたぐのが定石で、専用ライブラリも同じ手法を採る。
+// 月間は7列のGridなので、そのまま乗せられる。
+//
+// 設計の要点：
+//   ・帯は升目の中ではなく、升目と同じ階層に重ねる（升目は個別スクロールするため）
+//   ・週をまたぐ予定は週ごとに分割する（Gridは行をまたげない）
+//   ・重なりは段（レーン）に詰める
+//   ・帯以外はクリックを透かす（下の升目が押せなくなるため）
+
+// その日が、グリッドの何列目に来るか（週の始まりの設定に従う）
+function _bandColIndex(dateStr) {
+  try {
+    var dow = new Date(dateStr + 'T00:00:00').getDay();
+    return (typeof getWeekColumnIndex === 'function') ? getWeekColumnIndex(dow)
+         : ((typeof getWeekStartsOn === 'function' && getWeekStartsOn() === 0) ? dow : (dow + 6) % 7);
+  } catch(e) { return 0; }
+}
+
+function _bandDayDiff(a, b) {
+  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+}
+
+function _bandAddDays(dateStr, n) {
+  var d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// 予定を、表示中のグリッドの週ごとに切る
+function splitTaskByWeek(task, gridStartDate, weekCount) {
+  var segs = [];
+  if (!task || !task.date) return segs;
+  var s = task.date;
+  var e = task.endDate || task.date;
+  if (e < s) return segs;   // 逆転しているものは描かない（データが壊れていても落ちない）
+  for (var w = 0; w < weekCount; w++) {
+    var ws = _bandAddDays(gridStartDate, w * 7);
+    var we = _bandAddDays(ws, 6);
+    var from = (s > ws) ? s : ws;
+    var to   = (e < we) ? e : we;
+    if (from > to) continue;   // この週には掛かっていない
+    segs.push({
+      task: task, week: w, from: from, to: to,
+      colStart: _bandColIndex(from),
+      span: _bandDayDiff(from, to) + 1,
+      isStart: (from === s),
+      isEnd:   (to === e)
+    });
+  }
+  return segs;
+}
+window.splitTaskByWeek = splitTaskByWeek;
+
+// 重なる帯を段に詰める（空いている段を上から探す）
+function packBandLanes(segs) {
+  var lanes = [];
+  segs.forEach(function(seg) {
+    var lane = 0;
+    while (lane < 30) {   // 暴走防止。30段も重なることは現実には無い
+      if (!lanes[lane]) lanes[lane] = [];
+      var conflict = lanes[lane].some(function(x) {
+        return x.week === seg.week &&
+               !(x.colStart + x.span <= seg.colStart || seg.colStart + seg.span <= x.colStart);
+      });
+      if (!conflict) { lanes[lane].push(seg); seg.lane = lane; return; }
+      lane++;
+    }
+    seg.lane = 29;
+  });
+  return segs;
+}
+window.packBandLanes = packBandLanes;
+
+// v0.45.1611: 帯を描く。升目の上に重ねる層を作り、そこにGridで配置する。
+function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
+  // 前の描画を消す（残ると二重になる）
+  var old = document.getElementById('monthlyBandLayer');
+  if (old) old.remove();
+  if (!calendar) return;
+
+  // グリッドの左上が何日か（前月にさかのぼる）
+  var _first = new Date(year, month, 1);
+  _first.setDate(_first.getDate() - startDayOfWeek);
+  var gridStart = _first.getFullYear() + '-' + String(_first.getMonth()+1).padStart(2,'0') + '-' + String(_first.getDate()).padStart(2,'0');
+
+  // 対象は「終わりの日を持つ予定」だけ。1日だけのものは升目に出ているので描かない。
+  var _tomb;
+  try { _tomb = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
+  catch(e) { _tomb = new Set(); }
+  var targets = (allTasks || []).filter(function(t) {
+    if (!t || t.deleted || (t.kind || 'task') !== 'task') return false;
+    if (!t.endDate || t.endDate === t.date) return false;
+    if (_tomb.has(t.id)) return false;
+    if (typeof isCalendarVisible === 'function' && !isCalendarVisible(t.calendarId)) return false;
+    return true;
+  });
+  if (targets.length === 0) return;
+
+  // 週ごとに切って、段に詰める
+  var segs = [];
+  targets.forEach(function(t) { segs = segs.concat(splitTaskByWeek(t, gridStart, 6)); });
+  if (segs.length === 0) return;
+  packBandLanes(segs);
+
+  // 重ねる層。升目と同じGridにして、列をそのまま使う。
+  var layer = document.createElement('div');
+  layer.id = 'monthlyBandLayer';
+  // 升目のGridと同じ行構成にする。ヘッダー1行 + 6週。
+  // 行の高さを実測して合わせないと、帯が升目とずれる。
+  var _hdr = calendar.querySelector('.monthly-weekday-header');
+  var _hdrH = _hdr ? _hdr.offsetHeight : 28;
+  layer.style.cssText =
+    'position:absolute;left:0;right:0;top:0;bottom:0;' +
+    'display:grid;grid-template-columns:repeat(7,1fr);' +
+    'grid-template-rows:' + _hdrH + 'px repeat(6,' + rowH + 'px);' +
+    'pointer-events:none;';   // 帯以外はクリックを透かす（下の升目を押せるように）
+
+  var BAND_H = 20, BAND_GAP = 2, TOP_OFFSET = 34;   // 日付と暦の下から始める
+  var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+
+  segs.forEach(function(seg) {
+    var t = seg.task;
+    var cal = (calendars || []).filter(function(c) { return c && c.id === t.calendarId; })[0];
+    var color = (cal && cal.color) || '#90a4ae';
+    var el = document.createElement('div');
+    el.style.cssText =
+      'grid-column:' + (seg.colStart + 1) + ' / span ' + seg.span + ';' +
+      // v0.45.1611: 曜日ヘッダーがグリッドの1行目を占めるので、週は2行目から始まる
+      'grid-row:' + (seg.week + 2) + ';' +
+      'align-self:start;' +
+      'margin-top:' + (TOP_OFFSET + seg.lane * (BAND_H + BAND_GAP)) + 'px;' +
+      'margin-left:' + (seg.isStart ? '3px' : '0') + ';' +
+      'margin-right:' + (seg.isEnd ? '3px' : '0') + ';' +
+      'height:' + BAND_H + 'px;line-height:' + BAND_H + 'px;' +
+      'background:' + color + ';color:#fff;' +
+      'border-radius:' + (seg.isStart ? '4px' : '0') + ' ' + (seg.isEnd ? '4px' : '0') + ' ' +
+                        (seg.isEnd ? '4px' : '0') + ' ' + (seg.isStart ? '4px' : '0') + ';' +
+      'font-size:12px;padding:0 6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;' +
+      'pointer-events:auto;cursor:pointer;box-sizing:border-box;';
+    // タイトルは始まりの区間にだけ出す。続きの週は帯だけで「続いている」と分かる。
+    el.textContent = seg.isStart ? (t.text || '') : '';
+    el.title = (t.text || '') + '（' + t.date + '〜' + t.endDate + '）';
+    el.onclick = (function(_d) {
+      return function(e) {
+        e.stopPropagation();
+        if (typeof openMonthlySidebar === 'function') openMonthlySidebar(_d);
+      };
+    })(seg.from);
+    layer.appendChild(el);
+  });
+
+  // 升目のGridに重ねる。calendarはposition:staticなので、包む側に基準を作る。
+  var wrap = calendar.parentElement;
+  if (wrap && getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+  calendar.style.position = 'relative';
+  calendar.appendChild(layer);
+
+  // v0.45.1611: 帯の段数ぶん、その週の升目に上の余白を与える。
+  // タスクは升目へ直接入るので、器ではなく升目そのものの padding-top を上げる。
+  // 週ごとに段数が違うので、週単位で計算する（全体を一律に下げると余白が無駄になる）。
+  var laneByWeek = {};
+  segs.forEach(function(s) {
+    if (laneByWeek[s.week] === undefined || s.lane > laneByWeek[s.week]) laneByWeek[s.week] = s.lane;
+  });
+  var cells = calendar.querySelectorAll('.monthly-day-cell');
+  Object.keys(laneByWeek).forEach(function(w) {
+    var need = (laneByWeek[w] + 1) * (BAND_H + BAND_GAP);
+    for (var c = 0; c < 7; c++) {
+      var idx = (parseInt(w, 10) * 7) + c;
+      var cell = cells[idx];
+      if (cell) cell.style.paddingTop = (5 + need) + 'px';   // 5pxは元の余白
+    }
+  });
+}
+window._renderMonthlyBands = _renderMonthlyBands;
+
 function isCalendarVisible(calendarId) {
       if (!calendarId || calendarId === 'default') return true; // フォールバック
       // v0.45.1512: 【権威】2026-08-05、「月間にタスクが描画されない」との報告。
@@ -13042,6 +13223,11 @@ function myDeckApply(idx) {
       } // for i < 42
       // 月齢を即時＋遅延で埋める（関数定義が後にある場合のフォールバック）
       fillMoonAges && fillMoonAges();
+      // v0.45.1611: 複数日にまたがる予定を帯で重ねる。
+      // 升目を全部作り終えてから描く（グリッドの寸法が確定している必要があるため）。
+      try {
+        _renderMonthlyBands(calendar, startDayOfWeek, year, month, _mRowH);
+      } catch(eBand) { console.warn('[月間] 帯の描画に失敗:', eBand && eBand.message); }
       setTimeout(function(){ fillMoonAges && fillMoonAges(); }, 300);
       // v0.45.1559: 控えておいたスクロール位置を戻す。
       // 読んでいた場所を奪わないための処置で、同期のたびに先頭へ戻る不満の元だった。
