@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1617 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1618 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1617';
+    const APP_VERSION = 'v0.45.1618';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9880,26 +9880,57 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
   //
   // 測る対象を変える。「暦の情報を持っている升目」＝当月の升目のうち、
   // 最も背の高いものを基準にする。これなら、どの升目でも暦の下に収まる。
+  // v0.45.1618: 【権威】2026-08-16、帯が日付の数字を隠すとの報告。
+  // 前版は「測って避ける」方式だったが、測り損ねれば必ず乗る。
+  // TimeTreeは日付の行を帯より上に確保しており、構造として重ならない。
+  // こよみるも同じにする。暦の情報の下端を升目ごとに固定し、その下から帯を始める。
+  //
+  // 測るのをやめ、暦の要素に最低の高さを与えて位置を確定させる。
+  // これなら、どの升目でも同じ位置から帯が始まり、数字に乗ることがない。
   var BAND_H = 20, BAND_GAP = 2;
   var TOP_OFFSET = 34;
   try {
     var _cellsAll = calendar.querySelectorAll('.monthly-day-cell');
-    var _bottom = 0;
-    // 全升目を見て、暦の情報の下端が最も深いものを探す
+    var _need = 0;
+    // 当月の升目で、暦の情報が最も深いものに合わせる
     Array.prototype.forEach.call(_cellsAll, function(cell) {
-      if (cell.classList.contains('other-month')) return;   // 前月・翌月は暦が無いので除く
+      if (cell.classList.contains('other-month')) return;
       var _top = cell.getBoundingClientRect().top;
+      var _pt = parseFloat(getComputedStyle(cell).paddingTop) || 0;
+      var _b = _pt;
       Array.prototype.forEach.call(cell.children, function(el) {
         if (el.classList && el.classList.contains('monthly-task-item')) return;
-        var b = el.getBoundingClientRect().bottom - _top;
-        if (b > _bottom) _bottom = b;
+        if (el.classList && el.classList.contains('monthly-more-count')) return;
+        var bb = el.getBoundingClientRect().bottom - _top;
+        if (bb > _b) _b = bb;
       });
+      if (_b > _need) _need = _b;
     });
-    if (_bottom > 0) TOP_OFFSET = Math.ceil(_bottom) + 4;
+    if (_need > 0) TOP_OFFSET = Math.ceil(_need) + 5;
+    // 暦の領域をその高さで固定する。以後どの升目も同じ位置から予定が始まり、
+    // 帯もその下に置ける。升目ごとに高さが違うことによるズレが起きなくなる。
+    Array.prototype.forEach.call(_cellsAll, function(cell) {
+      var _last = null;
+      Array.prototype.forEach.call(cell.children, function(el) {
+        if (el.classList && (el.classList.contains('monthly-task-item') ||
+                             el.classList.contains('monthly-more-count'))) return;
+        _last = el;
+      });
+      if (_last) _last.style.marginBottom = '0';
+      cell.style.setProperty('--band-top', TOP_OFFSET + 'px');
+    });
   } catch(eProbe) {}
+  // v0.45.1618: 測定が失敗しても数字に乗らないよう、下限を設ける。
+  // 日付の数字だけで最低20px、節気・候・月齢で各16px。
+  // 測れなかった場合でも、この高さより上には絶対に置かない。
+  var _MIN_TOP = 20 + 16 * 3 + 5;   // = 73px
+  if (TOP_OFFSET < _MIN_TOP) TOP_OFFSET = _MIN_TOP;
   // 升目の高さを超えて帯が溢れないよう、上限を設ける。
-  // 行を低くしたときに、帯が下の週へはみ出すのを防ぐ。
-  if (TOP_OFFSET + BAND_H > rowH - 4) TOP_OFFSET = Math.max(4, rowH - BAND_H - 4);
+  // ただし下限を割ってまで詰めない。行が低すぎるなら帯を出さない方がまし。
+  if (TOP_OFFSET + BAND_H > rowH - 4) {
+    var _fit = rowH - BAND_H - 4;
+    TOP_OFFSET = (_fit >= 40) ? _fit : _MIN_TOP;   // 40px未満まで詰まるなら諦めて下限を保つ
+  }
   var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
 
   segs.forEach(function(seg) {
