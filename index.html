@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1611 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1612 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1611';
+    const APP_VERSION = 'v0.45.1612';
   const APP_LAST_UPDATED = '2026-08-06'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9832,7 +9832,28 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
     'grid-template-rows:' + _hdrH + 'px repeat(6,' + rowH + 'px);' +
     'pointer-events:none;';   // 帯以外はクリックを透かす（下の升目を押せるように）
 
-  var BAND_H = 20, BAND_GAP = 2, TOP_OFFSET = 34;   // 日付と暦の下から始める
+  // v0.45.1612: 【権威】2026-08-16、帯が日付や暦の上に乗ってしまうとの報告。
+  // 34pxは決め打ちだったため、暦の行数や文字の大きさが変われば必ずずれる。
+  // 升目の中身（日付・節気・候・月齢）の実際の高さを測って、その下から始める。
+  var BAND_H = 20, BAND_GAP = 2;
+  var TOP_OFFSET = 34;
+  try {
+    // 最初の升目から、暦の情報の下端を測る
+    var _probe = calendar.querySelector('.monthly-day-cell');
+    if (_probe) {
+      var _cellTop = _probe.getBoundingClientRect().top;
+      var _bottom = 0;
+      // クラス名に頼らず、升目の直下の子要素すべてから下端を測る。
+      // 暦の要素はクラスが付いていないものもあり、名前で拾うと取りこぼす。
+      // 予定（monthly-task-item）は帯の下に来るので、測る対象から外す。
+      Array.prototype.forEach.call(_probe.children, function(el) {
+        if (el.classList && el.classList.contains('monthly-task-item')) return;
+        var b = el.getBoundingClientRect().bottom - _cellTop;
+        if (b > _bottom) _bottom = b;
+      });
+      if (_bottom > 0) TOP_OFFSET = Math.ceil(_bottom) + 3;
+    }
+  } catch(eProbe) {}
   var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
 
   segs.forEach(function(seg) {
@@ -9854,8 +9875,10 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
                         (seg.isEnd ? '4px' : '0') + ' ' + (seg.isStart ? '4px' : '0') + ';' +
       'font-size:12px;padding:0 6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;' +
       'pointer-events:auto;cursor:pointer;box-sizing:border-box;';
-    // タイトルは始まりの区間にだけ出す。続きの週は帯だけで「続いている」と分かる。
-    el.textContent = seg.isStart ? (t.text || '') : '';
+    // v0.45.1612: 続きの週にもタイトルを出す。
+    // 帯だけだと何の予定か分からず、前の週まで遡って確かめることになる。
+    // 「◀」を頭に付けて、前から続いていることを示す（TimeTreeも同じ考え方）。
+    el.textContent = seg.isStart ? (t.text || '') : ('◀ ' + (t.text || ''));
     el.title = (t.text || '') + '（' + t.date + '〜' + t.endDate + '）';
     el.onclick = (function(_d) {
       return function(e) {
@@ -13228,7 +13251,16 @@ function myDeckApply(idx) {
       try {
         _renderMonthlyBands(calendar, startDayOfWeek, year, month, _mRowH);
       } catch(eBand) { console.warn('[月間] 帯の描画に失敗:', eBand && eBand.message); }
-      setTimeout(function(){ fillMoonAges && fillMoonAges(); }, 300);
+      setTimeout(function(){
+        fillMoonAges && fillMoonAges();
+        // v0.45.1612: 月齢が埋まると升目の中身の高さが変わるので、帯を測り直す。
+        // 先に描いた位置のままだと、月齢の行のぶんだけ帯が食い込む。
+        try {
+          if (typeof _renderMonthlyBands === 'function') {
+            _renderMonthlyBands(calendar, startDayOfWeek, year, month, _mRowH);
+          }
+        } catch(eRb) {}
+      }, 300);
       // v0.45.1559: 控えておいたスクロール位置を戻す。
       // 読んでいた場所を奪わないための処置で、同期のたびに先頭へ戻る不満の元だった。
       if (_msArea && _msTop) {
