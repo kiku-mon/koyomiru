@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1629 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1631 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1629';
+    const APP_VERSION = 'v0.45.1631';
   const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2835,7 +2835,7 @@
        高さが日によって変わると、上に重ねる帯の位置が合わなくなるため構造で揃える。
        暦（節気・候）は升目の最後に回し、場所が余ったときだけ出す。 */
     .monthly-cell-head {
-      height: 18px;
+      height: 28px;
       overflow: hidden;
     }
     .monthly-cell-head .monthly-day-number {
@@ -2845,7 +2845,10 @@
     .monthly-day-row {
       display: flex;
       align-items: baseline;
-      gap: 4px;
+      /* v0.45.1630: 【権威】2026-08-19、日付が2桁の日だけ月齢の数字が切れるとの指摘。
+         日付・祝日名・月齢が1行を取り合っており、日付が1桁増えるだけで月齢がはみ出す。
+         隙間と字間を詰めて、2桁＋「26.7」でも入るようにする。 */
+      gap: 2px;
       height: 18px;
       overflow: hidden;
     }
@@ -2855,11 +2858,14 @@
       min-width: 0;
     }
     /* 月齢は日付の行の右端に。満ち欠けの流れを月全体で追えるよう、常に残す */
-    .monthly-day-row .monthly-moon-age {
-      margin-left: auto;
-      flex: 0 0 auto;
+    /* v0.45.1631: 月齢は日付の一行下。横で取り合わないので、桁が増えても切れない */
+    .monthly-moon-row {
+      height: 10px;
+      line-height: 10px;
       font-size: 9px;
       color: #888;
+      white-space: nowrap;
+      overflow: hidden;
       pointer-events: none;
     }
     /* v0.45.1623: 【権威】2026-08-19、読み仮名が無いと素人には全く読めない、フリガナは必須との指摘。
@@ -2868,9 +2874,9 @@
        折り返しを許し、入る高さぶんだけ読ませる。入らない行は静かに切れる。 */
     .monthly-koyomi-line {
       font-size: 9px;
-      /* v0.45.1625: 1行10px。升目の余り（およそ55px）にちょうど5行入る。
-         「節気／よみ／候／よみ（2行に折り返す）」が収まる最小の刻み。 */
-      line-height: 10px;
+      /* v0.45.1631: 1行12px。絵文字が混ざっても行が膨らまないよう余裕を持たせる。
+         数えた行数と実際がずれると、フリガナの行が消える。 */
+      line-height: 12px;
       overflow: hidden;
       pointer-events: none;
       word-break: break-all;
@@ -9905,12 +9911,18 @@ window.packBandLanes = packBandLanes;
 // よって暦（節気・候）は予定より優先度を下げ、場所が余っているときだけ出す。
 // 月齢だけは、月をまたいで満ち欠けの流れを追うため、日付の行に常に残す。
 var MONTHLY_CELL_PAD = 5;    // 升目の上の余白
-var MONTHLY_HEAD_H   = 18;   // 日付の行（日付・祝日名・月齢）
+// v0.45.1631: 【権威】2026-08-19、月齢を日付の右に置くと桁が増えたとき切れる、
+// 一行下にしてはどうか、との提案。横で取り合うのをやめれば、字を小さくせずに済む。
+// 頭を「日付の行18px＋月齢の行10px」の2行にする。
+var MONTHLY_HEAD_H   = 28;   // 日付の行（日付・祝日名）＋月齢の行
 var MONTHLY_BAND_H   = 16;   // 帯1本
 var MONTHLY_LANE_H   = 17;   // 帯1段ぶん（帯16px＋隙間1px）
 var MONTHLY_ITEM_H   = 19;   // 予定カード1件
 var MONTHLY_MORE_H   = 14;   // 「+N件」の行
-var MONTHLY_KOYOMI_H = 20;   // 暦を出す最低の高さ（名前1行＋フリガナ1行）
+// v0.45.1631: 暦の行送り。絵文字が混ざると10pxでは行が膨らみ、
+// 数えた行数と実際がずれてフリガナが出ないことがあった。12pxに広げて揃える。
+var MONTHLY_KOYOMI_LH = 12;  // 暦の1行の高さ
+var MONTHLY_KOYOMI_H = 24;   // 暦を出す最低の高さ（名前1行＋フリガナ1行）
 // v0.45.1629: 【権威】2026-08-19、スマホでは上下の刻みが広すぎるとの指摘。
 // 下限が130pxだったため、いちばん縮めても画面に4行しか入らなかった。
 // 60pxまで詰められるようにする。ここを唯一の正とし、スライダーにも同じ値を当てる。
@@ -13034,14 +13046,15 @@ function myDeckApply(idx) {
           holidayDiv.title = holiday;
           dayRow.appendChild(holidayDiv);
         }
-        if (!isOtherMonth) {
-          var moonEl = document.createElement('span');
-          moonEl.className = 'monthly-moon-age';
-          moonEl.dataset.date = dateStr;
-          moonEl.textContent = '🌙…';
-          dayRow.appendChild(moonEl);
-        }
         head.appendChild(dayRow);
+        // v0.45.1631: 月齢は日付の一行下。日付が2桁でも桁が切れない。
+        if (!isOtherMonth) {
+          var moonRow = document.createElement('div');
+          moonRow.className = 'monthly-moon-row monthly-moon-age';
+          moonRow.dataset.date = dateStr;
+          moonRow.textContent = '🌙…';
+          head.appendChild(moonRow);
+        }
         cell.appendChild(head);
         // v0.45.1621: 帯が通っている日は、その段数ぶんの場所を頭のすぐ下に空ける。
         // 週ごとに一律ではなく日ごとに数えるので、帯が通らない日は狭くならない。
@@ -13350,8 +13363,7 @@ function myDeckApply(idx) {
                 // v0.45.1625: 【権威】2026-08-19、フリガナの最後の行が途中で切れるとの指摘。
                 // 高さをそのまま渡すと、行の途中で刃が入り、文字の上半分だけが残る。
                 // 行の高さの倍数に切り下げてから渡す。これで必ず行の境目で切れる。
-                var _koyomiLineH = 10;
-                var _koyomiMax = Math.floor(_restH / _koyomiLineH) * _koyomiLineH;
+                var _koyomiMax = Math.floor(_restH / MONTHLY_KOYOMI_LH) * MONTHLY_KOYOMI_LH;
                 koyomiLine.style.maxHeight = _koyomiMax + 'px';
                 var _mkLine = function(cls, text) {
                   var el = document.createElement('div');
@@ -13360,14 +13372,26 @@ function myDeckApply(idx) {
                   koyomiLine.appendChild(el);
                 };
                 var _sekkiYomi = _getR ? _getR(_ck.sekkiName) : '';
-                var _sekkiEl = document.createElement('div');
-                _sekkiEl.className = 'koyomi-sekki';
-                _sekkiEl.textContent = '◆' + _ck.sekkiName;
-                if (_isNewS) _sekkiEl.style.fontWeight = '700';   // 節気が変わる日は太字
-                koyomiLine.appendChild(_sekkiEl);
-                if (_sekkiYomi) _mkLine('koyomi-yomi', _sekkiYomi);
-                _mkLine('koyomi-kou', (_ck.icon || '') + _ck.name);
-                if (_ck.reading) _mkLine('koyomi-yomi', _ck.reading);
+                // v0.45.1631: 名前とフリガナは必ず対で出す。
+                // 入る行数を先に数え、対が入らないなら、その組はまるごと出さない。
+                // 名前だけ出てフリガナが切れている状態は、読めないので意味がない。
+                var _koyomiLines = Math.floor(_restH / MONTHLY_KOYOMI_LH);
+                if (_koyomiLines >= 2) {
+                  var _sekkiEl = document.createElement('div');
+                  _sekkiEl.className = 'koyomi-sekki';
+                  _sekkiEl.textContent = '◆' + _ck.sekkiName;
+                  if (_isNewS) _sekkiEl.style.fontWeight = '700';   // 節気が変わる日は太字
+                  koyomiLine.appendChild(_sekkiEl);
+                  if (_sekkiYomi) _mkLine('koyomi-yomi', _sekkiYomi);
+                }
+                // 候はフリガナが2行に折り返すため、対で3行ぶん要る（節気の2行と合わせて5行）
+                if (_koyomiLines >= 5) {
+                  // v0.45.1631: 候の名前から絵文字を外す。
+                  // 絵文字は1文字ぶんの幅を食ううえ行の高さを膨らませるため、
+                  // 「蒙霧升降」が2行に折り返し、その下のフリガナが押し出されて消えていた。
+                  _mkLine('koyomi-kou', _ck.name);
+                  if (_ck.reading) _mkLine('koyomi-yomi', _ck.reading);
+                }
                 cell.appendChild(koyomiLine);
               }
             }
