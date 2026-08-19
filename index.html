@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1646 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1647 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1646';
+    const APP_VERSION = 'v0.45.1647';
   const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2617,11 +2617,14 @@
     }
     .msb-edit-row.msb-row-title input {
       width: 100%;
-      font-size: 15px;
+      /* v0.45.1647: 【権威】2026-08-19、タイトルが主役で、開始時刻などはその属性。
+         主役が15pxで属性と同じ大きさでは、どこに何を書くのかが伝わらない。
+         Google・TimeTree ともタイトルだけ一段大きい。 */
+      font-size: 19px;
       font-weight: 600;
       border: none;
       border-radius: 0;
-      padding: 4px 0;
+      padding: 6px 0;
       text-align: left;
       background: transparent;
     }
@@ -6514,8 +6517,10 @@
         </div>
         <div class="msb-edit-row msb-row-title">
           <label class="msb-label">タイトル</label>
-          <input id="msbEditText" type="text" placeholder="予定を入力">
+          <input id="msbEditText" type="text" placeholder="例：打ち合わせ、有給、コピキャ">
         </div>
+        <!-- v0.45.1647: 【権威】2026-08-19、時刻欄が空欄で、何を入れられるのか分からないとの指摘。
+             type="time" は placeholder が効かないため、欄の外に例を添える。 -->
         <!-- v0.45.1592: 【権威】2026-08-13、「何日の何時に終わる」が打てない設計は穴、との指摘。
              従来は 日付／終了日／開始／終了 がバラバラに並び、開始と終了が対になっていなかった。
              そのため「8/13 22:00 〜 8/14 02:00」（深夜をまたぐコピキャ等）が表現できなかった。
@@ -6547,6 +6552,10 @@
             <input id="msbEditEndDate" type="date" class="msb-input-sm">
             <input id="msbEditEndTime" type="time" class="msb-input-sm msb-dt-time" placeholder="終了時刻" title="終了時刻">
           </div>
+        </div>
+        <div class="msb-edit-row" style="margin-top:-6px;">
+          <label class="msb-label"></label>
+          <span style="font-size:11px;color:#9aa3af;">空のままなら、開始した日のその時刻だけの予定になります。何日か続くなら終了日を入れてください</span>
         </div>
         <div class="msb-edit-row">
           <label class="msb-label">メモ</label>
@@ -19792,7 +19801,23 @@ function openSidebarEditForm(item, task) {
         }
       } catch(eCal) { console.warn('[編集] カレンダー一覧の作成に失敗:', eCal && eCal.message); }
       var allDayEl = document.getElementById('msbEditAllDay');
-      if (allDayEl) allDayEl.checked = !task.time;
+      // v0.45.1647: 【権威】2026-08-19、新規なのに「終日」が最初からオンになっている、との指摘。
+      // Google カレンダーもTimeTreeも、新規は「時刻あり」から始まり、
+      // 開始時刻に次の切りのいい時間が入っている。時刻を決めない人だけが終日に切り替える。
+      // 既存の予定を開いたときは、これまでどおり時刻の有無で判断する。
+      var _isNewTask = !task || !task.id;
+      if (allDayEl) allDayEl.checked = _isNewTask ? false : !task.time;
+      if (_isNewTask) {
+        try {
+          var _tEl = document.getElementById('msbEditTime');
+          if (_tEl && !_tEl.value) {
+            var _n = new Date();
+            _n.setMinutes(0, 0, 0);
+            _n.setHours(_n.getHours() + 1);   // 次の正時
+            _tEl.value = String(_n.getHours()).padStart(2, '0') + ':' + '00';
+          }
+        } catch(eT) {}
+      }
       msbAllDayChange();
       var repEl = document.getElementById('msbEditRepeat');
       if (repEl) repEl.value = task.repeat || 'none';
@@ -19807,12 +19832,19 @@ function openSidebarEditForm(item, task) {
         renderCalendarSelector('msbCalBtnInner', _msbCalId, function(id){ _msbCalId = id; });
       }
       document.getElementById('monthlySidebarEditForm').style.display = 'block';
-      document.getElementById('msbEditText').focus();
-      // 編集フォームが見えるようにスクロール
+      // v0.45.1647: 【権威】2026-08-19、カーソルが変な場所に出るとの指摘。
+      // フォームを出した直後に focus すると、キーボードが出る動きと
+      // scrollIntoView が同時に走り、位置が定まらないままカーソルだけが見える。
+      // 先に位置を決め、落ち着いてから focus する。focus 自体では動かさない。
       setTimeout(function() {
         var form = document.getElementById('monthlySidebarEditForm');
-        if (form) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 50);
+        if (form) form.scrollIntoView({ behavior: 'auto', block: 'start' });
+        setTimeout(function() {
+          var _tx = document.getElementById('msbEditText');
+          if (!_tx) return;
+          try { _tx.focus({ preventScroll: true }); } catch(e) { _tx.focus(); }
+        }, 120);
+      }, 20);
       document.querySelectorAll('.monthly-sidebar-task-item').forEach(function(el){
         el.style.background = el.dataset.id === task.id ? '#fef9ec' : '';
       });
