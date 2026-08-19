@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1634 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1637 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1634';
+    const APP_VERSION = 'v0.45.1637';
   const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2785,7 +2785,8 @@
          スクロール位置がどこであっても欠けないようにする。 */
       position: sticky;
       top: 0;
-      z-index: 6;
+      /* v0.45.1636: 上に浮くものより手前に描く。重なっても見出しが負けない */
+      z-index: 30;
     }
     .monthly-weekday-header.saturday {
       background-color: #f0f6ff;
@@ -6414,7 +6415,12 @@
     <!-- v0.45.1623: 【権威】2026-08-19、カレンダー本体が下に埋もれるとの指摘。
          絞り込みが2〜3行に折り返して縦を食っていた。1行の横スクロールに変えて縦を返す。
          隠すのではなく横に流すだけなので、指で送れば全部見える。 -->
-    <div id="monthlyCalendarFilter" style="display:flex;gap:6px;padding:4px 12px 6px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:84px;z-index:24;"></div>
+    <!-- v0.45.1636: 【権威】2026-08-19、曜日の見出しの上端が1pxほど削れる件。
+         余白を足しても直らなかったのは、隙間の問題ではなく「重なり」だったため。
+         この帯は position:sticky で浮いており、z-index も見出しより高いので、
+         わずかにスクロールすると見出しの上へ被さっていた。
+         浮かせるのをやめて普通の並びに戻す。重ならなければ削れようがない。 -->
+    <div id="monthlyCalendarFilter" style="display:flex;gap:6px;padding:4px 12px 9px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-bottom:1px solid #f0f0f0;background:#fff;position:relative;z-index:1;"></div>
     <div class="monthly-body-wrap">
     <!-- サイドバー背景オーバーレイ（タップで閉じる） -->
     <div id="monthlySidebarOverlay" class="monthly-sidebar-overlay" onclick="closeMonthlySidebar()"></div>
@@ -12932,10 +12938,14 @@ function myDeckApply(idx) {
           if (_area) {
             var _avail = _area.clientHeight;
             if (_avail > 0) {
-              // 曜日ヘッダーの分を引き、6週で割る。潰れすぎないよう下限は設ける。
-              var _headerH = 28;
-              var _fit = Math.floor((_avail - _headerH) / _weeks);
-              _mRowH = Math.max(72, _fit);
+              // v0.45.1637: 【権威】2026-08-19、最終週（31日）が下で切れるとの指摘。
+              // 曜日見出しの高さを28pxと決め打ちしていたが、実際は上下10pxの余白込みで
+              // それより高い。低く見積もった分だけ1行あたりが大きくなり、6週で溢れていた。
+              // 実測に切り替え、升目の下線（1週につき1px）も引く。
+              var _hdrEl = document.querySelector('.monthly-weekday-header');
+              var _headerH = _hdrEl ? Math.ceil(_hdrEl.getBoundingClientRect().height) : 38;
+              var _fit = Math.floor((_avail - _headerH - _weeks - 2) / _weeks);
+              _mRowH = Math.max(MONTHLY_ROWH_MIN, _fit);
             }
           }
         } catch(eFit) {}
