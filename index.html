@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1642 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1646 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1642';
+    const APP_VERSION = 'v0.45.1646';
   const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2243,6 +2243,17 @@
       /* コメント欄が開いたときに沈める（下記 .cmt-open）。動きは控えめに。 */
       transition: transform .22s cubic-bezier(.4,0,.2,1), opacity .18s ease;
     }
+    /* v0.45.1643: 【権威】2026-08-19、左下の＋とシート内の「予定を追加」が同じ役に見える、との指摘。
+       消すのではなく、シートを開いている間だけ浮いているボタンを引っ込める。
+       シート内の「予定を追加」はその日付に足す操作で、＋は今日に足す操作。
+       役が違うので消せないが、同時に見えていると同じに見えるうえ、
+       ＋がシートの中身に重なって読む邪魔にもなっていた。 */
+    body.monthly-sheet-open .koyomiru-fab,
+    body.monthly-sheet-open .koyomiru-help-fab {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s;
+    }
     .koyomiru-fab {
       left: 20px;
       width: 56px;
@@ -2414,9 +2425,11 @@
       line-height: 1.2;
     }
     .monthly-sidebar-sekki {
-      font-size: 16px;
+      /* v0.45.1643: 【権威】2026-08-19、暦はおまけではなく、こよみるの売り。
+         これを手がかりに予定を組むための情報なので、脇役の大きさでは役に立たない。 */
+      font-size: 18px;
       color: #9c7c34;
-      margin-top: 4px;
+      margin-top: 6px;
       line-height: 1.6;
     }
     /* v0.45.1563: ふりがな。名前より一段控えめにして、主役を邪魔しないようにする。
@@ -2429,9 +2442,10 @@
     /* v0.45.1520: サイドバーの暦情報。祝日・月齢・日の出日の入を一列に並べる。
        節気（金茶）とは色を分け、補足情報だと一目で分かるようにする。 */
     .monthly-sidebar-koyomi {
-      font-size: 11px;
-      color: #8e8e8e;
-      margin-top: 5px;
+      /* v0.45.1643: 月齢もこよみるの主役側。11pxでは注釈にしか見えない */
+      font-size: 13px;
+      color: #7a7a7a;
+      margin-top: 7px;
       line-height: 1.7;
       display: flex;
       flex-wrap: wrap;
@@ -6392,7 +6406,11 @@
     <div class="monthly-header">
       <span id="seasonalArt" style="display: none; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); font-size: 2em; line-height: 1; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.1));"></span>
       <button class="monthly-nav-btn" onclick="changeMonth(-1)">◀ 先月</button>
-      <h2 id="monthlyTitle"></h2>
+      <!-- v0.45.1644: 【権威】2026-08-19、UX全体の洗い直し。
+           数ヶ月送ったあと今月へ戻る手段が「先月」を連打するしかなかった。
+           Google・Apple・TimeTreeいずれも「今日」への一手を必ず用意している。
+           場所を増やさず、月のタイトル自体を押せるようにして戻す。 -->
+      <h2 id="monthlyTitle" onclick="window.goToThisMonth()" title="押すと今月に戻ります" style="cursor:pointer;"></h2>
       <button class="monthly-nav-btn" onclick="changeMonth(1)">来月 ▶</button>
       <div id="widthSliderWrap" style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
         <button id="monthlyPrintBtn" onclick="window.printMonthlyCalendar()" title="🖨️ タスク入りA4印刷"
@@ -10061,13 +10079,39 @@ function _renderMonthlyBands(calendar, bandInfo, rowH, weeks) {
     // 続きの週にもタイトルを出す。帯だけだと何の予定か分からず、前の週まで遡ることになる。
     // 「◀」を頭に付けて、前から続いていることを示す（TimeTreeも同じ考え方）。
     el.textContent = seg.isStart ? (t.text || '') : ('◀ ' + (t.text || ''));
+    // v0.45.1646: 【権威】2026-08-19、単日のカードは完了すると線が入るのに、
+    // 帯には何も出ないため、終わったのかどうか分からない。同じ見た目に揃える。
+    // なお予定は1件で「始まり〜終わり」を持つ1つの記録なので、
+    // どの日で完了しても全体が完了になる（中の日だけ完了、という状態は存在しない）。
+    if (t.completed) {
+      el.style.textDecoration = 'line-through';
+      el.style.opacity = '0.55';
+    }
     el.title = (t.text || '') + '（' + t.date + '〜' + t.endDate + '）';
-    el.onclick = (function(_d) {
+    // v0.45.1645: 【権威】2026-08-19、帯を押すと開始日のシートが開くのは裏切り、との判断。
+    // 14日の帯を押したのに11日が開けば、押した場所と結果が食い違う。
+    // 帯は「その日にもかかっている予定」なので、押した位置の日を割り出して開く。
+    // 帯は seg.span 日ぶんの幅を持つので、押した横位置を日数で割れば何日目かが出る。
+    el.onclick = (function(_from, _span) {
       return function(e) {
         e.stopPropagation();
+        var _d = _from;
+        try {
+          var _r = this.getBoundingClientRect();
+          if (_r.width > 0 && _span > 0) {
+            var _i = Math.floor((e.clientX - _r.left) / (_r.width / _span));
+            if (_i < 0) _i = 0;
+            if (_i > _span - 1) _i = _span - 1;
+            var _dt = new Date(_from.replace(/-/g, '/'));
+            _dt.setDate(_dt.getDate() + _i);
+            _d = _dt.getFullYear() + '-' +
+                 String(_dt.getMonth() + 1).padStart(2, '0') + '-' +
+                 String(_dt.getDate()).padStart(2, '0');
+          }
+        } catch (eHit) {}
         if (typeof openMonthlySidebar === 'function') openMonthlySidebar(_d);
       };
-    })(seg.from);
+    })(seg.from, seg.span);
     layer.appendChild(el);
   });
 
@@ -13201,8 +13245,17 @@ function myDeckApply(idx) {
         try { _tombG = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
         catch(eT) { _tombG = new Set(); }
         // v0.45.1590: またぎ予定は、始まりの日だけでなく途中の日にも出す
-        let dayTasks = allTasks.filter(t => isTaskOnDate(t, dateStr) && (t.kind || 'task') === 'task'
-          && !t.deleted && !_tombG.has(t.id) && isCalendarVisible(t.calendarId));
+        let dayTasks = allTasks.filter(function(t) {
+          if (!isTaskOnDate(t, dateStr) || (t.kind || 'task') !== 'task') return false;
+          if (t.deleted || _tombG.has(t.id) || !isCalendarVisible(t.calendarId)) return false;
+          // v0.45.1645: 【権威】2026-08-19、予定チップの中身が読めない件。
+          // 複数日にまたがる予定は帯として上に描いているのに、
+          // 升目の中にも同じものを毎日ぶん描いていた（途中の日は文字なしの空チップ）。
+          // 二重に場所を取り、単日の予定を「+N件」へ押し出していた。
+          // 帯があるならそちらに任せ、升目からは外す。
+          if (t.endDate && t.endDate !== t.date) return false;
+          return true;
+        });
         // 💰支払いのみフィルタ
         if (_monthlyFinanceFilterActive) {
         }
@@ -13306,20 +13359,9 @@ function myDeckApply(idx) {
           // v0.45.1590: またぎ予定は帯のように見せる。
           // 途中の日に毎回タイトルを出すと升目が埋まるので、始まりの日にだけ出す。
           // 途中の日は帯だけを引いて「続いている」ことを示す（TimeTreeと同じ考え方）。
-          var _span = (typeof getSpanPosition === 'function') ? getSpanPosition(task, dateStr) : 'single';
-          if (_span === 'middle' || _span === 'end') {
-            taskText.textContent = '';
-            taskDiv.style.opacity = '0.85';
-          } else {
-            taskText.textContent = (_sym3 ? _sym3+' ' : '') + _asgMark + (task.time ? `${task.time} ${task.text}` : task.text);
-          }
-          if (_span !== 'single') {
-            // 帯として繋がって見えるよう、角と余白を整える
-            taskDiv.style.borderRadius =
-              _span === 'start' ? '4px 0 0 4px' : (_span === 'end' ? '0 4px 4px 0' : '0');
-            taskDiv.style.marginLeft  = (_span === 'start') ? '' : '-4px';
-            taskDiv.style.marginRight = (_span === 'end')   ? '' : '-4px';
-          }
+          // v0.45.1645: またぎ予定は帯レイヤーが描くので、ここには単日の予定しか来ない。
+          // 以前あった「途中の日は文字を消して帯のように見せる」処理は役目を終えたため削除（第31条）。
+          taskText.textContent = (_sym3 ? _sym3+' ' : '') + _asgMark + (task.time ? `${task.time} ${task.text}` : task.text);
           taskText.style.flex = '1';
           taskText.style.overflow = 'hidden';
           taskText.style.textOverflow = 'ellipsis';
@@ -13333,6 +13375,11 @@ function myDeckApply(idx) {
           iconContainer.style.gap = '2px';
           iconContainer.style.marginLeft = '4px';
           iconContainer.style.flexShrink = '0';
+          // v0.45.1645: 狭い画面では ✏️📆 を出さない。
+          // 升目の幅は50px前後しかなく、アイコン2つで半分を食っていたため、
+          // 本文が「◉ 1…」のように潰れて読めなくなっていた。
+          // 押せばシートが開き、そこで編集も日次移動もできるので、失う操作は無い。
+          if (window.innerWidth <= 768) iconContainer.style.display = 'none';
           // ✏️編集ボタン
           const editBtn = document.createElement('span');
           editBtn.className = 'wg-task-edit';
@@ -14589,6 +14636,45 @@ function myDeckApply(idx) {
       renderMonthlyView();
       updateSeasonalArt();
     }
+    // v0.45.1644: 今月へ戻る。何ヶ月送っていても一手で帰れる。
+    function goToThisMonth() {
+      var _now = new Date();
+      if (currentMonthDate.getFullYear() === _now.getFullYear() &&
+          currentMonthDate.getMonth() === _now.getMonth()) return;   // すでに今月なら何もしない
+      cancelMoveMode();
+      currentMonthDate = new Date(_now.getFullYear(), _now.getMonth(), 1);
+      renderMonthlyView();
+      updateSeasonalArt();
+      if (typeof showToast === 'function') showToast('今月に戻りました');
+    }
+    window.goToThisMonth = goToThisMonth;
+    // v0.45.1644: 月間を左右にスワイプして月を送る。
+    // ボタンは画面上部にあり、片手だと親指が届かない。
+    // 日次ビューでは既に同じ操作を入れており、揃えることで迷いも減る。
+    (function() {
+      var _sx = 0, _sy = 0;
+      function _bind() {
+        var area = document.querySelector('.monthly-scroll-area');
+        if (!area || area._swipeBound) return;
+        area._swipeBound = true;
+        area.addEventListener('touchstart', function(e) {
+          if (!e.touches || !e.touches[0]) return;
+          _sx = e.touches[0].clientX; _sy = e.touches[0].clientY;
+        }, { passive: true });
+        area.addEventListener('touchend', function(e) {
+          if (!e.changedTouches || !e.changedTouches[0]) return;
+          var dx = e.changedTouches[0].clientX - _sx;
+          var dy = e.changedTouches[0].clientY - _sy;
+          // 横に80px以上、かつ縦の2倍以上動いたときだけ月送り（誤爆防止）
+          if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 2) {
+            if (typeof changeMonth === 'function') changeMonth(dx < 0 ? 1 : -1);
+          }
+        }, { passive: true });
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _bind);
+      else _bind();
+      setTimeout(_bind, 1200);   // 画面が後から組み上がる場合の保険
+    })();
     // 週を変更
     function changeWeek(delta) {
       currentWeekDate.setDate(currentWeekDate.getDate() + (delta * 7));
@@ -19397,6 +19483,8 @@ function openMonthlySidebar(dateStr) {
       _sidebarDateStr = dateStr;
       var sb = document.getElementById('monthlySidebar');
       if (!sb) return;
+      // v0.45.1643: シートを開いている間は浮いているボタンを引っ込める
+      try { document.body.classList.add('monthly-sheet-open'); } catch(e) {}
       var _d = new Date(dateStr.replace(/-/g, '/'));
       var _days = ['\u65e5','\u6708','\u706b','\u6c34','\u6728','\u91d1','\u571f'];
       var _dateLabel = (_d.getMonth()+1) + '\u6708' + _d.getDate() + '\u65e5\uff08' + _days[_d.getDay()] + '\uff09';
@@ -19504,6 +19592,8 @@ function openMonthlySidebar(dateStr) {
       } catch(e) {}
       var sb = document.getElementById('monthlySidebar');
       if (sb) sb.classList.remove('open');
+      // v0.45.1643: 浮いているボタンを戻す
+      try { document.body.classList.remove('monthly-sheet-open'); } catch(e) {}
       var ov = document.getElementById('monthlySidebarOverlay');
       if (ov) ov.classList.remove('show');
       _sidebarDateStr = '';
