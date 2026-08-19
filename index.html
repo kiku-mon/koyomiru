@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1661 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1664 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1661';
+    const APP_VERSION = 'v0.45.1664';
   const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2367,6 +2367,7 @@
       padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
     }
     .msb-form-close {
+      /* v0.45.1663: 「キャンセル」の文字から✕へ戻す */
       width: 40px;
       height: 40px;
       border: none;
@@ -2775,6 +2776,19 @@
       font-family: inherit;
       letter-spacing: .05em;
     }
+    /* v0.45.1664: 下部の保存。上部の保存と同じ色にして、同じ操作だと分かるようにする */
+    .msb-btn-save-bottom {
+      background: #0b6bcb;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .msb-btn-save-bottom:active { background: #094e96; }
     .msb-btn-cancel {
       background: #f3f4f6;
       color: #374151;
@@ -6587,13 +6601,16 @@
         <!-- v0.45.1521: TimeTree同様、保存を上部に常時見える位置へ置く。
              入力の途中でも保存の存在が視界に入り、下までスクロールせずに済む。 -->
         <div class="msb-form-header">
-          <!-- v0.45.1602: 【権威】2026-08-13、フォームを開いたあと閉じる手段が無く、
-               「タスクを入力してください」と出て逃げられなくなるとの報告。
-               やめる道が無いのは、それだけで閉じ込めになる。閉じるを必ず置く。
-               左に置くのは、右上の保存と押し間違えないため。 -->
-          <button class="msb-form-close" onclick="closeMsbEdit()" title="閉じる">✕</button>
-          <span class="msb-form-title" id="msbFormTitle">予定の編集</span>
+          <!-- v0.45.1602: フォームを開いたあと閉じる手段が無いと閉じ込めになるため、閉じるは必ず置く。
+               v0.45.1663: 【権威】2026-08-19、保存を左・✕を右にする、との判断。
+               右上は✕で閉じる場所、という感覚を優先する。
+               この並びは他のアプリと逆になるため、右上を押した人が
+               保存のつもりで閉じてしまう恐れがある。
+               そこで、書きかけがあるときに✕を押したら確認を挟み、
+               書いた内容を黙って失わないようにしている（closeMsbEdit 側）。 -->
           <button class="msb-form-save" onclick="saveMsbEdit()">保存</button>
+          <span class="msb-form-title" id="msbFormTitle">予定の編集</span>
+          <button class="msb-form-close" onclick="closeMsbEditGuarded()" title="閉じる">✕</button>
         </div>
         <!-- v0.45.1605: 【権威】2026-08-13、どのカレンダーに入るかを確かめたいのに
              選択が下にあって見切れる、間違えると諍いになりうる、との指摘。
@@ -6678,10 +6695,13 @@
              どちらで選ぶのか分からなくなる（第31条）。上の選択に一本化して撤去する。 -->
         <input type="hidden" id="msbEditId">
         <div class="msb-edit-actions">
-          <!-- v0.45.1521: 保存はフォーム上部へ移したのでここからは外す（重複を避ける）。
-               削除は誤操作を避けるため、キャンセルと並べて下部に残す。 -->
-          <button class="msb-btn-cancel" onclick="closeMsbEdit()">キャンセル</button>
+          <!-- v0.45.1664: 【権威】2026-08-19、下も左から 保存・削除・キャンセル の順にする、との指示。
+               保存を上下どちらにも置くことで、書き終わった位置からそのまま押せる。
+               左端＝進める（保存）、右端＝やめる（キャンセル）で、上部の並びとも揃う。
+               削除を真ん中にしたのは、両端に指が行きやすく、誤って押しにくいため。 -->
+          <button class="msb-btn-save-bottom" onclick="saveMsbEdit()">保存</button>
           <button class="msb-btn-delete" onclick="deleteMsbTask()">削除</button>
+          <button class="msb-btn-cancel" onclick="closeMsbEdit()">キャンセル</button>
         </div>
         <!-- v0.45.1660: 【権威】2026-08-19、造営は一般利用者に見せてはいけない、との指示。
              造営タブ自体は管理者モードでしか出ないが、このボタンの文言だけは
@@ -20048,6 +20068,20 @@ function msbAllDayChange() {
       var row = document.getElementById('msbEditRepeatEndRow');
       if (v && row) row.style.display = v.value !== 'none' ? 'flex' : 'none';
     }
+
+    // v0.45.1663: ✕を右上へ移したため、他アプリで保存がある位置と重なる。
+    // 押し間違えても書いた内容を黙って失わないよう、書きかけがあるときだけ確認を挟む。
+    // 何も書いていなければ、そのまま閉じる（毎回聞かれると煩わしい）。
+    function closeMsbEditGuarded() {
+      try {
+        var _tx = document.getElementById('msbEditText');
+        var _mm = document.getElementById('msbEditMemo');
+        var _dirty = (_tx && _tx.value.trim() !== '') || (_mm && _mm.value.trim() !== '');
+        if (_dirty && !confirm('書きかけの内容は保存されません。閉じますか？')) return;
+      } catch(e) {}
+      closeMsbEdit();
+    }
+    window.closeMsbEditGuarded = closeMsbEditGuarded;
 
     function closeMsbEdit() {
       _msbEditingId = '';
