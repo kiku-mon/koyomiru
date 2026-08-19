@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1620 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1629 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,8 +53,8 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1620';
-  const APP_LAST_UPDATED = '2026-08-18'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.45.1629';
+  const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
       // URLパラメータ ?deck=DCK1:xxx でデッキ自動追加
@@ -294,12 +294,23 @@
       if (!nav) return;
       // CSSのenv()が効いているか確認、効いていなければフォールバック
       var safeTop = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0') || 0;
-      // --satが取れない場合はiPhoneのデフォルト値を使用
+      // --satが取れない場合の推定
+      // v0.45.1623: 【権威】2026-08-19、画面上部の余白が多すぎるとの指摘。
+      // ここで無条件に44pxを積んでいたのが原因。この44pxは「ページがステータスバーの
+      // 真下から始まる」場合の逃がしで、ホーム画面から起動した時だけ必要になる。
+      // 普通のブラウザやアプリ内ブラウザでは、上の余白は相手側が既に確保しているため、
+      // こちらが積むとそのぶんまるごと無駄になり、カレンダー本体が下へ追いやられる。
       if (safeTop === 0 && /iPhone|iPad/.test(navigator.userAgent)) {
-        // screen.heightとwindow.innerHeightの差からステータスバー高さを推定
-        var diff = window.screen.height - window.innerHeight;
-        if (diff > 0 && diff < 100) safeTop = diff;
-        else safeTop = 44; // Dynamic Islandのデフォルト
+        var _standalone = (window.navigator.standalone === true) ||
+                          (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+        if (_standalone) {
+          // screen.heightとwindow.innerHeightの差からステータスバー高さを推定
+          var diff = window.screen.height - window.innerHeight;
+          if (diff > 0 && diff < 100) safeTop = diff;
+          else safeTop = 44; // Dynamic Islandのデフォルト
+        } else {
+          safeTop = 0;
+        }
       }
       nav.style.top = safeTop + 'px';
       // v0.45.1247: ステータスバー領域の白い蓋の高さもJS実測値と同期（CSSのenv()フォールバックとのズレ防止）
@@ -2820,11 +2831,11 @@
       font-size: 0.85em;
       margin-bottom: 5px;
     }
-    /* v0.45.1620: 升目の頭を「日付の行」と「暦の行」の2行・固定の高さにする。
-       日によって頭の高さが変わると、上に重ねる帯の位置が合わず、
-       余白が空きすぎたり暦の上に帯が乗ったりする。構造で揃える。 */
+    /* v0.45.1621: 升目の頭は「日付の行」1行・固定18px。
+       高さが日によって変わると、上に重ねる帯の位置が合わなくなるため構造で揃える。
+       暦（節気・候）は升目の最後に回し、場所が余ったときだけ出す。 */
     .monthly-cell-head {
-      height: 32px;
+      height: 18px;
       overflow: hidden;
     }
     .monthly-cell-head .monthly-day-number {
@@ -2843,22 +2854,31 @@
       font-size: 0.6em;
       min-width: 0;
     }
-    .monthly-koyomi-line {
-      display: flex;
-      gap: 5px;
-      height: 14px;
-      line-height: 14px;
+    /* 月齢は日付の行の右端に。満ち欠けの流れを月全体で追えるよう、常に残す */
+    .monthly-day-row .monthly-moon-age {
+      margin-left: auto;
+      flex: 0 0 auto;
       font-size: 9px;
-      color: #9c7c34;
-      white-space: nowrap;
-      overflow: hidden;
+      color: #888;
       pointer-events: none;
     }
-    .monthly-koyomi-line > span {
+    /* v0.45.1623: 【権威】2026-08-19、読み仮名が無いと素人には全く読めない、フリガナは必須との指摘。
+       1行に収めようとすると幅が足りず「◆…」しか出ず、意味を失っていた。
+       暦は予定が空いている日にだけ出るので、その日は縦に余裕がある。
+       折り返しを許し、入る高さぶんだけ読ませる。入らない行は静かに切れる。 */
+    .monthly-koyomi-line {
+      font-size: 9px;
+      /* v0.45.1625: 1行10px。升目の余り（およそ55px）にちょうど5行入る。
+         「節気／よみ／候／よみ（2行に折り返す）」が収まる最小の刻み。 */
+      line-height: 10px;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      pointer-events: none;
+      word-break: break-all;
+      margin-top: 1px;
     }
+    .monthly-koyomi-line .koyomi-sekki { color: #9c7c34; }
+    .monthly-koyomi-line .koyomi-kou   { color: #5a7a5a; }
+    .monthly-koyomi-line .koyomi-yomi  { color: #a99a80; }
     /* 帯の段数ぶんの場所。升目の上端ではなくここで空けるので、日付は動かない */
     .monthly-band-space {
       width: 100%;
@@ -6360,9 +6380,10 @@
     <!-- 月間スライダーバー（週間と同じスタイル） -->
     <div style="width:100%;display:flex;align-items:center;gap:0;padding:3px 8px 4px;box-sizing:border-box;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:48px;z-index:25;">
       <span style="font-size:0.65em;color:#f472b6;flex-shrink:0;margin-right:3px;line-height:1;vertical-align:middle;">↕︎</span>
-      <input type="range" id="monthlyRowHSlider" min="130" max="500" value="130"
+      <input type="range" id="monthlyRowHSlider" min="60" max="500" value="130"
         style="flex:1;accent-color:#f472b6;cursor:pointer;min-width:0;background:transparent;-webkit-appearance:none;height:4px;border-radius:2px;background:linear-gradient(to right,#f472b6 0%,#f472b6 0%,#e5e7eb 0%);"
         oninput="window.adjustMonthlyRowH(this.value)"
+        onchange="window.finishMonthlyRowH(this.value)"
         ondblclick="window.resetMonthlyRowH()">
       <span style="font-size:0.65em;color:#60a5fa;flex-shrink:0;margin-left:8px;margin-right:3px;line-height:1;vertical-align:middle;">↔</span>
       <input type="range" id="monthlyWidthSlider" min="100" max="300" value="100"
@@ -6373,7 +6394,10 @@
         style="font-size:0.6em;color:#aaa;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 5px;cursor:pointer;flex-shrink:0;margin-left:4px;">↺</button>
     </div>
     <!-- カレンダークイックフィルター -->
-    <div id="monthlyCalendarFilter" style="display:flex;gap:6px;padding:4px 12px 6px;flex-wrap:wrap;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:84px;z-index:24;"></div>
+    <!-- v0.45.1623: 【権威】2026-08-19、カレンダー本体が下に埋もれるとの指摘。
+         絞り込みが2〜3行に折り返して縦を食っていた。1行の横スクロールに変えて縦を返す。
+         隠すのではなく横に流すだけなので、指で送れば全部見える。 -->
+    <div id="monthlyCalendarFilter" style="display:flex;gap:6px;padding:4px 12px 6px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:84px;z-index:24;"></div>
     <div class="monthly-body-wrap">
     <!-- サイドバー背景オーバーレイ（タップで閉じる） -->
     <div id="monthlySidebarOverlay" class="monthly-sidebar-overlay" onclick="closeMonthlySidebar()"></div>
@@ -9876,14 +9900,40 @@ function packBandLanes(segs) {
 }
 window.packBandLanes = packBandLanes;
 
-// v0.45.1611: 帯を描く。升目の上に重ねる層を作り、そこにGridで配置する。
-function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
-  // 前の描画を消す（残ると二重になる）
-  var old = document.getElementById('monthlyBandLayer');
-  if (old) old.remove();
-  if (!calendar) return;
+// ===== v0.45.1621: 月間の升目の縦の寸法（ここだけを見れば分かるようにまとめる） =====
+// 【権威】2026-08-19、暦を見るのは予定が埋まっていない時だけ、というユースケース。
+// よって暦（節気・候）は予定より優先度を下げ、場所が余っているときだけ出す。
+// 月齢だけは、月をまたいで満ち欠けの流れを追うため、日付の行に常に残す。
+var MONTHLY_CELL_PAD = 5;    // 升目の上の余白
+var MONTHLY_HEAD_H   = 18;   // 日付の行（日付・祝日名・月齢）
+var MONTHLY_BAND_H   = 16;   // 帯1本
+var MONTHLY_LANE_H   = 17;   // 帯1段ぶん（帯16px＋隙間1px）
+var MONTHLY_ITEM_H   = 19;   // 予定カード1件
+var MONTHLY_MORE_H   = 14;   // 「+N件」の行
+var MONTHLY_KOYOMI_H = 20;   // 暦を出す最低の高さ（名前1行＋フリガナ1行）
+// v0.45.1629: 【権威】2026-08-19、スマホでは上下の刻みが広すぎるとの指摘。
+// 下限が130pxだったため、いちばん縮めても画面に4行しか入らなかった。
+// 60pxまで詰められるようにする。ここを唯一の正とし、スライダーにも同じ値を当てる。
+var MONTHLY_ROWH_MIN = 60;
+var MONTHLY_ROWH_MAX = 500;
 
-  // グリッドの左上が何日か（前月にさかのぼる）
+// ===== v0.45.1621: TimeTree方式に組み替える =====
+// 【権威】2026-08-19、TimeTreeの実装解説記事（同社エンジニアによる公開記事）を精読。
+// 決定的な違いは3つあった。
+//   ① 帯を別の層に重ねず、1日の予定と同じ列に積む。翌日以降には「ここは埋まっている」
+//      という場所取りを差し込んで、後の予定を下へ押し出す。重ねないのでずれない。
+//   ② 表示できる件数を先に決めてから枠を作る（後から畳み直さない）。
+//   ③ 並び順は 複数日 → 祝日 → 終日 → 時刻 → 作成日時。
+// こよみるは升目ごとにスクロールする作りなので、層そのものは残す。
+// ただし場所取りの考え方は取り入れ、「その日に何段使われているか」を先に数えて、
+// 升目を作る時点で予定の開始位置と件数を決める。後から畳み直す処理は廃止する（第31条）。
+// これで、帯の描画と升目の中身が同じ数字を見るようになり、食い違いが起きない。
+
+// 帯の段組みを先に計算する。升目を作る前に呼ぶ。
+function _computeMonthlyBands(startDayOfWeek, year, month, weeks) {
+  var empty = { segs: [], laneCount: [] };
+  // v0.45.1622: 週数は月によって4〜6に変わる。渡されなければ6として扱う。
+  var _wk = (weeks && weeks >= 1) ? weeks : 6;
   var _first = new Date(year, month, 1);
   _first.setDate(_first.getDate() - startDayOfWeek);
   var gridStart = _first.getFullYear() + '-' + String(_first.getMonth()+1).padStart(2,'0') + '-' + String(_first.getDate()).padStart(2,'0');
@@ -9899,38 +9949,52 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
     if (typeof isCalendarVisible === 'function' && !isCalendarVisible(t.calendarId)) return false;
     return true;
   });
-  if (targets.length === 0) return;
+  if (targets.length === 0) return empty;
 
   // 週ごとに切って、段に詰める
   var segs = [];
-  targets.forEach(function(t) { segs = segs.concat(splitTaskByWeek(t, gridStart, 6)); });
-  if (segs.length === 0) return;
+  targets.forEach(function(t) { segs = segs.concat(splitTaskByWeek(t, gridStart, _wk)); });
+  if (segs.length === 0) return empty;
   packBandLanes(segs);
 
-  // 重ねる層。升目と同じGridにして、列をそのまま使う。
+  // v0.45.1621: 「その日に何段使われているか」を日ごとに数える。
+  // 前版は週ごとに一律で場所を空けていたため、帯が通っていない日まで無駄に狭くなっていた。
+  var laneCount = [];
+  var _cells = _wk * 7;
+  for (var i = 0; i < _cells; i++) laneCount[i] = 0;
+  segs.forEach(function(s) {
+    for (var c = s.colStart; c < s.colStart + s.span; c++) {
+      var idx = s.week * 7 + c;
+      if (idx < 0 || idx >= _cells) continue;
+      if (laneCount[idx] < s.lane + 1) laneCount[idx] = s.lane + 1;
+    }
+  });
+  return { segs: segs, laneCount: laneCount };
+}
+window._computeMonthlyBands = _computeMonthlyBands;
+
+// 帯を描く。升目の上に重ねる層を作り、そこにGridで配置する。
+// 位置の計算はしない。升目の頭の高さも段の高さも決め打ちで、構造として揃っている。
+function _renderMonthlyBands(calendar, bandInfo, rowH, weeks) {
+  var old = document.getElementById('monthlyBandLayer');
+  if (old) old.remove();
+  if (!calendar || !bandInfo) return;
+  var segs = bandInfo.segs || [];
+  if (segs.length === 0) return;
+  var _wk = (weeks && weeks >= 1) ? weeks : 6;
+
   var layer = document.createElement('div');
   layer.id = 'monthlyBandLayer';
   // 升目のGridと同じ行構成にする。ヘッダー1行 + 6週。
-  // 行の高さを実測して合わせないと、帯が升目とずれる。
   var _hdr = calendar.querySelector('.monthly-weekday-header');
   var _hdrH = _hdr ? _hdr.offsetHeight : 28;
   layer.style.cssText =
     'position:absolute;left:0;right:0;top:0;bottom:0;' +
     'display:grid;grid-template-columns:repeat(7,1fr);' +
-    'grid-template-rows:' + _hdrH + 'px repeat(6,' + rowH + 'px);' +
+    'grid-template-rows:' + _hdrH + 'px repeat(' + _wk + ',' + rowH + 'px);' +
     'pointer-events:none;';   // 帯以外はクリックを透かす（下の升目を押せるように）
 
-  // v0.45.1620: 【権威】2026-08-18、帯のある週で日付の上に大きな余白ができ、
-  // 予定のカードが升目の外へ押し出されて見えなくなるとの報告。
-  // これまでは升目の中身の高さを実測して帯の位置を決めていたが、
-  // 測る対象（祝日名・記念日・スタンプ）が日ごとに違うため、必ずどこかでずれた。
-  // v0.45.1620で升目の頭を「日付の行18px＋暦の行14px」の固定構造に作り直したので、
-  // 測るのをやめて、その高さをそのまま使う。構造で揃っているので、ずれようがない。
-  // 升目の padding-top 5px を足した位置が、帯の始まりになる。
-  var CELL_PAD = 5, HEAD_H = 32;
-  var BAND_H = 16, BAND_GAP = 1;
-  var TOP_OFFSET = CELL_PAD + HEAD_H;   // = 37px
-  var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+  var TOP_OFFSET = MONTHLY_CELL_PAD + MONTHLY_HEAD_H;
 
   segs.forEach(function(seg) {
     var t = seg.task;
@@ -9939,20 +10003,19 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
     var el = document.createElement('div');
     el.style.cssText =
       'grid-column:' + (seg.colStart + 1) + ' / span ' + seg.span + ';' +
-      // v0.45.1611: 曜日ヘッダーがグリッドの1行目を占めるので、週は2行目から始まる
+      // 曜日ヘッダーがグリッドの1行目を占めるので、週は2行目から始まる
       'grid-row:' + (seg.week + 2) + ';' +
       'align-self:start;' +
-      'margin-top:' + (TOP_OFFSET + seg.lane * (BAND_H + BAND_GAP)) + 'px;' +
+      'margin-top:' + (TOP_OFFSET + seg.lane * MONTHLY_LANE_H) + 'px;' +
       'margin-left:' + (seg.isStart ? '3px' : '0') + ';' +
       'margin-right:' + (seg.isEnd ? '3px' : '0') + ';' +
-      'height:' + BAND_H + 'px;line-height:' + BAND_H + 'px;' +
+      'height:' + MONTHLY_BAND_H + 'px;line-height:' + MONTHLY_BAND_H + 'px;' +
       'background:' + color + ';color:#fff;' +
       'border-radius:' + (seg.isStart ? '4px' : '0') + ' ' + (seg.isEnd ? '4px' : '0') + ' ' +
                         (seg.isEnd ? '4px' : '0') + ' ' + (seg.isStart ? '4px' : '0') + ';' +
       'font-size:12px;padding:0 6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;' +
       'pointer-events:auto;cursor:pointer;box-sizing:border-box;';
-    // v0.45.1612: 続きの週にもタイトルを出す。
-    // 帯だけだと何の予定か分からず、前の週まで遡って確かめることになる。
+    // 続きの週にもタイトルを出す。帯だけだと何の予定か分からず、前の週まで遡ることになる。
     // 「◀」を頭に付けて、前から続いていることを示す（TimeTreeも同じ考え方）。
     el.textContent = seg.isStart ? (t.text || '') : ('◀ ' + (t.text || ''));
     el.title = (t.text || '') + '（' + t.date + '〜' + t.endDate + '）';
@@ -9970,66 +10033,6 @@ function _renderMonthlyBands(calendar, startDayOfWeek, year, month, rowH) {
   if (wrap && getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
   calendar.style.position = 'relative';
   calendar.appendChild(layer);
-
-  // v0.45.1620: 帯の段数ぶんの場所を、升目の上端ではなく「暦の下」に入れる。
-  // 以前は升目そのものの padding-top を上げていたため、日付も暦も一緒に下がり、
-  // 上に大きな余白ができたうえ、予定のカードが升目からはみ出して見えなくなっていた。
-  // 頭は動かさず、頭と予定のあいだに場所を空ける。これがTimeTreeと同じ構造。
-  var laneByWeek = {};
-  segs.forEach(function(s) {
-    if (laneByWeek[s.week] === undefined || s.lane > laneByWeek[s.week]) laneByWeek[s.week] = s.lane;
-  });
-  var cells = calendar.querySelectorAll('.monthly-day-cell');
-  var ITEM_H = 19, MORE_H = 14;
-  Object.keys(laneByWeek).forEach(function(w) {
-    var need = (laneByWeek[w] + 1) * (BAND_H + BAND_GAP);
-    for (var c = 0; c < 7; c++) {
-      var idx = (parseInt(w, 10) * 7) + c;
-      var cell = cells[idx];
-      if (!cell) continue;
-      // 頭のすぐ下に、帯の段数ぶんの場所を差し込む
-      var _sp = cell.querySelector('.monthly-band-space');
-      if (!_sp) {
-        _sp = document.createElement('div');
-        _sp.className = 'monthly-band-space';
-        var _head = cell.querySelector('.monthly-cell-head');
-        if (_head && _head.nextSibling) cell.insertBefore(_sp, _head.nextSibling);
-        else if (_head) cell.appendChild(_sp);
-        else cell.insertBefore(_sp, cell.firstChild);
-      }
-      _sp.style.height = need + 'px';
-      // 帯のぶん場所が減るので、入りきらない予定を畳み直す。
-      try {
-        var _items = cell.querySelectorAll('.monthly-task-item');
-        if (!_items.length) continue;
-        var _avail = cell.clientHeight - CELL_PAD - HEAD_H - need;
-        var _fit = Math.floor(_avail / ITEM_H);
-        // 畳むなら「+N件」の行のぶんも要る
-        if (_fit < _items.length) _fit = Math.floor((_avail - MORE_H) / ITEM_H);
-        if (_fit < 0) _fit = 0;
-        if (_items.length > _fit) {
-          var _hid = 0;
-          for (var k = _fit; k < _items.length; k++) { _items[k].style.display = 'none'; _hid++; }
-          var _more = cell.querySelector('.monthly-more-count');
-          var _prev = _more ? (parseInt(_more.dataset.n, 10) || 0) : 0;
-          if (!_more) {
-            _more = document.createElement('div');
-            _more.className = 'monthly-more-count';
-            _more.style.cssText = 'font-size:11px;color:#8e8e8e;padding:0 4px;cursor:pointer;font-weight:600;line-height:' + MORE_H + 'px;';
-            _more.onclick = (function(_ds) {
-              return function(e) {
-                e.stopPropagation();
-                if (typeof openMonthlySidebar === 'function') openMonthlySidebar(_ds);
-              };
-            })(cell.dataset.date || '');
-            cell.appendChild(_more);
-          }
-          _more.dataset.n = String(_prev + _hid);
-          _more.textContent = '+' + (_prev + _hid) + '件';
-        }
-      } catch(eFit) {}
-    }
-  });
 }
 window._renderMonthlyBands = _renderMonthlyBands;
 
@@ -12860,12 +12863,40 @@ function myDeckApply(idx) {
       renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
       // 月間表示モード取得
       const monthlyMode = allSettings.ui.monthlyMode || 'fixed';
+      // v0.45.1624: 年月の取り出しはここで行う。
+      // v0.45.1622で日付の計算を前へ出した際、year/month の宣言より手前で
+      // それらを参照してしまい「Cannot access 'year' before initialization」となり、
+      // 月間ビューが丸ごと描けなくなっていた。使う側より先に宣言する。
+      const year = currentMonthDate.getFullYear();
+      const month = currentMonthDate.getMonth();
+      // v0.45.1622: 日付の基礎計算を先に済ませる。
+      // 【権威】2026-08-19、TimeTreeの実装解説記事より。月と開始曜日によって週は
+      // 4〜6に変わるため、TimeTreeは6週固定にせず動的なレイアウトを採っている。
+      // こよみるは常に6週を描いていたため、5週で足りる月でも1行が6分の1に潰れていた。
+      // 必要な週数だけ描けば、5週の月は1行が2割背が高くなる。ただで手に入る余裕。
+      // 行の高さを求めるのに週数が要るので、日付の計算をここへ引き上げる。
+      // 月の最初の日
+      const firstDay = new Date(year, month, 1);
+      // v0.45.1555: 週の始まりの設定に従って、1日が何列目に来るかを求める
+      let startDayOfWeek = getWeekColumnIndex(firstDay.getDay());
+      // 月の最後の日
+      const lastDay = new Date(year, month + 1, 0);
+      const daysInMonth = lastDay.getDate();
+      // 前月の日数
+      const prevMonthLastDay = new Date(year, month, 0);
+      const daysInPrevMonth = prevMonthLastDay.getDate();
+      // その月を収めるのに必要な週数（4〜6）
+      var _weeks = Math.ceil((startDayOfWeek + daysInMonth) / 7);
+      if (_weeks < 4) _weeks = 4;
+      if (_weeks > 6) _weeks = 6;
+      var _cellCount = _weeks * 7;
       // 行高さ・列幅をスライダーから適用
       // PC(768px以上)はデフォルト行高を160pxに・スマホは130px
       var _defaultRowH = window.innerWidth >= 768 ? 160 : 130;
       var _mRowH = parseInt(allSettings.ui.monthlyRowH || _defaultRowH);
-      // v0.45.1594: 画面の高さに収める。6週×固定高だと必ずはみ出し、
+      // v0.45.1594: 画面の高さに収める。固定高だと必ずはみ出し、
       // 「今月どうなっているか」を一目で掴めなくなる。実際に使える高さから逆算する。
+      // v0.45.1622: 6ではなく実際の週数で割る。5週の月はその分だけ1行が高くなる。
       if (allSettings.ui.monthlyFitToScreen !== false) {
         try {
           var _area = document.querySelector('.monthly-scroll-area');
@@ -12874,7 +12905,7 @@ function myDeckApply(idx) {
             if (_avail > 0) {
               // 曜日ヘッダーの分を引き、6週で割る。潰れすぎないよう下限は設ける。
               var _headerH = 28;
-              var _fit = Math.floor((_avail - _headerH) / 6);
+              var _fit = Math.floor((_avail - _headerH) / _weeks);
               _mRowH = Math.max(72, _fit);
             }
           }
@@ -12887,8 +12918,11 @@ function myDeckApply(idx) {
       // スライダーの初期値を反映
       var _mRhSlider = document.getElementById('monthlyRowHSlider');
       if (_mRhSlider) {
+        // v0.45.1629: 下限・上限は定数を唯一の正とする（3箇所に書くとずれる）
+        _mRhSlider.min = MONTHLY_ROWH_MIN;
+        _mRhSlider.max = MONTHLY_ROWH_MAX;
         _mRhSlider.value = _mRowH;
-        var _rhPct = ((_mRowH - 130) / (500 - 130) * 100).toFixed(1);
+        var _rhPct = ((_mRowH - MONTHLY_ROWH_MIN) / (MONTHLY_ROWH_MAX - MONTHLY_ROWH_MIN) * 100).toFixed(1);
         _mRhSlider.style.background = 'linear-gradient(to right,#f472b6 ' + _rhPct + '%,#e5e7eb ' + _rhPct + '%)';
       }
       var _mCwSlider = document.getElementById('monthlyWidthSlider');
@@ -12897,9 +12931,7 @@ function myDeckApply(idx) {
         var _cwPct = ((_mColW - 100) / (300 - 100) * 100).toFixed(1);
         _mCwSlider.style.background = 'linear-gradient(to right,#60a5fa ' + _cwPct + '%,#e5e7eb ' + _cwPct + '%)';
       }
-      const year = currentMonthDate.getFullYear();
-      const month = currentMonthDate.getMonth();
-      // タイトル更新
+      // タイトル更新（year・monthはこの関数の先頭で宣言済み）
       document.getElementById('monthlyTitle').textContent = `${year}年${month + 1}月`;
       // 王国暦ラベル更新（第2条：nullチェック必須）
       var monthlyEraLabelEl = document.getElementById('monthlyEraLabel');
@@ -12918,23 +12950,20 @@ function myDeckApply(idx) {
         header.textContent = day;
         calendar.appendChild(header);
       });
-      // 月の最初の日
-      const firstDay = new Date(year, month, 1);
-      // v0.45.1555: 週の始まりの設定に従って、1日が何列目に来るかを求める
-      let startDayOfWeek = getWeekColumnIndex(firstDay.getDay());
-      // 月の最後の日
-      const lastDay = new Date(year, month + 1, 0);
-      const daysInMonth = lastDay.getDate();
-      // 前月の日数
-      const prevMonthLastDay = new Date(year, month, 0);
-      const daysInPrevMonth = prevMonthLastDay.getDate();
       // 今日の日付
       const today = new Date();
       const todayStr = getLocalDateStr(today);
-      // 6週分（42日）表示
+      // v0.45.1621: 帯の段組みを先に計算する。
+      // 升目を作る時点で「その日に何段使われているか」が分かっていないと、
+      // 予定の開始位置も件数も決められない（TimeTree方式）。
+      var _bandInfo = null;
+      try {
+        _bandInfo = _computeMonthlyBands(startDayOfWeek, year, month, _weeks);
+      } catch(eCb) { console.warn('[月間] 帯の計算に失敗:', eCb && eCb.message); }
+      // v0.45.1622: その月に必要な週数だけ描く（4〜6週）
       let currentDate = 1;
       let nextMonthDate = 1;
-      for (let i = 0; i < 42; i++) {
+      for (let i = 0; i < _cellCount; i++) {
         const cell = document.createElement('div');
         cell.className = 'monthly-day-cell';
         cell.style.height = _mRowH + 'px';
@@ -12984,12 +13013,11 @@ function myDeckApply(idx) {
           cell.classList.add('today');
         }
         cell.dataset.date = dateStr;
-        // v0.45.1620: 升目の頭を「日付の行」と「暦の行」の2行に作り直す。
-        // 【権威】2026-08-18、帯のある週で日付の上に大きな余白ができ、
-        // 予定のカードが升目の外へ押し出されて見えなくなるとの報告。
-        // 原因は、頭の高さが日ごとに変わるうえ、帯のぶんの余白を升目の上端に
-        // 足していたこと。高さを構造で固定し、余白は暦の下に入れる形に改める。
-        // 節気・候・月齢は3行で48px使っていた。1行にまとめて14pxにする。
+        // v0.45.1621: 升目の頭は「日付の行」1行だけにする。
+        // 【権威】2026-08-19、暦を読むのは予定が空いている時だけで、
+        // 予定が埋まってきたら暦は見ていない、というユースケース。
+        // よって節気・候は予定より下の優先度に落とし、升目の最後に回す（場所が余ればだけ出る）。
+        // 月齢は「この辺が満月」と月全体の流れで追うものなので、日付の行に常に残す。
         var head = document.createElement('div');
         head.className = 'monthly-cell-head';
         var dayRow = document.createElement('div');
@@ -13006,45 +13034,23 @@ function myDeckApply(idx) {
           holidayDiv.title = holiday;
           dayRow.appendChild(holidayDiv);
         }
-        head.appendChild(dayRow);
-        // 暦の行（節気・七十二候・月齢を1行にまとめる）
-        var koyomiLine = document.createElement('div');
-        koyomiLine.className = 'monthly-koyomi-line';
-        head.appendChild(koyomiLine);
-        cell.appendChild(head);
         if (!isOtherMonth) {
-          try {
-            var _cellDateObj = new Date(dateStr.replace(/-/g, '/'));
-            var _getCKou = typeof getCurrentShichijuniKou === 'function' ? getCurrentShichijuniKou : window.getCurrentShichijuniKou;
-            if (typeof _getCKou === 'function') {
-              var _ck = _getCKou(_cellDateObj);
-              if (_ck) {
-                var _prevD = new Date(_cellDateObj); _prevD.setDate(_prevD.getDate() - 1);
-                var _pk = _getCKou(_prevD);
-                var _isNewS = !_pk || _ck.sekkiName !== _pk.sekkiName;
-                // 節気（節気が変わる日は太字にして、区切りが分かるようにする）
-                var sekkiEl = document.createElement('span');
-                sekkiEl.style.cssText = 'color:#9c7c34;font-weight:' + (_isNewS?'700':'400') + ';flex:0 1 auto;';
-                var _getR = typeof getNijushiSekkiReading==='function'?getNijushiSekkiReading:window.getNijushiSekkiReading;
-                sekkiEl.textContent = '◆'+_ck.sekkiName;
-                sekkiEl.title = _ck.sekkiName + (_getR?'（'+_getR(_ck.sekkiName)+'）':'');
-                koyomiLine.appendChild(sekkiEl);
-                // 七十二候
-                var kouEl = document.createElement('span');
-                kouEl.style.cssText = 'color:#5a7a5a;flex:1 1 auto;min-width:0;';
-                kouEl.textContent = (_ck.icon||'')+_ck.name;
-                kouEl.title = _ck.name + (_ck.reading?'（'+_ck.reading+'）':'');
-                koyomiLine.appendChild(kouEl);
-              }
-            }
-            // 月齢プレースホルダー（DOMロード後に確実に埋める）
-            var moonEl = document.createElement('span');
-            moonEl.className = 'monthly-moon-age';
-            moonEl.dataset.date = dateStr;
-            moonEl.style.cssText = 'color:#888;flex:0 0 auto;margin-left:auto;';
-            moonEl.textContent = '🌙…';
-            koyomiLine.appendChild(moonEl);
-          } catch(e) { console.error('[月間節気月齢]', e); }
+          var moonEl = document.createElement('span');
+          moonEl.className = 'monthly-moon-age';
+          moonEl.dataset.date = dateStr;
+          moonEl.textContent = '🌙…';
+          dayRow.appendChild(moonEl);
+        }
+        head.appendChild(dayRow);
+        cell.appendChild(head);
+        // v0.45.1621: 帯が通っている日は、その段数ぶんの場所を頭のすぐ下に空ける。
+        // 週ごとに一律ではなく日ごとに数えるので、帯が通らない日は狭くならない。
+        var _lanes = (_bandInfo && _bandInfo.laneCount && _bandInfo.laneCount[i]) || 0;
+        if (_lanes > 0) {
+          var _sp = document.createElement('div');
+          _sp.className = 'monthly-band-space';
+          _sp.style.height = (_lanes * MONTHLY_LANE_H) + 'px';
+          cell.appendChild(_sp);
         }
         // v0.45.1620: 祝日名は日付の行に移した（第31条・残骸を残さない）
         // 記念日を表示
@@ -13148,13 +13154,16 @@ function myDeckApply(idx) {
         // 予定が多い日は升目からはみ出していた。帯を入れたことで場所がさらに減り、
         // 悪化している。升目の高さから入る件数を求めて、超えた分は畳む。
         var _cellH = _mRowH;
-        // v0.45.1620: 頭は「日付18px＋暦14px」の固定32px。升目の余白5pxを足した位置から予定が始まる。
-        var _usedTop = 5 + 32;   // 帯がある週は、帯を描くときにさらに畳み直される
-        var _itemH = 19;     // 予定1件ぶんの高さ
-        var _moreH = 14;     // 「+N件」の行
+        // v0.45.1621: 表示件数は「升目の高さ − 日付の行 − 帯の段数」から先に決める。
+        // 描いた後で畳み直す方式はやめた（帯と升目が別々の数字を見て食い違うため）。
+        var _usedTop = MONTHLY_CELL_PAD + MONTHLY_HEAD_H + (_lanes * MONTHLY_LANE_H);
+        var _itemH = MONTHLY_ITEM_H;
         var _maxItems = Math.floor((_cellH - _usedTop) / _itemH);
-        if (_maxItems < dayTasks.length) _maxItems = Math.floor((_cellH - _usedTop - _moreH) / _itemH);
-        if (_maxItems < 1) _maxItems = 1;   // 1件も見えないのは不親切なので、最低1件は出す
+        if (_maxItems < dayTasks.length) _maxItems = Math.floor((_cellH - _usedTop - MONTHLY_MORE_H) / _itemH);
+        if (_maxItems < 0) _maxItems = 0;
+        // 帯だけで埋まっている日は、無理に1件出すと升目からはみ出す。
+        // その場合は「+N件」に任せる（押せばその日の全部が読める）。
+        if (_maxItems < 1 && dayTasks.length > 0 && _lanes === 0) _maxItems = 1;
         var _overflow = Math.max(0, dayTasks.length - _maxItems);
         var _shown = _overflow > 0 ? dayTasks.slice(0, _maxItems) : dayTasks;
         _shown.forEach(task => {
@@ -13318,6 +13327,52 @@ function myDeckApply(idx) {
           })(dateStr);
           cell.appendChild(_moreEl);
         }
+        // v0.45.1621: 暦（節気・七十二候）は最後に置く。
+        // 予定より優先度を下げ、場所が余っているときだけ出す。
+        // 空いている日ほどよく読まれ、埋まっている日は見られないため、この順序が実態に合う。
+        // v0.45.1623: 読み仮名は必ず添える。読めない漢字だけ出しても暦にならない。
+        // 升目の幅では1行に収まらないので、折り返して縦の余白を使う。
+        // 名前とフリガナを別の行にすることで、幅の狭い升目でも文字が切れずに読める。
+        if (!isOtherMonth) {
+          try {
+            var _restH = _cellH - _usedTop - (_shown.length * _itemH) - (_overflow > 0 ? MONTHLY_MORE_H : 0);
+            if (_restH >= MONTHLY_KOYOMI_H) {
+              var _cellDateObj = new Date(dateStr.replace(/-/g, '/'));
+              var _getCKou = typeof getCurrentShichijuniKou === 'function' ? getCurrentShichijuniKou : window.getCurrentShichijuniKou;
+              var _ck = (typeof _getCKou === 'function') ? _getCKou(_cellDateObj) : null;
+              if (_ck) {
+                var _prevD = new Date(_cellDateObj); _prevD.setDate(_prevD.getDate() - 1);
+                var _pk = _getCKou(_prevD);
+                var _isNewS = !_pk || _ck.sekkiName !== _pk.sekkiName;
+                var _getR = typeof getNijushiSekkiReading==='function'?getNijushiSekkiReading:window.getNijushiSekkiReading;
+                var koyomiLine = document.createElement('div');
+                koyomiLine.className = 'monthly-koyomi-line';
+                // v0.45.1625: 【権威】2026-08-19、フリガナの最後の行が途中で切れるとの指摘。
+                // 高さをそのまま渡すと、行の途中で刃が入り、文字の上半分だけが残る。
+                // 行の高さの倍数に切り下げてから渡す。これで必ず行の境目で切れる。
+                var _koyomiLineH = 10;
+                var _koyomiMax = Math.floor(_restH / _koyomiLineH) * _koyomiLineH;
+                koyomiLine.style.maxHeight = _koyomiMax + 'px';
+                var _mkLine = function(cls, text) {
+                  var el = document.createElement('div');
+                  el.className = cls;
+                  el.textContent = text;
+                  koyomiLine.appendChild(el);
+                };
+                var _sekkiYomi = _getR ? _getR(_ck.sekkiName) : '';
+                var _sekkiEl = document.createElement('div');
+                _sekkiEl.className = 'koyomi-sekki';
+                _sekkiEl.textContent = '◆' + _ck.sekkiName;
+                if (_isNewS) _sekkiEl.style.fontWeight = '700';   // 節気が変わる日は太字
+                koyomiLine.appendChild(_sekkiEl);
+                if (_sekkiYomi) _mkLine('koyomi-yomi', _sekkiYomi);
+                _mkLine('koyomi-kou', (_ck.icon || '') + _ck.name);
+                if (_ck.reading) _mkLine('koyomi-yomi', _ck.reading);
+                cell.appendChild(koyomiLine);
+              }
+            }
+          } catch(eKoyomi) { console.error('[月間の暦]', eKoyomi); }
+        }
         // ドラッグオーバー（PC用 - タスク移動のみ）
         cell.addEventListener('dragover', (e) => {
           e.preventDefault();
@@ -13421,24 +13476,17 @@ function myDeckApply(idx) {
           cell.style.overflow = 'visible';
         }
         calendar.appendChild(cell);
-      } // for i < 42
+      } // for i < _cellCount（その月に必要な週数×7）
       // 月齢を即時＋遅延で埋める（関数定義が後にある場合のフォールバック）
       fillMoonAges && fillMoonAges();
       // v0.45.1611: 複数日にまたがる予定を帯で重ねる。
       // 升目を全部作り終えてから描く（グリッドの寸法が確定している必要があるため）。
       try {
-        _renderMonthlyBands(calendar, startDayOfWeek, year, month, _mRowH);
+        _renderMonthlyBands(calendar, _bandInfo, _mRowH, _weeks);
       } catch(eBand) { console.warn('[月間] 帯の描画に失敗:', eBand && eBand.message); }
-      setTimeout(function(){
-        fillMoonAges && fillMoonAges();
-        // v0.45.1612: 月齢が埋まると升目の中身の高さが変わるので、帯を測り直す。
-        // 先に描いた位置のままだと、月齢の行のぶんだけ帯が食い込む。
-        try {
-          if (typeof _renderMonthlyBands === 'function') {
-            _renderMonthlyBands(calendar, startDayOfWeek, year, month, _mRowH);
-          }
-        } catch(eRb) {}
-      }, 300);
+      // v0.45.1621: 月齢が埋まっても升目の高さは変わらなくなったので、
+      // 300ms後に帯を描き直す処置は不要になった（第31条・残骸を残さない）。
+      setTimeout(function(){ fillMoonAges && fillMoonAges(); }, 300);
       // v0.45.1559: 控えておいたスクロール位置を戻す。
       // 読んでいた場所を奪わないための処置で、同期のたびに先頭へ戻る不満の元だった。
       if (_msArea && _msTop) {
@@ -13594,27 +13642,73 @@ function myDeckApply(idx) {
     function adjustMonthlyRowH(v) {
       v = parseInt(v);
       allSettings.ui.monthlyRowH = v;
-      saveAllSettings();
-      var cal = document.getElementById('monthlyCalendar');
-      if (cal) {
-        var cells = cal.querySelectorAll('.monthly-day-cell');
-        cells.forEach(function(cell){
-          cell.style.height = v + 'px';
-          cell.style.maxHeight = v + 'px';
-        });
-        // v0.45.1616: 【権威】2026-08-16、スライダーとの連動を確かめてほしいとの依頼で判明。
-        // 升目の高さだけ変えて帯を描き直していなかったため、
-        // 行を伸縮させると帯だけが元の位置に取り残されていた。
-        // 高さが変われば帯の行寸法も変わるので、必ず描き直す。
-        try {
-          if (typeof renderMonthlyView === 'function') renderMonthlyView();
-        } catch(eSl) {}
-      }
+      // v0.45.1629: 【権威】2026-08-19、まだ滑らかでないとの指摘。
+      // 重さの正体は描き直しではなく saveAllSettings だった。
+      // 指を1回動かすたびに設定一式を書き出し、同期まで走らせていた。
+      // ドラッグ中は覚えるだけにして、書き出しは指を離したとき（onchange）に一度だけ行う。
+      allSettings.ui.monthlyFitToScreen = false;
+      _applyMonthlyRowHFast(v);
       var sl = document.getElementById('monthlyRowHSlider');
-      if (sl) { sl.value = v; var pct = ((v-130)/(500-130)*100).toFixed(1); sl.style.background='linear-gradient(to right,#f472b6 '+pct+'%,#e5e7eb '+pct+'%)'; }
+      if (sl) {
+        var pct = ((v - MONTHLY_ROWH_MIN) / (MONTHLY_ROWH_MAX - MONTHLY_ROWH_MIN) * 100).toFixed(1);
+        sl.style.background = 'linear-gradient(to right,#f472b6 ' + pct + '%,#e5e7eb ' + pct + '%)';
+      }
     }
+    // v0.45.1628: ドラッグ中に使う軽い反映。升目の高さと、重ねている帯の行寸法だけを直す。
+    // 作り直さないので、指の動きにそのまま付いてくる。
+    function _applyMonthlyRowHFast(v) {
+      try {
+        var cal = document.getElementById('monthlyCalendar');
+        if (!cal) return;
+        var cells = cal.querySelectorAll('.monthly-day-cell');
+        for (var i = 0; i < cells.length; i++) {
+          cells[i].style.height = v + 'px';
+          if (cells[i].style.maxHeight !== 'none') cells[i].style.maxHeight = v + 'px';
+        }
+        // 帯は升目に重ねているので、行の高さが変われば一緒に伸ばさないとずれる
+        var layer = document.getElementById('monthlyBandLayer');
+        if (layer) {
+          var weeks = Math.max(1, Math.round(cells.length / 7));
+          var hdr = cal.querySelector('.monthly-weekday-header');
+          var hdrH = hdr ? hdr.offsetHeight : 28;
+          layer.style.gridTemplateRows = hdrH + 'px repeat(' + weeks + ',' + v + 'px)';
+        }
+      } catch(eFast) {}
+    }
+    window._applyMonthlyRowHFast = _applyMonthlyRowHFast;
+    // 指を離したときの仕上げ。保存も通知も作り直しも、ここで一度だけ。
+    function finishMonthlyRowH(v) {
+      v = parseInt(v);
+      var _wasFit = (allSettings.ui.monthlyFitToScreen !== false);
+      allSettings.ui.monthlyRowH = v;
+      allSettings.ui.monthlyFitToScreen = false;
+      try { saveAllSettings(); } catch(e) {}
+      try {
+        var _mfEl = document.getElementById('monthlyFitCheck');
+        if (_mfEl) _mfEl.checked = false;
+      } catch(eMf) {}
+      // v0.45.1627: 設定のせいで効いていないなら、黙らずに知らせる
+      if (_wasFit && typeof showToast === 'function') {
+        showToast('「画面に収める」を解除しました。行の高さを手で決められます（↺ で元に戻せます）', { duration: 3000 });
+      }
+      try {
+        if (typeof renderMonthlyView === 'function') renderMonthlyView();
+      } catch(e2) {}
+    }
+    window.finishMonthlyRowH = finishMonthlyRowH;
     function resetMonthlyRowH() {
-      adjustMonthlyRowH(130);
+      // v0.45.1626: ↺ は「自動で画面に収める」に戻す（既定の状態へ戻す、の意味）
+      allSettings.ui.monthlyRowH = 130;
+      allSettings.ui.monthlyFitToScreen = true;
+      saveAllSettings();
+      try {
+        var _mfEl2 = document.getElementById('monthlyFitCheck');
+        if (_mfEl2) _mfEl2.checked = true;
+      } catch(eMf2) {}
+      try {
+        if (typeof renderMonthlyView === 'function') renderMonthlyView();
+      } catch(eRs) {}
+      if (typeof showToast === 'function') showToast('画面に収める表示に戻しました');
     }
     function adjustWeeklyWidth(p) {
       allSettings.ui.weeklyCellScale = p; saveAllSettings();
@@ -28811,6 +28905,7 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           background:${isOn ? bgColor : '#f5f5f5'};
           color:${isOn ? textColor : '#bbb'};
           transition:all 0.15s;
+          flex:0 0 auto;white-space:nowrap;
         `;
         // v0.45.1615: 隠しているときは、名前の代わりに「・・・」を出す。
         // チップの大きさや並びは変えないので、位置で見分けがつく。
@@ -28848,7 +28943,7 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       // 「全て」ボタン
       if (activeCalendarIds !== null) {
         const allBtn = document.createElement('button');
-        allBtn.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px solid #ccc;background:#fff;color:#888;';
+        allBtn.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px solid #ccc;background:#fff;color:#888;flex:0 0 auto;white-space:nowrap;';
         allBtn.textContent = '全て';
         allBtn.onclick = () => {
           activeCalendarIds = null;
@@ -28863,7 +28958,7 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       // ログイン済みなら出さない（用の無い案内は雑音にしかならない）。
       if (!window._cloudIsLoggedIn) {
         var loginChip = document.createElement('button');
-        loginChip.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px dashed #0b6bcb;background:#eaf3fc;color:#0b5bb0;';
+        loginChip.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;border:1.5px dashed #0b6bcb;background:#eaf3fc;color:#0b5bb0;flex:0 0 auto;white-space:nowrap;';
         loginChip.textContent = '👥 共有カレンダーを使う';
         loginChip.title = 'ログインすると、招待された共有カレンダーが見られます';
         loginChip.onclick = function() {
@@ -28876,7 +28971,7 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       // 状態が見た目で分かるよう、隠しているときは色を変える。
       var _hideBtn = document.createElement('button');
       var _hid = !!window._calChipsHidden;
-      _hideBtn.style.cssText = 'padding:5px 12px;border-radius:14px;font-size:0.75em;font-weight:600;cursor:pointer;' +
+      _hideBtn.style.cssText = 'padding:5px 12px;border-radius:14px;font-size:0.75em;font-weight:600;cursor:pointer;flex:0 0 auto;white-space:nowrap;' +
         (_hid ? 'border:2px solid #0b6bcb;background:#eaf3fc;color:#0b5bb0;'
               : 'border:2px solid #e5e5e5;background:#fff;color:#b0b0b0;');
       _hideBtn.textContent = _hid ? '👁 名前を出す' : '🙈 名前を隠す';
@@ -28886,7 +28981,7 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       if (containerId === 'monthlyCalendarFilter') {
         var finBtn = document.createElement('button');
         var isFinOn = _monthlyFinanceFilterActive;
-        finBtn.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;'
+        finBtn.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;flex:0 0 auto;white-space:nowrap;'
           + 'border:1.5px solid ' + (isFinOn ? '#c0392b' : '#ddd') + ';'
           + 'background:' + (isFinOn ? '#fef0f0' : '#fff') + ';'
           + 'color:' + (isFinOn ? '#c0392b' : '#aaa') + ';';
