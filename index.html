@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1631 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1634 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1631';
+    const APP_VERSION = 'v0.45.1634';
   const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2779,6 +2779,13 @@
       text-align: center;
       font-weight: bold;
       font-size: 0.9em;
+      /* v0.45.1634: 【権威】2026-08-19、絞り込みを開閉すると曜日の上端がわずかに欠ける、との指摘。
+         畳んだ分だけ中身の位置がずれるが、スクロール位置は元のまま残るため、
+         その差だけ見出しが上へ隠れていた。見出し自体を上に貼り付けて、
+         スクロール位置がどこであっても欠けないようにする。 */
+      position: sticky;
+      top: 0;
+      z-index: 6;
     }
     .monthly-weekday-header.saturday {
       background-color: #f0f6ff;
@@ -6398,6 +6405,10 @@
         ondblclick="window.resetMonthlyWidth()">
       <button onclick="window.resetMonthlyWidth();window.resetMonthlyRowH();"
         style="font-size:0.6em;color:#aaa;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 5px;cursor:pointer;flex-shrink:0;margin-left:4px;">↺</button>
+      <!-- v0.45.1633: 【権威】2026-08-19、🏷 が何のアイコンか分からないとの指摘。
+           絞り込みには世の中で意味の固定した記号が無いため、絵に頼らず文字で書く。 -->
+      <button id="monthlyFilterToggle" onclick="window.toggleMonthlyFilterBar()" title="絞り込みの表示を切り替える"
+        style="font-size:0.6em;color:#666;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 6px;cursor:pointer;flex-shrink:0;margin-left:4px;white-space:nowrap;">絞り込み ▾</button>
     </div>
     <!-- カレンダークイックフィルター -->
     <!-- v0.45.1623: 【権威】2026-08-19、カレンダー本体が下に埋もれるとの指摘。
@@ -9295,6 +9306,10 @@
         // コンパクトに収めるべき、との方針。スクロールせずに月全体が見えるほうが
         // 「今月どうなっているか」を掴みやすい。行の高さを手で決めたい人はOFFにできる。
         monthlyFitToScreen: true,
+        // v0.45.1632: 月間の絞り込みチップを畳んでいるか。
+        // カレンダーが増えるほど場所を食うので、必要な時だけ開けるようにする。
+        // 既定は開いた状態（今までと同じ見え方を保つ）。
+        monthlyFilterCollapsed: false,
         // v0.45.1577: 右下の？ボタンを出すか。既定は出さない（浮くボタンは＋だけにする）。
         // 出したくなったら設定で戻せる。試して比べられるようにしておくための設定。
         showHelpFab: false,
@@ -12873,6 +12888,8 @@ function myDeckApply(idx) {
       calendar.innerHTML = '';
       // カレンダーフィルター描画
       renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+      // v0.45.1632: 描き直すと中身が入れ替わるので、畳んでいる状態を当て直す
+      if (typeof applyMonthlyFilterBar === 'function') applyMonthlyFilterBar();
       // 月間表示モード取得
       const monthlyMode = allSettings.ui.monthlyMode || 'fixed';
       // v0.45.1624: 年月の取り出しはここで行う。
@@ -15587,6 +15604,30 @@ window.setWeekStartsOn = setWeekStartsOn;
 
 // v0.45.1577: ？ボタンの表示を設定に従わせる。
 // v0.45.1594: 月間を画面に収めるかの切り替え。
+// v0.45.1632: 月間の絞り込みチップの開閉。
+// カレンダーが多いと2〜3行に伸びて本体を圧迫するので、畳めるようにする。
+// 畳んでも絞り込みの状態（どれをオンにしているか）は変わらない。見え方だけの話。
+function applyMonthlyFilterBar() {
+  try {
+    var bar = document.getElementById('monthlyCalendarFilter');
+    var btn = document.getElementById('monthlyFilterToggle');
+    var collapsed = !!(allSettings && allSettings.ui && allSettings.ui.monthlyFilterCollapsed);
+    if (bar) bar.style.display = collapsed ? 'none' : 'flex';
+    if (btn) btn.textContent = collapsed ? '絞り込み ▸' : '絞り込み ▾';
+  } catch(e) {}
+}
+window.applyMonthlyFilterBar = applyMonthlyFilterBar;
+function toggleMonthlyFilterBar() {
+  try {
+    allSettings.ui.monthlyFilterCollapsed = !allSettings.ui.monthlyFilterCollapsed;
+    saveAllSettings();
+    applyMonthlyFilterBar();
+    // 畳んだ分だけ使える高さが変わるので、画面に収める設定なら計算し直す
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+  } catch(e) {}
+}
+window.toggleMonthlyFilterBar = toggleMonthlyFilterBar;
+
 function setMonthlyFitToScreen(v) {
   try {
     allSettings.ui.monthlyFitToScreen = !!v;
