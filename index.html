@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1682 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1683 ★ -->
 
 <html lang="ja">
 <head>
@@ -69,7 +69,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1682';
+    const APP_VERSION = 'v0.45.1683';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39127,10 +39127,31 @@ async function unifiedPushTasks() {
   // （id→updatedAt）と比較し、実際に変更・新規追加されたタスクだけを送る
   // 差分プッシュに変更する。無駄な通信・DB負荷・Realtimeイベント量を削減する。
   var _prevSnapshot = window._unifiedLastPushedSnapshot || {};
+  // v0.45.1683: 【権威】2026-08-20、連携の直後に403が出続ける件。
+  // 手元の予定には、他の人のカレンダーを指したものが混ざっている
+  // （招かれて見ているカレンダーの予定など）。それを自分の名前で送ろうとすると、
+  // クラウド側の権限で弾かれ、403になる。弾かれるのは正しい。送るほうが誤り。
+  // 自分が入っているカレンダーだけを送り、それ以外は手元に置いたままにする。
+  // 消したり書き換えたりはしない。見えなくなるわけでもない。送らないだけ。
+  var _allowed = null;
+  try {
+    if (!window._myCalendarIds || window._myCalendarIds.length === 0) {
+      if (typeof unifiedRefreshMyCalendarIds === 'function') await unifiedRefreshMyCalendarIds();
+    }
+    _allowed = {};
+    (window._myCalendarIds || []).forEach(function(id) { _allowed[id] = true; });
+    if (window._personalCalendarId) _allowed[window._personalCalendarId] = true;
+  } catch(eAllow) { _allowed = null; }   // 調べられないときは従来どおり送る（送れない方が損）
+  var _skipped = 0;
   var toPush = allTasks.filter(function(t){
     if (!t || !t.id) return false;
     var _sig = t.updatedAt || t.createdAt || '';
-    return _prevSnapshot[t.id] !== _sig;
+    if (_prevSnapshot[t.id] === _sig) return false;
+    if (_allowed) {
+      var _cid = t.cloudCalendarId || window._personalCalendarId;
+      if (_cid && !_allowed[_cid]) { _skipped++; return false; }
+    }
+    return true;
   }).map(function(t) {
     return {
       id: t.id,
@@ -39143,6 +39164,9 @@ async function unifiedPushTasks() {
       updated_at: t.updatedAt || t.createdAt || new Date().toISOString()
     };
   });
+  if (_skipped > 0) {
+    console.info('[Unified] 自分が入っていないカレンダーの予定 ' + _skipped + '件は送りませんでした（手元には残っています）');
+  }
   if (toPush.length === 0) return null;
   var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
   if (r.error) {
@@ -41457,6 +41481,11 @@ async function _takeOverAfterLink() {
     if (typeof unifiedEnsurePersonalCalendarAndMigrate === 'function') {
       await unifiedEnsurePersonalCalendarAndMigrate();
     }
+    // v0.45.1683: 送る前に「自分がいまどのカレンダーに入っているか」を取り直す。
+    // 連携でアカウントが変わっているので、古い一覧のままだと判断を誤る。
+    if (typeof unifiedRefreshMyCalendarIds === 'function') {
+      try { await unifiedRefreshMyCalendarIds(); } catch(eIds) {}
+    }
     // 手元のタスクを全部送る
     if (typeof unifiedPushTasks === 'function') {
       await unifiedPushTasks();
@@ -41467,7 +41496,13 @@ async function _takeOverAfterLink() {
     }
     console.info('[連携] 手元のデータを今のアカウントに引き継ぎました');
     if (typeof showToast === 'function') {
-      showToast('連携しました。予定も引き継がれています', {type:'ok'});
+      // v0.45.1683: 送れなかったものがあるのに「引き継がれています」と言い切らない。
+      // 実際には一部が権限で弾かれていたのに、成功として伝えていた。
+      if (window._cloudPushFailed) {
+        showToast('連携しました。一部の予定はこの端末に残っています', { duration: 5000 });
+      } else {
+        showToast('連携しました。予定も引き継がれています', {type:'ok'});
+      }
     }
   } catch(e) {
     console.warn('[連携] 引き継ぎに失敗:', e && e.message);
