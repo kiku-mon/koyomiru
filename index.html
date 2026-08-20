@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1697 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1701 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1697';
+    const APP_VERSION = 'v0.45.1701';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -4227,12 +4227,18 @@
     .nb-shelf-tab.nb-drag-over { border-color: #8a7f74 !important; background: rgba(255,255,255,0.85) !important; }
     /* 棚右端：共有ボタン群 */
     .nb-shelf-actions {
-      margin-left: auto;
+      /* v0.45.1701: 【権威】2026-08-20、スマホで自由帳のタブが3つほどしか見えず、
+         横にスクロールもできない、との報告。
+         原因はここの margin-left:auto。横に並ぶ帯の中でこれを使うと、
+         このまとまりを右端まで押しやろうとして、左のタブ側が潰される。
+         結果、タブは幅を失い、スクロールする余地も生まれない。
+         端に寄せるのはやめ、タブの後ろに普通に並べる。 */
       flex-shrink: 0;
       display: flex;
       align-items: center;
       gap: 4px;
       padding-bottom: 4px;
+      padding-left: 4px;
     }
     .nb-shelf-action-btn {
       flex-shrink: 0;
@@ -4709,8 +4715,20 @@
       .nb-cornell { min-height: 70vh; }
     }
     @media (max-width: 600px) {
-      .nb-shelf { padding: 10px 12px 0; }
-      .nb-shelf-tab { font-size: 0.76em; padding: 7px 10px 9px; max-width: 110px; }
+      .nb-shelf {
+        padding: 10px 12px 0;
+        /* v0.45.1701: 指で横に送れるようにする。折り返すとスクロールが生まれない。 */
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity;
+      }
+      .nb-shelf-tab {
+        font-size: 0.76em; padding: 7px 10px 9px;
+        /* v0.45.1701: 狭い画面でも読める幅を確保する。
+           入りきらない分は横に送って見せる（潰して詰め込まない）。 */
+        max-width: 110px; min-width: 68px;
+      }
       .nb-date-col { width: 52px; }
       .nb-text-textarea { font-size: 0.88em; }
     }
@@ -8665,6 +8683,11 @@
             <input type="checkbox" id="visTabNotebook" onchange="toggleVisibleTab('notebook',this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
             <span style="font-size:0.9em;color:#333;font-weight:600;">📓 自由帳</span>
           </label>
+          <!-- v0.45.1699: 旅行の表示切り替え。若木以上で使える。 -->
+          <label id="settingsLabelTravel" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="visTabTravel" onchange="toggleVisibleTab('travel',this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
+            <span style="font-size:0.9em;color:#333;font-weight:600;">🗺️ 旅行</span>
+          </label>
           <label id="settingsLabelJournal" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <input type="checkbox" id="visTabJournal" onchange="toggleVisibleTab('journal',this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
             <span style="font-size:0.9em;color:#333;font-weight:600;">📖 日誌</span>
@@ -11498,8 +11521,12 @@ function renderTodoList() {
       const container = document.getElementById('searchResults');
       if (!q) { container.innerHTML = ''; document.getElementById('searchCount').textContent = '0件'; return; }
       // タスク検索（kindが'note'以外 または 未設定の古いタスクも対象）
+      // v0.45.1700: 旅行は名前が title に入るため、text と memo だけを見ていると
+      // 「草津ゴルフ」で検索しても出てこなかった。title も見るようにする。
       const taskHits = allTasks.filter(t => t.kind !== 'note' && t.kind !== 'deckHistory' && t.kind !== 'myDeck' && t.kind !== 'guildLicense' &&
-        ((t.text || '').toLowerCase().includes(q) || (t.memo || '').toLowerCase().includes(q))
+        ((t.text || '').toLowerCase().includes(q) ||
+         (t.title || '').toLowerCase().includes(q) ||
+         (t.memo || '').toLowerCase().includes(q))
       ).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       // 自由帳検索
       const noteHits = nbPages().filter(p =>
@@ -16295,6 +16322,9 @@ function applyVisibleTabsSettings() {
     { id: 'navNotebook',   key: 'notebook' },
     { id: 'navDashboard',  key: 'dashboard' },
     { id: 'navPhoto',      key: 'photo' },
+    // v0.45.1699: 旅行タブも表示制御の対象にする。
+    // ここに無いと、設定で消しても消えない・並び替えの土台にも乗らない。
+    { id: 'navTravel',     key: 'travel' },
   ];
   tabs.forEach(function(t) {
     var el = document.getElementById(t.id);
@@ -17004,7 +17034,7 @@ var KINGDOM_MODES = {
   camp: {
     label: '🌱 種',
     // 日次・日誌・クラフト・ショップ
-    visibleTabs: { weekly: false, monthly: false, yearly: false, notebook: false, craft: false, dashboard: false, photo: false },
+    visibleTabs: { weekly: false, monthly: false, yearly: false, notebook: false, craft: false, dashboard: false, photo: false, travel: false },
     gantEnabled: false,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -17014,7 +17044,7 @@ var KINGDOM_MODES = {
   village: {
     label: '🌿 芽',
     // +週間のみ
-    visibleTabs: { weekly: true, monthly: false, yearly: false, notebook: false, craft: false, dashboard: false, photo: false },
+    visibleTabs: { weekly: true, monthly: false, yearly: false, notebook: false, craft: false, dashboard: false, photo: false, travel: false },
     gantEnabled: false,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -17024,7 +17054,7 @@ var KINGDOM_MODES = {
   town: {
     label: '🌳 若木',
     // +写真館・映画館・礎石・年間（造営は王国のみ）
-    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, craft: false, dashboard: true, photo: true },
+    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, craft: false, dashboard: true, photo: true, travel: true },
     gantEnabled: false,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -17034,7 +17064,7 @@ var KINGDOM_MODES = {
   kingdom: {
     label: '🌸 庭園',
     // 全機能解放（深考追加）
-    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, craft: false, dashboard: true, photo: true },
+    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, craft: false, dashboard: true, photo: true, travel: true },
     gantEnabled: true,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -17044,7 +17074,7 @@ var KINGDOM_MODES = {
   polestar: {
     label: '⭐ 北極星',
     // 王国と同じ・未来実装の枠
-    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, craft: false, dashboard: true, photo: true },
+    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, craft: false, dashboard: true, photo: true, travel: true },
     gantEnabled: true,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -17378,6 +17408,10 @@ function applySettingsSectionVisibility() {
   var labelPhoto = document.getElementById('settingsLabelPhoto');
   var _photoAvailable = (_effectiveModeKey === 'town' || _effectiveModeKey === 'kingdom');
   if (labelPhoto) labelPhoto.style.display = _photoAvailable ? '' : 'none';
+  // v0.45.1699: ナビタブ：旅行（若木以上で表示）
+  var labelTravel = document.getElementById('settingsLabelTravel');
+  var _travelAvailable = (_effectiveModeKey === 'town' || _effectiveModeKey === 'kingdom');
+  if (labelTravel) labelTravel.style.display = _travelAvailable ? '' : 'none';
   // ナビタブ：ダッシュボード（町・王国のみ表示）
   var labelDashboard = document.getElementById('settingsLabelDashboard');
   var _dashboardAvailable = (_effectiveModeKey === 'town' || _effectiveModeKey === 'kingdom');
@@ -17394,7 +17428,7 @@ function toggleVisibleTab(key, checked) {
       var _modeLabel = {
         camp: '種', village: '芽', town: '若木', kingdom: '庭園', polestar: '北極星'
       };
-      var _required = { yearly:'若木', notebook:'芽', photo:'若木', dashboard:'芽' };
+      var _required = { yearly:'若木', notebook:'芽', photo:'若木', dashboard:'芽', travel:'若木' };
       var _req = _required[key] || '上位';
       showToast('🌱 このタブは' + _req + 'モード以上で使えます', { type: 'info', duration: 3000 });
       var el = document.getElementById('visTab' + key.charAt(0).toUpperCase() + key.slice(1));
@@ -24470,7 +24504,7 @@ function saveMsbEdit() {
     // ===== YC_PRESET_DATA: 起動時データ注入（v0.45.961） =====
     (function() {
       try {
-        var _preset = [{"id": "019e3a10-1000-7000-9000-000000000002", "kind": "note", "title": "🔗 アカウント連携", "textL": "こよみるには、3つの入り方があります。\n\n　・Google\n　・Discord\n　・メールアドレス\n\n《ここが大事なところ》\n\n同じ人でも、入り方が違うと\n別の人として扱われます。\n\nDiscordで作った共有カレンダーは、\nGoogleで入ると見えません。\n\n同じ人なのに、と思われるはずです。\nでも、こよみるから見ると\n「別の入り口から来た誰か」なのです。\n\n《順番をまちがえないでください》\n\n連携は「いま使っている方から\n足していく」作業です。\n\n◎ 正しい順番\n　いつも使っている方でログイン\n　　↓\n　そこへ、別の方法を足す\n\n× まちがえやすい順番\n　新しい方でログインしてしまう\n　　↓\n　そこへ、いつもの方を足そうとする\n\nあとの順番だと、新しい方が\n「別の人」として先にできてしまい、\nあとから1つにまとめられません。", "textR": "《つなぎ方》\n\n① いつも使っている方法でログイン\n　（予定が見えていることを確かめる）\n② アカウント → 🔗 アカウント連携\n③ 足したい方法の「連携する」を押す\n④ その画面で承認する\n⑤ こよみるに戻ってくる\n\n✓ 連携済み と出たら完了です。\n\n《予定はどうなるの》\n\nこの端末にある予定は、\nそのまま引き継がれます。\n\n共有カレンダーも、コメントも、\n参加表明も、そのまま使えます。\n\n《写真と動画について》\n\n写真と動画は、この端末の中だけに\n保存されています。\nクラウドには送っていません。\n\n機種変更のときは、\n設定 → データ管理 から\n書き出して移してください。\n\n《うまくいかないとき》\n\n「すでに別のアカウントとして\n登録されています」と出たら、\nその方法で以前ログインしたことが\nあります。\n\nいったん別々にできた2つを、\n1つにまとめることはできません。\n\nいつも使っている方法でログインすれば、\nこれまでどおり使えます。\n予定が消えることはありません。\n\n《やめたくなったら》\n\nこよみるに入会はありません。\nログインは、共有するための鍵です。\n\n・共有をやめたい\n　→ 設定 → 共有カレンダー から抜ける\n・ログインをやめたい\n　→ アカウント → ログアウト\n\nどちらの場合も、この端末の予定は\n残ります。消えません。\n\nクラウドの記録まで消したいときは、\n共有している相手にも関わるので、\n管理者にご相談ください。", "createdAt": "2026-08-16T00:00:00.000Z", "updatedAt": "2026-08-20T00:00:00.000Z"}, {"id": "019e3a10-1000-7000-9000-000000000001", "kind": "note", "title": "🏷 スタンプの使い方", "textL": "勤務やシフトを、月間カレンダーに\nぽんぽん貼っていくための機能です。\n\n看護師さんの「日勤・夜勤・明け」、\nバイトの「早番・遅番」、\n学校の「1限・2限」など、\nくり返し使う予定に向いています。\n\n《3つの貼り方》\n\n① 選んでタップ\nスタンプを選んでから、日付をタップ。\n選んだままなので、続けて何日でも\nぽんぽん貼れます。\n\nもう一度同じ日をタップすると外れます。\nまちがえてもすぐ直せます。\n\n② ドラッグで動かす（パソコン）\n貼ったスタンプをつまんで、\n別の日へ引っぱると移動します。\n\n③ 指でドラッグ（スマホ）\n長めに押してから、指をすべらせます。\nパソコンと同じように動かせます。", "textR": "《中身は自由に変えられます》\n\n設定 → スタンプ から、\n名前・色・時刻を変えられます。\n\n最初は\n　仕事・休み・予定・記念日\nの4つが入っていますが、\n自分の働き方に合わせて\n書きかえてください。\n\n例）\n　日勤　08:30〜17:00\n　夜勤　16:30〜翌09:00\n　明け　　　　〜09:00\n　休み　（時刻なし）\n\n一度つくれば、あとは貼るだけ。\n月のはじめに一気に埋められます。\n\n《ひとつの日に複数貼れます》\n\n「日勤」と「残業」のように、\n重ねて貼ることもできます。\n\n《メモも残せます》\n\nスタンプを貼った日には、\nその日のメモも書けます。\n仕事用と、自分用に分けられます。", "createdAt": "2026-08-13T00:00:00.000Z", "updatedAt": "2026-08-13T00:00:00.000Z"}, {"id": "019db7b0-6dc6-7039-9854-637bd5187215", "kind": "note", "title": "🤲 貢献感と、ほどこすこと", "textL": "「貢献感こそが、幸福の源泉。」\n\nアドラー心理学では、幸福の三条件のひとつに「貢献感」を挙げる。\n\n承認されなくてもいい。感謝されなくてもいい。\n「自分は誰かの役に立てている」\nという感覚そのものが、人を幸福にする。\n\n《見える善行と見えない善行》\n見える善行：人に気づかれる形での親切。\n見えない善行：誰にも気づかれない親切。\n\n見返りを求めない行動ほど、\n自分の中に確かな手応えが残る。", "textR": "「ほどこす」ということ\n\n見返りを期待せずに\n何かを差し出すこと自体に、\n意味がある。\n\n雑記帳に書いた行動を\n「人のためにほどこす」として記録できる。\n\n完了すると徳が積まれる。\n\n《報酬》\n見える善行：徳+1 / GDP+3万\n見えない善行：徳+3 / GDP+9万\n\n《心得》\nあなたの行動が、誰かの何かになる。\n今日も、あなたは誰かのために動いた。", "dateL": "", "dateR": "", "text": "「貢献感こそが、幸福の源泉。」\n\nアドラー心理学では、幸福の三条件のひとつに「貢献感」を挙げる。\n\n承認されなくてもいい。感謝されなくてもいい。\n「自分は誰かの役に立てている」\nという感覚そのものが、人を幸福にする。\n\n《見える善行と見えない善行》\n見える善行：人に気づかれる形での親切。\n見えない善行：誰にも気づかれない親切。\n\n見返りを求めない行動ほど、\n自分の中に確かな手応えが残る。", "margin": "", "order": 0, "createdAt": "2026-04-23T00:14:46.214Z", "updatedAt": "2026-05-21T14:12:49.739Z"}, {"id": "019d9a30-76a3-7e2f-ac16-322f42fdc004", "kind": "note", "title": "📋 マイルール & 入念な準備", "textL": "【マイルール】\n変わらない自分の軸。\n毎日ここを起点に動く。\n\n例）\n・朝タスクを3つ決めてから始める\n・後回しにしたら理由を書く\n・1日1つ、深く調べる\n\n---ここに書く---\n\n\n\n\n\n\n\n【引き継ぎ】\nこのルールは明日も・来月も有効。\n変えたくなったら理由と一緒に更新する。", "textR": "【入念な準備】\n今日・明日の自分への指示書。\n\n▼ 今日の焦点\n（今日一番大切にすることは？）\n▷ ", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 1, "createdAt": "2026-04-17T06:46:00.611Z", "updatedAt": "2026-04-17T06:46:00.611Z"}, {"id": "019d38c0-43f5-711c-ae9d-7be962b35ce5", "kind": "note", "title": "⊙ 禅モードとは", "textL": "【禅モードとは】\n\n⊙ボタン（画面左下）から\nいつでも開ける白紙の空間。\n\nタスクも予定も関係ない。\nただ、書く。\n\n思ったことを書いてもいい。\n悩みを吐き出してもいい。\n何も書かなくてもいい。\n\n保存すると雑記帳に追加される。", "textR": "【使い方】\n\n① ⊙ボタンをタップ\n② 白紙に自由に書く\n③「保存」で雑記帳へ\n\n「閉じる」を押すと\n書いた内容は消えます。\n\n【禅の心得】\n\n完璧に書こうとしない。\n正しく書こうとしない。\nただ、今感じることを\nそのままここに置いていく。", "dateL": "", "dateR": "", "createdAt": "2026-03-29T08:40:17.653Z", "order": 2}, {"id": "019d89e9-e33e-73fc-8e44-dfc60c30fc96", "kind": "note", "title": "🗂️ マトリクス層ガイド", "textL": "【マトリクスとは】\n日次タスクを「どの視点で見るか」\nを切り替えるレンズ機能。\n\n◀ ▶ で層を切り替える\n設定→マトリクス層の表示設定\nで使う層だけ絞り込める\n\n---今つかえる層---\n🗺️ アイゼンハワー（重要度×緊急度）\n🔥 本能マトリクス（4大本能）\n📚 教育マトリクス（仁義礼智信）", "textR": "【アイゼンハワー】\n緊急×重要の4象限でタスクを整理。\n\n【本能マトリクス】\n生存・安全・所属・承認の\n4つの基本的な欲求から見る視点。\n\n【教育マトリクス】\n仁義礼智信という5つの徳目から\n行動を見つめ直す視点。\n\n※ 今後、増える予定です。", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 8, "createdAt": "2026-04-14T02:54:59.902Z", "updatedAt": "2026-04-14T02:54:59.902Z"}, {"id": "019d1d49-e5fd-7b72-bcbe-1e57b0df3bf4", "kind": "note", "title": "👹 業と徳の定義", "textL": "【業とは】\n不作為・怠り。\nやるべきことをやらずに放置すること。\n\n● タスクを3日以上放置 → 業が積む\n● 放置が長いほど業は重くなる\n● 業が多いほどGDPが毎日削られる\n\n【業の可視化】\n🔍検索 → 👹業タブ\nで放置タスクを色別に確認できる\n🔥 14日以上（濃赤）\n⚠️ 7日以上（中赤）\n　　3日以上（薄赤）", "textR": "【徳とは】\n具体的行動・精進努力。\nタスクを完了するたびに積み上がる。\n\n● タスク完了 → 徳+1\n● 日誌を書く → 徳+1\n● 月末に先月の完了件数分ボーナス\n\n【庭の力の計算式】\n徳×0.6 + GDP×0.4×1000 ÷ (業+1)\n個人の努力60%+他者交流40%\n\n業が多いと庭の力が下がる。\n業を祓い、徳を積め。\n\n【心得】\n不作為は業。\n具体的行動は徳。\n今日できることを今日やる。", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 12, "createdAt": "2026-03-24T00:41:15.518Z", "updatedAt": "2026-03-24T00:41:15.518Z"}, {"id": "019d1d49-e603-72f2-85ce-171489775200", "kind": "note", "title": "👑 称号一覧（全99段階）", "textL": "でっかい志を立てよう！！\n小さくまとまるな。\n\n【称号は全99段階】\n庭の力を高めるほど\n新しい称号が解放される。\n\n庭の力 = (徳×0.5 + GDP×0.25) × 業補正\n\n---前半（1〜49）---\n1. 🌱 種を蒔いた人（庭の力 0〜）\n2. 🪨 石をどけた人（庭の力 1〜）\n3. 🌾 芽を見つけた人（庭の力 2〜）\n4. 🏕️ 庭に立つ人（庭の力 3〜）\n5. 🐾 道を歩む人（庭の力 4〜）\n6. 🪓 土を耕す人（庭の力 5〜）\n7. 🧑‍🌾 苗を育てる人（庭の力 6〜）\n8. 🔨 支柱を立てる人（庭の力 7〜）\n9. 🪚 蔓を編む人（庭の力 9〜）\n10. ⚒️ 畝を作る人（庭の力 12〜）\n11. 🌼 花を分ける人（庭の力 15〜）\n12. 🪶 季節を記す人（庭の力 19〜）\n13. 🏡 庭に暮らす人（庭の力 23〜）\n14. 🌿 若葉を守る人（庭の力 28〜）\n15. 🍃 風を読む人（庭の力 33〜）\n16. 🛡️ 霜を防ぐ人（庭の力 39〜）\n17. 🌷 蕾を見守る人（庭の力 45〜）\n18. 🐝 花を巡る人（庭の力 52〜）\n19. 🎖️ 庭を治める人（庭の力 59〜）\n20. 🎗️ 畑を治める人（庭の力 67〜）\n21. ⚜️ 里を治める人（庭の力 75〜）\n22. 🏅 郷を治める人（庭の力 84〜）\n23. 👒 国を治める人（庭の力 94〜）\n24. 👑 四季を治める人（庭の力 104〜）\n25. 🏰 庭の主（庭の力 115〜）\n26. 🏯 里の主（庭の力 126〜）\n27. 🌾 実りの主（庭の力 138〜）\n28. 🎌 季節の旗手（庭の力 151〜）\n29. 📜 暦の記録者（庭の力 164〜）\n30. 📜 暦の編纂者（庭の力 178〜）\n31. 📜 暦の大成者（庭の力 192〜）\n32. 🔱 風の軍師（庭の力 207〜）\n33. ⚖️ 調和の宰相（庭の力 223〜）\n34. 🏛️ 庭園の議員（庭の力 239〜）\n35. 📋 四季の首相（庭の力 256〜）\n36. 🦅 大地の統治者（庭の力 274〜）\n37. 🌐 風土の総督（庭の力 292〜）\n38. ⚖️ 節気の統領（庭の力 311〜）\n39. 🔭 探求者（庭の力 331〜）\n40. 📡 知の番人（庭の力 352〜）\n41. 📜 暦学者（庭の力 373〜）\n42. 🌐 四季の外交官（庭の力 394〜）\n43. 🏹 嵐を読む者（庭の力 417〜）\n44. 🦅 鷹の目を持つ者（庭の力 440〜）\n45. 🌿 君子（庭の力 464〜）\n46. ☯️ 賢人（庭の力 489〜）\n47. 📿 庭の聖職者（庭の力 514〜）\n48. 🕊️ 聖人（庭の力 540〜）\n49. ✨ 聖人君子（庭の力 567〜）", "textR": "---後半（50〜99）---\n50. 🧘 仙人（庭の力 595〜）\n51. 🦁 野の王（庭の力 623〜）\n52. 🌊 潮の提督（庭の力 652〜）\n53. 🐉 龍と結んだ者（庭の力 682〜）\n54. 🏆 伝説の庭師（庭の力 712〜）\n55. ⚡ 伝説の勇者（庭の力 744〜）\n56. 🌟 伝説の主（庭の力 776〜）\n57. 🔮 星読みの賢者（庭の力 809〜）\n58. 🌌 天文の達人（庭の力 842〜）\n59. 👁️ 大いなる観測者（庭の力 877〜）\n60. ⛩️ 社の宮司（庭の力 912〜）\n61. 🌙 三日月の使い（庭の力 948〜）\n62. 🌗 半月の使い（庭の力 984〜）\n63. 🌕 満月の使い（庭の力 1,022〜）\n64. 🦋 生まれ変わる者（庭の力 1,060〜）\n65. 🌞 朝日の使者（庭の力 1,099〜）\n66. 🌇 夕焼けの使者（庭の力 1,139〜）\n67. 🌈 虹の使者（庭の力 1,180〜）\n68. 🍂 紅葉の主（庭の力 1,222〜）\n69. ❄️ 雪の主（庭の力 1,264〜）\n70. 🌸 花の主（庭の力 1,307〜）\n71. 🌻 夏の主（庭の力 1,351〜）\n72. 🌾 秋の主（庭の力 1,396〜）\n73. ☃️ 冬の主（庭の力 1,442〜）\n74. 🌤️ 四季の主（庭の力 1,488〜）\n75. 💫 流星群の使者（庭の力 1,536〜）\n76. 🌠 彗星の旅人（庭の力 1,584〜）\n77. 🌉 天の川の渡り人（庭の力 1,633〜）\n78. 🔭 星座の探求者（庭の力 1,683〜）\n79. 🌑 新月の賢者（庭の力 1,733〜）\n80. 🌒 月齢の賢者（庭の力 1,785〜）\n81. ⭐ 北極星の守り人（庭の力 1,837〜）\n82. 🪐 惑星の巡礼者（庭の力 1,890〜）\n83. 🌌 銀河の観測者（庭の力 1,945〜）\n84. 👁️ 全星座の眼（庭の力 2,000〜）\n85. ∞ 暦そのものの化身（庭の力 2,055〜）\n86. 🌐 歳時記の魂（庭の力 2,112〜）\n87. 🔱 二十四節気の体現者（庭の力 2,170〜）\n88. 🐉 龍神と結んだ守り人（庭の力 2,228〜）\n89. 👑 全季節の王（庭の力 2,288〜）\n90. 🌌 星々の創造者（庭の力 2,348〜）\n91. ∞ 時の彼方の者（庭の力 2,409〜）\n92. 🌟 刻の外の者（庭の力 2,471〜）\n93. 💡 暦を紐解いた者（庭の力 2,534〜）\n94. 🔥 始まりの日を見た者（庭の力 2,598〜）\n95. 🌊 潮汐の源流（庭の力 2,662〜）\n96. 🌌 星々の記憶（庭の力 2,728〜）\n97. 💫 光速で巡る者（庭の力 2,795〜）\n98. 🌠 超新星を見た者（庭の力 2,862〜）\n99. ✨ こよみるの伝説（庭の力 2,930〜）\n\n【最高峰を目指せ】\n✨ こよみるの伝説\nを目指して、今日も一歩。", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 13, "createdAt": "2026-03-24T00:41:15.518Z", "updatedAt": "2026-03-24T00:41:15.518Z"}];
+        var _preset = [{"id": "019e3a10-1000-7000-9000-000000000002", "kind": "note", "title": "🔗 アカウント連携", "textL": "こよみるには、3つの入り方があります。\n\n　・Google\n　・Discord\n　・メールアドレス\n\n《ここが大事なところ》\n\n同じ人でも、入り方が違うと\n別の人として扱われます。\n\nDiscordで作った共有カレンダーは、\nGoogleで入ると見えません。\n\n同じ人なのに、と思われるはずです。\nでも、こよみるから見ると\n「別の入り口から来た誰か」なのです。\n\n《順番をまちがえないでください》\n\n連携は「いま使っている方から\n足していく」作業です。\n\n◎ 正しい順番\n　いつも使っている方でログイン\n　　↓\n　そこへ、別の方法を足す\n\n× まちがえやすい順番\n　新しい方でログインしてしまう\n　　↓\n　そこへ、いつもの方を足そうとする\n\nあとの順番だと、新しい方が\n「別の人」として先にできてしまい、\nあとから1つにまとめられません。", "textR": "《つなぎ方》\n\n① いつも使っている方法でログイン\n　（予定が見えていることを確かめる）\n② アカウント → 🔗 アカウント連携\n③ 足したい方法の「連携する」を押す\n④ その画面で承認する\n⑤ こよみるに戻ってくる\n\n✓ 連携済み と出たら完了です。\n\n《予定はどうなるの》\n\nこの端末にある予定は、\nそのまま引き継がれます。\n\n共有カレンダーも、コメントも、\n参加表明も、そのまま使えます。\n\n《写真と動画について》\n\n写真と動画は、この端末の中だけに\n保存されています。\nクラウドには送っていません。\n\n機種変更のときは、\n設定 → データ管理 から\n書き出して移してください。\n\n《うまくいかないとき》\n\n「すでに別のアカウントとして\n登録されています」と出たら、\nその方法で以前ログインしたことが\nあります。\n\nいったん別々にできた2つを、\n1つにまとめることはできません。\n\nいつも使っている方法でログインすれば、\nこれまでどおり使えます。\n予定が消えることはありません。\n\n《やめたくなったら》\n\nこよみるに入会はありません。\nログインは、共有するための鍵です。\n\n・共有をやめたい\n　→ 設定 → 共有カレンダー から抜ける\n・ログインをやめたい\n　→ アカウント → ログアウト\n\nどちらの場合も、この端末の予定は\n残ります。消えません。\n\nクラウドの記録まで消したいときは、\n共有している相手にも関わるので、\n管理者にご相談ください。", "createdAt": "2026-08-16T00:00:00.000Z", "updatedAt": "2026-08-20T00:00:00.000Z"}, {"id": "019e3a10-1000-7000-9000-000000000001", "kind": "note", "title": "🏷 スタンプの使い方", "textL": "勤務やシフトを、月間カレンダーに\nぽんぽん貼っていくための機能です。\n\n看護師さんの「日勤・夜勤・明け」、\nバイトの「早番・遅番」、\n学校の「1限・2限」など、\nくり返し使う予定に向いています。\n\n《3つの貼り方》\n\n① 選んでタップ\nスタンプを選んでから、日付をタップ。\n選んだままなので、続けて何日でも\nぽんぽん貼れます。\n\nもう一度同じ日をタップすると外れます。\nまちがえてもすぐ直せます。\n\n② ドラッグで動かす（パソコン）\n貼ったスタンプをつまんで、\n別の日へ引っぱると移動します。\n\n③ 指でドラッグ（スマホ）\n長めに押してから、指をすべらせます。\nパソコンと同じように動かせます。", "textR": "《中身は自由に変えられます》\n\n設定 → スタンプ から、\n名前・色・時刻を変えられます。\n\n最初は\n　仕事・休み・予定・記念日\nの4つが入っていますが、\n自分の働き方に合わせて\n書きかえてください。\n\n例）\n　日勤　08:30〜17:00\n　夜勤　16:30〜翌09:00\n　明け　　　　〜09:00\n　休み　（時刻なし）\n\n一度つくれば、あとは貼るだけ。\n月のはじめに一気に埋められます。\n\n《ひとつの日に複数貼れます》\n\n「日勤」と「残業」のように、\n重ねて貼ることもできます。\n\n《メモも残せます》\n\nスタンプを貼った日には、\nその日のメモも書けます。\n仕事用と、自分用に分けられます。", "createdAt": "2026-08-13T00:00:00.000Z", "updatedAt": "2026-08-13T00:00:00.000Z"}, {"id": "019db7b0-6dc6-7039-9854-637bd5187215", "kind": "note", "title": "🤲 貢献感と、ほどこすこと", "textL": "「貢献感こそが、幸福の源泉。」\n\nアドラー心理学では、幸福の三条件のひとつに「貢献感」を挙げる。\n\n承認されなくてもいい。感謝されなくてもいい。\n「自分は誰かの役に立てている」\nという感覚そのものが、人を幸福にする。\n\n《見える善行と見えない善行》\n見える善行：人に気づかれる形での親切。\n見えない善行：誰にも気づかれない親切。\n\n見返りを求めない行動ほど、\n自分の中に確かな手応えが残る。", "textR": "「ほどこす」ということ\n\n見返りを期待せずに\n何かを差し出すこと自体に、\n意味がある。\n\n雑記帳に書いた行動を\n「人のためにほどこす」として記録できる。\n\n完了すると徳が積まれる。\n\n《報酬》\n見える善行：徳+1 / GDP+3万\n見えない善行：徳+3 / GDP+9万\n\n《心得》\nあなたの行動が、誰かの何かになる。\n今日も、あなたは誰かのために動いた。", "dateL": "", "dateR": "", "text": "「貢献感こそが、幸福の源泉。」\n\nアドラー心理学では、幸福の三条件のひとつに「貢献感」を挙げる。\n\n承認されなくてもいい。感謝されなくてもいい。\n「自分は誰かの役に立てている」\nという感覚そのものが、人を幸福にする。\n\n《見える善行と見えない善行》\n見える善行：人に気づかれる形での親切。\n見えない善行：誰にも気づかれない親切。\n\n見返りを求めない行動ほど、\n自分の中に確かな手応えが残る。", "margin": "", "order": 0, "createdAt": "2026-04-23T00:14:46.214Z", "updatedAt": "2026-05-21T14:12:49.739Z"}, {"id": "019d9a30-76a3-7e2f-ac16-322f42fdc004", "kind": "note", "title": "📋 マイルール & 入念な準備", "textL": "【マイルール】\n変わらない自分の軸。\n毎日ここを起点に動く。\n\n例）\n・朝タスクを3つ決めてから始める\n・後回しにしたら理由を書く\n・1日1つ、深く調べる\n\n---ここに書く---\n\n\n\n\n\n\n\n【引き継ぎ】\nこのルールは明日も・来月も有効。\n変えたくなったら理由と一緒に更新する。", "textR": "【入念な準備】\n今日・明日の自分への指示書。\n\n▼ 今日の焦点\n（今日一番大切にすることは？）\n▷ ", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 1, "createdAt": "2026-04-17T06:46:00.611Z", "updatedAt": "2026-04-17T06:46:00.611Z"}, {"id": "019d38c0-43f5-711c-ae9d-7be962b35ce5", "kind": "note", "title": "⊙ 禅モードとは", "textL": "【禅モードとは】\n\n⊙ボタン（画面左下）から\nいつでも開ける白紙の空間。\n\nタスクも予定も関係ない。\nただ、書く。\n\n思ったことを書いてもいい。\n悩みを吐き出してもいい。\n何も書かなくてもいい。\n\n保存すると雑記帳に追加される。", "textR": "【使い方】\n\n① ⊙ボタンをタップ\n② 白紙に自由に書く\n③「保存」で雑記帳へ\n\n「閉じる」を押すと\n書いた内容は消えます。\n\n【禅の心得】\n\n完璧に書こうとしない。\n正しく書こうとしない。\nただ、今感じることを\nそのままここに置いていく。", "dateL": "", "dateR": "", "createdAt": "2026-03-29T08:40:17.653Z", "order": 2}, {"id": "019d89e9-e33e-73fc-8e44-dfc60c30fc96", "kind": "note", "title": "🗂️ マトリクス層ガイド", "textL": "【マトリクスとは】\n日次タスクを「どの視点で見るか」\nを切り替えるレンズ機能。\n\n◀ ▶ で層を切り替える\n設定→マトリクス層の表示設定\nで使う層だけ絞り込める\n\n---今つかえる層---\n🗺️ アイゼンハワー（重要度×緊急度）\n🔥 本能マトリクス（4大本能）\n📚 教育マトリクス（仁義礼智信）", "textR": "【アイゼンハワー】\n緊急×重要の4象限でタスクを整理。\n\n【本能マトリクス】\n生存・安全・所属・承認の\n4つの基本的な欲求から見る視点。\n\n【教育マトリクス】\n仁義礼智信という5つの徳目から\n行動を見つめ直す視点。\n\n※ 今後、増える予定です。", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 8, "createdAt": "2026-04-14T02:54:59.902Z", "updatedAt": "2026-04-14T02:54:59.902Z"}, {"id": "019d1d49-e5fd-7b72-bcbe-1e57b0df3bf4", "kind": "note", "title": "👹 業と徳の定義", "textL": "【業とは】\n不作為・怠り。\nやるべきことをやらずに放置すること。\n\n● タスクを3日以上放置 → 業が積む\n● 放置が長いほど業は重くなる\n● 業が多いほどGDPが毎日削られる\n\n【業の可視化】\n🔍検索 → 👹業タブ\nで放置タスクを色別に確認できる\n🔥 14日以上（濃赤）\n⚠️ 7日以上（中赤）\n　　3日以上（薄赤）", "textR": "【徳とは】\n具体的行動・精進努力。\nタスクを完了するたびに積み上がる。\n\n● タスク完了 → 徳+1\n● 日誌を書く → 徳+1\n● 月末に先月の完了件数分ボーナス\n\n【庭の力の計算式】\n徳×0.6 + GDP×0.4×1000 ÷ (業+1)\n個人の努力60%+他者交流40%\n\n業が多いと庭の力が下がる。\n業を祓い、徳を積め。\n\n【心得】\n不作為は業。\n具体的行動は徳。\n今日できることを今日やる。", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 12, "createdAt": "2026-03-24T00:41:15.518Z", "updatedAt": "2026-03-24T00:41:15.518Z"}, {"id": "019d1d49-e603-72f2-85ce-171489775200", "kind": "note", "title": "👑 称号一覧（全99段階）", "textL": "でっかい志を立てよう！！\n小さくまとまるな。\n\n【称号は全99段階】\n庭の力を高めるほど\n新しい称号が解放される。\n\n庭の力 = (徳×0.5 + GDP×0.25) × 業補正\n\n---前半（1〜49）---\n1. 🌱 種を蒔いた人（庭の力 0〜）\n2. 🪨 石をどけた人（庭の力 1〜）\n3. 🌾 芽を見つけた人（庭の力 2〜）\n4. 🏕️ 庭に立つ人（庭の力 3〜）\n5. 🐾 道を歩む人（庭の力 4〜）\n6. 🪓 土を耕す人（庭の力 5〜）\n7. 🧑‍🌾 苗を育てる人（庭の力 6〜）\n8. 🔨 支柱を立てる人（庭の力 7〜）\n9. 🪚 蔓を編む人（庭の力 9〜）\n10. ⚒️ 畝を作る人（庭の力 12〜）\n11. 🌼 花を分ける人（庭の力 15〜）\n12. 🪶 季節を記す人（庭の力 19〜）\n13. 🏡 庭に暮らす人（庭の力 23〜）\n14. 🌿 若葉を守る人（庭の力 28〜）\n15. 🍃 風を読む人（庭の力 33〜）\n16. 🛡️ 霜を防ぐ人（庭の力 39〜）\n17. 🌷 蕾を見守る人（庭の力 45〜）\n18. 🐝 花を巡る人（庭の力 52〜）\n19. 🎖️ 庭を治める人（庭の力 59〜）\n20. 🎗️ 畑を治める人（庭の力 67〜）\n21. ⚜️ 里を治める人（庭の力 75〜）\n22. 🏅 郷を治める人（庭の力 84〜）\n23. 👒 国を治める人（庭の力 94〜）\n24. 👑 四季を治める人（庭の力 104〜）\n25. 🏰 庭の主（庭の力 115〜）\n26. 🏯 里の主（庭の力 126〜）\n27. 🌾 実りの主（庭の力 138〜）\n28. 🎌 季節の旗手（庭の力 151〜）\n29. 📜 暦の記録者（庭の力 164〜）\n30. 📜 暦の編纂者（庭の力 178〜）\n31. 📜 暦の大成者（庭の力 192〜）\n32. 🔱 風の軍師（庭の力 207〜）\n33. ⚖️ 調和の宰相（庭の力 223〜）\n34. 🏛️ 庭園の議員（庭の力 239〜）\n35. 📋 四季の首相（庭の力 256〜）\n36. 🦅 大地の統治者（庭の力 274〜）\n37. 🌐 風土の総督（庭の力 292〜）\n38. ⚖️ 節気の統領（庭の力 311〜）\n39. 🔭 探求者（庭の力 331〜）\n40. 📡 知の番人（庭の力 352〜）\n41. 📜 暦学者（庭の力 373〜）\n42. 🌐 四季の外交官（庭の力 394〜）\n43. 🏹 嵐を読む者（庭の力 417〜）\n44. 🦅 鷹の目を持つ者（庭の力 440〜）\n45. 🌿 君子（庭の力 464〜）\n46. ☯️ 賢人（庭の力 489〜）\n47. 📿 庭の聖職者（庭の力 514〜）\n48. 🕊️ 聖人（庭の力 540〜）\n49. ✨ 聖人君子（庭の力 567〜）", "textR": "---後半（50〜99）---\n50. 🧘 仙人（庭の力 595〜）\n51. 🦁 野の王（庭の力 623〜）\n52. 🌊 潮の提督（庭の力 652〜）\n53. 🐉 龍と結んだ者（庭の力 682〜）\n54. 🏆 伝説の庭師（庭の力 712〜）\n55. ⚡ 伝説の勇者（庭の力 744〜）\n56. 🌟 伝説の主（庭の力 776〜）\n57. 🔮 星読みの賢者（庭の力 809〜）\n58. 🌌 天文の達人（庭の力 842〜）\n59. 👁️ 大いなる観測者（庭の力 877〜）\n60. ⛩️ 社の宮司（庭の力 912〜）\n61. 🌙 三日月の使い（庭の力 948〜）\n62. 🌗 半月の使い（庭の力 984〜）\n63. 🌕 満月の使い（庭の力 1,022〜）\n64. 🦋 生まれ変わる者（庭の力 1,060〜）\n65. 🌞 朝日の使者（庭の力 1,099〜）\n66. 🌇 夕焼けの使者（庭の力 1,139〜）\n67. 🌈 虹の使者（庭の力 1,180〜）\n68. 🍂 紅葉の主（庭の力 1,222〜）\n69. ❄️ 雪の主（庭の力 1,264〜）\n70. 🌸 花の主（庭の力 1,307〜）\n71. 🌻 夏の主（庭の力 1,351〜）\n72. 🌾 秋の主（庭の力 1,396〜）\n73. ☃️ 冬の主（庭の力 1,442〜）\n74. 🌤️ 四季の主（庭の力 1,488〜）\n75. 💫 流星群の使者（庭の力 1,536〜）\n76. 🌠 彗星の旅人（庭の力 1,584〜）\n77. 🌉 天の川の渡り人（庭の力 1,633〜）\n78. 🔭 星座の探求者（庭の力 1,683〜）\n79. 🌑 新月の賢者（庭の力 1,733〜）\n80. 🌒 月齢の賢者（庭の力 1,785〜）\n81. ⭐ 北極星の守り人（庭の力 1,837〜）\n82. 🪐 惑星の巡礼者（庭の力 1,890〜）\n83. 🌌 銀河の観測者（庭の力 1,945〜）\n84. 👁️ 全星座の眼（庭の力 2,000〜）\n85. ∞ 暦そのものの化身（庭の力 2,055〜）\n86. 🌐 歳時記の魂（庭の力 2,112〜）\n87. 🔱 二十四節気の体現者（庭の力 2,170〜）\n88. 🐉 龍神と結んだ守り人（庭の力 2,228〜）\n89. 👑 全季節の王（庭の力 2,288〜）\n90. 🌌 星々の創造者（庭の力 2,348〜）\n91. ∞ 時の彼方の者（庭の力 2,409〜）\n92. 🌟 刻の外の者（庭の力 2,471〜）\n93. 💡 暦を紐解いた者（庭の力 2,534〜）\n94. 🔥 始まりの日を見た者（庭の力 2,598〜）\n95. 🌊 潮汐の源流（庭の力 2,662〜）\n96. 🌌 星々の記憶（庭の力 2,728〜）\n97. 💫 光速で巡る者（庭の力 2,795〜）\n98. 🌠 超新星を見た者（庭の力 2,862〜）\n99. ✨ こよみるの伝説（庭の力 2,930〜）\n\n【最高峰を目指せ】\n✨ こよみるの伝説\nを目指して、今日も一歩。", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 13, "createdAt": "2026-03-24T00:41:15.518Z", "updatedAt": "2026-03-24T00:41:15.518Z"}, {"id": "019e3a10-1000-7000-9000-000000000009", "kind": "note", "title": "🗺️ 旅行の使い方", "textL": "旅は、決めることが多いわりに、\n忘れると取り返しがつきません。\n\n宿の予約、集合の時刻、保険証。\nどれも当日になってからでは遅い。\n\nだから旅行のページは、\n「思い出して書く」のではなく\n「並んだものを消していく」形に\nしてあります。\n\n《はじめかた》\n\n① 旅行のタブを開く\n② ＋旅 を押して、名前と日付を入れる\n③ 旅の種類を選ぶ\n\n種類を選ぶと、持ち物と\n事前にやることが、まとめて入ります。\n\n　♨️ 温泉旅行\n　⛩️ 神事・参拝\n　⛳ ゴルフ\n　✈️ 海外\n　🏠 帰省\n　💼 仕事・出張\n　⛺ キャンプ\n　🏔️ 山・登山\n　🎣 釣り\n　⚽ スポーツ観戦\n　🍜 グルメ旅\n　🚃 近場\n　🌅 日帰り\n\n要らないものは消してください。\n多めに入れてあります。", "textR": "《いちばん大事な使い方》\n\n主催者から届いた連絡を、\nそのまま貼りつけてください。\n\n「重要連絡」の欄に貼るだけで、\n電話番号・地図のリンク・種類を\n自動で読み取ります。\n\n集合時刻も持ち物も場所も、\nたいていその連絡文に書いてあります。\n自分で打ち直す必要はありません。\n\n後から来るアンケートのSMSに\n埋もれることもなくなります。\n\n《種類を選び直したとき》\n\n温泉からゴルフに変えるような場合、\n前の種類の項目は自動で外れます。\n\nただし、次のものは残ります。\n\n　・自分で足したもの\n　・すでにチェックしたもの\n\n外す前に件数を出すので、\n消えて困るときは取りやめられます。\n\n《旅の項目は日次にも出ます》\n\n持ち物も事前にやることも、\nひとつひとつが行動です。\nだから日次・週間・月間にも出ます。\n\n旅の準備だけ別の場所に隔離すると、\n見落とすからです。\n\n《しおりの印刷》\n\nページのいちばん下にあります。\n紙で持っていきたいときにどうぞ。", "dateL": "", "dateR": "", "text": "", "margin": "", "order": 9, "createdAt": "2026-08-20T00:00:00.000Z", "updatedAt": "2026-08-20T00:00:00.000Z"}];
         var _existing = localStorage.getItem('allTasks');
         var _existingTasks = [];
         try { _existingTasks = JSON.parse(_existing || '[]'); } catch(e) {}
@@ -24914,6 +24948,38 @@ function saveMsbEdit() {
         window._dbgLog && window._dbgLog('mig_link_note_rewrite_v2: アカウント連携の説明を新しくしました');
       }
     });
+    addMigration('mig_travel_note_add_v1', function() {
+      // v0.45.1700: 旅行タブを新しく入れたので、使い方のページを配る。
+      // プリセットは初めて開く人にしか届かないため、既に使っている人にはここで足す。
+      // 既にあれば中身を新しくし、無ければ作る（v3で学んだ形）。
+      var _id = '019e3a10-1000-7000-9000-000000000009';
+      var _raw = localStorage.getItem('allTasks');
+      var _list = [];
+      try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
+      if (!Array.isArray(_list)) return;
+      var _found = false;
+      _list.forEach(function(t) {
+        if (!t || t.id !== _id) return;
+        t.title = '\ud83d\uddfa\ufe0f 旅行の使い方';
+        t.textL = "旅は、決めることが多いわりに、\n忘れると取り返しがつきません。\n\n宿の予約、集合の時刻、保険証。\nどれも当日になってからでは遅い。\n\nだから旅行のページは、\n「思い出して書く」のではなく\n「並んだものを消していく」形に\nしてあります。\n\n《はじめかた》\n\n① 旅行のタブを開く\n② ＋旅 を押して、名前と日付を入れる\n③ 旅の種類を選ぶ\n\n種類を選ぶと、持ち物と\n事前にやることが、まとめて入ります。\n\n　♨️ 温泉旅行\n　⛩️ 神事・参拝\n　⛳ ゴルフ\n　✈️ 海外\n　🏠 帰省\n　💼 仕事・出張\n　⛺ キャンプ\n　🏔️ 山・登山\n　🎣 釣り\n　⚽ スポーツ観戦\n　🍜 グルメ旅\n　🚃 近場\n　🌅 日帰り\n\n要らないものは消してください。\n多めに入れてあります。"; t.textR = "《いちばん大事な使い方》\n\n主催者から届いた連絡を、\nそのまま貼りつけてください。\n\n「重要連絡」の欄に貼るだけで、\n電話番号・地図のリンク・種類を\n自動で読み取ります。\n\n集合時刻も持ち物も場所も、\nたいていその連絡文に書いてあります。\n自分で打ち直す必要はありません。\n\n後から来るアンケートのSMSに\n埋もれることもなくなります。\n\n《種類を選び直したとき》\n\n温泉からゴルフに変えるような場合、\n前の種類の項目は自動で外れます。\n\nただし、次のものは残ります。\n\n　・自分で足したもの\n　・すでにチェックしたもの\n\n外す前に件数を出すので、\n消えて困るときは取りやめられます。\n\n《旅の項目は日次にも出ます》\n\n持ち物も事前にやることも、\nひとつひとつが行動です。\nだから日次・週間・月間にも出ます。\n\n旅の準備だけ別の場所に隔離すると、\n見落とすからです。\n\n《しおりの印刷》\n\nページのいちばん下にあります。\n紙で持っていきたいときにどうぞ。";
+        t.updatedAt = new Date().toISOString();
+        _found = true;
+      });
+      if (!_found) {
+        var _now = new Date().toISOString();
+        _list.push({ id:_id, kind:'note', title:'\ud83d\uddfa\ufe0f 旅行の使い方',
+          textL:"旅は、決めることが多いわりに、\n忘れると取り返しがつきません。\n\n宿の予約、集合の時刻、保険証。\nどれも当日になってからでは遅い。\n\nだから旅行のページは、\n「思い出して書く」のではなく\n「並んだものを消していく」形に\nしてあります。\n\n《はじめかた》\n\n① 旅行のタブを開く\n② ＋旅 を押して、名前と日付を入れる\n③ 旅の種類を選ぶ\n\n種類を選ぶと、持ち物と\n事前にやることが、まとめて入ります。\n\n　♨️ 温泉旅行\n　⛩️ 神事・参拝\n　⛳ ゴルフ\n　✈️ 海外\n　🏠 帰省\n　💼 仕事・出張\n　⛺ キャンプ\n　🏔️ 山・登山\n　🎣 釣り\n　⚽ スポーツ観戦\n　🍜 グルメ旅\n　🚃 近場\n　🌅 日帰り\n\n要らないものは消してください。\n多めに入れてあります。", textR:"《いちばん大事な使い方》\n\n主催者から届いた連絡を、\nそのまま貼りつけてください。\n\n「重要連絡」の欄に貼るだけで、\n電話番号・地図のリンク・種類を\n自動で読み取ります。\n\n集合時刻も持ち物も場所も、\nたいていその連絡文に書いてあります。\n自分で打ち直す必要はありません。\n\n後から来るアンケートのSMSに\n埋もれることもなくなります。\n\n《種類を選び直したとき》\n\n温泉からゴルフに変えるような場合、\n前の種類の項目は自動で外れます。\n\nただし、次のものは残ります。\n\n　・自分で足したもの\n　・すでにチェックしたもの\n\n外す前に件数を出すので、\n消えて困るときは取りやめられます。\n\n《旅の項目は日次にも出ます》\n\n持ち物も事前にやることも、\nひとつひとつが行動です。\nだから日次・週間・月間にも出ます。\n\n旅の準備だけ別の場所に隔離すると、\n見落とすからです。\n\n《しおりの印刷》\n\nページのいちばん下にあります。\n紙で持っていきたいときにどうぞ。", dateL:'', dateR:'', text:'', margin:'', order:9,
+          createdAt:_now, updatedAt:_now });
+      }
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try {
+        if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) {
+          allTasks.length = 0; _list.forEach(function(t){ allTasks.push(t); });
+        }
+      } catch(e) {}
+      window._dbgLog && window._dbgLog('mig_travel_note_add_v1: 旅行の使い方を' + (_found ? '新しくしました' : '追加しました'));
+    });
+
     addMigration('mig_link_note_add_v3', function() {
       // v0.45.1686: 【権威】2026-08-20、v2を走らせても自由帳が変わらない、との報告。
       // 原因は、v2が「既にあるページを書き換える」だけで、
@@ -27304,6 +27370,8 @@ function saveMsbEdit() {
       'mig_link_note_rewrite_v2',
       // アカウント連携の説明を、持っていない人には作って配る（v0.45.1686〜）
       'mig_link_note_add_v3',
+      // 旅行の使い方を配る（v0.45.1700〜）
+      'mig_travel_note_add_v1',
       // video必須フィールド補完（v0.45.703〜）
       'mig_video_required_fields_v1',
       // video done/completed/order/lastDownloadedAt補完（v0.45.704〜）
@@ -69866,12 +69934,9 @@ function renderTravelListView() {
   titleBox.appendChild(titleLbl); titleBox.appendChild(titleInp);
   area.appendChild(titleBox);
 
-  // ── 旅のしおり印刷ボタン ──
-  var printBtn = document.createElement('button');
-  printBtn.textContent = '🖨️ 旅のしおりを印刷';
-  printBtn.style.cssText = 'width:100%;padding:8px;margin-bottom:8px;background:#f8f8f8;border:1px solid #ddd;border-radius:10px;font-size:0.82em;cursor:pointer;color:#555;';
-  (function(tr){ printBtn.onclick = function(){ window.printTravelItinerary(tr.id); }; })(travel);
-  area.appendChild(printBtn);
+  // v0.45.1698: 【権威】2026-08-20、しおりの印刷が画面の2番目にあるのは順序が壊れている、との指摘。
+  // ここは旅の準備をする画面で、印刷は準備が終わったあとに一度使うかどうかのもの。
+  // 上に置くと毎回いちばん先に目に入って邪魔になるため、画面のいちばん下へ移した。
 
   // ── 日程（出発日・帰着日）編集行 ──
   // スマホ幅ではdate入力2つ＋ボタンの横並びが詰まって保存ボタンが被るため、日付は上段・保存は下段全幅に分ける
@@ -70296,6 +70361,15 @@ function renderTravelListView() {
   })(travel.id);
   memoBox.appendChild(memoTitle); memoBox.appendChild(memoHint); memoBox.appendChild(memoArea);
   area.appendChild(memoBox);
+
+  // v0.45.1698: しおりの印刷は、すべての準備の後ろに置く。
+  // 準備が終わってから一度使うかどうかの操作なので、上にあると毎回邪魔になる。
+  var printBtn = document.createElement('button');
+  printBtn.textContent = '🖨️ 旅のしおりを印刷';
+  printBtn.style.cssText = 'width:100%;padding:10px;margin-top:18px;background:#fafafa;' +
+    'border:1px solid #e5e5e5;border-radius:10px;font-size:0.8em;cursor:pointer;color:#999;font-family:inherit;';
+  (function(tr){ printBtn.onclick = function(){ window.printTravelItinerary(tr.id); }; })(travel);
+  area.appendChild(printBtn);
 }
 
 function reorderTravelChecklistItem(srcId, dstId) {
