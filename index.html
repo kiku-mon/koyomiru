@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1679 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1680 ★ -->
 
 <html lang="ja">
 <head>
@@ -69,7 +69,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1679';
+    const APP_VERSION = 'v0.45.1680';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -36874,7 +36874,22 @@ async function listMySharedCalendars() {
     .select('id, name, invite_code, invite_code_expires_at, owner_id, is_personal')
     .eq('is_personal', false)
     .order('created_at', { ascending: true });
-  if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); }
+  if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); return r; }
+  // v0.45.1680: 【権威】2026-08-20、設定の並びが月間のチップと合っていない、との指摘。
+  // 同じものが2か所で違う順に並ぶと、どれのことか分からなくなる。
+  // 月間のチップは手元のカレンダー一覧（calendars）の順で出ているので、そちらに合わせる。
+  // 手元に無いもの（まだ取り込めていない共有）は、作成順のまま後ろに置く。
+  try {
+    if (r.data && typeof calendars !== 'undefined' && Array.isArray(calendars)) {
+      var _order = {};
+      calendars.forEach(function(c, i) { if (c && c.id) _order[c.id] = i; });
+      r.data.sort(function(a, b) {
+        var ai = (_order[a.id] === undefined) ? 9999 : _order[a.id];
+        var bi = (_order[b.id] === undefined) ? 9999 : _order[b.id];
+        return ai - bi;
+      });
+    }
+  } catch(eSort) {}
   return r;
 }
 // v0.45.1500: 【権威】2026-08-03、共有カレンダーは「作る・招待する・参加する」だけが
@@ -37406,12 +37421,24 @@ window.deleteTaskComment = deleteTaskComment;
 async function renameSharedCalendar(calendarId, newName) {
   if (window._isTesting || window._smokeTestRunning) return null;
   if (!window.supabaseClient) return null;
+  // v0.45.1680: 【権威】2026-08-20、設定で共有カレンダーの名前を保存できない、との報告。
+  // Supabaseは権限で弾かれても error を返さず、0件更新で静かに終わる。
+  // .single() だと0件のときに別種のエラーになり、原因が「権限」だと分からない。
+  // 退出処理（v0.45.1522）と同じく、実際に変わった行を受け取って判定する。
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
     .update({ name: newName })
     .eq('id', calendarId)
-    .select('id, name')
-    .single();
-  if (r.error) console.error('[SharedCal] 名前変更失敗:', r.error.message);
+    .select('id, name');
+  if (r.error) { console.error('[SharedCal] 名前変更失敗:', r.error.message); return r; }
+  if (!r.data || r.data.length === 0) {
+    console.warn('[SharedCal] 名前変更：更新された行が0件（オーナー以外は変更できません）');
+    return { error: { message: 'このカレンダーの名前を変えられるのは、作った人だけです' } };
+  }
+  // 手元の控えも同時に直す。ここを直さないと、月間のチップが古い名前のまま残る。
+  try {
+    var _c = (calendars || []).filter(function(x){ return x && x.id === calendarId; })[0];
+    if (_c) { _c.name = newName; if (typeof saveCalendars === 'function') saveCalendars(); }
+  } catch(eLocal) {}
   return r;
 }
 
@@ -39583,7 +39610,15 @@ async function refreshSharedCalendarList() {
       '</details>';
 
     return '<div style="border:1px solid #eee;border-radius:14px;padding:16px;margin-bottom:12px;">' +
-      '<div style="font-size:0.95em;font-weight:700;color:#262626;margin-bottom:10px;">' + (c.name || '(無題)') + '</div>' +
+      // v0.45.1680: 【権威】2026-08-20、誰が作ったカレンダーか忘れてしまう、との指摘。
+      // 名前を変えられるか・消していいかは「作った人かどうか」で決まるので、
+      // その場に書いておく。書いていないと、押せないボタンの理由も分からない。
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
+        '<span style="font-size:0.95em;font-weight:700;color:#262626;">' + (c.name || '(無題)') + '</span>' +
+        (_isOwner
+          ? '<span style="font-size:0.68em;padding:2px 8px;border-radius:10px;background:#eaf3fc;color:#0b5bb0;white-space:nowrap;">あなたが作成</span>'
+          : '<span style="font-size:0.68em;padding:2px 8px;border-radius:10px;background:#f3f3f3;color:#777;white-space:nowrap;">参加中</span>') +
+      '</div>' +
       _memberHtml +
       '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + _safeName + '\')" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">招待する</button>' +
       _manageHtml +
@@ -39598,8 +39633,18 @@ async function renameSharedCalendarFromModal(calendarId, safeId) {
   var newName = (input.value || '').trim();
   if (!newName) { _sharedCalSetStatus('⚠️ カレンダー名を入力してください', 'error'); return; }
   var r = await renameSharedCalendar(calendarId, newName);
-  if (!r || r.error) { _sharedCalSetStatus('⚠️ 名前を変更できませんでした', 'error'); return; }
+  if (!r || r.error) {
+    // v0.45.1680: 理由を握りつぶさない。「変えられません」だけでは何が悪いか分からない。
+    var _m = (r && r.error && r.error.message) ? r.error.message : '名前を変更できませんでした';
+    _sharedCalSetStatus('⚠️ ' + _m, 'error');
+    return;
+  }
   _sharedCalSetStatus('✅ 名前を変更しました', 'success');
+  // v0.45.1680: 月間の絞り込みチップにも新しい名前を出す（古い名前が残るため）
+  try {
+    if (typeof renderCalendarFilter === 'function') renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+  } catch(eR) {}
   refreshSharedCalendarList();
 }
 // v0.45.1514: 【権威】2026-08-05、v0.45.1500でconfirm()を使ってしまっていたが、
