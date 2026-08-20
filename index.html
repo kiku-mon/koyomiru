@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1664 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1669 ★ -->
 
 <html lang="ja">
 <head>
@@ -53,7 +53,7 @@
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1664';
+    const APP_VERSION = 'v0.45.1669';
   const APP_LAST_UPDATED = '2026-08-19'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -5360,6 +5360,24 @@
     return;
   }
 
+  // v0.45.1669: 【権威】2026-08-19、起動アニメーションは初回だけにして、
+  // 2回目からは季節の風だよりだけにする、との判断。認知の負荷を下げるため。
+  // 毎日使う道具なので、毎回同じ演出を見せられると「早く本題へ」という気持ちに逆らう。
+  // 初めての人には世界観を伝える必要があるので、その一度だけ見せる。
+  var _seenSplash = false;
+  try { _seenSplash = localStorage.getItem('koyomiruSplashSeen') === '1'; } catch(e) {}
+  if (_seenSplash) {
+    var _sp = document.getElementById('ycSplash');
+    if (_sp && _sp.parentNode) _sp.parentNode.removeChild(_sp);
+    // 夜空は出さないので、風だよりは普通の（黒幕のある）出し方で開く
+    setTimeout(function() {
+      try { if (typeof showKazedayoriModal === 'function') showKazedayoriModal(); } catch(e) {}
+      if (typeof renderDailyFocusBanner === 'function') renderDailyFocusBanner();
+    }, 300);
+    return;
+  }
+  try { localStorage.setItem('koyomiruSplashSeen', '1'); } catch(e) {}
+
   // ===== 星パーティクル =====
   var cv = document.getElementById('ycSplashCanvas');
   if (!cv) return;
@@ -5430,6 +5448,9 @@
         ctx2.lineWidth = 1.5;
         ctx2.stroke();
         s.x += s.vx; s.y += s.vy; s.a -= s.da;
+        // v0.45.1665: 最後に流れた星の位置を覚えておく。
+        // 風だよりはここから広がるので、演出と中身が一本の話になる。
+        window._ycLastStarPoint = { x: s.x, y: s.y };
       });
     }
     raf = requestAnimationFrame(tick);
@@ -5462,36 +5483,91 @@
   setTimeout(function(){ if (sub) sub.style.opacity='1'; }, 800);
 
   // ===== 1750ms後にフェードアウト（0.25秒短縮）=====
-  function closeSplash() {
-    clearInterval(shootTimer);
+  // ===== v0.45.1668: 一枚の紙芝居にする =====
+  // 【権威】2026-08-19、起動アニメと風だよりが「二つ開いている」ように見える、
+  // 一連の紙芝居にしたい、との指摘。
+  // これまでは、夜空をまるごと消してから別の画面を開いていたため、
+  // どう繋いでも「終わって、始まる」が二回起きていた。
+  // 夜空は消さずに舞台として残し、その上で役者だけを入れ替える。
+  //   ① 月と文字が上へ抜ける（場面が去る）
+  //   ② 同じ夜空へ、下から風だよりが昇ってくる（場面が来る）
+  //   ③ 読み終えて閉じたとき、初めて夜空ごと上がってカレンダーが現れる
+  // 幕が下りるのは最後の一回だけになる。
+
+  // 夜空を片付ける。紙芝居の最後（風だよりを閉じたとき）にだけ呼ばれる。
+  window._ycDismissSky = function() {
     var el = document.getElementById('ycSplash');
     if (!el) return;
+    window._ycSkyAlive = false;
+    el.style.transition = 'opacity 0.7s ease';
     el.style.opacity = '0';
-    el.style.pointerEvents = 'none'; // 操作をブロックしない
+    el.style.pointerEvents = 'none';
     setTimeout(function() {
       cancelAnimationFrame(raf);
-      // Canvas要素を個別に先に削除（残留防止）
       var sc = document.getElementById('ycSplashCanvas');
       if (sc && sc.parentNode) sc.parentNode.removeChild(sc);
       var sh = document.getElementById('ycShootingCanvas');
       if (sh && sh.parentNode) sh.parentNode.removeChild(sh);
-      // スプラッシュ全体を削除
       if (el.parentNode) el.parentNode.removeChild(el);
-      // body・html の背景を確実にリセット
       document.body.style.background = '';
       document.documentElement.style.background = '';
-    }, 1020);
-  }
-  setTimeout(closeSplash, 1500);
+    }, 720);
+  };
 
-  // スプラッシュ終了後（2.6秒後）に季節の風だよりモーダルを表示
-  setTimeout(function() {
-    if (typeof showKazedayoriModal === 'function') {
-      showKazedayoriModal();
+  // 場面の切り替え。夜空は残したまま、月と文字だけを上へ抜けさせ、風だよりを迎える。
+  function handoffToKazedayori() {
+    clearInterval(shootTimer);
+    var el = document.getElementById('ycSplash');
+    if (!el) return;
+    window._ycSkyAlive = true;
+    // 風だよりのモーダルより後ろに回る（夜空は舞台であって、前に出るものではない）
+    el.style.zIndex = '99980';
+    el.style.pointerEvents = 'none';
+    var body = document.getElementById('ycSplashBody');
+    if (body) {
+      body.style.transition = 'opacity 0.7s ease, transform 0.9s cubic-bezier(.4,0,.2,1)';
+      body.style.opacity = '0';
+      body.style.transform = 'translateY(-70px)';
     }
-    // スプラッシュ消去後に焦点バナーを再描画（起動時の50ms描画はスプラッシュに隠れるため）
+    // 月が抜けきる前に、次の場面が昇り始める。重なりが「一続き」を作る。
+    setTimeout(function() {
+      try { openKazedayoriOnSky(); } catch(eK) {}
+    }, 420);
+    // 風だよりが出ない場合でも夜空が残り続けないよう、保険をかける
+    setTimeout(function() {
+      var m = document.getElementById('kazedayoriModal');
+      var _open = m && m.style.display && m.style.display !== 'none';
+      if (!_open && window._ycSkyAlive) window._ycDismissSky();
+    }, 4000);
+  }
+  setTimeout(handoffToKazedayori, 1500);
+
+  setTimeout(function() {
     if (typeof renderDailyFocusBanner === 'function') renderDailyFocusBanner();
   }, 2600);
+
+  // 同じ夜空の上へ、風だよりを下から昇らせる。
+  // 黒幕は出さない。夜空がすでに背景なので、幕を重ねると別の画面に見えてしまう。
+  function openKazedayoriOnSky() {
+    if (typeof showKazedayoriModal !== 'function') return;
+    showKazedayoriModal();
+    var card = document.getElementById('kazedayoriCard');
+    var modal = document.getElementById('kazedayoriModal');
+    if (!modal) return;
+    modal.style.backgroundColor = 'rgba(0,0,0,0)';
+    modal.style.transition = 'background-color .8s ease';
+    if (!card) return;
+    card.style.transition = 'none';
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(60px) scale(0.96)';
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        card.style.transition = 'transform .85s cubic-bezier(.16,.84,.3,1), opacity .6s ease';
+        card.style.opacity = '1';
+        card.style.transform = 'translateY(0) scale(1)';
+      });
+    });
+  }
 
   // v0.45.1399: 【権威】2026-07-25、「起動しなくていいんじゃないかな」という指摘を受け、
   // マトリクス紹介モーダルの初回自動起動を撤去する。モーダル自体（DOM）は残すが、
@@ -15703,10 +15779,13 @@ window.isGantTabVisible = isGantTabVisible;
 // v0.45.1526: ナビタブの定義（表示制御と並び替えの唯一の元・第4条）。
 // 並び替えの対象にするタブだけをここに置く。🔍検索・⚙️アカウントは常時表示かつ
 // 位置が固定なので含めない（利用者が迷子にならないための固定席）。
+// v0.45.1669: 【権威】2026-08-19、こよみるの主役は月間カレンダー。
+// 既定の並びを 月間・週間・日次・年間 にして、開いた人が最初に触るものを先頭に置く。
+// （並び替え設定を自分で保存している人は、その並びが優先される）
 var NAV_TAB_DEFS = [
-  { id: 'navDaily',      key: 'daily',     label: '📅 日次' },
-  { id: 'navWeekly',     key: 'weekly',    label: '📊 週間' },
   { id: 'navMonthly',    key: 'monthly',   label: '🗓️ 月間' },
+  { id: 'navWeekly',     key: 'weekly',    label: '📊 週間' },
+  { id: 'navDaily',      key: 'daily',     label: '📅 日次' },
   { id: 'navYearly',     key: 'yearly',    label: '📆 年間' },
   { id: 'navGant',       key: 'gant',      label: '🏗️ 造営' },
   { id: 'navNotebook',   key: 'notebook',  label: '📓 自由帳' },
@@ -30738,7 +30817,18 @@ function renderCalendarFilter(containerId, onChangeCallback) {
     function closeKazedayoriModal() {
       if (window._kazedayoriTimer) clearTimeout(window._kazedayoriTimer);
       var _modal = document.getElementById('kazedayoriModal');
-      if (_modal) { _modal.style.display = 'none'; _modal.style.opacity = '1'; _modal.style.transition = ''; }
+      if (_modal) { _modal.style.display = 'none'; _modal.style.opacity = '1'; _modal.style.transition = ''; _modal.style.backgroundColor = ''; }
+      // v0.45.1667: 起動時の演出で付けた指定を戻す。
+      // 残したままだと、次に開いたときに小さいまま出る。
+      try {
+        var _kc = document.getElementById('kazedayoriCard');
+        if (_kc) { _kc.style.transition = ''; _kc.style.transform = ''; _kc.style.opacity = ''; _kc.style.transformOrigin = ''; }
+      } catch(eKC) {}
+      // v0.45.1668: 紙芝居の最後。ここで初めて夜空ごと引き上げ、カレンダーが現れる。
+      // 幕が下りるのは一度きりになり、「二つ開いた」感じが消える。
+      try {
+        if (window._ycSkyAlive && typeof window._ycDismissSky === 'function') window._ycDismissSky();
+      } catch(eSky) {}
       // 3層防衛 層3（保険）: 大学・ブログビューが表示中なら再描画
       var _univView = document.getElementById('universityView');
       if (_univView && _univView.style.display !== 'none' && typeof renderUnivCourseList === 'function') {
@@ -32166,8 +32256,14 @@ function renderDashboardView() {
     // ※ スタンプの実体はallTasks内のkind:'stamp'。初回投入専用。
     // kind:'stamp' の一覧取得（order順）
     function getStamps() {
+      // v0.45.1667: 墓石（消したという記録）にあるものは、同期で戻ってきても出さない。
+      // 消す側だけを直しても、既にクラウドへ戻っている控えは消えないため、
+      // 表示の側でも最終判断する（予定の一覧と同じ考え方）。
+      var _tombS;
+      try { _tombS = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); }
+      catch(e) { _tombS = new Set(); }
       return allTasks
-        .filter(t => t.kind === 'stamp')
+        .filter(t => t.kind === 'stamp' && !_tombS.has(t.id))
         .sort((a, b) => (a.order || 0) - (b.order || 0));
     }
     // kind:'stamp' のID→定義取得
@@ -32889,6 +32985,27 @@ function renderDashboardView() {
       const idx = allTasks.findIndex(t => t.kind === 'stamp' && t.id === stampId);
       if (idx !== -1) {
         allTasks.splice(idx, 1);
+        // v0.45.1667: 【権威】2026-08-19、設定でスタンプを削除して保存したのに、
+        // アプリを再起動すると復活する、との報告。
+        // 原因は、手元から消すだけで「消した」という記録を残していなかったこと。
+        // 予定の削除では墓石（deletedTaskIds）を残し、クラウドにも削除を伝えているのに、
+        // スタンプだけこの手当てが抜けており、次回の同期で古い控えが戻ってきていた。
+        // 予定の削除と同じ手順に揃える。
+        try {
+          if (!window._isTesting) {
+            var _delIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'));
+            _delIds.add(stampId);
+            localStorage.setItem('deletedTaskIds', JSON.stringify([..._delIds]));
+          }
+        } catch(e) { console.warn('[removeStampById] 墓石記録エラー:', e); }
+        if (window._cloudIsLoggedIn && !window._isTesting && window.supabaseClient) {
+          try {
+            window.supabaseClient.from('koyomiru_shared_tasks')
+              .update({ deleted_at: new Date().toISOString() })
+              .eq('id', stampId)
+              .then(function(r){ if (r && r.error) console.warn('[removeStampById] 削除の伝播エラー:', r.error.message); });
+          } catch(e) {}
+        }
         saveAllTasks();
         loadStampSettingsUI();
         renderStampBar();
@@ -47795,11 +47912,13 @@ function showDebugLog(_initOnly) {
          ? ok('ST-110: 王国由来の歓迎文言が残っていないことを確認')
          : ng('ST-110: 王国の文言が残存', '');
 
-       // ③ closeSplashのタイマーが1500ms以上であること
-       var _st110TimerOk = /setTimeout\(closeSplash,\s*1[0-9]{3}\)/.test(_st110Src);
+       // ③ スプラッシュから風だよりへ渡すタイマーが1000ms以上であること
+       // v0.45.1668: closeSplash → handoffToKazedayori に改名。
+       // 確認したいこと（早すぎないか）は変えず、名前だけ追随させる。
+       var _st110TimerOk = /setTimeout\(handoffToKazedayori,\s*1[0-9]{3}\)/.test(_st110Src);
        _st110TimerOk
-         ? ok('ST-110: closeSplashタイマー 1000ms以上確認')
-         : ng('ST-110: closeSplashタイマー 短すぎる可能性');
+         ? ok('ST-110: スプラッシュ受け渡しタイマー 1000ms以上確認')
+         : ng('ST-110: スプラッシュ受け渡しタイマー 短すぎる可能性');
 
        // ④ kingdomMode復元テスト（ST-85・ST-90のロールバック確認）
        var _st110PrevMode = allSettings.ui.kingdomMode;
