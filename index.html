@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1686 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1687 ★ -->
 
 <html lang="ja">
 <head>
@@ -52,6 +52,59 @@
 
   <!-- ★★★ 色の切り替え: true = 色あり / false = 色なし（白） ★★★ -->
   <script>    var USE_COLORS = false;  // ← ここを true/false で切り替え
+    // v0.45.1687: 【権威】2026-08-20、自由帳を開くとメールアドレスが自動入力される、
+    // 以前は日次の第4象限でも同じことが起きた、との報告。
+    // ブラウザは1行の文字入力欄を見つけると、氏名・メールなどを推測して入れてくる。
+    // 欄を1つずつ塞いでも、新しい欄を作るたびに再発する。
+    // 「自動入力の対象外だ」と示す指定を1か所にまとめ、あとから作られる欄にも自動で当てる。
+    // ログイン用のメール・パスワード欄だけは、data-allow-autofill を付けて除外する。
+    window._noAutofill = function(el) {
+      try {
+        if (!el || el.dataset.allowAutofill === '1' || el.dataset.noAutofill === '1') return;
+        var _t = (el.getAttribute('type') || 'text').toLowerCase();
+        if (_t === 'email' || _t === 'password' || _t === 'tel') return;   // 本当に要る欄は触らない
+        el.setAttribute('autocomplete', 'off');
+        el.setAttribute('autocapitalize', 'off');
+        el.setAttribute('autocorrect', 'off');
+        el.setAttribute('spellcheck', 'false');
+        el.setAttribute('data-lpignore', 'true');       // パスワード管理アプリ向け
+        el.setAttribute('data-form-type', 'other');
+        // 名前で中身を推測されるのを避ける。毎回違う名前にすれば、記憶とも結びつかない。
+        if (!el.getAttribute('name')) {
+          el.setAttribute('name', 'f' + Math.random().toString(36).slice(2, 10));
+        }
+        el.dataset.noAutofill = '1';
+      } catch(e) {}
+    };
+    (function() {
+      function sweep(root) {
+        try {
+          var els = (root || document).querySelectorAll('input:not([data-no-autofill]), textarea:not([data-no-autofill])');
+          for (var i = 0; i < els.length; i++) window._noAutofill(els[i]);
+        } catch(e) {}
+      }
+      window._sweepNoAutofill = sweep;
+      function start() {
+        sweep(document);
+        // 自由帳のように、あとから作られる欄にも効かせる
+        try {
+          var mo = new MutationObserver(function(muts) {
+            for (var i = 0; i < muts.length; i++) {
+              var added = muts[i].addedNodes;
+              for (var j = 0; j < added.length; j++) {
+                var n = added[j];
+                if (!n || n.nodeType !== 1) continue;
+                if (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA') window._noAutofill(n);
+                else if (n.querySelectorAll) sweep(n);
+              }
+            }
+          });
+          mo.observe(document.documentElement, { childList: true, subtree: true });
+        } catch(e) {}
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+      else start();
+    })();
     // v0.45.1671: 【権威】2026-08-20、「console.info is not a function」で
     // 月間表示の修復とスタンプモードの引き継ぎが失敗した、との報告。
     // 一部のアプリ内ブラウザには console.info が無い。
@@ -69,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1686';
+    const APP_VERSION = 'v0.45.1687';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -27973,6 +28026,10 @@ function saveMsbEdit() {
           titleEl.id = 'nbTitleInput';
           titleEl.type = 'text';
           titleEl.placeholder = 'タイトル';
+          // v0.45.1687: 【権威】2026-08-20、自由帳を開くとメールアドレスが勝手に入る、との報告。
+          // ブラウザは「1行の文字入力」を見つけると、氏名・メールなどを推測して入れてくる。
+          // 止めるには、自動入力の対象外だと明示する必要がある。
+          if (typeof _noAutofill === 'function') _noAutofill(titleEl);
           titleEl.value = page.title || '';
           titleEl.addEventListener('input', nbOnChange);
           var statusEl = document.createElement('div');
