@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1671 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1672 ★ -->
 
 <html lang="ja">
 <head>
@@ -69,7 +69,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1671';
+    const APP_VERSION = 'v0.45.1672';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2454,6 +2454,27 @@
       font-weight: 700;
       color: #1a1a2e;
       line-height: 1.2;
+    }
+    /* v0.45.1672: 過ぎた日は暦を畳む。予定に場所を明け渡すため。
+       開くボタンは畳んでいるときだけ出す。 */
+    .msb-koyomi-open {
+      display: none;
+      margin-top: 6px;
+      padding: 4px 10px;
+      background: none;
+      border: 1px solid #e7e0d2;
+      border-radius: 14px;
+      color: #a99a80;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .monthly-sidebar.past-day .monthly-sidebar-sekki,
+    .monthly-sidebar.past-day .monthly-sidebar-koyomi {
+      display: none;
+    }
+    .monthly-sidebar.past-day .msb-koyomi-open {
+      display: inline-block;
     }
     .monthly-sidebar-sekki {
       /* v0.45.1657: 上段＝二十四節気、下段＝七十二候の2段組み。
@@ -6667,6 +6688,12 @@
                （月・暦・日の出）が最も活きるべき所。新しいビューは作らず（第56条）、
                既存サイドバーのヘッダーを拡張して情報を集約する。 -->
           <div class="monthly-sidebar-koyomi" id="monthlySidebarKoyomi"></div>
+          <!-- v0.45.1672: 【権威】2026-08-20、過ぎた日を見るときに月齢は要らないのに、
+               上半分を占めて肝心の予定が読みにくい、との指摘。
+               暦は「これからどうするか」を考えるための材料なので、
+               過ぎた日では役目を終えている。畳んでおき、見たい人だけ開く。 -->
+          <button id="monthlySidebarKoyomiOpen" class="msb-koyomi-open"
+                  onclick="window.expandSidebarKoyomi()">🌙 この日の暦を見る</button>
         </div>
         <button class="monthly-sidebar-close" onclick="closeMonthlySidebar()">✕</button>
       </div>
@@ -19712,6 +19739,16 @@ function toggleMonthlySidebarAdd(forceClose) {
 }
 window.toggleMonthlySidebarAdd = toggleMonthlySidebarAdd;
 
+// v0.45.1672: 畳んである暦を開く。過ぎた日でも読みたいときはある。
+// 開いたあとは、その日を閉じるまで開いたままにする。
+function expandSidebarKoyomi() {
+  try {
+    var sb = document.getElementById('monthlySidebar');
+    if (sb) sb.classList.remove('past-day');
+  } catch(e) {}
+}
+window.expandSidebarKoyomi = expandSidebarKoyomi;
+
 function openMonthlySidebar(dateStr) {
       // v0.45.1561: 開き直したら絞り込みに戻す。前の日で「全部見る」にしたまま
       // 引きずると、チップと合っていない状態がまた生まれる。
@@ -19722,6 +19759,16 @@ function openMonthlySidebar(dateStr) {
       _sidebarDateStr = dateStr;
       var sb = document.getElementById('monthlySidebar');
       if (!sb) return;
+      // v0.45.1672: 過ぎた日は暦を畳む。
+      // 暦は「これからどう動くか」を考えるための材料なので、過ぎた日では役目を終えている。
+      // 今日・これから先はそのまま出す（暦がいちばん効く場面なので）。
+      try {
+        var _td = new Date();
+        var _todayKey = _td.getFullYear() + '-' +
+          String(_td.getMonth() + 1).padStart(2, '0') + '-' +
+          String(_td.getDate()).padStart(2, '0');
+        sb.classList.toggle('past-day', dateStr < _todayKey);
+      } catch(ePd) {}
       // v0.45.1643: シートを開いている間は浮いているボタンを引っ込める
       try { document.body.classList.add('monthly-sheet-open'); } catch(e) {}
       var _d = new Date(dateStr.replace(/-/g, '/'));
