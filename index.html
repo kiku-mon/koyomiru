@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1704 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1706 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1704';
+    const APP_VERSION = 'v0.45.1706';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -4710,7 +4710,31 @@
     @media (max-width: 1099px) {
       .nb-shelf-tab { font-size: 0.8em; }
       .nb-spread { height: calc(100vh - 48px - 48px); }
-      .nb-leaf-right, .nb-gutter { display: none; }
+      /* v0.45.1705: 【権威】2026-08-21、スマホでは右ページが丸ごと隠れており、
+         書いた内容を読む手段が無い、との指摘。そのとおりで、欠損しているのと同じだった。
+         隠すのをやめ、左右を「1枚目・2枚目」として横に送って読む形にする。
+         綴じ目は1面では意味がないので、これまでどおり隠す。 */
+      .nb-gutter { display: none; }
+      /* v0.45.1706: 【権威】2026-08-21、縦一列でよいのでは、との提案。そのとおり。
+         横に送る形は「送れる」と気づいた人しか2枚目に辿り着けない。
+         紙のノートは上から下へ読むもので、縦に continuous に並べたほうが素直。
+         下へスクロールすればそのまま続きが読める。 */
+      .nb-spread {
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        height: auto;
+        max-height: calc(100vh - 48px - 48px);
+      }
+      .nb-leaf {
+        flex: 0 0 auto;
+      }
+      /* 2枚目の頭に区切りを置く。紙が変わったことが分かるように */
+      .nb-leaf-right {
+        border-top: 2px dashed #e2ddd3;
+        margin-top: 6px;
+      }
       .nb-leaf-left { box-shadow: none; }
       .nb-cornell { min-height: 70vh; }
     }
@@ -28384,8 +28408,61 @@ function saveMsbEdit() {
         var gutter = document.createElement('div');
         gutter.className = 'nb-gutter';
         spread.appendChild(gutter);
-        spread.appendChild(makeLeaf('right', 'nbDateR', 'nbTextR', '日付\nメモ', '続きを書いてください...', page.dateR||'', page.textR||''));
       }
+      // v0.45.1705: 【権威】2026-08-21、スマホで右ページが読めない、との指摘。
+      // 狭い画面では右ページを「作ってすらいなかった」ため、書いた内容へ辿り着く道が無かった。
+      // CSSで隠していただけでなく、DOMごと存在しない状態。欠損しているのと同じ。
+      // 狭い画面でも必ず作り、横に送って読めるようにする。
+      spread.appendChild(makeLeaf('right', 'nbDateR', 'nbTextR', '日付\nメモ', '続きを書いてください...', page.dateR||'', page.textR||''));
+      if (isSingle) _nbAttachPageIndicator(spread);
+    }
+
+    // v0.45.1705: 1面のときだけ、いま何枚目を見ているかを出す。
+    // 「これで終わりなのか、まだ続きがあるのか」が分からないのが不安の正体なので、
+    // 総数と現在地の両方を示す。押せば行き来もできる。
+    function _nbAttachPageIndicator(spread) {
+      var old = document.getElementById('nbLeafIndicator');
+      if (old) old.remove();
+      var bar = document.createElement('div');
+      bar.id = 'nbLeafIndicator';
+      bar.style.cssText = 'position:absolute;left:0;right:0;bottom:8px;display:flex;' +
+        'justify-content:center;align-items:center;gap:10px;pointer-events:none;z-index:5;';
+      function mk(i, label) {
+        var b = document.createElement('button');
+        b.textContent = label;
+        b.style.cssText = 'pointer-events:auto;border:none;border-radius:14px;padding:4px 12px;' +
+          'font-size:0.72em;font-weight:700;cursor:pointer;font-family:inherit;' +
+          'background:rgba(0,0,0,0.06);color:#8a7f70;';
+        b.onclick = function() {
+          var leaves = spread.querySelectorAll('.nb-leaf');
+          // v0.45.1706: 縦並びになったので、縦方向に寄せる
+          if (leaves[i]) leaves[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+        return b;
+      }
+      bar.appendChild(mk(0, '1 / 2'));
+      bar.appendChild(mk(1, '2 / 2 ↓'));
+      var wrap = spread.parentElement;
+      if (wrap && getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+      (wrap || spread).appendChild(bar);
+      // いま見ている面に合わせて濃さを変える（どちらにいるかを示す）
+      function sync() {
+        // v0.45.1706: 縦並びなので、いま見ている面は縦位置で判断する。
+        // 2枚目の上端を越えたら2枚目とみなす。
+        var leaves = spread.querySelectorAll('.nb-leaf');
+        var i = 0;
+        if (leaves.length > 1) {
+          var second = leaves[1];
+          if (spread.scrollTop >= second.offsetTop - spread.clientHeight * 0.4) i = 1;
+        }
+        var btns = bar.querySelectorAll('button');
+        for (var k = 0; k < btns.length; k++) {
+          btns[k].style.background = (k === i) ? 'rgba(0,0,0,0.16)' : 'rgba(0,0,0,0.06)';
+          btns[k].style.color = (k === i) ? '#5b5348' : '#a9a094';
+        }
+      }
+      spread.addEventListener('scroll', sync, { passive: true });
+      sync();
     }
     // 後方互換
     function nbSyncHeight() {}
