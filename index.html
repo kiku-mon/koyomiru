@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1701 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1702 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1701';
+    const APP_VERSION = 'v0.45.1702';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -28877,10 +28877,35 @@ function saveMsbEdit() {
         nbDndStart(tab, idx, e.clientX, e.clientY);
       });
       // タッチ
+      // v0.45.1702: 【権威】2026-08-21、スマホでタブが横に送れない、との報告。
+      // CSSは正しかった。原因はここ。触れた瞬間に並べ替えが始まり、
+      // touchmove で e.preventDefault() が呼ばれるため、指の動きが奪われていた。
+      // 横に滑らせてもスクロールにならず、並べ替えとして扱われる。
+      // 触れてすぐは何もせず、その場で押さえ続けたときだけ並べ替えを始める。
+      // 指が動いたら、それはスクロールの意思なので並べ替えを取りやめる。
       tab.addEventListener('touchstart', function(e) {
         if (e.target.classList.contains('nb-shelf-tab-del')) return;
         var t = e.touches[0];
-        nbDndStart(tab, idx, t.clientX, t.clientY);
+        var sx = t.clientX, sy = t.clientY;
+        var timer = setTimeout(function() {
+          timer = null;
+          nbDndStart(tab, idx, sx, sy);
+          try { if (navigator.vibrate) navigator.vibrate(10); } catch(e2) {}
+        }, 350);
+        function cancel() { if (timer) { clearTimeout(timer); timer = null; } cleanup(); }
+        function onMove(ev) {
+          if (!timer) return;
+          var m = ev.touches[0];
+          if (Math.abs(m.clientX - sx) > 8 || Math.abs(m.clientY - sy) > 8) cancel();
+        }
+        function cleanup() {
+          tab.removeEventListener('touchmove', onMove);
+          tab.removeEventListener('touchend', cancel);
+          tab.removeEventListener('touchcancel', cancel);
+        }
+        tab.addEventListener('touchmove', onMove, { passive: true });
+        tab.addEventListener('touchend', cancel, { passive: true });
+        tab.addEventListener('touchcancel', cancel, { passive: true });
       }, { passive: true });
     }
     function nbDndStart(tab, idx, x, y) {
