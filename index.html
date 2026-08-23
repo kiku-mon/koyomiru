@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1707 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1711 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1707';
+    const APP_VERSION = 'v0.45.1711';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -211,10 +211,23 @@
       if (!joinCode) return;
       window.history.replaceState({}, '', window.location.pathname); // パラメータをクリア（履歴汚染防止）
       setTimeout(function() {
+        // v0.45.1709: 【権威】2026-08-21、招待リンクの届き方が不親切、
+        // ログインが要ることの案内が足りない、との指摘。
+        // これまでは、まず共有カレンダーの画面を開き、その上にログイン画面をかぶせていた。
+        // 招待された人にはいきなり2枚の見知らぬ画面が出ることになり、
+        // 「何を求められているのか」が分からないまま閉じてしまう。
+        // ログインしていない人には、招待の説明だけを1枚見せる。共有の画面は出さない。
+        if (!window._cloudIsLoggedIn) {
+          if (typeof window._savePendingJoin === 'function') window._savePendingJoin(joinCode);
+          _showInviteWelcome();
+          return;
+        }
         if (typeof window.openSharedCalendarModal === 'function') {
           window.openSharedCalendarModal();
           var joinInput = document.getElementById('sharedCalendarJoinCode');
           if (joinInput) joinInput.value = joinCode;
+          // v0.45.1709: 参加を決める前に、中身を見せる
+          if (typeof window.renderInvitePreview === 'function') window.renderInvitePreview(joinCode);
           // v0.45.1404: 【権威】2026-07-25、「招待するボタンはOS標準の共有シートが開いて
           // 親切だが、リンクを受け取った側は手動で『参加する』を押す必要があり、もう一手間
           // 掛かる」との指摘を受けた。ログイン済みなら、その場で自動的に参加まで完了させる
@@ -234,30 +247,60 @@
             if (typeof window._sharedCalSetStatus === 'function') {
               window._sharedCalSetStatus('📩 招待されています。表示名を確かめて「参加する」を押してください。', 'info');
             }
-          } else {
-            // v0.45.1541: 招待リンクを踏んだのに未ログインだと、何をすればいいか
-            // 分からないまま終わる。ここが最も離脱しやすい場面なので、
-            // 何のために登録するのかを添えて、ログインの入口まで案内する。
-            // v0.45.1542: さらに、招待コードを預けておく。ログインが済んだ時点で
-            // 参加から画面遷移まで自動で再開されるので、利用者は何も覚えなくてよい。
-            if (typeof window._savePendingJoin === 'function') window._savePendingJoin(joinCode);
-            // v0.45.1553: 【権威】2026-08-06、招待された人が未ログインのままログイン画面を
-            // 閉じると、普通のアプリ画面に取り残される。共有カレンダーは当然見えないので
-            // 「無い」と混乱する。しかも自分の予定は入力できてしまうため、余計に紛らわしい。
-            // 招待されている事実を画面上部に残し、いつでもログインに戻れるようにする。
-            _showInviteBanner();
-            if (typeof window._sharedCalSetStatus === 'function') {
-              window._sharedCalSetStatus(
-                '📩 招待リンクから開きました。ログインすると、このカレンダーの予定が見られるようになります。', 'info');
-            }
-            setTimeout(function() {
-              if (typeof window.openCloudLoginModal === 'function') window.openCloudLoginModal();
-            }, 1200);
           }
+          // v0.45.1709: 未ログインの場合は、この手前で _showInviteWelcome() に分岐済み。
         }
       }, 800); // アプリ初期化・ログイン状態確認を待つ
     } catch(e) { console.warn('[SharedCal] 招待リンク処理エラー:', e); }
   })();
+  // v0.45.1709: 招待された人に最初に見せる1枚。
+  // 伝えるのは3つだけ。①招待されていること ②見るにはログインが要ること
+  // ③このアプリ自体はログイン無しでも使えること。
+  // ③を書くのは、「登録しないと何もできないアプリ」だと思われて閉じられるのを防ぐため。
+  function _showInviteWelcome() {
+    try {
+      var old = document.getElementById('inviteWelcomeOverlay');
+      if (old) old.remove();
+      var ov = document.createElement('div');
+      ov.id = 'inviteWelcomeOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99600;background:rgba(0,0,0,0.5);' +
+        'display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;' +
+        'box-shadow:0 8px 32px rgba(0,0,0,0.18);text-align:center;';
+      card.innerHTML =
+        '<div style="font-size:2.4em;margin-bottom:6px;">📩</div>' +
+        '<div style="font-size:1.15em;font-weight:700;color:#262626;margin-bottom:10px;">カレンダーに招待されています</div>' +
+        '<div style="font-size:0.84em;color:#666;line-height:1.9;margin-bottom:18px;">' +
+          '相手の予定を見るには、ログインが必要です。<br>' +
+          'ログインすると、そのまま参加できます。' +
+        '</div>' +
+        '<div style="background:#f6f8fb;border-radius:12px;padding:12px 14px;font-size:0.76em;' +
+          'color:#7a8494;line-height:1.8;margin-bottom:18px;text-align:left;">' +
+          'こよみるは、ログインしなくても使えます。<br>' +
+          'ログインが要るのは、<b>共有カレンダー</b>だけです。<br>' +
+          '（Google・Discord・メールのどれかを選ぶだけ）' +
+        '</div>' +
+        '<button id="inviteWelcomeLogin" style="width:100%;padding:13px;border:none;border-radius:12px;' +
+          'background:#0b6bcb;color:#fff;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;' +
+          'box-shadow:0 2px 8px rgba(11,107,203,0.25);">ログインして参加する</button>' +
+        '<button id="inviteWelcomeLater" style="width:100%;margin-top:8px;padding:10px;border:none;' +
+          'background:none;color:#9aa3af;font-size:0.8em;cursor:pointer;font-family:inherit;">あとで</button>';
+      ov.appendChild(card);
+      document.body.appendChild(ov);
+      document.getElementById('inviteWelcomeLogin').onclick = function() {
+        ov.remove();
+        if (typeof window.openCloudLoginModal === 'function') window.openCloudLoginModal();
+      };
+      document.getElementById('inviteWelcomeLater').onclick = function() {
+        ov.remove();
+        // 招待されている事実は画面上部に残す。あとから戻れるように。
+        if (typeof _showInviteBanner === 'function') _showInviteBanner();
+      };
+    } catch(e) { console.warn('[SharedCal] 招待画面エラー:', e); }
+  }
+  window._showInviteWelcome = _showInviteWelcome;
+
   // ===== データマイグレーション =====
   (function migrateData() {
     var version = parseInt(localStorage.getItem('dataVersion') || '0');
@@ -37416,6 +37459,51 @@ async function lookupInviteCode(code) {
 }
 
 // 招待コードで参加する
+async // v0.45.1709: 【権威】2026-08-21、参加前に中身が見えないと入る気にならない、との指摘。
+// 招待コードから「カレンダー名・人数・近い予定」だけを覗く。
+// クラウド側に koyomiru_peek_invite という関数が必要（未作成なら静かに何も出さない）。
+// 予定の中身は題名だけに絞る。参加していない人に、詳細まで見せるべきではない。
+async function peekSharedCalendarByCode(code) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient || !code) return null;
+  try {
+    var r = await window.supabaseClient.rpc('koyomiru_peek_invite', { code: code });
+    if (r.error) { console.info('[SharedCal] 覗き見は未対応:', r.error.message); return null; }
+    return r.data || null;
+  } catch (e) { return null; }
+}
+window.peekSharedCalendarByCode = peekSharedCalendarByCode;
+
+// 覗いた中身を、参加ボタンの手前に出す。
+async function renderInvitePreview(code) {
+  var box = document.getElementById('sharedCalendarPeek');
+  if (!box) return;
+  box.style.display = 'none';
+  box.innerHTML = '';
+  var data = await peekSharedCalendarByCode(code);
+  if (!data) return;
+  var name = data.name || '共有カレンダー';
+  var members = (typeof data.member_count === 'number') ? data.member_count : null;
+  var items = Array.isArray(data.upcoming) ? data.upcoming : [];
+  var esc = function(s){ return String(s || '').replace(/</g,'&lt;'); };
+  var html = '<div style="font-size:0.86em;font-weight:700;color:#262626;margin-bottom:4px;">' + esc(name) + '</div>';
+  if (members !== null) {
+    html += '<div style="font-size:0.74em;color:#8e8e8e;margin-bottom:8px;">' + members + '人が参加しています</div>';
+  }
+  if (items.length) {
+    html += '<div style="font-size:0.74em;color:#8e8e8e;margin-bottom:4px;">これからの予定</div>';
+    html += items.slice(0, 3).map(function(t){
+      return '<div style="font-size:0.78em;color:#444;padding:3px 0;">・' +
+        esc(t.date || '') + '　' + esc(t.text || '') + '</div>';
+    }).join('');
+  } else {
+    html += '<div style="font-size:0.76em;color:#aaa;">まだ予定は入っていません</div>';
+  }
+  box.innerHTML = html;
+  box.style.display = 'block';
+}
+window.renderInvitePreview = renderInvitePreview;
+
 async function joinSharedCalendarByCode(code, displayName) {
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
@@ -37437,12 +37525,13 @@ async function joinSharedCalendarByCode(code, displayName) {
 async function listMySharedCalendars() {
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
-  // v0.45.1396: 【権威】2026-07-25、is_personal（個人用カレンダー）を除外していなかったため、
-  // 招待する相手がいない個人用カレンダーまで「共有カレンダー」として一覧に出てしまい、
-  // 「個人用カレンダーが2つあってどっちがどっちか分からない」という混乱を招いた。
+  // v0.45.1711: 【権威】2026-08-21、すべてのカレンダーはいつでも共有できるべきで、
+  // 「個人用は共有できない」という区別を作ったのが誤りだった、との指摘。そのとおり。
+  // v0.45.1396で個人用を一覧から外したのは「2つ並んで見分けがつかない」ためだったが、
+  // 実際に自分の画面に出る個人用は1つだけで、混乱は起きない（18個あるのは18人分）。
+  // 除外をやめる。共有したくなった日に、そのまま招待できるようにするため。
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
     .select('id, name, invite_code, invite_code_expires_at, owner_id, is_personal')
-    .eq('is_personal', false)
     .order('created_at', { ascending: true });
   if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); return r; }
   // v0.45.1680: 【権威】2026-08-20、設定の並びが月間のチップと合っていない、との指摘。
@@ -40211,10 +40300,14 @@ async function refreshSharedCalendarList() {
       // 落ち着かない、との指摘。名前の長さで並びが変わるのが原因。
       // 印を名前と同じ行で取り合わせるのをやめ、名前の上に小さく置いて、常に同じ形にする。
       '<div style="margin-bottom:10px;">' +
+        // v0.45.1711: 「自分の予定が入る先」であることを示す。
+        // これは「共有できない」という意味ではない。招待すればそのまま共有できる。
         '<div style="margin-bottom:3px;">' +
-          (_isOwner
-            ? '<span style="font-size:0.66em;padding:2px 8px;border-radius:10px;background:#eaf3fc;color:#0b5bb0;">あなたが作成</span>'
-            : '<span style="font-size:0.66em;padding:2px 8px;border-radius:10px;background:#f3f3f3;color:#777;">参加中</span>') +
+          (c.is_personal
+            ? '<span style="font-size:0.66em;padding:2px 8px;border-radius:10px;background:#f0f4ea;color:#5a7a3a;">自分の予定が入るカレンダー</span>'
+            : (_isOwner
+              ? '<span style="font-size:0.66em;padding:2px 8px;border-radius:10px;background:#eaf3fc;color:#0b5bb0;">あなたが作成</span>'
+              : '<span style="font-size:0.66em;padding:2px 8px;border-radius:10px;background:#f3f3f3;color:#777;">参加中</span>')) +
         '</div>' +
         '<div style="font-size:0.95em;font-weight:700;color:#262626;word-break:break-all;">' + (c.name || '(無題)') + '</div>' +
       '</div>' +
@@ -60633,7 +60726,12 @@ function deleteJournal(id) {
       var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
       window._newJournalMeta = { mood:0, condition:0, weather:'' };
       window._newJournalText = '';
-      window._newJournalDetailOpen = false; // v0.45.1264: 詳細（日付・気分・体調・天気）は初期は閉じておく
+      // v0.45.1708: 【権威】2026-08-21、新規作成では日付も気分も天気も出てこず、
+      // 編集して初めて現れるのはおかしい、との指摘。そのとおり。
+      // 日誌は「その日を記録するもの」なので、日付・気分・体調・天気はおまけではなく本体。
+      // 畳んでおくと、書いた本人が付けられることに気づけないまま保存してしまう。
+      // 初めから開いておき、要らない人だけ畳む。
+      window._newJournalDetailOpen = true;
       var modal = document.getElementById('journalNewModal');
       if (!modal) { modal = document.createElement('div'); modal.id = 'journalNewModal'; document.body.appendChild(modal); }
       function _buildMoodBtns(type, arr, cur) {
@@ -60658,7 +60756,7 @@ function deleteJournal(id) {
           + '<div style="padding:28px 24px 40px;flex:1;">'
           + '<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.14em;margin-bottom:10px;font-family:serif;">RECORD / 今日の記録</div>'
           + '<textarea id="journalNewText" placeholder="今日、何があったか。何を感じたか。何を考えたか。" style="width:100%;padding:18px;border:1.5px solid rgba(44,36,22,0.2);border-radius:14px;font-size:16px;box-sizing:border-box;height:200px;resize:vertical;background:rgba(255,255,255,0.8);color:var(--ink);font-family:Noto Serif JP,serif;line-height:2.0;outline:none;margin-bottom:12px;"></textarea>'
-          + '<button id="journalNewDetailToggle" type="button" style="width:100%;text-align:left;padding:8px 0;border:none;background:transparent;color:#7a6a54;font-size:13px;cursor:pointer;margin-bottom:8px;font-family:serif;">'+(window._newJournalDetailOpen?'▾':'▸')+' 詳細を追加（日付・気分・体調・天気）</button>'
+          + '<button id="journalNewDetailToggle" type="button" style="width:100%;text-align:left;padding:8px 0;border:none;background:transparent;color:#7a6a54;font-size:13px;cursor:pointer;margin-bottom:8px;font-family:serif;">'+(window._newJournalDetailOpen?'▾':'▸')+' 日付・気分・体調・天気</button>'
           + '<div id="journalNewDetailSection" style="display:'+(window._newJournalDetailOpen?'block':'none')+';">'
           + '<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.14em;margin-bottom:8px;font-family:serif;">DATE / 日付</div>'
           + '<input id="journalNewDate" type="date" value="'+todayStr+'" style="width:100%;padding:12px 16px;border:1.5px solid rgba(44,36,22,0.2);border-radius:12px;font-size:15px;box-sizing:border-box;margin-bottom:24px;background:rgba(255,255,255,0.8);color:var(--ink);font-family:serif;outline:none;">'
@@ -67558,6 +67656,9 @@ window.addMigration = addMigration;
     <button onclick="closeSharedCalendarModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:1.3em;color:#999;cursor:pointer;">✕</button>
     <div style="font-size:1.15em;font-weight:700;color:#262626;margin-bottom:4px;">共有カレンダー</div>
     <div style="font-size:0.78em;color:#8e8e8e;margin-bottom:20px;">招待した相手と、予定を共有できます。</div>
+
+    <!-- v0.45.1709: 招待から来た人に、参加前の中身を見せる枠 -->
+    <div id="sharedCalendarPeek" style="display:none;background:#f6f8fb;border-radius:12px;padding:14px 16px;margin-bottom:16px;"></div>
 
     <div id="sharedCalendarMyList" style="margin-bottom:18px;"></div>
 
