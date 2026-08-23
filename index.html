@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1712 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1713 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1712';
+    const APP_VERSION = 'v0.45.1713';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39680,6 +39680,57 @@ window.disablePushNotifications = disablePushNotifications;
 window._myCalendarIds = window._myCalendarIds || [];
 window._personalCalendarId = window._personalCalendarId || null;
 
+// v0.45.1713: 【権威】2026-08-21、月間のチップと設定の一覧が食い違うのは
+// 取り込み漏れではなく、そもそもクラウドに存在しないカレンダーがあるから、との調査結果。
+// 「メイン」「仕事」などは初回にこよみるが手元に作るもので、クラウドへは一度も上がらない。
+// 一方こよみるは「すべてのカレンダーはいつでも共有できる」を方針にしている。
+// 構造が方針と食い違っているので、手元のカレンダーもクラウドへ上げる。
+//
+// 守ること（壊さないための線引き）：
+//   ・上げるのは器（名前）だけ。予定の同期はこれまでどおり別の仕組みが担う
+//   ・既にクラウドの控えを持つもの（cloudCalendarId あり）は触らない
+//   ・個人用カレンダーには手を出さない。あれは「予定の既定の入れ先」で役割が違う
+//   ・失敗しても手元は壊さない。上げられなければ、これまでどおり手元だけで動く
+async function pushLocalCalendarsToCloud() {
+  if (window._isTesting || window._smokeTestRunning) return 0;
+  if (!window.supabaseClient || !window._cloudIsLoggedIn) return 0;
+  try {
+    var u = await window.supabaseClient.auth.getUser();
+    if (!u.data || !u.data.user) return 0;
+    var list = (allSettings && allSettings.calendar && allSettings.calendar.list) || [];
+    var targets = list.filter(function(c) {
+      if (!c || !c.id) return false;
+      if (c.cloudCalendarId) return false;        // すでに控えがある
+      if (c.isPersonal) return false;             // 個人用は別扱い
+      return true;
+    });
+    if (!targets.length) return 0;
+    var made = 0;
+    for (var i = 0; i < targets.length; i++) {
+      var cal = targets[i];
+      var r = await window.supabaseClient.from('koyomiru_shared_calendars')
+        .insert({ name: cal.name || 'カレンダー', owner_id: u.data.user.id })
+        .select('id')
+        .single();
+      if (r.error) { console.warn('[SharedCal] 器の作成に失敗:', cal.name, r.error.message); continue; }
+      cal.cloudCalendarId = r.data.id;
+      cal.isShared = true;
+      cal.sharedOwner = true;
+      made++;
+    }
+    if (made > 0) {
+      calendars = allSettings.calendar.list;
+      saveAllSettings();
+      console.info('[SharedCal] 手元のカレンダー ' + made + '件をクラウドへ上げました');
+    }
+    return made;
+  } catch (e) {
+    console.warn('[SharedCal] クラウドへの引き上げに失敗:', e && e.message);
+    return 0;   // 失敗しても手元はそのまま使える
+  }
+}
+window.pushLocalCalendarsToCloud = pushLocalCalendarsToCloud;
+
 async function unifiedRefreshMyCalendarIds() {
   if (!window.supabaseClient) return [];
   var u = await window.supabaseClient.auth.getUser();
@@ -39719,6 +39770,13 @@ async function unifiedEnsurePersonalCalendarAndMigrate() {
     }
   }
   await unifiedRefreshMyCalendarIds();
+  // v0.45.1713: 手元だけにあったカレンダーを、この時点でクラウドへ上げる。
+  // ここでやるのは、個人用カレンダーの確認が済み、所属も分かった直後だから。
+  // これより早いと、上げた器を自分のものだと認識できない。
+  try {
+    var _made = await pushLocalCalendarsToCloud();
+    if (_made > 0) await unifiedRefreshMyCalendarIds();   // 増えた分を所属に反映する
+  } catch (ePush) { console.warn('[SharedCal] 引き上げ中の例外:', ePush && ePush.message); }
 }
 
 // プッシュ：ローカルで変更・新規追加されたタスクだけを、それぞれの所属カレンダーへupsert（差分方式・v0.45.1365〜）
