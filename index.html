@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1716 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1719 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,8 +122,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1716';
-  const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.45.1719';
+  const APP_LAST_UPDATED = '2026-08-24'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
       // URLパラメータ ?deck=DCK1:xxx でデッキ自動追加
@@ -8772,6 +8772,12 @@
           <label id="settingsLabelNotebook" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <input type="checkbox" id="visTabNotebook" onchange="toggleVisibleTab('notebook',this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
             <span style="font-size:0.9em;color:#333;font-weight:600;">📓 自由帳</span>
+          </label>
+          <!-- v0.45.1717: 六曜の表示切り替え。仕事で日取りを見る人には要るが、
+               気にしない人には雑音になるので消せるようにする。既定はオン。 -->
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="showRokuyoChk" onchange="window.toggleShowRokuyo(this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
+            <span style="font-size:0.9em;color:#333;font-weight:600;">📖 六曜（大安・友引）</span>
           </label>
           <!-- v0.45.1699: 旅行の表示切り替え。若木以上で使える。 -->
           <label id="settingsLabelTravel" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
@@ -17498,6 +17504,9 @@ function applySettingsSectionVisibility() {
   var labelPhoto = document.getElementById('settingsLabelPhoto');
   var _photoAvailable = (_effectiveModeKey === 'town' || _effectiveModeKey === 'kingdom');
   if (labelPhoto) labelPhoto.style.display = _photoAvailable ? '' : 'none';
+  // v0.45.1717: 六曜のチェック状態を反映（既定はオン）
+  var _rkChk = document.getElementById('showRokuyoChk');
+  if (_rkChk) _rkChk.checked = !(allSettings && allSettings.ui && allSettings.ui.showRokuyo === false);
   // v0.45.1699: ナビタブ：旅行（若木以上で表示）
   var labelTravel = document.getElementById('settingsLabelTravel');
   var _travelAvailable = (_effectiveModeKey === 'town' || _effectiveModeKey === 'kingdom');
@@ -20190,6 +20199,20 @@ function openMonthlySidebar(dateStr) {
         var _hol2 = null;
         try { _hol2 = (typeof getHoliday === 'function') ? getHoliday(dateStr) : null; } catch(e) {}
         if (_hol2) _rows.push('<div class="msk-line"><span class="msk-holiday">' + _hol2 + '</span></div>');
+        // v0.45.1717: 六曜。仕事の日取り（契約・地鎮祭・葬儀）で実際に使われる。
+        // 暦の情報なので、月・太陽と同じ並びに置く。
+        // 気にしない人には雑音になるので、設定で消せるようにする（既定はオン）。
+        try {
+          var _rkOn = !(allSettings && allSettings.ui && allSettings.ui.showRokuyo === false);
+          if (_rkOn && typeof getRokuyo === 'function') {
+            var _rk = getRokuyo(_d);
+            if (_rk) {
+              var _rkColor = (_rk === '大安') ? '#1E7A4D' : (_rk === '仏滅' ? '#9aa0a6' : '#7a6a54');
+              _rows.push('<div class="msk-line"><span class="msk-key">📖 暦注</span>' +
+                '<span style="color:' + _rkColor + ';font-weight:700;">' + _rk + '</span></div>');
+            }
+          }
+        } catch (eRk) {}
         try {
           if (typeof calcMoonAgeNAOJ === 'function') {
             // v0.45.1677: 【権威】2026-08-20、升目と食い違っていたのは渡す時刻の違い。
@@ -34913,6 +34936,94 @@ function _naojGetNearestNewMoon(ts) {
   return best;
 }
 // 月齢計算（国立天文台テーブルベース・JST正午）
+// ===== v0.45.1717: 六曜（大安・友引など） =====
+// 【権威】2026-08-24、ビジネスで日取りを決めるとき大安や友引を見る、との要望。
+// 契約・地鎮祭・葬儀など、日本の仕事では実際に使われている。
+// 印刷用のCSS（.monthly-rokuyou）は前から用意されていたが、中身が無かった。
+//
+// 六曜は「旧暦の月＋日」を6で割った余りで決まる。西暦からは直接出せない。
+// 旧暦は「朔（新月）の日を1日とし、冬至を含む月を11月とする」ので、
+// 朔の時刻と冬至の日を天文計算で求める必要がある。
+// 朔の計算はMeeusの方法を使う。実際の暦（2026年8月・1月）と照合して一致を確認済み。
+var ROKUYO_NAMES = ['大安','赤口','先勝','友引','先負','仏滅'];
+
+function _rkNewMoonJD(k) {
+  var T = k / 1236.85;
+  var jde = 2451550.09766 + 29.530588861 * k + 0.00015437 * T * T - 0.000000150 * T * T * T;
+  var E = 1 - 0.002516 * T - 0.0000074 * T * T;
+  var rad = Math.PI / 180;
+  var M  = (2.5534 + 29.10535670 * k - 0.0000014 * T * T) * rad;
+  var Mp = (201.5643 + 385.81693528 * k + 0.0107582 * T * T) * rad;
+  var F  = (160.7108 + 390.67050284 * k - 0.0016118 * T * T) * rad;
+  var O  = (124.7746 - 1.56375588 * k + 0.0020672 * T * T) * rad;
+  var c = -0.40720 * Math.sin(Mp) + 0.17241 * E * Math.sin(M) + 0.01608 * Math.sin(2 * Mp)
+    + 0.01039 * Math.sin(2 * F) + 0.00739 * E * Math.sin(Mp - M) - 0.00514 * E * Math.sin(Mp + M)
+    + 0.00208 * E * E * Math.sin(2 * M) - 0.00111 * Math.sin(Mp - 2 * F) - 0.00057 * Math.sin(Mp + 2 * F)
+    + 0.00056 * E * Math.sin(2 * Mp + M) - 0.00042 * Math.sin(3 * Mp) + 0.00042 * E * Math.sin(M + 2 * F)
+    + 0.00038 * E * Math.sin(M - 2 * F) - 0.00024 * E * Math.sin(2 * Mp - M) - 0.00017 * Math.sin(O)
+    - 0.00007 * Math.sin(Mp + 2 * M);
+  return jde + c;
+}
+function _rkToJD(y, m, d) {
+  if (m <= 2) { y -= 1; m += 12; }
+  var a = Math.floor(y / 100), b = 2 - a + Math.floor(a / 4);
+  return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + b - 1524.5;
+}
+function _rkNewMoonDayJST(k) { return Math.floor(_rkNewMoonJD(k) + 9 / 24 + 0.5); }
+function _rkSunLon(jd) {
+  var T = (jd - 2451545.0) / 36525;
+  var L = 280.46646 + 36000.76983 * T + 0.0003032 * T * T;
+  var M = (357.52911 + 35999.05029 * T - 0.0001537 * T * T) * Math.PI / 180;
+  var C = (1.914602 - 0.004817 * T) * Math.sin(M) + (0.019993 - 0.000101 * T) * Math.sin(2 * M)
+        + 0.000289 * Math.sin(3 * M);
+  return ((L + C) % 360 + 360) % 360;
+}
+// 日付（Date か 'YYYY-MM-DD'）から六曜を返す。求まらなければ null。
+function getRokuyo(dateOrStr) {
+  try {
+    var dt;
+    if (dateOrStr instanceof Date) dt = dateOrStr;
+    else if (typeof dateOrStr === 'string') dt = new Date(String(dateOrStr).replace(/-/g, '/'));
+    else dt = new Date();
+    if (isNaN(dt.getTime())) return null;
+    var y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
+    var jd = _rkToJD(y, m, d);
+    var today = Math.floor(jd + 9 / 24 + 0.5);
+    // その日以前で最も近い朔
+    var k = Math.round((jd - 2451550.09766) / 29.530588861) + 2, nm;
+    while (true) { nm = _rkNewMoonDayJST(k); if (nm <= today) break; k--; }
+    var lunarDay = today - nm + 1;
+    // 直前の冬至（太陽黄経270度）を求め、それを含む月を11月とする
+    var wy = (m <= 2 || (m === 3 && d < 21)) ? y - 1 : y;
+    var wjd = _rkToJD(wy, 12, 21);
+    for (var i = 0; i < 6; i++) {
+      var s = _rkSunLon(wjd);
+      var diff = ((270 - s + 180) % 360) - 180;
+      wjd += diff / 0.9856;
+    }
+    var wDay = Math.floor(wjd + 9 / 24 + 0.5);
+    var kw = Math.round((wjd - 2451550.09766) / 29.530588861) + 2, nmw;
+    while (true) { nmw = _rkNewMoonDayJST(kw); if (nmw <= wDay) break; kw--; }
+    var lunarMonth = ((11 + (k - kw) - 1) % 12) + 1;
+    return ROKUYO_NAMES[(lunarMonth + lunarDay) % 6];
+  } catch (e) { return null; }
+}
+window.getRokuyo = getRokuyo;
+
+// v0.45.1717: 六曜を出すかどうか。既定はオン。
+function toggleShowRokuyo(on) {
+  try {
+    if (!allSettings.ui) allSettings.ui = {};
+    allSettings.ui.showRokuyo = !!on;
+    saveAllSettings();
+    if (typeof renderMonthlySidebarTasks === 'function' && window._sidebarDateStr) {
+      if (typeof openMonthlySidebar === 'function') openMonthlySidebar(window._sidebarDateStr);
+    }
+    if (typeof showToast === 'function') showToast(on ? '六曜を表示します' : '六曜を隠しました', {type:'ok'});
+  } catch (e) {}
+}
+window.toggleShowRokuyo = toggleShowRokuyo;
+
 function calcMoonAgeNAOJ(date) {
   if (!date) date = new Date();
   // 現在時刻で計算（JST正午固定をやめる）
@@ -37530,8 +37641,19 @@ async function listMySharedCalendars() {
   // v0.45.1396で個人用を一覧から外したのは「2つ並んで見分けがつかない」ためだったが、
   // 実際に自分の画面に出る個人用は1つだけで、混乱は起きない（18個あるのは18人分）。
   // 除外をやめる。共有したくなった日に、そのまま招待できるようにするため。
+  // v0.45.1719: 【権威】2026-08-24、設定に「個人用カレンダー」がいくつも並ぶ、との報告。
+  // v0.45.1711で個人用の除外をやめたとき、絞り込みごと外してしまっていた。
+  // その結果、自分が入っていないカレンダーまで一覧に出ていた（他の人の個人用18個）。
+  // 自分が参加しているものだけを出す。所属の一覧から引く。
+  var _mine = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+    .select('calendar_id')
+    .eq('user_id', (await window.supabaseClient.auth.getUser()).data.user.id);
+  if (_mine.error) { console.error('[SharedCal] 所属取得失敗:', _mine.error.message); return _mine; }
+  var _ids = (_mine.data || []).map(function(row){ return row.calendar_id; });
+  if (!_ids.length) return { data: [] };
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
     .select('id, name, invite_code, invite_code_expires_at, owner_id, is_personal')
+    .in('id', _ids)
     .order('created_at', { ascending: true });
   if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); return r; }
   // v0.45.1680: 【権威】2026-08-20、設定の並びが月間のチップと合っていない、との指摘。
@@ -60461,7 +60583,13 @@ document.addEventListener('DOMContentLoaded', function() {
         'overflow-y:auto;-webkit-overflow-scrolling:touch;';
       // ヘッダー
       var hdr = document.createElement('div');
-      hdr.style.cssText = 'background:linear-gradient(160deg,#2c2416,#3d3020);padding:18px 20px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;';
+      // v0.45.1718: 【権威】2026-08-24、日誌の詳細で見出しごと閉じるボタンが見えず、
+      // この画面から出られない、との報告。出られないのは致命的。
+      // 見出しは存在していたが、スマホ上端の時刻表示の領域に食い込んで隠れていた。
+      // その端末で触れない範囲（safe area）のぶん、上に余白を積む。
+      hdr.style.cssText = 'background:linear-gradient(160deg,#2c2416,#3d3020);' +
+        'padding:calc(18px + env(safe-area-inset-top, 0px)) 20px 16px;' +
+        'position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;';
       hdr.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">📖</span><span style="font-size:14px;font-weight:700;color:#f5ede0;letter-spacing:.08em;font-family:serif;">' + _dateDisp2 + '</span></div>';
       var closeBtn = document.createElement('button');
       closeBtn.type = 'button';
@@ -60608,10 +60736,14 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       function buildEditModal() {
         var m = window._editJournalMeta;
-        modal.style.cssText = 'display:flex;position:fixed;inset:0;z-index:9400;background:rgba(10,10,20,0.72);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;overflow-y:auto;';
+        // v0.45.1718: 外側が動くと、見出しの「上に貼り付く」指定が紙のほうを基準にしてしまい、
+        // 紙が下へ流れたときに見出しごと画面の外へ出る。スクロールを内側へ移す。
+        modal.style.cssText = 'display:flex;position:fixed;inset:0;z-index:9400;background:rgba(10,10,20,0.72);backdrop-filter:blur(6px);align-items:stretch;justify-content:center;overflow:hidden;';
         var div = document.createElement('div');
-        div.style.cssText = 'width:100%;max-width:640px;margin:0 auto;min-height:100vh;background:linear-gradient(160deg,#faf8f3 0%,#f2ede3 100%);display:flex;flex-direction:column;';
-        div.innerHTML = '<div style="background:linear-gradient(160deg,#2c2416,#3d3020);padding:18px 20px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">✏️</span><span style="font-size:14px;font-weight:700;color:#f5ede0;letter-spacing:.08em;font-family:serif;">日誌を編集する</span></div><button id="journalEditCloseBtn" type="button" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(245,237,224,0.7);font-size:13px;padding:6px 14px;border-radius:20px;cursor:pointer;">× 閉じる</button></div>'
+        div.style.cssText = 'width:100%;max-width:640px;margin:0 auto;height:100%;max-height:100%;' +
+          'background:linear-gradient(160deg,#faf8f3 0%,#f2ede3 100%);display:flex;flex-direction:column;' +
+          'overflow-y:auto;-webkit-overflow-scrolling:touch;';
+        div.innerHTML = '<div style="background:linear-gradient(160deg,#2c2416,#3d3020);padding:calc(18px + env(safe-area-inset-top, 0px)) 20px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">✏️</span><span style="font-size:14px;font-weight:700;color:#f5ede0;letter-spacing:.08em;font-family:serif;">日誌を編集する</span></div><button id="journalEditCloseBtn" type="button" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(245,237,224,0.7);font-size:13px;padding:6px 14px;border-radius:20px;cursor:pointer;">× 閉じる</button></div>'
           + '<div style="padding:28px 24px 40px;flex:1;">'
           + '<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.14em;margin-bottom:8px;font-family:serif;">DATE / 日付</div>'
           + '<input id="journalEditDate" type="date" value="'+j.date+'" style="width:100%;padding:12px 16px;border:1.5px solid rgba(44,36,22,0.2);border-radius:12px;font-size:15px;box-sizing:border-box;margin-bottom:24px;background:rgba(255,255,255,0.8);color:var(--ink);font-family:serif;outline:none;">'
@@ -60914,10 +61046,14 @@ function deleteJournal(id) {
       }
       function buildNewModal() {
         var m = window._newJournalMeta;
-        modal.style.cssText = 'display:flex;position:fixed;inset:0;z-index:9400;background:rgba(10,10,20,0.72);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;overflow-y:auto;';
+        // v0.45.1718: 外側が動くと、見出しの「上に貼り付く」指定が紙のほうを基準にしてしまい、
+        // 紙が下へ流れたときに見出しごと画面の外へ出る。スクロールを内側へ移す。
+        modal.style.cssText = 'display:flex;position:fixed;inset:0;z-index:9400;background:rgba(10,10,20,0.72);backdrop-filter:blur(6px);align-items:stretch;justify-content:center;overflow:hidden;';
         var div = document.createElement('div');
-        div.style.cssText = 'width:100%;max-width:640px;margin:0 auto;min-height:100vh;background:linear-gradient(160deg,#faf8f3 0%,#f2ede3 100%);display:flex;flex-direction:column;';
-        div.innerHTML = '<div style="background:linear-gradient(160deg,#2c2416,#3d3020);padding:18px 20px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">📖</span><span style="font-size:14px;font-weight:700;color:#f5ede0;letter-spacing:.08em;font-family:serif;">庭の日誌を記す</span></div><button id="journalNewCloseBtn" type="button" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(245,237,224,0.7);font-size:13px;padding:6px 14px;border-radius:20px;cursor:pointer;">× 閉じる</button></div>'
+        div.style.cssText = 'width:100%;max-width:640px;margin:0 auto;height:100%;max-height:100%;' +
+          'background:linear-gradient(160deg,#faf8f3 0%,#f2ede3 100%);display:flex;flex-direction:column;' +
+          'overflow-y:auto;-webkit-overflow-scrolling:touch;';
+        div.innerHTML = '<div style="background:linear-gradient(160deg,#2c2416,#3d3020);padding:calc(18px + env(safe-area-inset-top, 0px)) 20px 16px;position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">📖</span><span style="font-size:14px;font-weight:700;color:#f5ede0;letter-spacing:.08em;font-family:serif;">庭の日誌を記す</span></div><button id="journalNewCloseBtn" type="button" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:rgba(245,237,224,0.7);font-size:13px;padding:6px 14px;border-radius:20px;cursor:pointer;">× 閉じる</button></div>'
           + '<div style="padding:28px 24px 40px;flex:1;">'
           + '<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.14em;margin-bottom:10px;font-family:serif;">RECORD / 今日の記録</div>'
           + '<textarea id="journalNewText" placeholder="今日、何があったか。何を感じたか。何を考えたか。" style="width:100%;padding:18px;border:1.5px solid rgba(44,36,22,0.2);border-radius:14px;font-size:16px;box-sizing:border-box;height:200px;resize:vertical;background:rgba(255,255,255,0.8);color:var(--ink);font-family:Noto Serif JP,serif;line-height:2.0;outline:none;margin-bottom:12px;"></textarea>'
