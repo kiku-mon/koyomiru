@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1713 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1715 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1713';
+    const APP_VERSION = 'v0.45.1715';
   const APP_LAST_UPDATED = '2026-08-20'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39691,6 +39691,62 @@ window._personalCalendarId = window._personalCalendarId || null;
 //   ・既にクラウドの控えを持つもの（cloudCalendarId あり）は触らない
 //   ・個人用カレンダーには手を出さない。あれは「予定の既定の入れ先」で役割が違う
 //   ・失敗しても手元は壊さない。上げられなければ、これまでどおり手元だけで動く
+// v0.45.1714: 手元だけのカレンダーを、共有できる状態にする。
+// 一律・自動ではやらない。押した1つだけを、予定ごと引っ越す。
+// 引っ越さないと、そのカレンダーの予定が個人用と新しい器に分かれてしまう。
+async function makeLocalCalendarShareable(localCalId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient || !window._cloudIsLoggedIn) {
+    return { error: { message: 'ログインすると共有できるようになります' } };
+  }
+  var list = (allSettings && allSettings.calendar && allSettings.calendar.list) || [];
+  var cal = list.find(function(c){ return c && c.id === localCalId; });
+  if (!cal) return { error: { message: 'カレンダーが見つかりません' } };
+  if (cal.cloudCalendarId) return { data: { id: cal.cloudCalendarId, already: true } };
+  try {
+    var u = await window.supabaseClient.auth.getUser();
+    if (!u.data || !u.data.user) return { error: { message: 'ログインし直してください' } };
+    var r = await window.supabaseClient.from('koyomiru_shared_calendars')
+      .insert({ name: cal.name || 'カレンダー', owner_id: u.data.user.id })
+      .select('id, invite_code')
+      .single();
+    if (r.error) return r;
+    // 器を作ったら、そのカレンダーの予定の行き先も新しい器へ揃える。
+    // ここを飛ばすと、古い予定は個人用に残り、新しい予定だけが器へ行って分かれる。
+    var moved = 0;
+    allTasks.forEach(function(t) {
+      if (!t || t.calendarId !== localCalId) return;
+      t.cloudCalendarId = r.data.id;
+      t.updatedAt = new Date().toISOString();
+      moved++;
+    });
+    cal.cloudCalendarId = r.data.id;
+    cal.isShared = true;
+    cal.sharedOwner = true;
+    calendars = allSettings.calendar.list;
+    saveAllSettings();
+    if (moved > 0) {
+      saveAllTasks();
+      // 送信済みの印を消して、新しい行き先へ送り直させる
+      try { window._unifiedLastPushedSnapshot = {}; } catch(eSnap) {}
+      if (typeof unifiedPushTasks === 'function') { try { await unifiedPushTasks(); } catch(eP) {} }
+    }
+    console.info('[SharedCal] 「' + (cal.name||'') + '」を共有できるようにしました（予定 ' + moved + '件を引っ越し）');
+    return { data: { id: r.data.id, invite_code: r.data.invite_code, moved: moved } };
+  } catch (e) {
+    return { error: { message: (e && e.message) || '失敗しました' } };
+  }
+}
+window.makeLocalCalendarShareable = makeLocalCalendarShareable;
+
+// v0.45.1715: 【権威】2026-08-21、SSOTを厳守したい、との方針。
+// いまは「予定がどこに属するか」の答えが2通りある。
+//   ・カレンダーが器を持たない → その予定は個人用カレンダーへ
+//   ・器を持つ               → その器へ
+// 同じ問いに2つの答えがあるので、SSOTになっていない。
+// すべてのカレンダーに器を与え、予定は必ず自分のカレンダーの器に属する形へ揃える。
+// 器を作るだけでは、古い予定が個人用に取り残されて2か所に分かれる（v0.45.1713の失敗）。
+// 器を作るのと予定の引っ越しを、必ず一組で行う。
 async function pushLocalCalendarsToCloud() {
   if (window._isTesting || window._smokeTestRunning) return 0;
   if (!window.supabaseClient || !window._cloudIsLoggedIn) return 0;
@@ -39700,12 +39756,12 @@ async function pushLocalCalendarsToCloud() {
     var list = (allSettings && allSettings.calendar && allSettings.calendar.list) || [];
     var targets = list.filter(function(c) {
       if (!c || !c.id) return false;
-      if (c.cloudCalendarId) return false;        // すでに控えがある
-      if (c.isPersonal) return false;             // 個人用は別扱い
+      if (c.cloudCalendarId) return false;        // すでに器がある
+      if (c.isPersonal) return false;             // 個人用は既に器そのもの
       return true;
     });
     if (!targets.length) return 0;
-    var made = 0;
+    var made = 0, movedTotal = 0;
     for (var i = 0; i < targets.length; i++) {
       var cal = targets[i];
       var r = await window.supabaseClient.from('koyomiru_shared_calendars')
@@ -39713,15 +39769,30 @@ async function pushLocalCalendarsToCloud() {
         .select('id')
         .single();
       if (r.error) { console.warn('[SharedCal] 器の作成に失敗:', cal.name, r.error.message); continue; }
+      // 器を作ったら、そのカレンダーの予定を必ず同じ器へ揃える。
+      // ここを飛ばすと、同じカレンダーの予定が個人用と器に分かれる。
+      var moved = 0;
+      allTasks.forEach(function(t) {
+        if (!t || t.calendarId !== cal.id) return;
+        t.cloudCalendarId = r.data.id;
+        t.updatedAt = new Date().toISOString();
+        moved++;
+      });
       cal.cloudCalendarId = r.data.id;
       cal.isShared = true;
       cal.sharedOwner = true;
       made++;
+      movedTotal += moved;
     }
     if (made > 0) {
       calendars = allSettings.calendar.list;
       saveAllSettings();
-      console.info('[SharedCal] 手元のカレンダー ' + made + '件をクラウドへ上げました');
+      if (movedTotal > 0) {
+        saveAllTasks();
+        // 送信済みの印を消し、新しい行き先へ送り直させる
+        try { window._unifiedLastPushedSnapshot = {}; } catch(eSnap) {}
+      }
+      console.info('[SharedCal] カレンダー ' + made + '件に器を作り、予定 ' + movedTotal + '件を揃えました');
     }
     return made;
   } catch (e) {
@@ -39770,12 +39841,19 @@ async function unifiedEnsurePersonalCalendarAndMigrate() {
     }
   }
   await unifiedRefreshMyCalendarIds();
-  // v0.45.1713: 手元だけにあったカレンダーを、この時点でクラウドへ上げる。
-  // ここでやるのは、個人用カレンダーの確認が済み、所属も分かった直後だから。
-  // これより早いと、上げた器を自分のものだと認識できない。
+  // v0.45.1715: すべてのカレンダーに器を与え、予定を必ずその器へ揃える（SSOT）。
+  // v0.45.1713で一度これを入れて撤回したのは、器だけ作って予定を置き去りにしたため。
+  // 今回は器の作成と予定の引っ越しを一組にしてある。
+  // ここで呼ぶのは、個人用の確認が済み、自分の所属が分かった直後だから。
   try {
     var _made = await pushLocalCalendarsToCloud();
-    if (_made > 0) await unifiedRefreshMyCalendarIds();   // 増えた分を所属に反映する
+    if (_made > 0) {
+      await unifiedRefreshMyCalendarIds();     // 増えた器を自分の所属に反映
+      if (typeof unifiedPushTasks === 'function') await unifiedPushTasks();   // 新しい行き先へ送り直す
+      if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
+        renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+      }
+    }
   } catch (ePush) { console.warn('[SharedCal] 引き上げ中の例外:', ePush && ePush.message); }
 }
 
