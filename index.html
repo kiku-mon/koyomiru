@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1724 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1725 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1724';
+    const APP_VERSION = 'v0.45.1725';
   const APP_LAST_UPDATED = '2026-08-24'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -40442,6 +40442,9 @@ async function refreshSharedCalendarList() {
     if (r.data && typeof linkSharedCalendarToLocal === 'function') {
       var _added = 0;
       r.data.forEach(function(row) {
+        // v0.45.1725: 個人用は手元に取り込まない。仕組みの土台であって、
+        // 利用者が作ったカレンダーではないため、チップにも一覧にも出さない。
+        if (row.is_personal) return;
         if (linkSharedCalendarToLocal(row.id, row.name, null)) _added++;
       });
       if (_added > 0) {
@@ -40453,7 +40456,7 @@ async function refreshSharedCalendarList() {
     }
   } catch (eSync) { console.warn('[SharedCal] 取り込み失敗:', eSync); }
 
-  var _hasAny = r.data && r.data.length > 0;
+  var _hasAny = _visible && _visible.length > 0;
   // v0.45.1500: カレンダーが1つも無い人に「作る」と「参加」を同時に迫らないよう、
   // 空のときは作成だけを見せ、コード入力は隠す（招待は基本リンクから来るため）。
   if (emptyEl) emptyEl.style.display = _hasAny ? 'none' : 'block';
@@ -40483,7 +40486,11 @@ async function refreshSharedCalendarList() {
     console.info('[SharedCal] 手元に無かった共有カレンダー ' + _repaired + '件をカレンダー一覧に追加しました');
   }
 
-  listEl.innerHTML = r.data.map(function(c) {
+  // v0.45.1725: 個人用は一覧に出さない。共有する対象ではなく、仕組みの土台だから。
+  // 「すべてのカレンダーは共有できる」という方針は変えないが、
+  // 個人用は利用者が作ったものではないので、同列には並べない。
+  var _visible = r.data.filter(function(c) { return !c.is_personal; });
+  listEl.innerHTML = _visible.map(function(c) {
     var inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(c.invite_code);
     var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(inviteUrl);
     var safeId = 'sc_' + c.id.replace(/-/g, '');
