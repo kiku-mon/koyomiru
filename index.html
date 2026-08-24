@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1726 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1727 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1726';
+    const APP_VERSION = 'v0.45.1727';
   const APP_LAST_UPDATED = '2026-08-24'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -37667,8 +37667,15 @@ async function listMySharedCalendars() {
   // 手元に無いもの（まだ取り込めていない共有）は、作成順のまま後ろに置く。
   try {
     if (r.data && typeof calendars !== 'undefined' && Array.isArray(calendars)) {
+      // v0.45.1727: 【権威】2026-08-24、月間のチップと設定の並びが合わない、との指摘。
+      // 原因は照合の相手を間違えていたこと。手元の一覧は手元のIDを持ち、
+      // クラウドの一覧はクラウドのIDを持つ。別物なので一致せず、全部が
+      // 「手元に無いもの」として後ろへ送られていた。
+      // 手元の行が覚えているクラウド側のID（cloudCalendarId）で突き合わせる。
       var _order = {};
-      calendars.forEach(function(c, i) { if (c && c.id) _order[c.id] = i; });
+      calendars.forEach(function(c, i) {
+        if (c && c.cloudCalendarId) _order[c.cloudCalendarId] = i;
+      });
       r.data.sort(function(a, b) {
         var ai = (_order[a.id] === undefined) ? 9999 : _order[a.id];
         var bi = (_order[b.id] === undefined) ? 9999 : _order[b.id];
@@ -40382,6 +40389,15 @@ function openSharedCalendarModal() {
   var ov = document.getElementById('sharedCalendarOverlay');
   if (!ov) return;
   ov.style.display = 'flex';
+  // v0.45.1727: 【権威】2026-08-24、一覧が前回のまま残る、との指摘。
+  // 開いた直後は古い内容が見えたままで、取り直しが終わるまで気づけない。
+  // 一度空にして「読み込み中」を出し、取り直した結果だけを見せる。
+  try {
+    var _le = document.getElementById('sharedCalendarMyList');
+    if (_le) _le.innerHTML = '<div style="padding:18px;text-align:center;color:#aaa;font-size:0.82em;">読み込み中…</div>';
+    var _pk = document.getElementById('sharedCalendarPeek');
+    if (_pk) { _pk.style.display = 'none'; _pk.innerHTML = ''; }
+  } catch (e) {}
   refreshSharedCalendarList();
 }
 function closeSharedCalendarModal() {
@@ -40486,10 +40502,29 @@ async function refreshSharedCalendarList() {
   // v0.45.1534: v0.45.1533以前に作った共有カレンダーは、作成時にローカルへ
   // 統合されておらず「クラウドにあるのに手元で使えない」状態で取り残されている。
   // 一覧を開いたこの時点で補って、過去に作った分も使えるようにする。
-  var _repaired = 0;
+  // v0.45.1727: 【権威】2026-08-24、「WMカレンダー」と「WM」のように、
+  // 月間のチップと設定で名前が違って見える、との指摘。
+  // 手元とクラウドで別々に名前を持っており、片方だけ変えると食い違う。
+  // クラウド側が正なので、手元の名前をそちらへ合わせる。
+  var _repaired = 0, _renamed = 0;
   _visible.forEach(function(c) {
-    if (linkSharedCalendarToLocal(c.id, c.name)) _repaired++;
+    if (linkSharedCalendarToLocal(c.id, c.name)) { _repaired++; return; }
+    var _local = (allSettings.calendar.list || []).find(function(x) {
+      return x && x.cloudCalendarId === c.id;
+    });
+    if (_local && c.name && _local.name !== c.name) {
+      _local.name = c.name;
+      _renamed++;
+    }
   });
+  if (_renamed > 0) {
+    calendars = allSettings.calendar.list;
+    saveAllSettings();
+    if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
+      renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+    }
+    console.info('[SharedCal] 名前が食い違っていた ' + _renamed + '件をクラウドに合わせました');
+  }
   if (_repaired > 0) {
     console.info('[SharedCal] 手元に無かった共有カレンダー ' + _repaired + '件をカレンダー一覧に追加しました');
   }
