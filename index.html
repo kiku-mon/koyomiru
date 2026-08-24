@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1728 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1729 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1728';
+    const APP_VERSION = 'v0.45.1729';
   const APP_LAST_UPDATED = '2026-08-24'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -29640,6 +29640,21 @@ window.unshareCalendar = unshareCalendar;
 function loadCalendarSettingsUI() {
       const list = document.getElementById('calendarSettingsList');
       if (!list) return;
+      // v0.45.1729: 【権威】2026-08-24、共有カレンダーへの入口は2つあり、
+      // 設定配下のカレンダー一覧から入った人は片づかない、との指摘。そのとおり。
+      // ここは手元の一覧をそのまま描くだけで、クラウドを見ていなかった。
+      // ログイン中なら正解を取り直し、余分な行を片づけてから描き直す。
+      // 取得は待たない（画面の表示を止めないため）。片づいたら再描画される。
+      if (window._cloudIsLoggedIn && !window._calSettingsPruning) {
+        window._calSettingsPruning = true;
+        setTimeout(function() {
+          if (typeof listMySharedCalendars !== 'function') { window._calSettingsPruning = false; return; }
+          Promise.resolve(listMySharedCalendars()).then(function(res) {
+            // listMySharedCalendars の中で片づけが走る。ここでは後始末だけ。
+            window._calSettingsPruning = false;
+          }).catch(function() { window._calSettingsPruning = false; });
+        }, 0);
+      }
       list.innerHTML = '';
       let dragSrcIdx = null;
       // メインカレンダーselectを更新
@@ -37638,6 +37653,55 @@ async function joinSharedCalendarByCode(code, displayName) {
 }
 
 // 自分が参加している共有カレンダー一覧（RLSにより自動的にメンバーの分だけ返る）
+// v0.45.1729: 手元の余分な行を、クラウドの正解に照らして片づける。
+// v0.45.1713 と v0.45.1715 で私が入れた自動生成の後始末。
+// 通常のマイグレーションでは直せない。起動時にはクラウド側の正解を
+// まだ知らないため、消す判断ができない。正解が手に入った時点で呼ぶ。
+//
+// 消すのは次の3つだけ。予定には一切触らない。
+//   ・同じ器を指す2行目以降（重複）
+//   ・個人用を指す行（表に出すものではない）
+//   ・クラウドに無い器を指す行（すでに消えたもの）
+// 器を持たない行（未ログインで作ったもの）は必ず残す。
+// 正解が空・取得失敗のときは何もしない。正解が無いのに消してはいけない。
+function pruneLocalCalendarsAgainstCloud(cloudRows) {
+  try {
+    if (!cloudRows || !Array.isArray(cloudRows) || cloudRows.length === 0) return 0;
+    var alive = {};
+    cloudRows.forEach(function(row) { if (row && row.id) alive[row.id] = row; });
+    var list = (allSettings.calendar && allSettings.calendar.list) || [];
+    var seen = {}, dropped = [];
+    var kept = list.filter(function(x) {
+      if (!x) return false;
+      if (!x.cloudCalendarId) return true;
+      var cloud = alive[x.cloudCalendarId];
+      if (!cloud) { dropped.push((x.name || '?') + '（クラウドに無い）'); return false; }
+      if (cloud.is_personal) { dropped.push((x.name || '?') + '（個人用）'); return false; }
+      if (seen[x.cloudCalendarId]) { dropped.push((x.name || '?') + '（重複）'); return false; }
+      seen[x.cloudCalendarId] = true;
+      if (cloud.name && x.name !== cloud.name) x.name = cloud.name;   // 名前も合わせる
+      return true;
+    });
+    if (dropped.length === 0) return 0;
+    allSettings.calendar.list = kept;
+    calendars = allSettings.calendar.list;
+    saveAllSettings();
+    if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
+      renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+    }
+    if (typeof loadCalendarSettingsUI === 'function') {
+      try { loadCalendarSettingsUI(); } catch (e2) {}
+    }
+    console.info('[SharedCal] 余分だった ' + dropped.length + '件を片づけました: ' + dropped.join('、'));
+    if (window.showToast) showToast('🧹 余分なカレンダー ' + dropped.length + '件を片づけました', {type:'ok'});
+    return dropped.length;
+  } catch (e) {
+    console.warn('[SharedCal] 片づけ失敗（手元はそのまま）:', e && e.message);
+    return 0;
+  }
+}
+window.pruneLocalCalendarsAgainstCloud = pruneLocalCalendarsAgainstCloud;
+
 async function listMySharedCalendars() {
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
@@ -37683,6 +37747,9 @@ async function listMySharedCalendars() {
       });
     }
   } catch(eSort) {}
+  // v0.45.1729: 取得できた時点で片づける。ここに置けば、
+  // どの入口（アカウント配下・設定配下）から呼ばれても必ず走る。
+  try { pruneLocalCalendarsAgainstCloud(r.data); } catch(ePr) {}
   return r;
 }
 // v0.45.1500: 【権威】2026-08-03、共有カレンダーは「作る・招待する・参加する」だけが
@@ -40515,40 +40582,7 @@ async function refreshSharedCalendarList() {
   // 存在するかというクラウド側の正解をまだ知らないため、消す判断ができない。
   // 一覧を開いたこの時点なら正解が手元にあるので、ここで自動的に片づける。
   //
-  // 消すのは次の3つだけ。予定には一切触らない。
-  //   ・同じ器を指す2行目以降（重複）
-  //   ・個人用を指す行（表に出すものではない）
-  //   ・クラウドに無い器を指す行（すでに消えたもの）
-  // 器を持たない行（未ログインで作ったもの）は必ず残す。
-  // クラウドの取得が失敗していたら何もしない。正解が無いのに消してはいけない。
-  try {
-    if (r.data && Array.isArray(r.data) && r.data.length > 0) {
-      var _alive = {};
-      r.data.forEach(function(row) { if (row && row.id) _alive[row.id] = row; });
-      var _list = (allSettings.calendar && allSettings.calendar.list) || [];
-      var _seen = {}, _dropped = [];
-      var _kept = _list.filter(function(x) {
-        if (!x) return false;
-        if (!x.cloudCalendarId) return true;
-        var _cloud = _alive[x.cloudCalendarId];
-        if (!_cloud) { _dropped.push((x.name || '?') + '（クラウドに無い）'); return false; }
-        if (_cloud.is_personal) { _dropped.push((x.name || '?') + '（個人用）'); return false; }
-        if (_seen[x.cloudCalendarId]) { _dropped.push((x.name || '?') + '（重複）'); return false; }
-        _seen[x.cloudCalendarId] = true;
-        return true;
-      });
-      if (_dropped.length > 0) {
-        allSettings.calendar.list = _kept;
-        calendars = allSettings.calendar.list;
-        saveAllSettings();
-        if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
-          renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
-        }
-        console.info('[SharedCal] 余分だった ' + _dropped.length + '件を片づけました: ' + _dropped.join('、'));
-        if (window.showToast) showToast('🧹 余分なカレンダー ' + _dropped.length + '件を片づけました', {type:'ok'});
-      }
-    }
-  } catch (ePrune) { console.warn('[SharedCal] 片づけ失敗（手元はそのまま）:', ePrune && ePrune.message); }
+  // v0.45.1729: 片づけは listMySharedCalendars の中で済んでいる（第4条・唯一の処理）。
 
   var _repaired = 0, _renamed = 0;
   _visible.forEach(function(c) {
