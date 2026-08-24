@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1727 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1728 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1727';
+    const APP_VERSION = 'v0.45.1728';
   const APP_LAST_UPDATED = '2026-08-24'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -40506,6 +40506,50 @@ async function refreshSharedCalendarList() {
   // 月間のチップと設定で名前が違って見える、との指摘。
   // 手元とクラウドで別々に名前を持っており、片方だけ変えると食い違う。
   // クラウド側が正なので、手元の名前をそちらへ合わせる。
+  // v0.45.1728: 【権威】2026-08-24、手元に余分な行が溜まっている（個人用が2つ・
+  // メインが3つ）。スマホではコンソールが開けず、他の利用者の端末でも同じことが
+  // 起きている可能性がある、との指摘。
+  //
+  // これは v0.45.1713 と v0.45.1715 で私が入れた自動生成の後始末。
+  // 通常のマイグレーションでは直せない。起動時には、どのカレンダーが本当に
+  // 存在するかというクラウド側の正解をまだ知らないため、消す判断ができない。
+  // 一覧を開いたこの時点なら正解が手元にあるので、ここで自動的に片づける。
+  //
+  // 消すのは次の3つだけ。予定には一切触らない。
+  //   ・同じ器を指す2行目以降（重複）
+  //   ・個人用を指す行（表に出すものではない）
+  //   ・クラウドに無い器を指す行（すでに消えたもの）
+  // 器を持たない行（未ログインで作ったもの）は必ず残す。
+  // クラウドの取得が失敗していたら何もしない。正解が無いのに消してはいけない。
+  try {
+    if (r.data && Array.isArray(r.data) && r.data.length > 0) {
+      var _alive = {};
+      r.data.forEach(function(row) { if (row && row.id) _alive[row.id] = row; });
+      var _list = (allSettings.calendar && allSettings.calendar.list) || [];
+      var _seen = {}, _dropped = [];
+      var _kept = _list.filter(function(x) {
+        if (!x) return false;
+        if (!x.cloudCalendarId) return true;
+        var _cloud = _alive[x.cloudCalendarId];
+        if (!_cloud) { _dropped.push((x.name || '?') + '（クラウドに無い）'); return false; }
+        if (_cloud.is_personal) { _dropped.push((x.name || '?') + '（個人用）'); return false; }
+        if (_seen[x.cloudCalendarId]) { _dropped.push((x.name || '?') + '（重複）'); return false; }
+        _seen[x.cloudCalendarId] = true;
+        return true;
+      });
+      if (_dropped.length > 0) {
+        allSettings.calendar.list = _kept;
+        calendars = allSettings.calendar.list;
+        saveAllSettings();
+        if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
+          renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+        }
+        console.info('[SharedCal] 余分だった ' + _dropped.length + '件を片づけました: ' + _dropped.join('、'));
+        if (window.showToast) showToast('🧹 余分なカレンダー ' + _dropped.length + '件を片づけました', {type:'ok'});
+      }
+    }
+  } catch (ePrune) { console.warn('[SharedCal] 片づけ失敗（手元はそのまま）:', ePrune && ePrune.message); }
+
   var _repaired = 0, _renamed = 0;
   _visible.forEach(function(c) {
     if (linkSharedCalendarToLocal(c.id, c.name)) { _repaired++; return; }
