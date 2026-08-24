@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1725 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1726 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1725';
+    const APP_VERSION = 'v0.45.1726';
   const APP_LAST_UPDATED = '2026-08-24'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -40456,7 +40456,15 @@ async function refreshSharedCalendarList() {
     }
   } catch (eSync) { console.warn('[SharedCal] 取り込み失敗:', eSync); }
 
-  var _hasAny = _visible && _visible.length > 0;
+  // v0.45.1726: 【権威】2026-08-24、一覧が「まだ共有カレンダーがありません」になる、との報告。
+  // v0.45.1725で _visible を、使う場所より後ろで定義してしまっていた。
+  // JavaScriptでは var の宣言だけが先に持ち上がり、中身は後から入る。
+  // そのため数える時点では空で、0件と判定されていた。使う前に定義し直す。
+  //
+  // 個人用は一覧に出さない。共有する対象ではなく仕組みの土台であり、
+  // 利用者が作ったものではないため。
+  var _visible = (r.data || []).filter(function(c) { return c && !c.is_personal; });
+  var _hasAny = _visible.length > 0;
   // v0.45.1500: カレンダーが1つも無い人に「作る」と「参加」を同時に迫らないよう、
   // 空のときは作成だけを見せ、コード入力は隠す（招待は基本リンクから来るため）。
   if (emptyEl) emptyEl.style.display = _hasAny ? 'none' : 'block';
@@ -40479,17 +40487,13 @@ async function refreshSharedCalendarList() {
   // 統合されておらず「クラウドにあるのに手元で使えない」状態で取り残されている。
   // 一覧を開いたこの時点で補って、過去に作った分も使えるようにする。
   var _repaired = 0;
-  r.data.forEach(function(c) {
+  _visible.forEach(function(c) {
     if (linkSharedCalendarToLocal(c.id, c.name)) _repaired++;
   });
   if (_repaired > 0) {
     console.info('[SharedCal] 手元に無かった共有カレンダー ' + _repaired + '件をカレンダー一覧に追加しました');
   }
 
-  // v0.45.1725: 個人用は一覧に出さない。共有する対象ではなく、仕組みの土台だから。
-  // 「すべてのカレンダーは共有できる」という方針は変えないが、
-  // 個人用は利用者が作ったものではないので、同列には並べない。
-  var _visible = r.data.filter(function(c) { return !c.is_personal; });
   listEl.innerHTML = _visible.map(function(c) {
     var inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(c.invite_code);
     var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(inviteUrl);
