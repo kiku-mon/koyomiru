@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1719 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1722 ★ -->
 
 <html lang="ja">
 <head>
@@ -122,7 +122,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1719';
+    const APP_VERSION = 'v0.45.1722';
   const APP_LAST_UPDATED = '2026-08-24'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -37570,7 +37570,12 @@ async function lookupInviteCode(code) {
 }
 
 // 招待コードで参加する
-async // v0.45.1709: 【権威】2026-08-21、参加前に中身が見えないと入る気にならない、との指摘。
+// v0.45.1722: 【権威】2026-08-24、「async is not defined」が出続けた件。
+// v0.45.1709で新しい関数を挿入したとき、元の「async function joinSharedCalendarByCode」の
+// async と function のあいだに差し込んでしまい、async が単独で取り残されていた。
+// 構文としては通る（式として解釈される）ため node --check では捕まらず、
+// 実行時に「そんな名前は無い」と止まる。孤立した async を取り除く。
+// v0.45.1709: 【権威】2026-08-21、参加前に中身が見えないと入る気にならない、との指摘。
 // 招待コードから「カレンダー名・人数・近い予定」だけを覗く。
 // クラウド側に koyomiru_peek_invite という関数が必要（未作成なら静かに何も出さない）。
 // 予定の中身は題名だけに絞る。参加していない人に、詳細まで見せるべきではない。
@@ -41487,6 +41492,37 @@ async function cloudSendPasswordReset() {
 window.cloudSendPasswordReset = cloudSendPasswordReset;
 // v0.45.1518: 右上アバターから開くアカウントメニュー。
 // ログイン状態に応じて、名前・サブ文言・下部のボタン（ログイン／ログアウト）を差し替える。
+// v0.45.1720: 【権威】2026-08-24、ログイン中なのにアカウントメニューが
+// 「ログインしていません」と出る、との報告（同じ画面で2つの表示が食い違う写真あり）。
+// 原因：ここは window._cloudIsLoggedIn という「起動時に一度だけ入る変数」を見ていた。
+// ログインモーダル側は開くたびに本人確認をしているので、両者がずれる。
+// 変数は、再読込せずに時間が経つ・別のタブでログインする・再接続が入る、
+// といった場面で古いままになる。見た目が嘘をつくと、利用者は何が正しいか判断できない。
+// 開くたびに本人確認をやり直し、その結果で描き直す。
+// v0.45.1721: async/await ではなく then で書く。
+// 「async is not defined」の報告を受け、環境差で解釈できない可能性を潰すため。
+// この関数は待つ必要がないので、then で十分足りる。
+function _refreshAccountMenuLoginState() {
+  try {
+    if (!window.supabaseClient || !window.supabaseClient.auth) return;
+    window.supabaseClient.auth.getUser().then(function (r) {
+      try {
+        var nowIn = !!(r && r.data && r.data.user);
+        if (nowIn !== !!window._cloudIsLoggedIn) {
+          window._cloudIsLoggedIn = nowIn;
+          if (nowIn && r.data.user.email) window._cloudUserEmail = r.data.user.email;
+          if (typeof _cloudSetNavRing === 'function') _cloudSetNavRing(nowIn);
+          console.info('[Account] ログイン状態を取り直しました:', nowIn);
+        }
+        _renderAccountMenu();
+      } catch (e2) { console.warn('[Account] 反映に失敗:', e2 && e2.message); }
+    }).catch(function (e) {
+      console.warn('[Account] 状態確認に失敗:', e && e.message);
+    });
+  } catch (e) { console.warn('[Account] 状態確認の呼び出しに失敗:', e && e.message); }
+}
+window._refreshAccountMenuLoginState = _refreshAccountMenuLoginState;
+
 function _renderAccountMenu() {
   var nameEl = document.getElementById('accountMenuName');
   var subEl  = document.getElementById('accountMenuSub');
@@ -41522,7 +41558,12 @@ function toggleAccountMenu(e) {
   var ov = document.getElementById('accountMenuOverlay');
   if (!menu || !ov) { switchView('settings'); return; }   // 第2条：DOMが無ければ従来動作に退避
   var willOpen = (menu.style.display === 'none' || !menu.style.display);
-  if (willOpen) _renderAccountMenu();
+  if (willOpen) {
+    // v0.45.1720: まず手元の値で描いて即座に開き、そのあと本人確認の結果で描き直す。
+    // 先に確認を待つと、押してからメニューが出るまで間が空いて反応が鈍く感じる。
+    _renderAccountMenu();
+    if (typeof _refreshAccountMenuLoginState === 'function') _refreshAccountMenuLoginState();
+  }
   menu.style.display = willOpen ? 'block' : 'none';
   ov.style.display   = willOpen ? 'block' : 'none';
 }
