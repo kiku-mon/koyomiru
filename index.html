@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1743 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1744 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1743';
+    const APP_VERSION = 'v0.45.1744';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -40697,6 +40697,13 @@ async function unifiedPushTasks() {
     // 全部を止めるより、送れるものを送るほうが害が小さい。
     console.warn('[Unified] 記録の器が取れないため、共有カレンダーの分だけ送ります');
   }
+  // v0.45.1744: 【権威】2026-08-25、送信がどこで止まっているか分からない、との状況。
+  // コンソールが使えない端末でも追えるよう、要所をデバッグ画面に残す。
+  // 黙って終わる場所があると、動いているのか止まっているのかすら分からない。
+  var _dbg = (typeof window._dbgLog === 'function') ? window._dbgLog : function(){};
+  _dbg('[送信] 開始 手元' + allTasks.length + '件 所属' +
+       ((window._myCalendarIds||[]).length) + '件 記録の器=' +
+       (window._personalCalendarId ? 'あり' : 'なし'));
   // v0.45.1353: 上のawait待ちの間にスモークテストが始まった場合、
   // テスト中の一時的なallTasksの状態が実クラウドへ送信されてしまう恐れがある。
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1378: 多層防御
@@ -40777,7 +40784,14 @@ async function unifiedPushTasks() {
       showToast('⚠️ ' + _skipped + '件の予定がこの端末に留まっています', {type:'warn', duration:6000});
     }
   }
-  if (toPush.length === 0) return null;
+  // v0.45.1744: ここが黙って終わる場所だった。
+  // 送るものが無いのか、絞り込みで全部落ちたのかが分からないと、
+  // 動いているのか止まっているのかすら判断できない。
+  if (toPush.length === 0) {
+    _dbg('[送信] 送る対象が0件（前回の控え' + Object.keys(_prevSnapshot).length + '件）');
+    return null;
+  }
+  _dbg('[送信] ' + toPush.length + '件を送ります');
   var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
   if (r.error) {
     console.error('[Unified] プッシュ失敗:', r.error.message);
@@ -68107,24 +68121,80 @@ function openMigrationReportPanel() {
   var resultLabel = document.createElement('div');
   resultLabel.style.cssText = 'font-size:0.72em;color:#6b7280;letter-spacing:0.05em;font-weight:600;';
   resultLabel.textContent = '● 出力結果（実行後にここに表示）';
+  // v0.45.1744: コピーの処理は1か所にまとめる（第4条）。
+  // 端末によっては新しい方法が使えないので、古い方法にも落とす。
+  function _mrpCopyText(txt, btn, label) {
+    var done = function(msg, ms) {
+      btn.textContent = msg;
+      setTimeout(function(){ btn.textContent = label; }, ms || 2000);
+    };
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function() {
+        done('✅ コピー完了 (' + txt.length + '文字)');
+      }).catch(function() { _mrpCopyFallback(txt, done); });
+    } else {
+      _mrpCopyFallback(txt, done);
+    }
+  }
+  function _mrpCopyFallback(txt, done) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = txt;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      var okc = document.execCommand('copy');
+      document.body.removeChild(ta);
+      done(okc ? ('✅ コピー完了 (' + txt.length + '文字)') : '❌ コピーできません', 2500);
+    } catch (e) { done('❌ ' + e.message, 2500); }
+  }
+
+  // v0.45.1744: 【権威】2026-08-25、テストが長すぎて全文を貼ると空で届く、
+  // そのため報告が面倒になりスモークテスト自体をやらなくなる、との指摘。
+  // 報告できないテストは、無いのと同じ。落ちたものだけを短く取り出せるようにする。
+  var copyNgBtn = document.createElement('button');
+  copyNgBtn.id = 'mrpCopyNgBtn';
+  copyNgBtn.textContent = '❌ 落ちた分だけ';
+  copyNgBtn.style.cssText = 'padding:6px 12px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.45);border-radius:6px;color:#fca5a5;font-size:0.78em;cursor:pointer;font-weight:600;letter-spacing:0.03em;white-space:nowrap;margin-right:6px;';
+  copyNgBtn.onclick = function() {
+    var txt = resultArea.textContent || '';
+    if (!txt || txt === '(まだ実行されていません)') {
+      copyNgBtn.textContent = '⚠️ まだ実行されていません';
+      setTimeout(function(){ copyNgBtn.textContent = '❌ 落ちた分だけ'; }, 1500);
+      return;
+    }
+    // 落ちた行と、最後のまとめ（APAG・件数）だけを拾う
+    var lines = txt.split('\n');
+    var ng = [];
+    var summary = [];
+    lines.forEach(function(ln) {
+      if (ln.indexOf('❌') !== -1 || ln.indexOf('★NG') !== -1) ng.push(ln);
+      if (ln.indexOf('GUARDIAN') !== -1 || ln.indexOf('GREAT') !== -1 ||
+          ln.indexOf('合計') !== -1 || ln.indexOf('VERDICT') !== -1) summary.push(ln);
+    });
+    var out = '【落ちた項目 ' + ng.length + '件】\n' + ng.join('\n') +
+              (summary.length ? ('\n\n【まとめ】\n' + summary.join('\n')) : '');
+    _mrpCopyText(out, copyNgBtn, '❌ 落ちた分だけ');
+  };
+
   var copyAllBtn = document.createElement('button');
   copyAllBtn.id = 'mrpCopyAllBtn';
-  copyAllBtn.textContent = '📋 全文コピー';
+  copyAllBtn.textContent = '📋 全部（長い）';
   copyAllBtn.style.cssText = 'padding:6px 12px;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.4);border-radius:6px;color:#c084fc;font-size:0.78em;cursor:pointer;font-weight:600;letter-spacing:0.03em;white-space:nowrap;';
   copyAllBtn.onclick = function() {
     var txt = resultArea.textContent;
     if (!txt || txt === '(まだ実行されていません)') {
       copyAllBtn.textContent = '⚠️ まだ実行されていません';
-      setTimeout(function(){ copyAllBtn.textContent = '📋 全文コピー'; }, 1500);
+      setTimeout(function(){ copyAllBtn.textContent = '📋 全部（長い）'; }, 1500);
       return;
     }
     if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(txt).then(function() {
         copyAllBtn.textContent = '✅ コピー完了 (' + txt.length + '文字)';
-        setTimeout(function(){ copyAllBtn.textContent = '📋 全文コピー'; }, 2000);
+        setTimeout(function(){ copyAllBtn.textContent = '📋 全部（長い）'; }, 2000);
       }).catch(function(err) {
         copyAllBtn.textContent = '❌ 失敗: ' + err.message;
-        setTimeout(function(){ copyAllBtn.textContent = '📋 全文コピー'; }, 2500);
+        setTimeout(function(){ copyAllBtn.textContent = '📋 全部（長い）'; }, 2500);
       });
     } else {
       // フォールバック：textareaを一時生成してselect→execCommand('copy')
@@ -68137,15 +68207,19 @@ function openMigrationReportPanel() {
         var ok = document.execCommand('copy');
         document.body.removeChild(ta);
         copyAllBtn.textContent = ok ? '✅ コピー完了' : '⚠️ 手動でコピーしてください';
-        setTimeout(function(){ copyAllBtn.textContent = '📋 全文コピー'; }, 2000);
+        setTimeout(function(){ copyAllBtn.textContent = '📋 全部（長い）'; }, 2000);
       } catch (e) {
         copyAllBtn.textContent = '❌ ' + e.message;
-        setTimeout(function(){ copyAllBtn.textContent = '📋 全文コピー'; }, 2500);
+        setTimeout(function(){ copyAllBtn.textContent = '📋 全部（長い）'; }, 2500);
       }
     }
   };
   resultLabelRow.appendChild(resultLabel);
-  resultLabelRow.appendChild(copyAllBtn);
+  var _btnGroup = document.createElement('div');
+  _btnGroup.style.cssText = 'display:flex;align-items:center;';
+  _btnGroup.appendChild(copyNgBtn);
+  _btnGroup.appendChild(copyAllBtn);
+  resultLabelRow.appendChild(_btnGroup);
 
   var resultArea = document.createElement('pre');
   resultArea.id = 'mrpResultArea';
