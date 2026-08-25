@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1752 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1756 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1752';
+    const APP_VERSION = 'v0.45.1756';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -20086,6 +20086,35 @@ function renderMonthlySidebarTasks() {
           renderMonthlySidebarTasks();
           typeof renderMonthlyView === 'function' && renderMonthlyView();
         };
+        // v0.45.1756: まだクラウドへ送れていない予定に、印を出す。
+        // 楽観的更新では、手元に書けた時点で画面に出る。
+        // それ自体は正しいが、送れていないことまで隠れてしまうと、
+        // 書いた本人は届いたと思い、共有カレンダーに参加している人には無い、という
+        // いちばん困る状態になる（実際そうなっていた）。
+        // 押せば理由が読める。黙って失敗しない。
+        var _unsent = (window._unsentTaskIds || {})[taskId];
+        if (_unsent) {
+          var warn = document.createElement('button');
+          warn.textContent = '⏳';
+          warn.title = 'クラウドへ保存できていません';
+          warn.style.cssText = 'background:none;border:none;font-size:15px;cursor:pointer;padding:2px 4px;flex-shrink:0;';
+          warn.onclick = function(e) {
+            e && e.stopPropagation();
+            showChoiceModal({
+              title: 'クラウドへ保存できていません',
+              desc: 'この予定はこの端末にだけあります。<br>' +
+                    '共有カレンダーに参加している人の画面には出ていません。<br><br>' +
+                    '<span style="font-size:0.85em;color:#888;">' + String(_unsent).slice(0,120) + '</span>',
+              buttons: [
+                { label: 'もう一度送る', style: 'primary', onClick: function() {
+                    if (typeof unifiedPushTasks === 'function') unifiedPushTasks();
+                  } },
+                { label: '閉じる', style: 'cancel', onClick: function() {} }
+              ]
+            });
+          };
+          item.appendChild(warn);   // 行そのものに付ける（_body はこの時点でまだ無い）
+        }
         // タスク名（タップでインライン編集）
         var txt = document.createElement('span');
         txt.className = 'msb-task-text';
@@ -41015,6 +41044,25 @@ async function unifiedPushTasks() {
   _dbg('════════════════════════════════');
   _dbg('');
   var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
+  // v0.45.1756: 【権威】2026-08-25、失敗が分かることを先にやる、との方針。
+  // 楽観的更新（手元を先に書き、あとでクラウドへ送る）は既にできている。
+  // 足りないのは、送れなかったときに画面が黙っていること。
+  // 今日いちばん困ったのは、送ったつもりで届いていなかったこと。
+  // 速さより先に、嘘をつかないことを直す。
+  //
+  // どの予定が送れていないかを、1件ずつ覚えておく。
+  // 印は予定の横に出し、押せば理由が分かるようにする。
+  try {
+    window._unsentTaskIds = window._unsentTaskIds || {};
+    if (r.error) {
+      toPush.forEach(function(row) { window._unsentTaskIds[row.id] = r.error.message; });
+    } else {
+      toPush.forEach(function(row) { delete window._unsentTaskIds[row.id]; });
+    }
+    if (typeof renderMonthlySidebarTasks === 'function' && window._sidebarDateStr) {
+      renderMonthlySidebarTasks();
+    }
+  } catch (eMark) {}
   if (r.error) {
     console.error('[Unified] プッシュ失敗:', r.error.message);
     window._cloudPushFailed = true;
@@ -44233,11 +44281,92 @@ function showDebugLog(_initOnly) {
   // 落ちたものだけを取れるようにしろ、との指示。
   // v0.45.1745で直したのは移行レポートの別パネルで、実際に押されるのはこちらだった。
   // 同じ「全文コピー」という名前のボタンが2か所にあり、取り違えた。
+  // v0.45.1755: 【権威】2026-08-25、ファイルではなくZIPで保存せよ、との指示。
+  // ZIPなら受け取る側が必ず展開するため、中身が確実に読まれる。
+  //
+  // 外部の部品は読み込まない。読み込みが1つ増えるだけで、
+  // 電波の悪い場所やアーティファクトでは動かなくなる（第1条の教訓）。
+  // 圧縮なしのZIP（stored方式）なら、この場で組み立てられる。
+  // 実際に作って展開し、中身が読めることを確かめてある。
+  function _crc32(buf) {
+    var t = [], c;
+    for (var n = 0; n < 256; n++) {
+      c = n;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c;
+    }
+    c = 0 ^ (-1);
+    for (var i = 0; i < buf.length; i++) c = (c >>> 8) ^ t[(c ^ buf[i]) & 0xFF];
+    return (c ^ (-1)) >>> 0;
+  }
+  function _makeStoredZip(name, text) {
+    var enc = new TextEncoder();
+    var data = enc.encode(text);
+    var nameB = enc.encode(name);
+    var crc = _crc32(data);
+    var u16 = function(n) { return [n & 255, (n >> 8) & 255]; };
+    var u32 = function(n) { return [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255]; };
+    var parts = [];
+    var local = [].concat([0x50,0x4b,0x03,0x04], u16(20), u16(0), u16(0), u16(0), u16(0),
+                          u32(crc), u32(data.length), u32(data.length), u16(nameB.length), u16(0));
+    parts.push(new Uint8Array(local), nameB, data);
+    var offset = local.length + nameB.length + data.length;
+    var central = [].concat([0x50,0x4b,0x01,0x02], u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+                            u32(crc), u32(data.length), u32(data.length), u16(nameB.length),
+                            u16(0), u16(0), u16(0), u16(0), u32(0), u32(0));
+    parts.push(new Uint8Array(central), nameB);
+    var cLen = central.length + nameB.length;
+    var end = [].concat([0x50,0x4b,0x05,0x06], u16(0), u16(0), u16(1), u16(1),
+                        u32(cLen), u32(offset), u16(0));
+    parts.push(new Uint8Array(end));
+    var total = parts.reduce(function(a, pp) { return a + pp.length; }, 0);
+    var out = new Uint8Array(total), pos = 0;
+    parts.forEach(function(pp) { out.set(pp, pos); pos += pp.length; });
+    return out;
+  }
+
+  // v0.45.1754: 【権威】2026-08-25、コピーが長いとファイルに包まれてしまうなら、
+  // いっそ最初からファイルとして保存できるようにしてはどうか、との提案。そのとおり。
+  //
+  // 貼り付けは、長さによって通ったり通らなかったりする。
+  // ファイルなら長さに関わらず確実に渡せる。削る必要もなくなる。
+  // コピーとファイル、両方を残す（短ければ貼るほうが速い）。
+  var btnSave = document.createElement('button');
+  btnSave.textContent = '🗜️ テスト結果をZIPで保存';
+  btnSave.style.cssText = 'width:100%;padding:13px 10px;background:#1f6feb;border:2px solid #58a6ff;border-radius:8px;color:#fff;font-weight:700;font-size:1em;cursor:pointer;margin-top:14px;margin-bottom:6px;';
+  btnSave.onclick = function() {
+    try {
+      var full = _buildReportText(true);   // ZIPには削らず全部入れる
+      var _st = new Date();
+      var _pad = function(n){ return String(n).padStart(2,'0'); };
+      var _stamp = _st.getFullYear() + _pad(_st.getMonth()+1) + _pad(_st.getDate()) +
+                   '-' + _pad(_st.getHours()) + _pad(_st.getMinutes());
+      var _zip = _makeStoredZip('koyomiru-test-' + _stamp + '.txt', full);
+      var blob = new Blob([_zip], { type: 'application/zip' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'koyomiru-test-' + _stamp + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      btnSave.textContent = '✅ 保存しました（' + full.length + '文字）';
+      // 中身の文字数を出すのは、空でないことを押した本人が確かめられるようにするため
+      setTimeout(function(){ btnSave.textContent = '🗜️ テスト結果をZIPで保存'; }, 2500);
+    } catch (e) {
+      btnSave.textContent = '❌ 保存できません: ' + e.message;
+      setTimeout(function(){ btnSave.textContent = '🗜️ テスト結果をZIPで保存'; }, 3000);
+    }
+  };
+  box.appendChild(btnSave);
+
   var btnCopy = document.createElement('button');
   btnCopy.textContent = '❌ 落ちた分だけコピー';
   btnCopy.style.cssText = 'width:100%;padding:13px 10px;background:#238636;border:2px solid #3fb950;border-radius:8px;color:#fff;font-weight:700;font-size:1em;cursor:pointer;margin-top:14px;margin-bottom:6px;';
-  btnCopy.onclick = function(){
-    // スモークテスト結果を取得
+  // v0.45.1754: 文章の組み立ては1か所にまとめる（第4条）。
+  // full=true ならファイル用（削らない）、false なら貼り付け用（短く）。
+  function _buildReportText(full) {
     var smokeResult = '';
     var smokeEl = box.querySelector('.smoke-result');
     if (smokeEl) {
@@ -44257,23 +44386,44 @@ function showDebugLog(_initOnly) {
     var _syncLines = logArr.filter(function(ln) {
       return String(ln).indexOf('[送信]') !== -1 || String(ln).indexOf('[Unified]') !== -1;
     });
+    // v0.45.1753: 【権威】2026-08-25、まだ長くてファイルに包まれてしまう、
+    // 本文のまま貼れる長さにしろ、との指示。
+    //
+    // 貼り付け先は、長い文章を自動でファイルに変える。そうなると読む側の手間が増え、
+    // 結局やり取りが滞る。本文のまま渡ることが、報告の道具としての最低条件。
+    //
+    // 削る順は「無くても原因が追えるもの」から。
+    //   ・記号（✅❌）を落とす … 1件あたり2文字減り、件数が多いほど効く
+    //   ・落ちた項目は30件まで … それ以上あるなら、まず先頭から直すことになる
+    //   ・同期の記録は5件 … 直近だけ見れば足りる
+    //   ・エラーは3件 … 同じ原因のものが並ぶことが多い
+    var _clean = function(s) {
+      return String(s).replace(/[✅❌⚠️📤🔴🟢⚫★]/g, '').replace(/\s+/g, ' ').trim();
+    };
+    var _ng = full ? _ngLines : _ngLines.slice(0, 30).map(_clean);
+    var _sm = full ? _summary : _summary.slice(0, 4).map(_clean);
+    var _sy = full ? _syncLines : _syncLines.slice(-5).map(_clean);
     var text = [
-      '=== こよみる ' + v + ' ===',
+      'こよみる ' + v,
       '',
-      '--- 落ちた項目 (' + _ngLines.length + '件) ---',
-      _ngLines.length ? _ngLines.join('\n') : '(なし)',
+      '[落ちた ' + _ngLines.length + '件' + ((!full && _ngLines.length > 30) ? '・先頭30件' : '') + ']',
+      _ng.length ? _ng.join('\n') : 'なし',
       '',
-      '--- まとめ ---',
-      _summary.length ? _summary.join('\n') : '(スモークテスト未実行)',
+      '[まとめ]',
+      _sm.length ? _sm.join('\n') : 'テスト未実行',
       '',
-      '--- エラー (' + errArr.length + '件) ---',
-      errArr.length
-        ? errArr.slice(0, 10).map(function(e){ return e.msg + ' L' + (e.line||'?'); }).join('\n')
-        : '(なし)',
+      '[エラー ' + errArr.length + '件]',
+      errArr.length ? errArr.slice(0, full ? 50 : 3).map(function(e){ return _clean(e.msg) + ' L' + (e.line||'?'); }).join('\n') : 'なし',
       '',
-      '--- 同期の記録 ---',
-      _syncLines.length ? _syncLines.slice(-15).join('\n') : '(なし)'
+      '[同期]',
+      _sy.length ? _sy.join('\n') : 'なし',
+      full ? '\n[起動の記録]\n' + logArr.join('\n') : ''
     ].join('\n');
+    return text;
+  }
+
+  btnCopy.onclick = function(){
+    var text = _buildReportText(false);
     // iOS Safari対応コピー処理
     function doFallbackCopy() {
       var ta = document.createElement('textarea');
