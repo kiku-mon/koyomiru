@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1762 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1765 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1762';
+    const APP_VERSION = 'v0.45.1765';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2904,6 +2904,21 @@
       letter-spacing: .02em;
     }
     /* 値側は右寄せ。TimeTreeは値が右端に揃うので、走査したとき目が迷わない。 */
+    /* v0.45.1764: 時刻を押しやすくする小さなボタン。
+       タイムピッカーは正確だが遅い。よく使う値は1回で入るべき。 */
+    .msb-now-btn {
+      flex-shrink: 0;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 0.78em;
+      font-family: inherit;
+      background: #fafafa;
+      color: #6b7280;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .msb-now-btn:active { background: #eef2f7; }
     .msb-input-sm {
       flex: 1;
       max-width: 62%;
@@ -7056,14 +7071,21 @@
           <div class="msb-dt-pair">
             <input id="msbEditDate" type="date" class="msb-input-sm">
             <input id="msbEditTime" type="time" class="msb-input-sm msb-dt-time" placeholder="開始時刻" title="開始時刻">
+            <button type="button" onclick="window._msbFillTime('msbEditTime')" class="msb-now-btn" title="いまの時刻を入れる">今</button>
           </div>
         </div>
         <div class="msb-edit-row msb-dt-row">
           <label class="msb-label">終了</label>
           <div class="msb-dt-pair">
-            <input id="msbEditEndDate" type="date" class="msb-input-sm">
+            <input id="msbEditEndDate" type="date" class="msb-input-sm" onchange="window._msbOnEndDateChange()">
             <input id="msbEditEndTime" type="time" class="msb-input-sm msb-dt-time" placeholder="終了時刻" title="終了時刻">
+            <button type="button" onclick="window._msbAddFromStart(60)" class="msb-now-btn" title="開始から1時間後">+1h</button>
+            <button type="button" onclick="window._msbAddFromStart(120)" class="msb-now-btn" title="開始から2時間後">+2h</button>
           </div>
+          <!-- v0.45.1764: 【権威】2026-08-26、「空のままで構いません」と書くのは対症であり
+               根を直していない、との指摘。そのとおり。
+               入れにくいものを「入れなくていい」と言い訳するより、入れやすくするのが筋。
+               時刻を押しやすくする道を、欄の隣に置く。 -->
         </div>
         <div class="msb-edit-row" style="margin-top:-6px;">
           <label class="msb-label"></label>
@@ -21011,6 +21033,81 @@ function toggleMsbMore(forceClose) {
   } catch(e) {}
 }
 window.toggleMsbMore = toggleMsbMore;
+
+// v0.45.1763: 【権威】2026-08-26、複数日にまたがる予定の入力が重い、との指摘。
+// 「8/26から9/27まで」のようなざっくりした予定に、終了の時刻まで求めるのは無理がある。
+// 実際、終了日だけ入れて保存しても通らず、2〜3回やり直してようやく保存できていた。
+//
+// 起きていたこと：
+//   ・開始の時刻が空のままだと、終日なのか時刻ありなのか宙ぶらりんになる
+//   ・終了日を入れた瞬間、終了の時刻欄が空で目立ち、埋めなければと思わせる
+//   ・実際には空でも通るのに、押しても手応えが無いので失敗したように見える
+//
+// 「何日から何日まで」は、それだけで完結した情報である。
+// 時刻を求めない。入れたい人だけが入れればよい。
+// v0.45.1764: 【権威】2026-08-26、時刻の入力が重い、タイムピッカーにこだわらず
+// 入れやすくする道を考えよ、との指示。
+//
+// タイムピッカーは正確だが、回して合わせるのに時間がかかる。
+// 実際に入れたい値は「いま」か「開始から何時間か」がほとんどで、
+// そこを1回で入れられれば、回す必要そのものが無くなる。
+// カレンダーの定石でもあり、Googleカレンダーも開始を入れると終了を自動で埋める。
+function _msbFillTime(id) {
+  try {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var n = new Date();
+    var p = function(v) { return String(v).padStart(2, '0'); };
+    // 5分単位に丸める。1分刻みの精度は、予定にはほぼ要らない
+    // 丸めた結果が60分になったら、素直に時を繰り上げる。
+    // 手で 24:00 を組み立てると 23:59 が 24:00 になり、時刻として成り立たなくなる。
+    // Date に足させれば、日をまたいでも 00:00 に落ち着く。
+    var m = Math.round(n.getMinutes() / 5) * 5;
+    n.setMinutes(0, 0, 0);
+    n.setMinutes(m);
+    el.value = p(n.getHours()) + ':' + p(n.getMinutes());
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  } catch (e) {}
+}
+window._msbFillTime = _msbFillTime;
+
+// 開始からの長さで終了を入れる。開始が空なら、まず「いま」を入れてから足す。
+function _msbAddFromStart(minutes) {
+  try {
+    var st = document.getElementById('msbEditTime');
+    var et = document.getElementById('msbEditEndTime');
+    if (!st || !et) return;
+    if (!st.value) _msbFillTime('msbEditTime');
+    if (!st.value) return;
+    var parts = st.value.split(':');
+    var base = new Date();
+    base.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
+    base.setMinutes(base.getMinutes() + minutes);
+    var p = function(v) { return String(v).padStart(2, '0'); };
+    et.value = p(base.getHours()) + ':' + p(base.getMinutes());
+    et.dispatchEvent(new Event('change', { bubbles: true }));
+  } catch (e) {}
+}
+window._msbAddFromStart = _msbAddFromStart;
+
+function _msbOnEndDateChange() {
+  try {
+    var ed = document.getElementById('msbEditEndDate');
+    var sd = document.getElementById('msbEditDate');
+    if (!ed || !sd || !ed.value) return;
+    // 終了日が開始日より前なら、その場で気づけるようにする（保存まで待たせない）
+    if (sd.value && ed.value < sd.value) {
+      if (window.showToast) showToast('終了日が開始日より前になっています', {type:'warn'});
+      ed.value = sd.value;
+      return;
+    }
+    // 日をまたぐ予定になったら、時刻は要らないことを伝える
+    if (sd.value && ed.value > sd.value) {
+      // v0.45.1764: 但し書きは出さない。押せる道を出す（時刻の横のボタン）。
+    }
+  } catch (e) {}
+}
+window._msbOnEndDateChange = _msbOnEndDateChange;
 
 function saveMsbEdit() {
       var id   = document.getElementById('msbEditId').value;
@@ -38779,7 +38876,7 @@ async function renderTaskComments(taskId) {
             (_mine
               ? '<span style="margin-left:auto;display:flex;gap:8px;">' +
                   '<button onclick="editTaskCommentFromUI(\'' + c.id + '\',\'' + taskId + '\')" ' +
-                    'style="background:none;border:none;color:#9aa3af;font-size:11px;cursor:pointer;padding:0 2px;">直す</button>' +
+                    'style="background:none;border:none;color:#9aa3af;font-size:11px;cursor:pointer;padding:0 2px;">編集</button>' +
                   '<button onclick="removeTaskCommentFromUI(\'' + c.id + '\')" ' +
                     'style="background:none;border:none;color:#ccc;font-size:12px;cursor:pointer;padding:0 2px;">✕</button>' +
                 '</span>'
@@ -38846,13 +38943,17 @@ async function editTaskCommentFromUI(commentId, taskId) {
       return;
     }
     showTextInputModal({
-      title: 'コメントを直す',
+      title: 'コメントを編集',
       defaultValue: row.body || '',
       onSubmit: async function(newBody) {
         newBody = (newBody || '').trim();
         if (!newBody || newBody === row.body) return;
+        // v0.45.1763: 【権威】2026-08-26、コメントを編集できない、との報告。
+        //   Could not find the 'updated_at' column
+        // この表に updated_at は無いのに、私が確かめずに書き込もうとしていた。
+        // 本文だけを書き換える。
         var up = await window.supabaseClient.from('koyomiru_task_comments')
-          .update({ body: newBody, updated_at: new Date().toISOString() })
+          .update({ body: newBody })
           .eq('id', commentId);
         if (up.error) {
           if (window.showToast) showToast('直せませんでした: ' + up.error.message, {type:'error'});
