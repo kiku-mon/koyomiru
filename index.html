@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1745 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1746 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1745';
+    const APP_VERSION = 'v0.45.1746';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -43947,8 +43947,12 @@ function showDebugLog(_initOnly) {
   })();
   box.innerHTML = rows.join('');
   // コピーボタン
+  // v0.45.1746: 【権威】2026-08-25、全文コピーは長すぎて貼れず事実上使えない、
+  // 落ちたものだけを取れるようにしろ、との指示。
+  // v0.45.1745で直したのは移行レポートの別パネルで、実際に押されるのはこちらだった。
+  // 同じ「全文コピー」という名前のボタンが2か所にあり、取り違えた。
   var btnCopy = document.createElement('button');
-  btnCopy.textContent = '📋 全文コピー';
+  btnCopy.textContent = '❌ 落ちた分だけコピー';
   btnCopy.style.cssText = 'width:100%;padding:13px 10px;background:#238636;border:2px solid #3fb950;border-radius:8px;color:#fff;font-weight:700;font-size:1em;cursor:pointer;margin-top:14px;margin-bottom:6px;';
   btnCopy.onclick = function(){
     // スモークテスト結果を取得
@@ -43957,20 +43961,36 @@ function showDebugLog(_initOnly) {
     if (smokeEl) {
       smokeResult = smokeEl.innerText || smokeEl.textContent || '';
     }
+    // v0.45.1746: 落ちたものと、原因を追うのに要るものだけを取り出す。
+    // 起動マイルストーン40件やlocalStorageの一覧は、正常時には読む必要がない。
+    // 長すぎて貼れなければ、報告そのものが行われなくなる。
+    var _ngLines = [];
+    var _summary = [];
+    (smokeResult || '').split('\n').forEach(function(ln) {
+      if (ln.indexOf('❌') !== -1 || ln.indexOf('★NG') !== -1) _ngLines.push(ln);
+      if (ln.indexOf('GUARDIAN') !== -1 || ln.indexOf('GREAT') !== -1 ||
+          ln.indexOf('VERDICT') !== -1 || ln.indexOf('件失敗') !== -1) _summary.push(ln);
+    });
+    // 同期の記録は原因追跡に要るので残す
+    var _syncLines = logArr.filter(function(ln) {
+      return String(ln).indexOf('[送信]') !== -1 || String(ln).indexOf('[Unified]') !== -1;
+    });
     var text = [
-      '=== デバッグパネル ' + v + ' ===',
+      '=== こよみる ' + v + ' ===',
       '',
-      '--- 起動マイルストーン ---',
-      logArr.join('\n'),
+      '--- 落ちた項目 (' + _ngLines.length + '件) ---',
+      _ngLines.length ? _ngLines.join('\n') : '(なし)',
       '',
-      '--- エラー(' + errArr.length + '件) ---',
-      errArr.map(function(e){ return e.msg + ' src:' + (e.src||'?') + ' L' + (e.line||'?') + (e.stack ? '\n' + e.stack.slice(0,300) : ''); }).join('\n'),
+      '--- まとめ ---',
+      _summary.length ? _summary.join('\n') : '(スモークテスト未実行)',
       '',
-      '--- localStorage ---',
-      lsInfo.join('\n'),
+      '--- エラー (' + errArr.length + '件) ---',
+      errArr.length
+        ? errArr.slice(0, 10).map(function(e){ return e.msg + ' L' + (e.line||'?'); }).join('\n')
+        : '(なし)',
       '',
-      '--- スモークテスト ---',
-      smokeResult || '(未実行・先にスモークテストを実行してください)'
+      '--- 同期の記録 ---',
+      _syncLines.length ? _syncLines.slice(-15).join('\n') : '(なし)'
     ].join('\n');
     // iOS Safari対応コピー処理
     function doFallbackCopy() {
@@ -43986,7 +44006,7 @@ function showDebugLog(_initOnly) {
       try {
         var ok = document.execCommand('copy');
         btnCopy.textContent = ok ? '✅ コピー完了' : '❌ コピー失敗';
-        if (ok) setTimeout(function(){ btnCopy.textContent = '📋 全文コピー'; }, 2000);
+        if (ok) setTimeout(function(){ btnCopy.textContent = '❌ 落ちた分だけコピー'; }, 2000);
       } catch(e) {
         btnCopy.textContent = '❌ コピー失敗';
       }
@@ -43995,7 +44015,7 @@ function showDebugLog(_initOnly) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function(){
         btnCopy.textContent = '✅ コピー完了';
-        setTimeout(function(){ btnCopy.textContent = '📋 全文コピー'; }, 2000);
+        setTimeout(function(){ btnCopy.textContent = '❌ 落ちた分だけコピー'; }, 2000);
       }).catch(function(){
         // clipboard API失敗 → fallbackへ
         doFallbackCopy();
