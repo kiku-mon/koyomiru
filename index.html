@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1739 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1742 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1739';
+    const APP_VERSION = 'v0.45.1742';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -11018,6 +11018,15 @@ function isCalendarVisible(calendarId) {
       { name: '時間割',       color: '#90caf9', shareable: true,  symbol: '○' },   // v0.45.1570: 「学校」から改称。授業・シフトなど繰り返しの予定を指す言葉として広い
       { name: 'プライベート', color: '#a5d6a7', shareable: true,  symbol: '♡' },
       { name: '家族',         color: '#c2185b', shareable: true,  symbol: '♥' },
+      // v0.45.1740: 【権威】2026-08-25、献立カレンダーを足せばよいだけ、との指摘。
+      // そのとおりで、新しい機能を作る話ではない。カレンダーを1つ増やすだけで足りる。
+      // 献立は朝昼晩と毎日3回くり返すので、予定の中でも最も規則的で、
+      // 「今日カレーだから昼は軽く」のように家族で分かち合う理由も最初からある。
+      { name: '献立',         color: '#ffab91', shareable: true,  symbol: '◍' },
+      // v0.45.1741: 【権威】2026-08-25、夢カレンダーを足す指示。
+      // 見た夢を書き留める場所。起きた直後にしか思い出せず、放っておくと必ず消える。
+      // 日付に結びつくものなので、カレンダーがそのまま器になる。
+      { name: '夢',           color: '#b39ddb', shareable: false, symbol: '☾' },
       { name: '趣味',         color: '#ffcc80', shareable: true,  symbol: '☆' },
       { name: 'メモ',         color: '#b0bec5', shareable: false, symbol: '★' },
     ];    function createCalendarFromTemplate(tmpl) {
@@ -27973,6 +27982,13 @@ function saveMsbEdit() {
       yearlyView.style.display = 'none';
       settingsView.style.display = 'none';
       notebookView.style.display = 'none';
+      // v0.45.1742: 【権威】2026-08-25、設定とダッシュボードが二重に開いている、との指摘。
+      // 全ビューを隠すこの並びにダッシュボードだけが入っておらず、
+      // 他のタブへ移っても残り続けて重なっていた。旅行ビューと同じ抜けが、ここにもあった。
+      var _dbHide = document.getElementById('dashboardView');
+      if (_dbHide) _dbHide.style.display = 'none';
+      // 隠すときに秒のカウントダウンも止める（見えない画面で数え続ける意味がない）
+      if (typeof _stopLifeTick === 'function') _stopLifeTick();
       // v0.45.1688: 旅行ビューも一緒に隠す（隠し忘れると他のタブに残って重なる）
       var _tvHide = document.getElementById('travelView');
       if (_tvHide) _tvHide.style.display = 'none';
@@ -32159,8 +32175,11 @@ function renderDashboardView() {
         }
         var _sec = document.getElementById('dbLifeSec');
         if (_sec) {
-          _sec.textContent = _life.beyond ? ''
-            : (_fmt(_life.leftSec) + ' 秒');
+          if (_life.beyond) { _sec.textContent = ''; delete _sec.dataset.sec; }
+          else {
+            _sec.dataset.sec = _life.leftSec;
+            _sec.textContent = _fmt(_life.leftSec) + ' 秒';
+          }
         }
         // 大切な人。残りが短い人から並べる
         var _pp = (typeof getPreciousPeople === 'function') ? getPreciousPeople() : [];
@@ -32187,8 +32206,14 @@ function renderDashboardView() {
               } else if (p.beyond) {
                 _right = '<span style="color:#5c6b4a;font-weight:700;">見込みを超えて</span>';
               } else if (typeof p.meetsLeft === 'number') {
+                // v0.45.1742: 【権威】2026-08-25、ゆかりの人にも秒を出してほしい、との指示。
+                // 「あと66回」は胸に迫るが、回数は動かない。秒は見ているあいだにも減る。
+                // その人と過ごせる時間が、いま削られていることが分かる。
                 _right = '<span style="font-size:1.15em;font-weight:700;color:#8b7355;">あと ' +
-                         _fmt(p.meetsLeft) + ' 回</span>';
+                         _fmt(p.meetsLeft) + ' 回</span>' +
+                         '<div class="yukari-sec" data-sec="' + p.leftSec + '" ' +
+                         'style="font-size:0.62em;color:#b8b0a2;font-variant-numeric:tabular-nums;' +
+                         'margin-top:1px;">' + _fmt(p.leftSec) + ' 秒</div>';
               } else {
                 _right = '<span style="font-size:0.75em;color:#c8c2b6;">—</span>';
               }
@@ -32205,6 +32230,9 @@ function renderDashboardView() {
         }
       }
     }
+    // v0.45.1742: 描き終えてから、秒を動かし始める
+    if (_life && typeof _startLifeTick === 'function') _startLifeTick();
+    else if (typeof _stopLifeTick === 'function') _stopLifeTick();
   } catch (eLife) { console.warn('[Life] 一生の暦の描画に失敗:', eLife && eLife.message); }
 
   // 庭の情報
@@ -70210,6 +70238,41 @@ function _showTravelTemplateResult(r) {
   renderTravelListView();
 }
 window._showTravelTemplateResult = _showTravelTemplateResult;
+
+// v0.45.1742: 【権威】2026-08-25、秒がカウントダウンで減っていく形にしてほしい、との指示。
+// そのとおりで、止まった数字は「大きい数」でしかないが、
+// 減っていく数字は「なくなるもの」に見える。時間が有限だと伝わるのは動いているときだけ。
+//
+// 毎秒すべてを描き直すのではなく、秒の文字だけを書き換える（第46条・重い処理を避ける）。
+// ダッシュボードを見ていないときは止める。裏で動かし続ける意味がない。
+var _lifeTickTimer = null;
+function _startLifeTick() {
+  if (_lifeTickTimer) return;
+  _lifeTickTimer = setInterval(function() {
+    try {
+      var dv = document.getElementById('dashboardView');
+      if (!dv || dv.style.display === 'none') { _stopLifeTick(); return; }
+      var fmt = function(n) { return Number(n).toLocaleString('ja-JP'); };
+      // 自分の残り秒
+      var me = document.getElementById('dbLifeSec');
+      if (me && me.dataset.sec) {
+        var s = parseInt(me.dataset.sec, 10) - 1;
+        if (s >= 0) { me.dataset.sec = s; me.textContent = fmt(s) + ' 秒'; }
+      }
+      // ゆかりの人の残り秒
+      var list = document.querySelectorAll('.yukari-sec');
+      for (var i = 0; i < list.length; i++) {
+        var v = parseInt(list[i].dataset.sec, 10) - 1;
+        if (v >= 0) { list[i].dataset.sec = v; list[i].textContent = fmt(v) + ' 秒'; }
+      }
+    } catch (e) { _stopLifeTick(); }
+  }, 1000);
+}
+function _stopLifeTick() {
+  if (_lifeTickTimer) { clearInterval(_lifeTickTimer); _lifeTickTimer = null; }
+}
+window._startLifeTick = _startLifeTick;
+window._stopLifeTick = _stopLifeTick;
 
 // 旅の種類ひとつから、持ち物と事前にやることの両方を入れる。
 // 既にある項目は飛ばすので、何度押しても二重にならない。
