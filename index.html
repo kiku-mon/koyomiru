@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1765 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1766 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1765';
+    const APP_VERSION = 'v0.45.1766';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39346,6 +39346,78 @@ async function leaveSharedCalendar(calendarId) {
 }
 
 // 共有カレンダーごと削除する（オーナーのみ／全メンバーから消える）
+// v0.45.1766: 【権威】2026-08-26、気軽に作ったカレンダーが、
+// 誰かの予定が残っているせいで消せないのは面倒である、強制削除を作れ、との指示。
+//
+// 実際に起きたこと：Maoさんが作った「きくモン」カレンダーに私が参加し、
+// カレンダーが増えたので抜けた。しかし私の書いた予定が残っていたため、
+// Maoさんは自分で作ったカレンダーを片づけられなくなった。
+//
+// 消す順序が要る。カレンダーの行だけ消しても、予定・コメント・参加者が
+// 宙に浮いて残る（クラウドの設定によっては、外部キーで削除そのものが弾かれる）。
+// 中身から先に消し、器は最後に消す。
+//
+// 第62条：削除はクラウドへ必ず伝播させる。ここでは器ごと消えるので、
+// 参加していた全員の手元からも、次の取り込みで消える。
+// あわせて墓石を置き、復活しないようにする。
+async function forceDeleteSharedCalendar(calendarId) {
+  if (window._isTesting || window._smokeTestRunning) return null;
+  if (!window.supabaseClient) return { error: { message: 'ログインが必要です' } };
+  var _sb = window.supabaseClient;
+  var _log = function(m) { if (typeof window._dbgLog === 'function') window._dbgLog('[強制削除] ' + m); };
+  try {
+    // ① 予定に墓石を立てる（消す前に印を残す。復活を防ぐため）
+    var _tasks = await _sb.from('koyomiru_shared_tasks').select('id').eq('calendar_id', calendarId);
+    var _ids = (_tasks.data || []).map(function(x) { return x.id; });
+    _log('この器の予定 ' + _ids.length + '件');
+
+    // ② コメントを消す（予定にぶら下がっているので先に）
+    if (_ids.length > 0) {
+      var _c = await _sb.from('koyomiru_task_comments').delete().in('task_id', _ids);
+      if (_c.error) _log('コメント削除の警告: ' + _c.error.message);
+      else _log('コメントを消しました');
+    }
+
+    // ③ 予定を消す
+    var _t = await _sb.from('koyomiru_shared_tasks').delete().eq('calendar_id', calendarId);
+    if (_t.error) return { error: { message: '予定を消せませんでした: ' + _t.error.message } };
+    _log('予定を消しました');
+
+    // ④ 参加者を外す
+    var _m = await _sb.from('koyomiru_shared_calendar_members').delete().eq('calendar_id', calendarId);
+    if (_m.error) _log('参加者削除の警告: ' + _m.error.message);
+    else _log('参加者を外しました');
+
+    // ⑤ 最後に器そのものを消す
+    var _r = await _sb.from('koyomiru_shared_calendars').delete().eq('id', calendarId).select('id');
+    if (_r.error) return { error: { message: 'カレンダーを消せませんでした: ' + _r.error.message } };
+    if (!_r.data || _r.data.length === 0) {
+      return { error: { message: '作った人だけが消せます' } };
+    }
+    _log('カレンダーを消しました');
+
+    // ⑥ 手元も片づける（第62条：クラウドと手元を必ず揃える）
+    try {
+      var _localGone = 0;
+      for (var i = allTasks.length - 1; i >= 0; i--) {
+        if (allTasks[i] && allTasks[i].cloudCalendarId === calendarId) {
+          if (typeof _propagateDeletion === 'function') {
+            try { _propagateDeletion(allTasks[i].id); } catch (e2) {}
+          }
+          allTasks.splice(i, 1); _localGone++;
+        }
+      }
+      if (_localGone > 0) { saveAllTasks(); _log('この端末からも ' + _localGone + '件消しました'); }
+      if (typeof _removeLocalSharedCalendar === 'function') _removeLocalSharedCalendar(calendarId, 'delete');
+    } catch (eLocal) { _log('手元の後始末で警告: ' + (eLocal && eLocal.message)); }
+
+    return { data: { deleted: true, tasks: _ids.length } };
+  } catch (e) {
+    return { error: { message: (e && e.message) || '消せませんでした' } };
+  }
+}
+window.forceDeleteSharedCalendar = forceDeleteSharedCalendar;
+
 async function deleteSharedCalendar(calendarId) {
   if (window._isTesting || window._smokeTestRunning) return null;
   if (!window.supabaseClient) return null;
@@ -41898,7 +41970,13 @@ async function refreshSharedCalendarList() {
           '</div>' +
           (_isOwner ?
             '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
-            '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">参加している全員の画面から消えます。取り消せません。</div>'
+            '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">参加している全員の画面から消えます。取り消せません。</div>' +
+            // v0.45.1766: 予定が残っていて消せないときのための道。
+            // 気軽に作ったカレンダーを片づけられないのは、作った人にとって負担になる。
+            '<button onclick="forceDeleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\')" ' +
+              'style="width:100%;margin-top:6px;padding:8px;border:none;border-radius:8px;' +
+              'background:none;color:#c08a7a;font-size:0.74em;cursor:pointer;text-decoration:underline;">' +
+              '中身ごと強制的に消す</button>'
             :
             '<button onclick="leaveSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #dcdcdc;border-radius:8px;background:#fff;color:#666;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーから抜ける</button>' +
             '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">あなたの画面からだけ消えます。他の人には残ります。</div>') +
@@ -41999,7 +42077,68 @@ async function leaveSharedCalendarFromModal(calendarId, name, btn) {
     refreshSharedCalendarList();
   });
 }
-async function deleteSharedCalendarFromModal(calendarId, name, btn) {
+// v0.45.1766: 強制削除の確認。ブラウザ標準の確認窓は使わない（第55条）。
+// 取り返しがつかない操作なので、聞く回数を増やす。ただし同じ問いを繰り返さない。
+// 一段ごとに「何が消えるか」を具体的に示し、進むほど重い言葉にする。
+async function forceDeleteSharedCalendarFromModal(calendarId, name) {
+  try {
+    // どれだけのものが消えるかを、先に数えて見せる
+    var _cnt = 0, _members = 0;
+    try {
+      var _t = await window.supabaseClient.from('koyomiru_shared_tasks')
+        .select('id', { count: 'exact', head: true }).eq('calendar_id', calendarId);
+      _cnt = _t.count || 0;
+      var _m = await window.supabaseClient.from('koyomiru_shared_calendar_members')
+        .select('user_id', { count: 'exact', head: true }).eq('calendar_id', calendarId);
+      _members = _m.count || 0;
+    } catch (e) {}
+
+    showChoiceModal({
+      title: '「' + name + '」を消す',
+      desc: 'このカレンダーには <b>予定 ' + _cnt + '件</b>、<b>参加者 ' + _members + '人</b> がいます。',
+      buttons: [
+        { label: '消す手続きに進む', style: 'danger', onClick: function() {
+            showChoiceModal({
+              title: '参加している人の画面からも消えます',
+              desc: '他の人が書いた予定も、コメントも、すべて消えます。<br>' +
+                    '消したことは、参加者に知らされません。',
+              buttons: [
+                { label: 'それでも消す', style: 'danger', onClick: function() {
+                    showChoiceModal({
+                      title: '元に戻せません',
+                      desc: '<b>予定 ' + _cnt + '件</b> と、そこに書かれたやり取りが失われます。<br>' +
+                            '取り消す方法はありません。<br><br>' +
+                            '最後の確認です。本当に消しますか。',
+                      buttons: [
+                        { label: '消す', style: 'danger', onClick: async function() {
+                            _sharedCalSetStatus('消しています…', 'info');
+                            var r = await forceDeleteSharedCalendar(calendarId);
+                            if (!r || r.error) {
+                              _sharedCalSetStatus('⚠️ ' + ((r && r.error && r.error.message) || '消せませんでした'), 'error');
+                            } else {
+                              _sharedCalSetStatus('✅ 「' + name + '」を消しました（予定 ' + (r.data.tasks || 0) + '件）', 'success');
+                            }
+                            refreshSharedCalendarList();
+                            if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
+                              renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+                            }
+                          } },
+                        { label: 'やめる', style: 'cancel', onClick: function() {} }
+                      ]
+                    });
+                  } },
+                { label: 'やめる', style: 'cancel', onClick: function() {} }
+              ]
+            });
+          } },
+        { label: 'やめる', style: 'cancel', onClick: function() {} }
+      ]
+    });
+  } catch (e) { console.warn('[SharedCal] 強制削除の確認で失敗:', e && e.message); }
+}
+window.forceDeleteSharedCalendarFromModal = forceDeleteSharedCalendarFromModal;
+
+function deleteSharedCalendarFromModal(calendarId, name, btn) {
   _sharedCalConfirmButton(btn, 'もう一度押すと全員から消えます', async function() {
     var r = await deleteSharedCalendar(calendarId);
     // v0.45.1523: DB側が権限で弾かれても、この端末の共有だけは必ず解除する。
