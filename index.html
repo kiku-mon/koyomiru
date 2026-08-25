@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1742 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1743 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1742';
+    const APP_VERSION = 'v0.45.1743';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -40680,7 +40680,23 @@ async function unifiedPushTasks() {
   if (!window._personalCalendarId) {
     try { await unifiedEnsurePersonalCalendarAndMigrate(); } catch(e) { console.warn('[Unified] 初期化リトライ失敗:', e); }
   }
-  if (!window._personalCalendarId) return null;
+  // v0.45.1743: 【権威】2026-08-25、共有カレンダーへ書いても8月20日以降1件も上がらない、
+  // 相手の書き込みも届かない、との報告。編集して保存し直しても上がらないことを確認済み。
+  //
+  // ここで「カレンダーに属さない記録」の器が取れないと、1件も送らずに終わっていた。
+  // その器は日誌や写真の受け皿であって、共有カレンダーの予定とは無関係なのに、
+  // それが無いというだけで共有まで止まるのは筋が通らない。
+  // 器が取れないときは、もう一度だけ所属を引き直して確かめる。
+  if (!window._personalCalendarId) {
+    try {
+      if (typeof unifiedRefreshMyCalendarIds === 'function') await unifiedRefreshMyCalendarIds();
+    } catch (e2) { console.warn('[Unified] 所属の引き直しに失敗:', e2 && e2.message); }
+  }
+  if (!window._personalCalendarId) {
+    // それでも取れないなら、共有カレンダーの分だけでも送る。
+    // 全部を止めるより、送れるものを送るほうが害が小さい。
+    console.warn('[Unified] 記録の器が取れないため、共有カレンダーの分だけ送ります');
+  }
   // v0.45.1353: 上のawait待ちの間にスモークテストが始まった場合、
   // テスト中の一時的なallTasksの状態が実クラウドへ送信されてしまう恐れがある。
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1378: 多層防御
@@ -40706,6 +40722,13 @@ async function unifiedPushTasks() {
     _allowed = {};
     (window._myCalendarIds || []).forEach(function(id) { _allowed[id] = true; });
     if (window._personalCalendarId) _allowed[window._personalCalendarId] = true;
+    // v0.45.1743: 所属が1件も取れていないときは、絞り込み自体をやめる。
+    // 「自分のものが1つも無い」は、権限の判定ではなく取得の失敗である可能性が高い。
+    // そこで全部を止めると、共有カレンダーへの書き込みが永久に届かなくなる。
+    if (Object.keys(_allowed).length === 0) {
+      console.warn('[Unified] 所属が取れないため、絞り込みをやめて送ります');
+      _allowed = null;
+    }
     // v0.45.1738: 【権威】2026-08-25、共有した予定が相手に届かない、との報告。
     // 調べたところ、書き出しの中で351件が送られずに手元へ留まっていた。
     // 原因は v0.45.1725 で「個人用は手元の一覧に取り込まない」と変えたこと。
