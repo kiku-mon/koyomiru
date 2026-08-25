@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1746 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1752 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1746';
+    const APP_VERSION = 'v0.45.1752';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2349,9 +2349,36 @@
          150px空ければ、タブ帯を避けたうえで、背景を押して閉じる余地も残る。
          iOSでは100vhが実際の見える高さより大きくなるので、--vh（実測値）を使う。 */
       .monthly-sidebar.open {
-        height: calc(var(--vh, 1vh) * 100 - 108px);
+        /* v0.45.1752: 【権威】2026-08-25、ボトムシートを3段にする設計。
+           この箱には性質の違うものが5種類（暦・予定の一覧・予定の中身・
+           コメント・追加フォーム）詰まっており、同じ高さの中で押し合っていた。
+           コメントが増えれば暦が押し出される。高さが1段しかないのが根。
+
+           段の境目は、中身の性質が変わるところに置く。
+             第1段 30% … 暦だけ（自然が決めるもの・予定が無い日でもある）
+             第2段 60% … 暦＋予定（自分が決めるもの・いちばん使う）
+             第3段 92% … すべて（人と交わすもの・コメントを読む）
+           引き上げるにつれ、自然 → 自分 → 他人 と広がる。
+
+           既定は第2段。高さは data-snap で切り替える（class を増やさない）。 */
+        height: calc(var(--vh, 1vh) * 100 * 0.60);
         width: 100% !important;
+      
+        transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
       }
+      .monthly-sidebar.open[data-snap="1"] { height: calc(var(--vh, 1vh) * 100 * 0.30); }
+      .monthly-sidebar.open[data-snap="2"] { height: calc(var(--vh, 1vh) * 100 * 0.60); }
+      .monthly-sidebar.open[data-snap="3"] { height: calc(var(--vh, 1vh) * 100 - 108px); }
+      /* いま何段目かを示す点。押せば何が増えるか予想できるようにする */
+      .msb-snap-dots {
+        display: flex; justify-content: center; gap: 5px;
+        padding: 2px 0 6px; pointer-events: none;
+      }
+      .msb-snap-dot {
+        width: 5px; height: 5px; border-radius: 50%;
+        background: #dcd7cc; transition: background 0.2s, transform 0.2s;
+      }
+      .msb-snap-dot.on { background: #8b7355; transform: scale(1.3);}
     }
     /* サイドバー背景オーバーレイ（スマホ用） */
     .monthly-sidebar-overlay {
@@ -6917,6 +6944,13 @@
     </div>
     <!-- 右サイドバー（タイムツリー方式・全機能） -->
     <div id="monthlySidebar" class="monthly-sidebar" onclick="event.stopPropagation()">
+      <!-- v0.45.1752: いま何段目かを示す点。3つのうち、光っているのが今の高さ。
+           押せば何が増えるか予想できるようにするためのもので、飾りではない。 -->
+      <div class="msb-snap-dots" id="msbSnapDots">
+        <span class="msb-snap-dot" data-i="1"></span>
+        <span class="msb-snap-dot on" data-i="2"></span>
+        <span class="msb-snap-dot" data-i="3"></span>
+      </div>
       <div class="monthly-sidebar-header">
         <div>
           <!-- v0.45.1681: 【権威】2026-08-20、過ぎた日と同じく、今日や先の日でも
@@ -11996,11 +12030,38 @@ function renderTodoList() {
       // 元々クラウドから取得した内容なので、そのまま追いかけて再アップロードする必要はない。
       if (skipCloudSync) {
         if (typeof _syncLog === 'function') _syncLog('ローカル保存のみ（クラウド由来のデータのため再アップロード予約なし）');
+        // v0.45.1747: 【権威】2026-08-25、共有カレンダーへ書いても相手に届かない件。
+        // デバッグ画面の記録に、プルは何度も走っているのに送信が一度も無かった。
+        //
+        // プルは0.02秒ほどの間隔で連続して走り、そのたびに saveAllTasks(true) を呼ぶ。
+        // 送信は保存の1.2秒後に予約されるが、その待ち時間のあいだにプルが割り込み、
+        // クラウドの内容で allTasks を丸ごと入れ替える。
+        // 予約が実行される頃には、手元で加えた変更が消えている。
+        // 結果、送るものが無くなり、いつまでも相手に届かない。
+        //
+        // 手元にまだ送っていない変更があるなら、プルのあとに送り直す。
+        // クラウド由来の保存でも、送信の予約自体は消してはいけない。
+        try {
+          if (window._cloudIsLoggedIn && window._pendingLocalChange &&
+              typeof window.unifiedPushTasks === 'function') {
+            if (window._cloudAutoSaveTimer) clearTimeout(window._cloudAutoSaveTimer);
+            window._cloudAutoSaveTimer = setTimeout(function() {
+              window._cloudAutoSaveTimer = null;
+              window._pendingLocalChange = false;
+              if (typeof _syncLog === 'function') _syncLog('プル後の送り直し（手元の変更を守る）');
+              window.unifiedPushTasks().catch(function(e){ console.warn('[Unified] 送り直し失敗:', e); });
+            }, 1500);
+          }
+        } catch (e) {}
       } else if (window._cloudIsLoggedIn && typeof window.unifiedPushTasks === 'function') {
         if (window._cloudAutoSaveTimer) clearTimeout(window._cloudAutoSaveTimer);
+        // v0.45.1747: 手元で変更が起きたことを覚えておく。
+        // プルに割り込まれて予約が空振りしても、これがあれば送り直せる。
+        window._pendingLocalChange = true;
         if (typeof _syncLog === 'function') _syncLog('自動アップロード予約（1.2秒後・統一エンジン）', 'allTasks ' + allTasks.length + '件・トリガー元: saveAllTasks');
         window._cloudAutoSaveTimer = setTimeout(function() {
           window._cloudAutoSaveTimer = null;
+          window._pendingLocalChange = false;
           if (typeof _syncLog === 'function') _syncLog('自動アップロード実行（予約から1.2秒経過・統一エンジン）');
           // v0.45.1344: 旧supabaseSyncUp（koyomiru_tasksブロブ方式）から
           // unifiedPushTasks（koyomiru_shared_tasks・1タスク1行方式）へ切り替え。
@@ -20281,6 +20342,80 @@ function expandSidebarKoyomi() {
 }
 window.expandSidebarKoyomi = expandSidebarKoyomi;
 
+// ===== v0.45.1752: ボトムシートの3段 =====
+// 【権威】2026-08-25、Googleマップのように段を分けてはどうか、との提案。
+// 段の意味は、こよみるの中身から決める。
+//   1段目 … 暦だけ（自然が決めるもの）
+//   2段目 … 暦＋予定（自分が決めるもの）※既定
+//   3段目 … すべて（人と交わすもの・コメント）
+// 引き上げるにつれ、自然 → 自分 → 他人 と広がる。
+//
+// 高さは data-snap でCSSに任せる（クラスを増やさない・第31条）。
+// window に載せるのは、外の script からも呼べるようにするため（第3条・第59条）。
+window._msbSnap = 2;
+window.setMsbSnap = function(n) {
+  try {
+    n = Math.min(3, Math.max(1, Number(n) || 2));
+    window._msbSnap = n;
+    var sb = document.getElementById('monthlySidebar');
+    if (sb) sb.setAttribute('data-snap', String(n));
+    var dots = document.querySelectorAll('#msbSnapDots .msb-snap-dot');
+    for (var i = 0; i < dots.length; i++) {
+      if (Number(dots[i].dataset.i) === n) dots[i].classList.add('on');
+      else dots[i].classList.remove('on');
+    }
+  } catch (e) {}
+};
+
+// つまみを指で動かしたとき、いちばん近い段に吸い付ける。
+// 途中の高さで止めない。中途半端な高さは、どの中身も読みにくいため。
+window._msbInitDrag = function() {
+  var sb = document.getElementById('monthlySidebar');
+  var grip = document.getElementById('msbSnapDots');
+  if (!sb || !grip || grip.dataset.bound === '1') return;
+  grip.dataset.bound = '1';
+  grip.style.pointerEvents = 'auto';
+  var startY = 0, startH = 0, dragging = false;
+  var vh = function() { return window.innerHeight || 800; };
+
+  grip.addEventListener('touchstart', function(e) {
+    var t = e.touches[0];
+    startY = t.clientY;
+    startH = sb.getBoundingClientRect().height;
+    dragging = true;
+    sb.style.transition = 'none';
+  }, { passive: true });
+
+  grip.addEventListener('touchmove', function(e) {
+    if (!dragging) return;
+    var t = e.touches[0];
+    var h = startH + (startY - t.clientY);
+    var min = vh() * 0.20, max = vh() - 108;
+    sb.style.height = Math.min(max, Math.max(min, h)) + 'px';
+    e.preventDefault();
+  }, { passive: false });
+
+  grip.addEventListener('touchend', function() {
+    if (!dragging) return;
+    dragging = false;
+    var h = sb.getBoundingClientRect().height;
+    var targets = [vh() * 0.30, vh() * 0.60, vh() - 108];
+    var best = 0, diff = Infinity;
+    for (var i = 0; i < targets.length; i++) {
+      var dd = Math.abs(targets[i] - h);
+      if (dd < diff) { diff = dd; best = i; }
+    }
+    sb.style.transition = '';
+    sb.style.height = '';
+    window.setMsbSnap(best + 1);
+  }, { passive: true });
+
+  grip.addEventListener('click', function(e) {
+    var t = e.target;
+    if (t && t.dataset && t.dataset.i) window.setMsbSnap(Number(t.dataset.i));
+  });
+};
+
 function openMonthlySidebar(dateStr) {
       // v0.45.1561: 開き直したら絞り込みに戻す。前の日で「全部見る」にしたまま
       // 引きずると、チップと合っていない状態がまた生まれる。
@@ -20291,6 +20426,10 @@ function openMonthlySidebar(dateStr) {
       _sidebarDateStr = dateStr;
       var sb = document.getElementById('monthlySidebar');
       if (!sb) return;
+      // v0.45.1752: 開くときは必ず2段目から。
+      // 前の日で3段目まで上げたまま引きずると、暦が見えない状態で始まる。
+      if (typeof window.setMsbSnap === 'function') window.setMsbSnap(2);
+      if (typeof window._msbInitDrag === 'function') window._msbInitDrag();
       // v0.45.1672: 過ぎた日は暦を畳む。
       // 暦は「これからどう動くか」を考えるための材料なので、過ぎた日では役目を終えている。
       // 今日・これから先はそのまま出す（暦がいちばん効く場面なので）。
@@ -38597,16 +38736,41 @@ async function renderTaskComments(taskId) {
             '<span style="font-size:13px;font-weight:700;color:' + (_mine ? '#0b6bcb' : '#5b6472') + ';">' +
               _esc(c.display_name || 'メンバー') + '</span>' +
             '<span style="font-size:10px;color:#c0c0c0;">' + _when + '</span>' +
-            (_mine ? '<button onclick="removeTaskCommentFromUI(\'' + c.id + '\')" style="margin-left:auto;background:none;border:none;color:#ccc;font-size:12px;cursor:pointer;padding:0 2px;">✕</button>' : '') +
+            (_mine
+              ? '<span style="margin-left:auto;display:flex;gap:8px;">' +
+                  '<button onclick="editTaskCommentFromUI(\'' + c.id + '\',\'' + taskId + '\')" ' +
+                    'style="background:none;border:none;color:#9aa3af;font-size:11px;cursor:pointer;padding:0 2px;">直す</button>' +
+                  '<button onclick="removeTaskCommentFromUI(\'' + c.id + '\')" ' +
+                    'style="background:none;border:none;color:#ccc;font-size:12px;cursor:pointer;padding:0 2px;">✕</button>' +
+                '</span>'
+              : '') +
           '</div>' +
           '<div style="font-size:15px;color:#333;line-height:1.7;white-space:pre-wrap;word-break:break-all;">' +
             _lnk(c.body) + '</div>' +
         '</div>';
       }).join('');
+  // v0.45.1751: 【権威】2026-08-25、コメントが2件で画面が埋まり、
+  // 3件目が書けない・予定そのものが読めない・折りたためない、との報告。
+  //
+  // 原因は、コメントの一覧に高さの上限が無かったこと。
+  // 増えるほど下へ伸び、入力欄が画面の外へ押し出されて書けなくなる。
+  // 予定の中身まで押し潰されるので、他の予定を見ることもできない。
+  //
+  // 一覧に高さの上限を与え、そこだけを送って読む形にする。
+  // あわせて、多いときは畳めるようにする（既定は開く。少なければ畳む意味がない）。
+  var _open = (window._commentOpenState && window._commentOpenState[taskId] !== false);
+  var _many = rows.length >= 3;
   host.innerHTML =
     '<div style="border-top:1px solid #eee;background:#fafbfc;">' +
-      '<div style="padding:9px 16px 5px;font-size:13px;font-weight:700;color:#666;">💬 この予定について（' + rows.length + '）</div>' +
-      listHtml +
+      '<div onclick="window.toggleCommentFold(\'' + taskId + '\')" ' +
+        'style="padding:9px 16px 5px;font-size:13px;font-weight:700;color:#666;' +
+        'cursor:pointer;display:flex;align-items:center;justify-content:space-between;">' +
+        '<span>💬 この予定について（' + rows.length + '）</span>' +
+        (_many ? '<span style="font-size:11px;color:#999;">' + (_open ? '畳む ▾' : '開く ▸') + '</span>' : '') +
+      '</div>' +
+      (_open
+        ? '<div style="max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch;">' + listHtml + '</div>'
+        : '<div style="padding:8px 16px;font-size:12px;color:#aaa;">' + rows.length + '件のやり取りを畳んでいます</div>') +
       '<div style="display:flex;gap:6px;padding:10px 16px 12px;">' +
         '<input id="msbCommentInput" type="text" placeholder="コメントを書く…" maxlength="500" ' +
           'onkeydown="if(event.key===\'Enter\'&&!event.isComposing)postTaskCommentFromUI()" ' +
@@ -38616,6 +38780,50 @@ async function renderTaskComments(taskId) {
     '</div>';
 }
 window.renderTaskComments = renderTaskComments;
+
+// v0.45.1751: コメントの折りたたみ。多くなったら畳んで、予定そのものを読めるようにする。
+window._commentOpenState = window._commentOpenState || {};
+function toggleCommentFold(taskId) {
+  try {
+    if (!window._commentOpenState) window._commentOpenState = {};
+    var cur = (window._commentOpenState[taskId] !== false);
+    window._commentOpenState[taskId] = !cur;
+    if (typeof renderTaskComments === 'function') renderTaskComments(taskId);
+  } catch (e) {}
+}
+window.toggleCommentFold = toggleCommentFold;
+
+// v0.45.1751: 【権威】2026-08-25、コメントの編集ができない、との指摘。
+// 書き間違えたら消して書き直すしかなく、やり取りの流れが切れる。
+// 自分の書いたものだけ直せるようにする（他人のものは触らない）。
+async function editTaskCommentFromUI(commentId, taskId) {
+  try {
+    var r = await listTaskComments(taskId);
+    var row = (r && r.data || []).find(function(c) { return c.id === commentId; });
+    if (!row) return;
+    if (row.user_id !== window._cloudUserId) {
+      if (window.showToast) showToast('自分が書いたものだけ直せます', {type:'warn'});
+      return;
+    }
+    showTextInputModal({
+      title: 'コメントを直す',
+      defaultValue: row.body || '',
+      onSubmit: async function(newBody) {
+        newBody = (newBody || '').trim();
+        if (!newBody || newBody === row.body) return;
+        var up = await window.supabaseClient.from('koyomiru_task_comments')
+          .update({ body: newBody, updated_at: new Date().toISOString() })
+          .eq('id', commentId);
+        if (up.error) {
+          if (window.showToast) showToast('直せませんでした: ' + up.error.message, {type:'error'});
+          return;
+        }
+        if (typeof renderTaskComments === 'function') renderTaskComments(taskId);
+      }
+    });
+  } catch (e) { console.warn('[Comment] 編集に失敗:', e && e.message); }
+}
+window.editTaskCommentFromUI = editTaskCommentFromUI;
 
 async function postTaskCommentFromUI() {
   var taskId = window._openCommentTaskId;
@@ -40701,8 +40909,8 @@ async function unifiedPushTasks() {
   // コンソールが使えない端末でも追えるよう、要所をデバッグ画面に残す。
   // 黙って終わる場所があると、動いているのか止まっているのかすら分からない。
   var _dbg = (typeof window._dbgLog === 'function') ? window._dbgLog : function(){};
-  _dbg('[送信] 開始 手元' + allTasks.length + '件 所属' +
-       ((window._myCalendarIds||[]).length) + '件 記録の器=' +
+  _dbg('[送信] この端末の予定' + allTasks.length + '件 / 参加しているカレンダー' +
+       ((window._myCalendarIds||[]).length) + '件 / カレンダーに属さない記録の置き場=' +
        (window._personalCalendarId ? 'あり' : 'なし'));
   // v0.45.1353: 上のawait待ちの間にスモークテストが始まった場合、
   // テスト中の一時的なallTasksの状態が実クラウドへ送信されてしまう恐れがある。
@@ -40787,16 +40995,40 @@ async function unifiedPushTasks() {
   // v0.45.1744: ここが黙って終わる場所だった。
   // 送るものが無いのか、絞り込みで全部落ちたのかが分からないと、
   // 動いているのか止まっているのかすら判断できない。
+  // v0.45.1749: 【権威】2026-08-25、予定の送信はこのアプリの一番の要所なので、
+  // その記録は誰が見ても分かるほど大きく出すこと、との指示。
+  // 他の記録に埋もれて見落とせば、届いていないことに気づけない。
   if (toPush.length === 0) {
-    _dbg('[送信] 送る対象が0件（前回の控え' + Object.keys(_prevSnapshot).length + '件）');
+    _dbg('');
+    _dbg('════════════════════════════════');
+    _dbg('　⚠️  クラウドへ送るものがありません');
+    _dbg('　　　この端末の予定　　' + allTasks.length + '件');
+    _dbg('　　　保存済みの控え　　' + Object.keys(_prevSnapshot).length + '件');
+    _dbg('　　　すべてクラウドに保存済みと判断されました');
+    _dbg('════════════════════════════════');
+    _dbg('');
     return null;
   }
-  _dbg('[送信] ' + toPush.length + '件を送ります');
+  _dbg('');
+  _dbg('════════════════════════════════');
+  _dbg('　📤  予定 ' + toPush.length + '件 をクラウドへ送ります');
+  _dbg('════════════════════════════════');
+  _dbg('');
   var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
   if (r.error) {
     console.error('[Unified] プッシュ失敗:', r.error.message);
     window._cloudPushFailed = true;
-    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プッシュ失敗: ' + r.error.message);
+    // v0.45.1749: 失敗はいちばん大きく出す。黙って失敗するのが最も困る。
+    if (typeof window._dbgLog === 'function') {
+      window._dbgLog('');
+      window._dbgLog('════════════════════════════════');
+      window._dbgLog('　❌  クラウドへ保存できませんでした（' + toPush.length + '件）');
+      window._dbgLog('　　　' + r.error.message);
+      window._dbgLog('　　　この端末にだけ残っています');
+      window._dbgLog('　　　共有カレンダーに参加している人の画面には出ません');
+      window._dbgLog('════════════════════════════════');
+      window._dbgLog('');
+    }
   }
   else {
     window._cloudPushFailed = false;
@@ -40808,7 +41040,32 @@ async function unifiedPushTasks() {
     if (typeof _syncLog === 'function') _syncLog('統一同期：プッシュ完了', toPush.length + '件（差分）');
     // v0.45.1348: デバッグパネル（_dbg_log）にも記録。console.logはスマホのDevToolsが
     // なければ確認できないため、デバッグパネルで直接見える形にする。
-    if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プッシュ完了: ' + toPush.length + '件（差分） → calendar=' + (window._personalCalendarId || '?'));
+    // v0.45.1749: 成功も同じ大きさで出す。届いたかどうかが一番知りたいこと。
+    // v0.45.1750: 【権威】2026-08-25、「相手」が誰を指すのか状況で変わる、
+    // 一義的に特定できる言葉を使え、との指示。そのとおり。
+    // 「相手」は、共有カレンダーの参加者を指すこともあれば、
+    // 自分の別の端末を指すこともある。読む人によって意味が変わる。
+    // 何を、どのカレンダーへ送ったのかを、名前で書く。
+    if (typeof window._dbgLog === 'function') {
+      var _byCal = {};
+      toPush.forEach(function(row) {
+        var _cid = row.calendar_id;
+        var _cal = (allSettings.calendar && allSettings.calendar.list || []).find(function(c) {
+          return c && c.cloudCalendarId === _cid;
+        });
+        var _nm = _cal ? _cal.name : (_cid === window._personalCalendarId ? 'カレンダーに属さない記録' : '不明');
+        _byCal[_nm] = (_byCal[_nm] || 0) + 1;
+      });
+      window._dbgLog('');
+      window._dbgLog('════════════════════════════════');
+      window._dbgLog('　✅  クラウドへ保存できました（' + toPush.length + '件）');
+      Object.keys(_byCal).forEach(function(nm) {
+        window._dbgLog('　　　' + nm + '　' + _byCal[nm] + '件');
+      });
+      window._dbgLog('　　　共有カレンダーの分は、参加している人の画面にも出ます');
+      window._dbgLog('════════════════════════════════');
+      window._dbgLog('');
+    }
   }
   return r;
 }
@@ -42732,7 +42989,32 @@ function _unifiedStartRealtimeSubscription(userId) {
           if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RTイベント受信: ' + (payload && payload.eventType) + ' cal=' + (calId ? calId.slice(0, 8) : '?') + (calId && window._myCalendarIds.indexOf(calId) === -1 ? '（自分のカレンダーでないため無視）' : ''));
           if (!calId || window._myCalendarIds.indexOf(calId) === -1) return; // 自分のカレンダーでなければ無視
           if (typeof _syncLog === 'function') _syncLog('統一同期：Realtimeイベント受信', 'calendar_id=' + calId);
-          unifiedPullTasks();
+          // v0.45.1748: 【権威】2026-08-25、送るべきものが送れていない、
+          // 割り込みは想定していなかった、全体を見直すべき、との指示。
+          //
+          // ここは変更の通知が来るたびに即座にプルしていた。間引きが無い。
+          // クラウドが1回変われば1回、10件まとめて変われば10回。
+          // 自分が送ったぶんの通知も返ってくるので、
+          //   送信 → 通知 → プル → 手元を上書き
+          // が短い間に繰り返され、その隙に入った変更が消える。
+          //
+          // 通知を受けたら少し待ち、その間に来た分はまとめて1回にする。
+          // 待つあいだに手元で書き加えたものは、プルの後に送り直される（v0.45.1747）。
+          if (window._rtPullTimer) clearTimeout(window._rtPullTimer);
+          window._rtPullTimer = setTimeout(function() {
+            window._rtPullTimer = null;
+            // 送信の予約が控えているなら、先にそちらを終わらせる。
+            // 送る前に引き込むと、手元の変更が上書きされて永久に届かない。
+            if (window._cloudAutoSaveTimer) {
+              if (typeof _syncLog === 'function') _syncLog('送信待ちのため、取り込みを後回しにします');
+              window._rtPullTimer = setTimeout(function() {
+                window._rtPullTimer = null;
+                unifiedPullTasks();
+              }, 2000);
+              return;
+            }
+            unifiedPullTasks();
+          }, 800);
         } catch(e2) { console.warn('[Unified] Realtimeイベント処理エラー:', e2); }
       })
       // v0.45.1566: 予定ごとのコメントもリアルタイムで届ける。
