@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1758 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1759 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1758';
+    const APP_VERSION = 'v0.45.1759';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -40995,12 +40995,25 @@ async function unifiedPushTasks() {
     // 所属の一覧（_myCalendarIds）はクラウドから引いており個人用も含む。
     // それが取れているなら、手元の一覧の有無は関係ない。
     // 念のため、手元の器も許すものとして加えておく（送れない方が損）。
-    try {
-      (allSettings.calendar.list || []).forEach(function(c) {
-        if (c && c.cloudCalendarId) _allowed[c.cloudCalendarId] = true;
-      });
-    } catch (eLocal) {}
-  } catch(eAllow) { _allowed = null; }   // 調べられないときは従来どおり送る（送れない方が損）
+    // v0.45.1759: 【権威】2026-08-25、送信の記録が「開始」で止まっていた件の真因。
+    // 直前で _allowed を null にする道（v0.45.1743）を作ったのに、
+    // ここ（v0.45.1738）は null になり得ることを考えていなかった。
+    // null に代入しようとして例外が飛び、catch に落ちて静かに終わっていた。
+    // 記録が「開始」の1行で途切れていたのは、これが理由。
+    //
+    // 私が入れた2つの修正が、互いに噛み合っていなかった。
+    // null のときは絞り込み自体をやめているので、足す必要もない。
+    if (_allowed) {
+      try {
+        (allSettings.calendar.list || []).forEach(function(c) {
+          if (c && c.cloudCalendarId) _allowed[c.cloudCalendarId] = true;
+        });
+      } catch (eLocal) {}
+    }
+  } catch(eAllow) {
+    _allowed = null;   // 調べられないときは従来どおり送る（送れない方が損）
+    _dbg('[送信] 送り先の確認でつまずきました: ' + (eAllow && eAllow.message));
+  }
   var _skipped = 0;
   var toPush = allTasks.filter(function(t){
     if (!t || !t.id) return false;
