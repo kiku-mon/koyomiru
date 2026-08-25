@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1759 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1762 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1759';
+    const APP_VERSION = 'v0.45.1762';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39181,6 +39181,66 @@ async function leaveSharedCalendar(calendarId) {
     console.warn('[SharedCal] 退出：削除された行が0件（権限設定を確認してください）');
     return { error: { message: '権限がないため退出できませんでした' } };
   }
+  // v0.45.1761: 【権威】2026-08-25、抜けたはずのカレンダー宛ての予定が手元に残り続け、
+  // 他の予定の送信まで巻き込んで止めていた、との実例。
+  //
+  // 起きたこと：Maoさんが作った「きくモン」カレンダーに参加したあと、
+  // カレンダーが増えすぎたので抜けた。ところが、その日そこへ書いた予定が
+  // 手元に残ったまま送り先を指し続け、権限に弾かれて、
+  // まとめて送っていた他の予定まで道連れにしていた。
+  //
+  // 抜けたなら、そのカレンダー宛ての予定も行き先を変えるのが筋。
+  //
+  // v0.45.1762: 【権威】2026-08-25、移す先を「カレンダーに属さない記録」にしたのは誤り、
+  // との指摘。そのとおり。あそこは日誌・写真・自由帳など、
+  // そもそもカレンダーに属さないものの置き場である。
+  // 予定は必ずどれかのカレンダーに属する。行き先を失った予定を
+  // あそこへ入れると、置き場の意味そのものが壊れる。
+  // 私は「消えないところ」を探して、意味の違う箱に入れてしまった。
+  //
+  // 正しい行き先は自分のカレンダー。既定は「メイン」、無ければ最初のもの。
+  // 書いた内容は失われず、自分の予定として手元に残る。
+  try {
+    var _dest = null, _destName = '';
+    var _cl = (allSettings.calendar && allSettings.calendar.list) || [];
+    var _main = _cl.find(function(c) { return c && c.name === 'メイン' && c.cloudCalendarId; });
+    if (!_main) _main = _cl.find(function(c) { return c && c.cloudCalendarId && c.cloudCalendarId !== calendarId; });
+    if (_main) { _dest = _main.cloudCalendarId; _destName = _main.name || 'あなたのカレンダー'; }
+    var _moved = 0;
+    allTasks.forEach(function(t) {
+      if (!t || t.cloudCalendarId !== calendarId) return;
+      t.cloudCalendarId = _dest;
+      if (_main && _main.id) t.calendarId = _main.id;   // 手元の所属も揃える
+      t.updatedAt = new Date().toISOString();
+      _moved++;
+    });
+    if (_moved > 0) {
+      saveAllTasks();
+      // 送信済みの控えからも外し、新しい送り先へ送り直させる
+      try {
+        var _snap = window._unifiedLastPushedSnapshot || {};
+        allTasks.forEach(function(t) {
+          if (t && t.cloudCalendarId === _dest) delete _snap[t.id];
+        });
+        window._unifiedLastPushedSnapshot = _snap;
+      } catch (eSnap) {}
+      console.info('[SharedCal] 抜けたカレンダーの予定 ' + _moved + '件を「' + _destName + '」へ移しました');
+      if (window.showToast) {
+        showToast('このカレンダーの予定 ' + _moved + '件を「' + (_destName || 'あなたのカレンダー') + '」へ移しました', {type:'ok', duration:5000});
+      }
+    }
+    // 手元のカレンダー一覧からも外す（表に出す理由がなくなったため）
+    var _list = (allSettings.calendar && allSettings.calendar.list) || [];
+    var _kept = _list.filter(function(c) { return !c || c.cloudCalendarId !== calendarId; });
+    if (_kept.length !== _list.length) {
+      allSettings.calendar.list = _kept;
+      calendars = allSettings.calendar.list;
+      saveAllSettings();
+      if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
+        renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+      }
+    }
+  } catch (eLeave) { console.warn('[SharedCal] 退出後の後始末に失敗:', eLeave && eLeave.message); }
   return r;
 }
 
@@ -41067,7 +41127,52 @@ async function unifiedPushTasks() {
   _dbg('　📤  予定 ' + toPush.length + '件 をクラウドへ送ります');
   _dbg('════════════════════════════════');
   _dbg('');
+  // v0.45.1760: 【権威】2026-08-25、送信の失敗理由がついに記録された。
+  //   new row violates row-level security policy
+  // 18件をまとめて1回で送っていたため、そのうち1件でも権限に弾かれると
+  // 残り17件まで巻き添えで失敗していた。実際、参加していないカレンダー宛ての
+  // 予定が1つ混じっただけで、共有カレンダーの予定が8月20日以降ずっと届かなかった。
+  //
+  // まとめて送るのは通信を減らすためだが、1件の失敗で全部を落とすなら本末転倒。
+  // まず全部まとめて試し、弾かれたときだけ1件ずつ送り直す。
+  // 普段は今までどおり1回で済み、問題があるときだけ丁寧に分ける。
   var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
+  if (r.error && toPush.length > 1) {
+    _dbg('　まとめて送れなかったので、1件ずつ送り直します（' + toPush.length + '件）');
+    var _okRows = [], _ngRows = [];
+    for (var _i = 0; _i < toPush.length; _i++) {
+      var _one = await window.supabaseClient.from('koyomiru_shared_tasks')
+        .upsert([toPush[_i]], { onConflict: 'id' });
+      if (_one.error) _ngRows.push({ row: toPush[_i], msg: _one.error.message });
+      else _okRows.push(toPush[_i]);
+    }
+    if (_okRows.length > 0) {
+      _dbg('　　' + _okRows.length + '件は送れました');
+      // 送れた分だけ控えに入れる。失敗した分は次回また送り直される。
+      var _snap = Object.assign({}, _prevSnapshot);
+      _okRows.forEach(function(row) { _snap[row.id] = row.updated_at; });
+      window._unifiedLastPushedSnapshot = _snap;
+      try {
+        window._unsentTaskIds = window._unsentTaskIds || {};
+        _okRows.forEach(function(row) { delete window._unsentTaskIds[row.id]; });
+        _ngRows.forEach(function(x) { window._unsentTaskIds[x.row.id] = x.msg; });
+      } catch (e) {}
+    }
+    if (_ngRows.length > 0) {
+      _dbg('');
+      _dbg('════════════════════════════════');
+      _dbg('　⚠️  ' + _ngRows.length + '件だけ送れませんでした');
+      _ngRows.slice(0, 3).forEach(function(x) {
+        var _nm = (x.row.data && (x.row.data.text || x.row.data.title)) || '(名前なし)';
+        _dbg('　　　' + String(_nm).slice(0, 20) + ' … ' + String(x.msg).slice(0, 60));
+      });
+      _dbg('　　　残りはこの端末に残っています');
+      _dbg('════════════════════════════════');
+      _dbg('');
+    }
+    // 1件でも送れていれば、全体としては成功扱いにする（残りは次回再送）
+    if (_okRows.length > 0) r = { error: null, data: _okRows };
+  }
   // v0.45.1756: 【権威】2026-08-25、失敗が分かることを先にやる、との方針。
   // 楽観的更新（手元を先に書き、あとでクラウドへ送る）は既にできている。
   // 足りないのは、送れなかったときに画面が黙っていること。
