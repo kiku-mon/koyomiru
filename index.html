@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1769 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1772 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1769';
+    const APP_VERSION = 'v0.45.1772';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -9310,12 +9310,10 @@
             style="width:16px;height:16px;accent-color:#c2185b;cursor:pointer;">
           <span style="font-size:0.85em;color:#555;">本能アイコンを表示する</span>
         </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="showInstinctColorCheck"
-            onchange="allSettings.ui.showInstinctColor=this.checked;saveAllSettings();renderAllSections();"
-            style="width:16px;height:16px;accent-color:#c2185b;cursor:pointer;">
-          <span style="font-size:0.85em;color:#555;">本能カラーを表示する</span>
-        </label>
+        <!-- v0.45.1772: 「本能カラーを表示する」は削除（第31条）。
+             左の線をカレンダーの色に一本化したため、押しても何も起きない設定になった。
+             残しておくと、効かないものを触らせることになる。
+             本能の分類そのもの（アイコン）は残っており、別の設定で切り替えられる。 -->
       </div>
       <!-- マトリクス層表示設定 -->
       <div style="background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
@@ -10779,6 +10777,41 @@ var MONTHLY_ROWH_MAX = 500;
 // これで、帯の描画と升目の中身が同じ数字を見るようになり、食い違いが起きない。
 
 // 帯の段組みを先に計算する。升目を作る前に呼ぶ。
+// v0.45.1770: 【権威】2026-08-26、複数日にまたがる予定はカレンダーの色で描かれるのに、
+// 単日の予定は象限の色（緊急かつ重要＝赤など）で描かれていて、統一感がない、との指摘。
+// そのとおり。同じカレンダーの予定が、またぐかどうかで違う色になるのは筋が通らない。
+//
+// 色は「どのカレンダーのものか」を示すべきである。
+// 象限は日次のマトリクスで見るもので、月間で色分けする理由がない。
+// 月間は「どの予定がどのカレンダーに属するか」を一目で掴む場所。
+//
+// 引く処理は1か所にまとめ、帯からも升目からも呼ぶ（第4条）。
+function getTaskCalendarColor(t) {
+  try {
+    if (!t) return '#90a4ae';
+    var cal = (typeof calendars !== 'undefined' && calendars)
+      ? calendars.filter(function(c) { return c && c.id === t.calendarId; })[0]
+      : null;
+    return (cal && cal.color) || '#90a4ae';
+  } catch (e) { return '#90a4ae'; }
+}
+window.getTaskCalendarColor = getTaskCalendarColor;
+
+// 帯は色をそのまま敷けるが、升目の小さなチップは濃い色で埋めると字が読めない。
+// 同じ色を薄くして背景に、元の色は左の線に使う。カレンダーは色で分かり、字も読める。
+function _hexToSoft(hex, alpha) {
+  try {
+    var h = String(hex || '').replace('#', '');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    if (h.length !== 6) return 'rgba(144,164,174,' + (alpha || 0.14) + ')';
+    var r = parseInt(h.slice(0,2), 16), g = parseInt(h.slice(2,4), 16), b = parseInt(h.slice(4,6), 16);
+    // 16進として読めない文字が混ざると NaN になる。灰色に落とす。
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return 'rgba(144,164,174,' + (alpha || 0.14) + ')';
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha || 0.14) + ')';
+  } catch (e) { return 'rgba(144,164,174,0.14)'; }
+}
+window._hexToSoft = _hexToSoft;
+
 function _computeMonthlyBands(startDayOfWeek, year, month, weeks) {
   var empty = { segs: [], laneCount: [] };
   // v0.45.1622: 週数は月によって4〜6に変わる。渡されなければ6として扱う。
@@ -10847,8 +10880,7 @@ function _renderMonthlyBands(calendar, bandInfo, rowH, weeks) {
 
   segs.forEach(function(seg) {
     var t = seg.task;
-    var cal = (calendars || []).filter(function(c) { return c && c.id === t.calendarId; })[0];
-    var color = (cal && cal.color) || '#90a4ae';
+    var color = getTaskCalendarColor(t);
     var el = document.createElement('div');
     el.style.cssText =
       'grid-column:' + (seg.colStart + 1) + ' / span ' + seg.span + ';' +
@@ -14111,14 +14143,11 @@ function myDeckApply(idx) {
           taskDiv.draggable = true;
           taskDiv.style.display = 'flex';
           taskDiv.style.alignItems = 'center';
-          // 象限による色
-          const colors = {
-            1: { bg: '#ffe6e6', border: '#ff4444' },
-            2: { bg: '#e8f5e9', border: '#4caf50' },
-            3: { bg: '#fffef5', border: '#ffc107' },
-            4: { bg: '#f0f0f0', border: '#999999' }
-          };
-          const color = colors[task.section] || colors[4];
+          // v0.45.1770: カレンダーの色で描く。またぐ予定と同じ基準に揃える。
+          // 象限の色は日次のマトリクスで見るもので、月間で使う理由がない。
+          // 濃い色で埋めると字が読めないので、薄くして背景に、元の色は左の線に使う。
+          const _calColor = getTaskCalendarColor(task);
+          const color = { bg: _hexToSoft(_calColor, 0.16), border: _calColor };
           const _mnStaleBg = getStaleColor(task.date, task.completed);
           taskDiv.style.backgroundColor = _mnStaleBg || color.bg;
           taskDiv.style.borderLeft = `3px solid ${color.border}`;
@@ -23321,10 +23350,13 @@ function saveMsbEdit() {
         var _instIcon4 = (_instModeOn4 && allSettings.ui.showInstinctIcon !== false && typeof getInstinctIcon==='function') ? getInstinctIcon(task.instinct) : '';
         const displayText = (_sym4 ? _sym4+' ' : '') + (_instIcon4 ? _instIcon4+' ' : '') + (task.time ? `${task.time} ${task.text}` : task.text);
         textSpan.textContent = displayText;
-        // 本能カラーをborder-leftに適用
-        var _instColor4 = (_instModeOn4 && allSettings.ui.showInstinctColor !== false && typeof getInstinctColor==='function') ? getInstinctColor(task.instinct) : '';
-        if (_instColor4) {
-          li.style.borderLeft = '3px solid ' + _instColor4;
+        // v0.45.1772: 【権威】2026-08-26、本能の色はやめてカレンダーの色に一本化せよ、との指示。
+        // 月間カレンダーが主役であり、日次はそれに従う。
+        // 左の線は「どのカレンダーの予定か」だけを示す。ここに別の意味を混ぜない。
+        // 本能の分類そのもの（アイコン）は残す。色だけをやめる。
+        var _lineColor4 = (typeof getTaskCalendarColor === 'function') ? getTaskCalendarColor(task) : '';
+        if (_lineColor4) {
+          li.style.borderLeft = '3px solid ' + _lineColor4;
           li.style.paddingLeft = '8px';
         } else {
           li.style.borderLeft = '';
@@ -29969,8 +30001,7 @@ function loadSettingsUI() {
       if (_instModeCheck) _instModeCheck.checked = (allSettings.ui.instinctMode !== false); // DEFAULTがtrueなのでundefinedもtrue扱い
       var _instIconCheck = document.getElementById('showInstinctIconCheck');
       if (_instIconCheck) _instIconCheck.checked = allSettings.ui.showInstinctIcon !== false;
-      var _instColorCheck = document.getElementById('showInstinctColorCheck');
-      if (_instColorCheck) _instColorCheck.checked = allSettings.ui.showInstinctColor !== false;
+      // v0.45.1772: 「本能カラー」の設定は削除済み（第31条）。
 
       // 中央円「今ここで」表示チェック（DEFAULTがfalseなので=== trueで判定。第42条）
       var _showMccCheck = document.getElementById('showMatrixCenterCircleCheck');
@@ -32265,6 +32296,10 @@ function getPreciousPeople() {
         var leftDays = Math.floor((end.getTime() - now) / 86400000);
         var every = Number(t.meetEvery) || 30;
         o.leftDays = leftDays;
+        // v0.45.1771: 【権威】2026-08-26、ゆかりの人の秒が「NaN秒」になる、との報告。
+        // v0.45.1733で生前と没後を1つにまとめたとき、leftSec を返し忘れていた。
+        // 表示側は p.leftSec を使うので、undefined から NaN になっていた。
+        o.leftSec = Math.floor((end.getTime() - now) / 1000);
         o.beyond = leftDays < 0;
         o.meetEvery = every;
         o.meetsLeft = leftDays > 0 ? Math.floor(leftDays / every) : 0;
@@ -33353,9 +33388,9 @@ function renderDashboardView() {
         // 本能アイコン
         var _instOn = allSettings.ui.instinctMode !== false;
         var _instIcon = (_instOn && typeof getInstinctIcon === 'function') ? getInstinctIcon(t.instinct) : '';
-        // 本能カラー
-        var _instColor = (_instOn && typeof getInstinctColor === 'function') ? getInstinctColor(t.instinct) : '';
-        if (_instColor) { item.style.borderLeft = '3px solid ' + _instColor; item.style.paddingLeft = '6px'; }
+        // v0.45.1772: ここもカレンダーの色に一本化する（第4条・同じ基準）。
+        var _lineColor = (typeof getTaskCalendarColor === 'function') ? getTaskCalendarColor(t) : '';
+        if (_lineColor) { item.style.borderLeft = '3px solid ' + _lineColor; item.style.paddingLeft = '6px'; }
         // Fタグ
         var fTag = t.fTag ? '<span style="font-size:0.8em;color:#4facfe;font-weight:700;margin-right:2px;">' + t.fTag + '</span>' : '';
         // テキスト
