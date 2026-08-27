@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1773 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1774 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1773';
+    const APP_VERSION = 'v0.45.1774';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -39256,13 +39256,40 @@ async function openViewLinkModal(cloudCalendarId, calName) {
 window.openViewLinkModal = openViewLinkModal;
 
 function _copyViewLink(url) {
+  // v0.45.1774: 【権威】2026-08-16、コピーしたと出ないとの指摘。
+  // writeTextは非同期なので、待たずに成功を出すと、失敗しても成功と出てしまう。
+  // 結果を待ってから知らせる。使えない環境のために、選択して写す道も残す。
   try {
-    navigator.clipboard.writeText(url);
-    if (typeof showToast === 'function') showToast('リンクをコピーしました');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function() {
+        if (typeof showToast === 'function') showToast('リンクをコピーしました', {type:'ok'});
+      }).catch(function() {
+        _fallbackCopy(url);
+      });
+      return;
+    }
+  } catch(e) {}
+  _fallbackCopy(url);
+}
+function _fallbackCopy(url) {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, url.length);
+    var okc = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (typeof showToast === 'function') {
+      showToast(okc ? 'リンクをコピーしました' : '上のリンクを長押しして写してください',
+                { type: okc ? 'ok' : 'warn' });
+    }
   } catch(e) {
-    if (typeof showToast === 'function') showToast('コピーできませんでした', {type:'error'});
+    if (typeof showToast === 'function') showToast('上のリンクを長押しして写してください', {type:'warn'});
   }
 }
+window._fallbackCopy = _fallbackCopy;
 window._copyViewLink = _copyViewLink;
 
 async function _reissueViewLink(ccid, name) {
@@ -39315,6 +39342,11 @@ async function openViewOnlyMode(token) {
     }
 
     var calName = rows[0].calendar_name || 'カレンダー';
+    // v0.45.1774: 開いた瞬間に、どのカレンダーへ、どの立場で入ったかを知らせる。
+    // 画面を読む前に分かるほうが、迷いが少ない。
+    if (typeof showToast === 'function') {
+      showToast('「' + calName + '」を閲覧のみで開きました', {type:'ok'});
+    }
     // 日付ごとにまとめる。カレンダーの升目ではなく一覧にするのは、
     // 見るだけの人に必要なのは「いつ何があるか」だけだから。
     var byDate = {};
@@ -39350,13 +39382,30 @@ async function openViewOnlyMode(token) {
         }).join('');
 
     ov.innerHTML = '<div style="max-width:560px;margin:0 auto;">' +
+      // v0.45.1774: 【権威】2026-08-16、開いた人に「今どういう立場か」を伝えるべき、との指摘。
+      // どのカレンダーを、どの立場で見ているのか。書き込むには何が要るのか。
+      // これが分からないと、書けないことに戸惑うか、書ける場所を探し続けることになる。
       '<div style="background:#fff;border-radius:14px;padding:18px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">' +
+        '<div style="display:inline-block;padding:4px 10px;border-radius:12px;background:#eef3f8;color:#5b6472;font-size:11px;font-weight:700;margin-bottom:8px;">👁 閲覧のみ</div>' +
         '<div style="font-size:19px;font-weight:700;color:#262626;">' + _esc(calName) + '</div>' +
-        '<div style="font-size:12px;color:#9aa3af;margin-top:5px;">見るだけの画面です。登録もログインも要りません。</div>' +
+        '<div style="font-size:12.5px;color:#8e8e8e;margin-top:8px;line-height:1.8;">' +
+          'このカレンダーの予定を、見るだけの形で共有されています。<br>' +
+          '登録もログインも要りません。' +
+        '</div>' +
+      '</div>' +
+      '<div style="background:#fffaf0;border:1px solid #f0e0b8;border-radius:12px;padding:13px 15px;margin-bottom:14px;">' +
+        '<div style="font-size:12.5px;color:#8a6d1f;line-height:1.9;">' +
+          '予定の追加や書き換えはできません。<br>' +
+          '書き込みたいときは、送ってくれた方に<b>参加の招待</b>をお願いしてください。' +
+        '</div>' +
       '</div>' +
       '<div style="background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">' + listHtml + '</div>' +
-      '<div style="text-align:center;margin-top:20px;">' +
-        '<div style="font-size:12px;color:#b9b9b9;line-height:1.8;">こよみる — 季節とともに、予定を分かち合う</div>' +
+      // v0.45.1774: 自分でも使ってみたい人のために入口を置く。
+      // ただし押し売りにならないよう、控えめに最後へ。
+      '<div style="text-align:center;margin-top:22px;">' +
+        '<button onclick="document.getElementById(\'viewOnlyOverlay\').remove()" ' +
+          'style="padding:11px 22px;border:1px solid #dcdcdc;border-radius:10px;background:#fff;color:#666;font-size:14px;cursor:pointer;font-family:inherit;">こよみるを使ってみる</button>' +
+        '<div style="font-size:12px;color:#b9b9b9;line-height:1.8;margin-top:14px;">こよみる — 季節とともに、予定を分かち合う</div>' +
       '</div>' +
     '</div>';
   } catch(e) {
