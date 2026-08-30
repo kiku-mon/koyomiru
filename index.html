@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1777 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1778 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,8 +157,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1777';
-  const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.45.1778';
+  const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
       // URLパラメータ ?deck=DCK1:xxx でデッキ自動追加
@@ -237,6 +237,28 @@
           }, 800);
         } catch(e) {}
       })();
+  // v0.45.1778: 【権威】2026-08-31、招待リンクを踏んだ新規の人が、招待の案内ではなく
+  // 初回セットアップ画面（使うカレンダーを選ぶ）を見せられ、その下にあるログインへ
+  // 手が届かなかった、との報告。重なり順がセットアップ画面（999999）＞招待（99600）で、
+  // かつセットアップ画面は「必ず選ばせる」設計で閉じるボタンが隠してあるため。
+  //
+  // 招待された人の目的は「相手のカレンダーを見る」の一点。自分のカレンダー選びを
+  // 先にやらせるのは、目的と関係ない作業を先に強いることになる。
+  // そこで「どういう入口から来たか」を最初に記録し、招待・見るだけの間は
+  // 起動アニメも風だよりもセットアップ画面も出さないようにする。
+  //
+  // ここで判定するのは、この直後の history.replaceState で ?join= や ?view= が
+  // URLから消えるため。消えたあとでは、もうどこから来たか分からない。
+  window._koyomiruEntryMode = null;   // 'join'（招待）／'view'（見るだけ）／null（通常）
+  try {
+    var _emParams = new URLSearchParams(window.location.search);
+    if (_emParams.get('view'))      window._koyomiruEntryMode = 'view';
+    else if (_emParams.get('join')) window._koyomiruEntryMode = 'join';
+  } catch(e) {}
+  // 保留したセットアップ画面を、招待が片付いてから出すための旗。
+  // 「出さない」だけにすると、断った人がカレンダーの選び直しに一生たどり着けない。
+  window._koyomiruSetupPending = false;
+
   // v0.45.1619: 見るだけリンク（?view=TOKEN）で開かれたとき。
   // ログインを求めず、そのまま読める画面を出す。
   // 招待リンクより先に判定する。見るだけの人に参加を促すのは筋が違う。
@@ -349,12 +371,30 @@ async function _showInviteCard(code) {
         '</div>' +
         '<button onclick="_acceptInvite(\'' + code + '\')" ' +
           'style="width:100%;padding:14px;border:none;border-radius:12px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">参加する</button>' +
-        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
+        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove();_releasePendingSetup(200)" ' +
           'style="width:100%;padding:11px;border:none;border-radius:12px;background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">あとにする</button>' +
       '</div>';
   } catch(e) { console.warn('[招待] 表示に失敗:', e && e.message); }
 }
 window._showInviteCard = _showInviteCard;
+
+// v0.45.1778: 保留していた初回セットアップ画面を出す。
+// 招待が片付いたとき（参加した／あとにした／見るだけを終えた）にだけ呼ぶ。
+// 出しっぱなしにしないのは、招待の最中に「使うカレンダーを選んでください」が
+// 前に立ちはだかると、招待された人がログインまでたどり着けないため。
+// 一度出したら旗を降ろす。二度出ると、選んだそばからまた選ばされる。
+function _releasePendingSetup(delayMs) {
+  try {
+    if (!window._koyomiruSetupPending) return;
+    window._koyomiruSetupPending = false;
+    setTimeout(function() {
+      try {
+        if (typeof window.showSetupOverlay === 'function') window.showSetupOverlay();
+      } catch(e) { console.warn('[招待] セットアップ表示に失敗:', e && e.message); }
+    }, (typeof delayMs === 'number') ? delayMs : 0);
+  } catch(e) {}
+}
+window._releasePendingSetup = _releasePendingSetup;
 
 // 参加を実行する。押したら終わり、が理想。
 async function _acceptInvite(code) {
@@ -385,6 +425,9 @@ async function _acceptInvite(code) {
     if (typeof renderMonthlyView === 'function') renderMonthlyView();
   } catch(e) {}
   if (typeof showToast === 'function') showToast('参加しました。月間カレンダーに表示されます', {type:'ok'});
+  // v0.45.1778: 参加できた実感を先に持ってもらってから、自分のカレンダーを聞く。
+  // 1.6秒あけるのは、月間が描かれて「入れた」と分かるまでの間を取るため。
+  _releasePendingSetup(1600);
 }
 window._acceptInvite = _acceptInvite;
 
@@ -427,6 +470,9 @@ function _showInviteWelcome() {
         ov.remove();
         // 招待されている事実は画面上部に残す。あとから戻れるように。
         if (typeof _showInviteBanner === 'function') _showInviteBanner();
+        // v0.45.1778: 参加しないと決めた人も、このアプリ自体は使える。
+        // ここで保留を解いておかないと、カレンダーを選ぶ機会に一生たどり着けない。
+        _releasePendingSetup(300);
       };
     } catch(e) { console.warn('[SharedCal] 招待画面エラー:', e); }
   }
@@ -5801,6 +5847,16 @@ function _showInviteWelcome() {
     return;
   }
 
+  // v0.45.1778: 招待・見るだけで来た人には、世界観の演出を出さない。
+  // 目的は「相手のカレンダーを見る」の一点で、夜空も風だよりもその邪魔になる。
+  // 世界観は、ちゃんと中に入ってもらってからで間に合う。
+  // koyomiruSplashSeen は立てないので、あとで普通に開いたときに一度だけ見られる。
+  if (window._koyomiruEntryMode) {
+    var _sInv = document.getElementById('ycSplash');
+    if (_sInv && _sInv.parentNode) _sInv.parentNode.removeChild(_sInv);
+    return;
+  }
+
   // v0.45.1669: 【権威】2026-08-19、起動アニメーションは初回だけにして、
   // 2回目からは季節の風だよりだけにする、との判断。認知の負荷を下げるため。
   // 毎日使う道具なので、毎回同じ演出を見せられると「早く本題へ」という気持ちに逆らう。
@@ -9399,6 +9455,11 @@ function _showInviteWelcome() {
           <span style="font-size:0.85em;color:#555;font-weight:600;">◎ カレンダー記号を表示する</span>
         </label>
         <div id="calendarSettingsList"></div>
+        <!-- v0.45.1778: 【権威】2026-08-31、新規の人の画面にカレンダーが1件も無いという
+             報告があったが、空なら「メイン」を自動で作る救済が入っているため、
+             コードの上ではあり得ない。次に同じことが起きたときに、その場で
+             件数を確かめられるようにする。推測で直さないための計器。 -->
+        <div id="calendarCountLabel" style="margin-top:8px;font-size:0.72em;color:#9aa3af;text-align:right;"></div>
         <button onclick="addCalendarSetting()"
           style="width:100%;margin-top:10px;padding:10px;border:1.5px dashed #c5cae9;border-radius:8px;background:transparent;color:#3949ab;font-size:0.85em;font-weight:600;cursor:pointer;">
           ＋ カレンダーを追加する
@@ -10699,6 +10760,13 @@ function _showInviteWelcome() {
       } else {
         // 初回起動：セットアップ画面を表示
         calendars = [];
+        // v0.45.1778: 招待・見るだけで来た人には、ここでは出さない。
+        // 相手のカレンダーを見るのが先で、自分のカレンダー選びはそのあと。
+        // 旗だけ立てておき、招待が片付いた時点（参加した／あとにした）で出す。
+        if (window._koyomiruEntryMode) {
+          window._koyomiruSetupPending = true;
+          return;
+        }
         // DOMロード後にセットアップ表示
         document.addEventListener('DOMContentLoaded', function() {
           showSetupOverlay();
@@ -11222,11 +11290,20 @@ function isCalendarVisible(calendarId) {
     // 既定は「メイン」1つだけにして、残りは必要になった人が足す形にする
     // （設定の「テンプレートから追加」からいつでも足せる）。
     // メインを先頭に置くのは、社会人向けの「仕事」を既定にしない意図もある。
+    //
+    // v0.45.1778: 【権威】2026-08-31、上の「既定は1つ」を3つに改める。
+    // 1つに絞ったのは「空のカレンダーが場所を取り、選択を迫る」ためだったが、
+    // 実際に新規の人の画面を見たところ、チップが1個しかないと
+    // 「これは切り替えられるものだ」と気づけないことが分かった。
+    // 3つ並んで初めて、絞り込みという機能の存在が伝わる。
+    // 「豪華に見せる」ためではなく「機能の存在を伝える」ための3つである。
+    // 仕事を既定にしない意図は引き継ぎ、誰にでも当てはまる
+    // メイン・プライベート・メモの3つを既定とする。
     const CALENDAR_TEMPLATES = [
       { name: 'メイン',       color: '#90caf9', shareable: true,  symbol: '◎', defaultOn: true },
       { name: '仕事',         color: '#80cbc4', shareable: true,  symbol: '◉' },
       { name: '時間割',       color: '#90caf9', shareable: true,  symbol: '○' },   // v0.45.1570: 「学校」から改称。授業・シフトなど繰り返しの予定を指す言葉として広い
-      { name: 'プライベート', color: '#a5d6a7', shareable: true,  symbol: '♡' },
+      { name: 'プライベート', color: '#a5d6a7', shareable: true,  symbol: '♡', defaultOn: true },
       { name: '家族',         color: '#c2185b', shareable: true,  symbol: '♥' },
       // v0.45.1740: 【権威】2026-08-25、献立カレンダーを足せばよいだけ、との指摘。
       // そのとおりで、新しい機能を作る話ではない。カレンダーを1つ増やすだけで足りる。
@@ -11238,7 +11315,7 @@ function isCalendarVisible(calendarId) {
       // 日付に結びつくものなので、カレンダーがそのまま器になる。
       { name: '夢',           color: '#b39ddb', shareable: false, symbol: '☾' },
       { name: '趣味',         color: '#ffcc80', shareable: true,  symbol: '☆' },
-      { name: 'メモ',         color: '#b0bec5', shareable: false, symbol: '★' },
+      { name: 'メモ',         color: '#b0bec5', shareable: false, symbol: '★', defaultOn: true },
     ];    function createCalendarFromTemplate(tmpl) {
       // v0.45.1511: 【権威】2026-08-04、カレンダー記号が「-」になるとの報告。
       // CALENDAR_TEMPLATES には ◎○♡♥☆★ が定義されているのに、ここで symbol を
@@ -30288,6 +30365,13 @@ window.unshareCalendar = unshareCalendar;
 function loadCalendarSettingsUI() {
       const list = document.getElementById('calendarSettingsList');
       if (!list) return;
+      // v0.45.1778: 今この端末が何件のカレンダーを持っているかを、その場で確かめられるようにする。
+      var _cntEl = document.getElementById('calendarCountLabel');
+      if (_cntEl) {
+        var _all = (allSettings.calendar && allSettings.calendar.list) || [];
+        var _shown = _all.filter(function(c){ return c && c.visible; }).length;
+        _cntEl.textContent = 'このデバイスのカレンダー ' + _all.length + '件（表示中 ' + _shown + '件）';
+      }
       // v0.45.1729: 【権威】2026-08-24、共有カレンダーへの入口は2つあり、
       // 設定配下のカレンダー一覧から入った人は片づかない、との指摘。そのとおり。
       // ここは手元の一覧をそのまま描くだけで、クラウドを見ていなかった。
@@ -31618,6 +31702,8 @@ function renderCalendarFilter(containerId, onChangeCallback) {
     window.closeWeeklyEditModal = closeWeeklyEditModal;
     window.closeWeeklyTaskModal = closeWeeklyTaskModal;
     window.completeSetup = completeSetup;
+    // v0.45.1778: 招待の処理は先頭のscriptブロックにあり、そこから呼ぶ必要がある（第3条）。
+    window.showSetupOverlay = showSetupOverlay;
     window.confirmAddToWeekly = confirmAddToWeekly;
     window.confirmDeleteFromEdit = confirmDeleteFromEdit;
     window.confirmPurpose = confirmPurpose;
@@ -39520,6 +39606,8 @@ function closeViewOnlyMode() {
     if (typeof renderMonthlyView === 'function') renderMonthlyView();
     if (typeof renderAllSections === 'function') renderAllSections(null);
     if (typeof showToast === 'function') showToast('閲覧を終了しました');
+    // v0.45.1778: 見るだけで来た人も、閲覧を終えたらこのアプリを使い始められる。
+    if (typeof window._releasePendingSetup === 'function') window._releasePendingSetup(400);
   } catch(e) { console.warn('[見るだけ] 終了に失敗:', e && e.message); }
 }
 window.closeViewOnlyMode = closeViewOnlyMode;
