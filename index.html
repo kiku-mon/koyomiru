@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1774 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1775 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1774';
+    const APP_VERSION = 'v0.45.1775';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -29364,7 +29364,8 @@ function saveMsbEdit() {
     // =====================
     // STEP3：実行
     // =====================
-    function nbShareStep3(method) {
+    // v0.45.1775: async の欠落を修正（awaitを使うのにasyncが無く、呼ぶと処理が止まる）
+    async function nbShareStep3(method) {
       var box = document.getElementById('nbShareModalBox');
       if (method==='file') {
         box.innerHTML =
@@ -29457,7 +29458,8 @@ function saveMsbEdit() {
         '<button class="nb-share-btn cancel" onclick="nbShareClose()">キャンセル</button>';
       document.getElementById('nbShareModal').classList.add('show');
     }
-    function nbShareImportStep2(method) {
+    // v0.45.1775: async の欠落を修正（awaitを使うのにasyncが無く、呼ぶと処理が止まる）
+    async function nbShareImportStep2(method) {
       var box = document.getElementById('nbShareModalBox');
       if (method==='file') {
         box.innerHTML =
@@ -38540,6 +38542,11 @@ async function peekSharedCalendarByCode(code) {
 window.peekSharedCalendarByCode = peekSharedCalendarByCode;
 
 // 覗いた中身を、参加ボタンの手前に出す。
+async // v0.45.1775: 【権威】2026-08-27、招待リンクを踏んでも「参加する」が出ない、
+// 代わりに新規作成のボタンだけ見えるとの報告。
+// 原因は、この関数に async が付いていないのに await を使っていたこと。
+// 構文として成立しないため、呼ばれた時点で処理全体が止まり、
+// 招待の画面が組み上がる前に中断していた。
 async function renderInvitePreview(code) {
   var box = document.getElementById('sharedCalendarPeek');
   if (!box) return;
@@ -39360,26 +39367,53 @@ async function openViewOnlyMode(token) {
     var today = (typeof getLocalDateStr === 'function') ? getLocalDateStr(new Date()) : '';
     // 過ぎた予定は畳む。これから何があるかを見に来ているため。
     var future = dates.filter(function(dt) { return dt >= today; });
-    var listHtml = future.length === 0
-      ? '<div style="padding:30px 0;text-align:center;font-size:14px;color:#b9b9b9;">これからの予定はありません</div>'
-      : future.map(function(dt) {
-          var _d = new Date(dt + 'T00:00:00');
-          var _w = ['日','月','火','水','木','金','土'][_d.getDay()];
-          var _label = (_d.getMonth()+1) + '月' + _d.getDate() + '日（' + _w + '）';
-          var items = byDate[dt].sort(function(a,b) { return (a.time||'').localeCompare(b.time||''); })
-            .map(function(t) {
-              return '<div style="padding:11px 0;border-bottom:1px solid #f2f2f2;">' +
-                (t.time ? '<span style="font-size:13px;color:#0b6bcb;font-weight:700;margin-right:8px;">' + _esc(t.time) + '</span>' : '') +
-                '<span style="font-size:16px;color:#333;">' + _esc(t.text || '') + '</span>' +
-                (t.endDate && t.endDate !== t.date
-                  ? '<div style="font-size:12px;color:#9aa3af;margin-top:3px;">〜' + _esc(t.endDate) + '</div>' : '') +
-                (t.memo ? '<div style="font-size:13px;color:#8e8e8e;line-height:1.7;margin-top:5px;white-space:pre-wrap;word-break:break-all;">' + _lnk(t.memo) + '</div>' : '') +
-              '</div>';
-            }).join('');
-          return '<div style="margin-bottom:18px;">' +
-            '<div style="font-size:13px;font-weight:700;color:#666;padding-bottom:5px;">' + _label + '</div>' +
-            items + '</div>';
-        }).join('');
+    // v0.45.1775: 【権威】2026-08-27、見るだけリンクでも「カレンダーを見せなければ意味がない」
+    // との指摘。一覧では、こよみるでカレンダーを見るという体験にならない。
+    // 月間の升目として描く。暦の情報も添えて、こよみるらしさを保つ。
+    var _base = new Date();
+    var _y = _base.getFullYear(), _m = _base.getMonth();
+    var _wStart = (typeof getWeekStartsOn === 'function') ? getWeekStartsOn() : 1;
+    var _wdLabels = _wStart === 0 ? ['日','月','火','水','木','金','土'] : ['月','火','水','木','金','土','日'];
+    var _first = new Date(_y, _m, 1);
+    var _fdow = _first.getDay();
+    var _startCol = _wStart === 0 ? _fdow : (_fdow + 6) % 7;
+    var _gridStart = new Date(_y, _m, 1 - _startCol);
+
+    var _hdr = _wdLabels.map(function(w) {
+      var _c = (w === '土') ? '#4a90d9' : (w === '日' ? '#d9534f' : '#8e8e8e');
+      return '<div style="text-align:center;font-size:11px;font-weight:700;color:' + _c + ';padding:6px 0;">' + w + '</div>';
+    }).join('');
+
+    var _cells = '';
+    for (var _i = 0; _i < 42; _i++) {
+      var _cd = new Date(_gridStart);
+      _cd.setDate(_gridStart.getDate() + _i);
+      var _ds = _cd.getFullYear() + '-' + String(_cd.getMonth()+1).padStart(2,'0') + '-' + String(_cd.getDate()).padStart(2,'0');
+      var _isCur = (_cd.getMonth() === _m);
+      var _isToday = (_ds === today);
+      var _dow = _cd.getDay();
+      var _bg = _isToday ? '#fffbe6' : (_dow === 0 ? '#fff7f7' : (_dow === 6 ? '#f5f9ff' : '#fff'));
+      var _items = (byDate[_ds] || []).sort(function(a,b) { return (a.time||'').localeCompare(b.time||''); });
+      var _itemHtml = _items.slice(0, 3).map(function(t) {
+        return '<div style="font-size:10px;line-height:1.5;background:#eef3f8;color:#39485c;border-radius:3px;padding:1px 3px;margin-top:2px;' +
+               'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">' +
+               (t.time ? _esc(t.time) + ' ' : '') + _esc(t.text || '') + '</div>';
+      }).join('');
+      if (_items.length > 3) {
+        _itemHtml += '<div style="font-size:10px;color:#9aa3af;padding:1px 3px;">+' + (_items.length - 3) + '件</div>';
+      }
+      _cells += '<div style="min-height:72px;border-right:1px solid #eee;border-bottom:1px solid #eee;padding:3px 4px;' +
+        'background:' + _bg + ';overflow:hidden;">' +
+        '<div style="font-size:12px;font-weight:700;color:' + (_isCur ? (_isToday ? '#b8860b' : '#333') : '#ccc') + ';">' +
+          _cd.getDate() + '</div>' + (_isCur ? _itemHtml : '') + '</div>';
+    }
+
+    var listHtml =
+      '<div style="display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid #eee;border-left:1px solid #eee;">' +
+        _hdr.replace(/padding:6px 0;/g, 'padding:6px 0;border-right:1px solid #eee;border-bottom:1px solid #eee;') +
+        _cells +
+      '</div>';
+    var _monthLabel = _y + '年' + (_m + 1) + '月';
 
     ov.innerHTML = '<div style="max-width:560px;margin:0 auto;">' +
       // v0.45.1774: 【権威】2026-08-16、開いた人に「今どういう立場か」を伝えるべき、との指摘。
@@ -39399,7 +39433,10 @@ async function openViewOnlyMode(token) {
           '書き込みたいときは、送ってくれた方に<b>参加の招待</b>をお願いしてください。' +
         '</div>' +
       '</div>' +
-      '<div style="background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">' + listHtml + '</div>' +
+      '<div style="background:#fff;border-radius:14px;padding:14px 12px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">' +
+        '<div style="text-align:center;font-size:17px;font-weight:700;color:#262626;margin-bottom:10px;">' + _monthLabel + '</div>' +
+        listHtml +
+      '</div>' +
       // v0.45.1774: 自分でも使ってみたい人のために入口を置く。
       // ただし押し売りにならないよう、控えめに最後へ。
       '<div style="text-align:center;margin-top:22px;">' +
