@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1776 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1777 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1776';
+    const APP_VERSION = 'v0.45.1777';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -271,33 +271,12 @@
           _showInviteWelcome();
           return;
         }
-        if (typeof window.openSharedCalendarModal === 'function') {
-          window.openSharedCalendarModal();
-          var joinInput = document.getElementById('sharedCalendarJoinCode');
-          if (joinInput) joinInput.value = joinCode;
-          // v0.45.1709: 参加を決める前に、中身を見せる
-          if (typeof window.renderInvitePreview === 'function') window.renderInvitePreview(joinCode);
-          // v0.45.1404: 【権威】2026-07-25、「招待するボタンはOS標準の共有シートが開いて
-          // 親切だが、リンクを受け取った側は手動で『参加する』を押す必要があり、もう一手間
-          // 掛かる」との指摘を受けた。ログイン済みなら、その場で自動的に参加まで完了させる
-          // （Discord/Zoomのようなワンタップ体験に近づける）。
-          if (window._cloudIsLoggedIn) {
-            // v0.45.1546: 【権威】2026-08-06、従来はここで即座に参加まで済ませていたが、
-            // 「そのカレンダーでどう名乗るか」を選ぶ機会がなく、普段使いの名前が
-            // そのまま他の参加者に見えていた。場によって名乗りを変えたい人もいる
-            // （Discordのサーバー別ニックネームと同じ需要）ため、ここで一度止める。
-            // 名前は既に埋まっているので、押す手間が一つ増えるだけで済ませる。
-            try {
-              var _jn = document.getElementById('sharedCalendarJoinName');
-              if (_jn && !_jn.value) {
-                _jn.value = (window.allSettings && allSettings.profile && allSettings.profile.name) || '';
-              }
-            } catch(eJn) {}
-            if (typeof window._sharedCalSetStatus === 'function') {
-              window._sharedCalSetStatus('📩 招待されています。表示名を確かめて「参加する」を押してください。', 'info');
-            }
-          }
-          // v0.45.1709: 未ログインの場合は、この手前で _showInviteWelcome() に分岐済み。
+        // v0.45.1777: 招待されたときは、そのカレンダーのことだけを1枚で見せる。
+        // 共有カレンダーの一覧を丸ごと開くと、自分のカレンダーや新規作成の欄まで並び、
+        // 招待された人は何をすればいいのか分からなくなる。
+        // 見せるのは「どのカレンダーか」「誰がいるか」「何があるか」「表示名」の4つだけ。
+        if (typeof window._showInviteCard === 'function') {
+          window._showInviteCard(joinCode);
         }
       }, 800); // アプリ初期化・ログイン状態確認を待つ
     } catch(e) { console.warn('[SharedCal] 招待リンク処理エラー:', e); }
@@ -306,7 +285,110 @@
   // 伝えるのは3つだけ。①招待されていること ②見るにはログインが要ること
   // ③このアプリ自体はログイン無しでも使えること。
   // ③を書くのは、「登録しないと何もできないアプリ」だと思われて閉じられるのを防ぐため。
-  function _showInviteWelcome() {
+  // v0.45.1777: 【権威】2026-08-27、招待された人の体験を設計し直す。
+// これまではログイン済みだと「共有カレンダーの一覧」が丸ごと開いていた。
+// 招待された人が見たいのは「どのカレンダーに、誰がいて、何があるか」だけ。
+// 自分のカレンダー一覧や新規作成の欄まで出ると、何をすればいいのか分からなくなる。
+// 招待のときは、そのカレンダーのことだけを1枚で見せる。
+async function _showInviteCard(code) {
+  try {
+    var old = document.getElementById('inviteCardOverlay');
+    if (old) old.remove();
+    var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+
+    var ov = document.createElement('div');
+    ov.id = 'inviteCardOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99600;background:rgba(0,0,0,0.5);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+    ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
+      '<div style="font-size:14px;color:#8e8e8e;">確かめています…</div></div>';
+    document.body.appendChild(ov);
+
+    var data = await peekSharedCalendarByCode(code);
+    if (!data) {
+      ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
+        '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:8px;">この招待は使えません</div>' +
+        '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
+          '期限が切れているか、取り消された可能性があります。<br>送った方にご確認ください。</div>' +
+        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
+          'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
+      '</div>';
+      return;
+    }
+
+    var name = data.name || '共有カレンダー';
+    var members = (typeof data.member_count === 'number') ? data.member_count : null;
+    var items = Array.isArray(data.upcoming) ? data.upcoming : [];
+    // 初期値は、いま使っている名前。多くの人はそのまま押すだけで済む。
+    var _defName = (allSettings.profile && allSettings.profile.name) || '';
+
+    var peek = items.length
+      ? '<div style="background:#f6f8fb;border-radius:12px;padding:12px 14px;margin-bottom:16px;text-align:left;">' +
+          '<div style="font-size:0.72em;color:#9aa3af;margin-bottom:5px;">これからの予定</div>' +
+          items.slice(0, 3).map(function(t) {
+            return '<div style="font-size:0.8em;color:#444;padding:2px 0;">・' +
+              _esc(t.date || '') + '　' + _esc(t.text || '') + '</div>';
+          }).join('') +
+        '</div>'
+      : '<div style="background:#f6f8fb;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:0.78em;color:#9aa3af;">まだ予定は入っていません</div>';
+
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.18);">' +
+        '<div style="text-align:center;font-size:2.2em;margin-bottom:4px;">📩</div>' +
+        '<div style="text-align:center;font-size:0.8em;color:#8e8e8e;margin-bottom:4px;">カレンダーに招待されています</div>' +
+        '<div style="text-align:center;font-size:1.25em;font-weight:700;color:#262626;margin-bottom:6px;">' + _esc(name) + '</div>' +
+        (members !== null
+          ? '<div style="text-align:center;font-size:0.78em;color:#9aa3af;margin-bottom:16px;">' + members + '人が参加しています</div>'
+          : '<div style="margin-bottom:16px;"></div>') +
+        peek +
+        '<div style="text-align:left;margin-bottom:16px;">' +
+          '<div style="font-size:0.76em;color:#8e8e8e;margin-bottom:5px;">このカレンダーでの表示名</div>' +
+          '<input id="inviteCardName" type="text" value="' + _esc(_defName) + '" maxlength="20" placeholder="お名前" ' +
+            'style="width:100%;padding:11px 12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;box-sizing:border-box;font-family:inherit;">' +
+          '<div style="font-size:0.72em;color:#b9b9b9;margin-top:5px;">他の参加者にはこの名前で表示されます</div>' +
+        '</div>' +
+        '<button onclick="_acceptInvite(\'' + code + '\')" ' +
+          'style="width:100%;padding:14px;border:none;border-radius:12px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">参加する</button>' +
+        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
+          'style="width:100%;padding:11px;border:none;border-radius:12px;background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">あとにする</button>' +
+      '</div>';
+  } catch(e) { console.warn('[招待] 表示に失敗:', e && e.message); }
+}
+window._showInviteCard = _showInviteCard;
+
+// 参加を実行する。押したら終わり、が理想。
+async function _acceptInvite(code) {
+  var inp = document.getElementById('inviteCardName');
+  var nm = inp ? (inp.value || '').trim() : '';
+  var btn = document.querySelector('#inviteCardOverlay button');
+  if (btn) { btn.disabled = true; btn.textContent = '参加しています…'; }
+  var r = await joinSharedCalendarByCode(code, nm);
+  if (!r || r.error) {
+    if (btn) { btn.disabled = false; btn.textContent = '参加する'; }
+    var msg = (r && r.error && r.error.message) || '参加できませんでした';
+    if (/already|duplicate/i.test(msg)) {
+      // 既に入っている場合は、失敗ではなく成功として扱う
+      var ov0 = document.getElementById('inviteCardOverlay');
+      if (ov0) ov0.remove();
+      if (typeof showToast === 'function') showToast('すでに参加しています');
+      return;
+    }
+    if (typeof showToast === 'function') showToast('⚠️ ' + msg, {type:'error'});
+    return;
+  }
+  var ov = document.getElementById('inviteCardOverlay');
+  if (ov) ov.remove();
+  // 参加したら、そのカレンダーが見える場所へ連れて行く。
+  // 「参加しました」で終わると、どこを見ればいいか分からない。
+  try {
+    if (typeof switchView === 'function') switchView('monthly');
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+  } catch(e) {}
+  if (typeof showToast === 'function') showToast('参加しました。月間カレンダーに表示されます', {type:'ok'});
+}
+window._acceptInvite = _acceptInvite;
+
+function _showInviteWelcome() {
     try {
       var old = document.getElementById('inviteWelcomeOverlay');
       if (old) old.remove();
@@ -42793,15 +42875,13 @@ function _resumePendingJoin() {
   _clearPendingJoin();   // 何度も走らせない（失敗しても再試行はユーザー操作に委ねる）
   setTimeout(function() {
     try {
-      if (typeof window.openSharedCalendarModal !== 'function') return;
-      window.openSharedCalendarModal();
-      var input = document.getElementById('sharedCalendarJoinCode');
-      if (input) input.value = code;
-      if (typeof window._sharedCalSetStatus === 'function') {
-        window._sharedCalSetStatus('招待されたカレンダーに参加しています…', 'info');
-      }
-      if (typeof window.joinSharedCalendarFromModal === 'function') {
-        window.joinSharedCalendarFromModal();   // 成功すれば月間カレンダーまで案内される
+      // v0.45.1777: ログインを終えて戻ってきたときも、招待カードを見せる。
+      // 以前は一覧を開いて即座に参加させていたが、
+      //   ・どのカレンダーに入ったのか分からない
+      //   ・表示名を選ぶ機会が無い
+      // という問題があった。入る前に一度、何に入るのかを見せる。
+      if (typeof window._showInviteCard === 'function') {
+        window._showInviteCard(code);
       }
     } catch(e) { console.warn('[SharedCal] 参加の再開に失敗:', e && e.message); }
   }, 900);   // ログイン直後の初期化・同期の立ち上がりを待つ
