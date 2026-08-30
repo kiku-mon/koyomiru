@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1775 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1776 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1775';
+    const APP_VERSION = 'v0.45.1776';
   const APP_LAST_UPDATED = '2026-08-25'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -2625,6 +2625,27 @@
     }
     #monthlyWidthSlider::-moz-range-thumb {
       border-color: #60a5fa;
+    }
+    /* v0.45.1776: 閲覧のみのとき、書き込みの入口を全部塞ぐ。
+       押してから断られるのは、最も避けたい体験。
+       押せる場所を残さないことで、迷わせない。 */
+    body.view-only-mode .koyomiru-fab,
+    body.view-only-mode .koyomiru-help-fab,
+    body.view-only-mode .nav-tabs,
+    body.view-only-mode #monthlySidebarAddBtn,
+    body.view-only-mode .monthly-sidebar-edit-form,
+    body.view-only-mode #msbAttendArea,
+    body.view-only-mode #msbCommentArea {
+      display: none !important;
+    }
+    /* 升目のクリックも無効にする（新規作成が始まるため） */
+    body.view-only-mode .monthly-day-cell {
+      cursor: default !important;
+      pointer-events: none;
+    }
+    /* 予定の完了チェックや削除も押させない */
+    body.view-only-mode .monthly-task-item {
+      pointer-events: none;
     }
     .monthly-sidebar-date {
       font-size: 22px;
@@ -39323,131 +39344,117 @@ async function _stopViewLink(ccid) {
 window._stopViewLink = _stopViewLink;
 
 async function openViewOnlyMode(token) {
+  // v0.45.1776: 【権威】2026-08-27、「実際のカレンダーを見せたい」との指摘。
+  // 前版は閲覧用に別の升目を組んでいたが、それでは「こよみるでカレンダーを見る」
+  // 体験にならない。本物の月間ビューをそのまま見せる。
+  //
+  // 手順：取ってきた予定を allTasks に入れ、月間へ切り替え、書き込みの入口だけ塞ぐ。
+  // 手元のデータは触らない（この端末で使っている人の予定を壊さないため、
+  // 元のデータを退避してから差し替え、閉じるときに戻す）。
   try {
-    var ov = document.createElement('div');
-    ov.id = 'viewOnlyOverlay';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:999998;background:#f7f8fa;overflow-y:auto;' +
-      'padding:20px 16px calc(24px + env(safe-area-inset-bottom,0px));';
-    ov.innerHTML = '<div style="max-width:560px;margin:0 auto;">' +
-      '<div style="font-size:14px;color:#8e8e8e;padding:12px 0;">読み込んでいます…</div></div>';
-    document.body.appendChild(ov);
-
     var r = await fetchByViewToken(token);
     var rows = (r && !r.error && r.data) ? r.data : null;
-    var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
-    var _lnk = (typeof linkifyText === 'function') ? linkifyText : _esc;
-
     if (!rows || rows.length === 0) {
-      ov.innerHTML = '<div style="max-width:560px;margin:60px auto;text-align:center;">' +
-        '<div style="font-size:17px;font-weight:700;color:#333;margin-bottom:10px;">このリンクは使えません</div>' +
-        '<div style="font-size:14px;color:#8e8e8e;line-height:1.8;">' +
-          '期限が切れているか、共有が止められた可能性があります。<br>送った方にご確認ください。</div>' +
-        '<button onclick="document.getElementById(\'viewOnlyOverlay\').remove();history.replaceState(null,\'\',location.pathname)" ' +
-          'style="margin-top:20px;padding:11px 22px;border:1px solid #dcdcdc;border-radius:10px;background:#fff;color:#666;font-size:14px;cursor:pointer;font-family:inherit;">閉じる</button>' +
-      '</div>';
+      _showViewLinkError();
       return;
     }
-
     var calName = rows[0].calendar_name || 'カレンダー';
-    // v0.45.1774: 開いた瞬間に、どのカレンダーへ、どの立場で入ったかを知らせる。
-    // 画面を読む前に分かるほうが、迷いが少ない。
+
+    // 元のデータを退避する。閉じるときに必ず戻す。
+    window._viewOnlyBackup = {
+      tasks: allTasks,
+      calendars: (allSettings.calendar && allSettings.calendar.list) || [],
+      active: (typeof activeCalendarIds !== 'undefined') ? activeCalendarIds : null,
+      view: localStorage.getItem('currentView') || 'daily'
+    };
+
+    // 見せる用のカレンダーを1つだけ作る
+    var _vcId = 'viewonly-cal';
+    allSettings.calendar = allSettings.calendar || {};
+    allSettings.calendar.list = [{
+      id: _vcId, name: calName, color: '#7c9cbf', visible: true, symbol: '◎'
+    }];
+    if (typeof calendars !== 'undefined') calendars = allSettings.calendar.list;
+    activeCalendarIds = null;   // 全部表示
+
+    // 取ってきた予定を流し込む
+    allTasks = rows.map(function(row) {
+      var t = Object.assign({}, row.data || {});
+      t.calendarId = _vcId;
+      t.cloudCalendarId = null;   // 共有の印は出さない（書けないので誤解を招く）
+      return t;
+    }).filter(function(t) { return t && t.date && !t.deleted; });
+
+    // 月間へ切り替えて描く
+    if (typeof switchView === 'function') switchView('monthly');
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+
+    // 書き込みの入口を塞ぐ
+    document.body.classList.add('view-only-mode');
+
+    // 上部に、立場と抜け方を示す帯を出す
+    var bar = document.createElement('div');
+    bar.id = 'viewOnlyBar';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99997;' +
+      'background:#39485c;color:#fff;padding:10px 14px calc(10px + env(safe-area-inset-top,0px));' +
+      'display:flex;align-items:center;gap:10px;font-size:13px;';
+    var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
+    bar.innerHTML =
+      '<span style="flex:1;line-height:1.5;">' +
+        '<b>' + _esc(calName) + '</b>' +
+        '<span style="opacity:0.75;"> — 閲覧のみ</span><br>' +
+        '<span style="font-size:11.5px;opacity:0.75;">書き込むには、送ってくれた方に招待をお願いしてください</span>' +
+      '</span>' +
+      '<button onclick="closeViewOnlyMode()" style="flex-shrink:0;padding:7px 13px;border:none;border-radius:8px;background:rgba(255,255,255,0.2);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">終了</button>';
+    document.body.appendChild(bar);
+    // 帯のぶん、画面全体を下げる
+    document.body.style.paddingTop = (bar.offsetHeight || 56) + 'px';
+
     if (typeof showToast === 'function') {
       showToast('「' + calName + '」を閲覧のみで開きました', {type:'ok'});
     }
-    // 日付ごとにまとめる。カレンダーの升目ではなく一覧にするのは、
-    // 見るだけの人に必要なのは「いつ何があるか」だけだから。
-    var byDate = {};
-    rows.forEach(function(row) {
-      var t = row.data || {};
-      if (!t.date || t.deleted) return;
-      if (!byDate[t.date]) byDate[t.date] = [];
-      byDate[t.date].push(t);
-    });
-    var dates = Object.keys(byDate).sort();
-    var today = (typeof getLocalDateStr === 'function') ? getLocalDateStr(new Date()) : '';
-    // 過ぎた予定は畳む。これから何があるかを見に来ているため。
-    var future = dates.filter(function(dt) { return dt >= today; });
-    // v0.45.1775: 【権威】2026-08-27、見るだけリンクでも「カレンダーを見せなければ意味がない」
-    // との指摘。一覧では、こよみるでカレンダーを見るという体験にならない。
-    // 月間の升目として描く。暦の情報も添えて、こよみるらしさを保つ。
-    var _base = new Date();
-    var _y = _base.getFullYear(), _m = _base.getMonth();
-    var _wStart = (typeof getWeekStartsOn === 'function') ? getWeekStartsOn() : 1;
-    var _wdLabels = _wStart === 0 ? ['日','月','火','水','木','金','土'] : ['月','火','水','木','金','土','日'];
-    var _first = new Date(_y, _m, 1);
-    var _fdow = _first.getDay();
-    var _startCol = _wStart === 0 ? _fdow : (_fdow + 6) % 7;
-    var _gridStart = new Date(_y, _m, 1 - _startCol);
-
-    var _hdr = _wdLabels.map(function(w) {
-      var _c = (w === '土') ? '#4a90d9' : (w === '日' ? '#d9534f' : '#8e8e8e');
-      return '<div style="text-align:center;font-size:11px;font-weight:700;color:' + _c + ';padding:6px 0;">' + w + '</div>';
-    }).join('');
-
-    var _cells = '';
-    for (var _i = 0; _i < 42; _i++) {
-      var _cd = new Date(_gridStart);
-      _cd.setDate(_gridStart.getDate() + _i);
-      var _ds = _cd.getFullYear() + '-' + String(_cd.getMonth()+1).padStart(2,'0') + '-' + String(_cd.getDate()).padStart(2,'0');
-      var _isCur = (_cd.getMonth() === _m);
-      var _isToday = (_ds === today);
-      var _dow = _cd.getDay();
-      var _bg = _isToday ? '#fffbe6' : (_dow === 0 ? '#fff7f7' : (_dow === 6 ? '#f5f9ff' : '#fff'));
-      var _items = (byDate[_ds] || []).sort(function(a,b) { return (a.time||'').localeCompare(b.time||''); });
-      var _itemHtml = _items.slice(0, 3).map(function(t) {
-        return '<div style="font-size:10px;line-height:1.5;background:#eef3f8;color:#39485c;border-radius:3px;padding:1px 3px;margin-top:2px;' +
-               'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">' +
-               (t.time ? _esc(t.time) + ' ' : '') + _esc(t.text || '') + '</div>';
-      }).join('');
-      if (_items.length > 3) {
-        _itemHtml += '<div style="font-size:10px;color:#9aa3af;padding:1px 3px;">+' + (_items.length - 3) + '件</div>';
-      }
-      _cells += '<div style="min-height:72px;border-right:1px solid #eee;border-bottom:1px solid #eee;padding:3px 4px;' +
-        'background:' + _bg + ';overflow:hidden;">' +
-        '<div style="font-size:12px;font-weight:700;color:' + (_isCur ? (_isToday ? '#b8860b' : '#333') : '#ccc') + ';">' +
-          _cd.getDate() + '</div>' + (_isCur ? _itemHtml : '') + '</div>';
-    }
-
-    var listHtml =
-      '<div style="display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid #eee;border-left:1px solid #eee;">' +
-        _hdr.replace(/padding:6px 0;/g, 'padding:6px 0;border-right:1px solid #eee;border-bottom:1px solid #eee;') +
-        _cells +
-      '</div>';
-    var _monthLabel = _y + '年' + (_m + 1) + '月';
-
-    ov.innerHTML = '<div style="max-width:560px;margin:0 auto;">' +
-      // v0.45.1774: 【権威】2026-08-16、開いた人に「今どういう立場か」を伝えるべき、との指摘。
-      // どのカレンダーを、どの立場で見ているのか。書き込むには何が要るのか。
-      // これが分からないと、書けないことに戸惑うか、書ける場所を探し続けることになる。
-      '<div style="background:#fff;border-radius:14px;padding:18px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">' +
-        '<div style="display:inline-block;padding:4px 10px;border-radius:12px;background:#eef3f8;color:#5b6472;font-size:11px;font-weight:700;margin-bottom:8px;">👁 閲覧のみ</div>' +
-        '<div style="font-size:19px;font-weight:700;color:#262626;">' + _esc(calName) + '</div>' +
-        '<div style="font-size:12.5px;color:#8e8e8e;margin-top:8px;line-height:1.8;">' +
-          'このカレンダーの予定を、見るだけの形で共有されています。<br>' +
-          '登録もログインも要りません。' +
-        '</div>' +
-      '</div>' +
-      '<div style="background:#fffaf0;border:1px solid #f0e0b8;border-radius:12px;padding:13px 15px;margin-bottom:14px;">' +
-        '<div style="font-size:12.5px;color:#8a6d1f;line-height:1.9;">' +
-          '予定の追加や書き換えはできません。<br>' +
-          '書き込みたいときは、送ってくれた方に<b>参加の招待</b>をお願いしてください。' +
-        '</div>' +
-      '</div>' +
-      '<div style="background:#fff;border-radius:14px;padding:14px 12px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">' +
-        '<div style="text-align:center;font-size:17px;font-weight:700;color:#262626;margin-bottom:10px;">' + _monthLabel + '</div>' +
-        listHtml +
-      '</div>' +
-      // v0.45.1774: 自分でも使ってみたい人のために入口を置く。
-      // ただし押し売りにならないよう、控えめに最後へ。
-      '<div style="text-align:center;margin-top:22px;">' +
-        '<button onclick="document.getElementById(\'viewOnlyOverlay\').remove()" ' +
-          'style="padding:11px 22px;border:1px solid #dcdcdc;border-radius:10px;background:#fff;color:#666;font-size:14px;cursor:pointer;font-family:inherit;">こよみるを使ってみる</button>' +
-        '<div style="font-size:12px;color:#b9b9b9;line-height:1.8;margin-top:14px;">こよみる — 季節とともに、予定を分かち合う</div>' +
-      '</div>' +
-    '</div>';
   } catch(e) {
     console.warn('[見るだけ] 表示に失敗:', e && e.message);
+    _showViewLinkError();
   }
+}
+window.openViewOnlyMode = openViewOnlyMode;
+
+// 閲覧を終える。退避したデータを必ず戻す。
+function closeViewOnlyMode() {
+  try {
+    var bk = window._viewOnlyBackup;
+    if (bk) {
+      allTasks = bk.tasks;
+      allSettings.calendar.list = bk.calendars;
+      if (typeof calendars !== 'undefined') calendars = bk.calendars;
+      activeCalendarIds = bk.active;
+      window._viewOnlyBackup = null;
+    }
+    document.body.classList.remove('view-only-mode');
+    document.body.style.paddingTop = '';
+    var bar = document.getElementById('viewOnlyBar');
+    if (bar) bar.remove();
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+    if (typeof renderAllSections === 'function') renderAllSections(null);
+    if (typeof showToast === 'function') showToast('閲覧を終了しました');
+  } catch(e) { console.warn('[見るだけ] 終了に失敗:', e && e.message); }
+}
+window.closeViewOnlyMode = closeViewOnlyMode;
+
+function _showViewLinkError() {
+  var ov = document.createElement('div');
+  ov.id = 'viewOnlyOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:999998;background:#f7f8fa;' +
+    'display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML = '<div style="max-width:380px;text-align:center;">' +
+    '<div style="font-size:17px;font-weight:700;color:#333;margin-bottom:10px;">このリンクは使えません</div>' +
+    '<div style="font-size:14px;color:#8e8e8e;line-height:1.8;">' +
+      '期限が切れているか、共有が止められた可能性があります。<br>送った方にご確認ください。</div>' +
+    '<button onclick="document.getElementById(\'viewOnlyOverlay\').remove()" ' +
+      'style="margin-top:20px;padding:11px 22px;border:1px solid #dcdcdc;border-radius:10px;background:#fff;color:#666;font-size:14px;cursor:pointer;font-family:inherit;">閉じる</button>' +
+  '</div>';
+  document.body.appendChild(ov);
 }
 window.openViewOnlyMode = openViewOnlyMode;
 
@@ -41515,6 +41522,10 @@ async function unifiedEnsurePersonalCalendarAndMigrate() {
 
 // プッシュ：ローカルで変更・新規追加されたタスクだけを、それぞれの所属カレンダーへupsert（差分方式・v0.45.1365〜）
 async function unifiedPushTasks() {
+  // v0.45.1776: 閲覧のみの間は絶対に送らない。
+  // 見せるために allTasks を差し替えているので、ここで送ると
+  // 他人のカレンダーの予定を、自分のものとしてクラウドへ書き込んでしまう。
+  if (window._viewOnlyBackup) return { data: null, error: null };
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1340の教訓＋v0.45.1378多層防御：テスト中は絶対に実送信しない
   if (!window.supabaseClient) return null;
   // v0.45.1347: ページ読み込み直後にタスクを作成すると、クラウド初期化
@@ -41838,6 +41849,9 @@ function _syncFlushPendingRender() {
 window._syncFlushPendingRender = _syncFlushPendingRender;
 
 async function unifiedPullTasks() {
+  // v0.45.1776: 閲覧のみの間は取り込まない。
+  // allTasks を上書きされると、見せている内容が消え、退避したデータとも食い違う。
+  if (window._viewOnlyBackup) return { data: null, error: null };
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1340の教訓＋v0.45.1378多層防御
   if (!window.supabaseClient) return null;
   if (window._myCalendarIds.length === 0) await unifiedRefreshMyCalendarIds();
