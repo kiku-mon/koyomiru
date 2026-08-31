@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1795 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1796 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1795';
+    const APP_VERSION = 'v0.45.1796';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -8667,6 +8667,8 @@ function _showInviteWelcome() {
   <div id="gardenSunriseTimeLabel" style="position:absolute;top:52px;left:50%;transform:translateX(-50%);color:#ffcf9a;font-size:11.5px;z-index:10;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.5);"></div>
   <button id="gardenLookAtSunBtn" onclick="gardenViewGoraikou()" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(20,30,25,0.5);color:#f3ead9;border:1px solid rgba(243,234,217,0.35);border-radius:16px;padding:6px 16px;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px);">☀️ 太陽を見る</button>
   <button id="gardenPreviewBtn" onclick="gardenPreviewSunrise()" style="position:absolute;top:116px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(255,140,74,0.55);color:#fff;border:1px solid rgba(255,200,150,0.5);border-radius:16px;padding:6px 16px;font-size:12px;cursor:pointer;backdrop-filter:blur(6px);">🔎 日の出をプレビュー</button>
+  <!-- v0.45.1796: 遊び心。餌をやると鯉が寄ってきて跳ねる。 -->
+  <button id="gardenFeedBtn" onclick="gardenFeedKoi()" style="position:absolute;top:150px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(120,180,120,0.55);color:#fff;border:1px solid rgba(200,240,200,0.5);border-radius:16px;padding:6px 16px;font-size:12px;cursor:pointer;backdrop-filter:blur(6px);">🍚 餌をやる</button>
   <button id="gardenPreviewBackBtn" onclick="gardenPreviewBackToRealtime()" style="display:none;position:absolute;top:154px;left:50%;transform:translateX(-50%);z-index:10;background:rgba(20,30,25,0.5);color:#f3ead9;border:1px solid rgba(243,234,217,0.35);border-radius:16px;padding:5px 14px;font-size:11.5px;cursor:pointer;backdrop-filter:blur(6px);">⏱️ 実際の時刻に戻す</button>
   <div id="gardenFallback" style="display:none;padding:60px 20px;text-align:center;color:#e8dfc8;">
     <div style="font-size:2.5em;margin-bottom:12px;">🌳</div>
@@ -40440,6 +40442,18 @@ window.gardenLookAtSun = gardenViewGoraikou;
 // v0.45.1436: 【権威】2026-07-30、実際の日の出を待たなくても、その場で
 // 確認できるプレビュー機能。押すと、季節・空・カメラ構図まで、まとめて
 // 日の出の状態に切り替わる。
+// v0.45.1796: 餌やりの入口。庭がまだ組み立てられていないときに押されても
+// 落ちないよう、用意ができているかを確かめてから呼ぶ（第2条）。
+function gardenFeedKoi() {
+  if (typeof window._gardenDropFeed !== 'function') {
+    if (typeof showToast === 'function') showToast('庭の準備中です。少し待ってからもう一度どうぞ');
+    return;
+  }
+  window._gardenDropFeed();
+  if (typeof showToast === 'function') showToast('🍚 餌をまきました');
+}
+window.gardenFeedKoi = gardenFeedKoi;
+
 function gardenPreviewSunrise() {
   window._gardenPreviewMode = 'sunrise';
   if (typeof _gardenApplyTodaySeasonAndMoon === 'function') _gardenApplyTodaySeasonAndMoon();
@@ -41041,11 +41055,44 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
       p.rotation.z += 0.01;
       if (p.position.y < 0.05) p.position.y = 4.5;
     });
+    // v0.45.1796: 餌をやったら鯉が寄ってきて跳ねる。遊び心のための仕掛け。
+    // 餌が生きている間だけ、行き先を餌の位置に差し替える。
+    // 餌そのものは _gardenFeed に置き、時間で薄れて消える。
+    if (window._gardenFeed) {
+      var _fd = window._gardenFeed;
+      _fd.life -= 0.016;
+      if (_fd.mesh) {
+        _fd.mesh.position.y = 0.02 + Math.sin(t * 4) * 0.008;
+        if (_fd.mesh.material) _fd.mesh.material.opacity = Math.max(0, Math.min(0.9, _fd.life * 0.5));
+      }
+      if (_fd.ripple) {
+        var _rp = 1 - Math.max(0, _fd.life) / _fd.maxLife;
+        _fd.ripple.scale.set(0.3 + _rp * 3.2, 0.3 + _rp * 3.2, 1);
+        if (_fd.ripple.material) _fd.ripple.material.opacity = 0.5 * (1 - _rp);
+      }
+      if (_fd.life <= 0) {
+        try {
+          if (_fd.mesh) scene.remove(_fd.mesh);
+          if (_fd.ripple) scene.remove(_fd.ripple);
+        } catch(eFd) {}
+        window._gardenFeed = null;
+      }
+    }
     koiList.forEach(function(k) {
+      var _feed = window._gardenFeed;
+      if (_feed) {
+        // 餌があるうちは、そちらへ向かう
+        k.userData.targetX = _feed.x + (k.userData.bob % 1 - 0.5) * 0.5;
+        k.userData.targetZ = _feed.z + (k.userData.wiggle % 1 - 0.5) * 0.5;
+      }
       var dx = k.userData.targetX - k.position.x;
       var dz = k.userData.targetZ - k.position.z;
       var dist = Math.sqrt(dx*dx + dz*dz);
-      if (dist < 0.3) {
+      // 餌のそばに着いたら跳ねる。跳ねている間は水面より上に出る。
+      if (_feed && dist < 0.55 && k.userData.jump === undefined) {
+        k.userData.jump = 0;
+      }
+      if (!_feed && dist < 0.3) {
         k.userData.targetX = (Math.random() - 0.5) * 4.5;
         k.userData.targetZ = (Math.random() - 0.5) * 4.5;
       }
@@ -41064,6 +41111,20 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
       // v0.45.1484: 水面 y=0.03、水底 y=-0.22 の間を泳ぐ。半透明水面越しに見えるよう
       // やや浅め（-0.06基準）に配置する。
       k.position.y = -0.06 + Math.sin(t * 1.5 + k.userData.bob) * 0.025;
+      // v0.45.1796: 跳ねている最中は、放物線を描いて水面の上へ出る。
+      // 0.9秒で一往復し、頂点で少し身をひねる。終わったら印を消して通常に戻る。
+      if (k.userData.jump !== undefined) {
+        k.userData.jump += 0.016;
+        var _jp = k.userData.jump / 0.9;
+        if (_jp >= 1) {
+          k.userData.jump = undefined;
+          k.rotation.z = 0;
+        } else {
+          var _arc = Math.sin(_jp * Math.PI);
+          k.position.y += _arc * 0.55;
+          k.rotation.z = _arc * 0.7;
+        }
+      }
       k.rotation.y = -k.userData.heading + Math.PI / 2;
       k.userData.wiggle += 0.15 + speedMul * 0.12;
       if (k.children[0]) k.children[0].rotation.y = Math.sin(k.userData.wiggle) * (0.2 + speedMul * 0.08);
@@ -41169,6 +41230,41 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
     }
   }
   buildKoi();
+
+  // v0.45.1796: 【権威】2026-08-31、鯉に餌をやったら跳ねるようにしたい、との要望。
+  // 池の適当な場所に餌を落とすと、鯉がそこへ向かい、着いた順に跳ねる。
+  // 餌は数秒で薄れて消え、消えたら鯉はいつもの気ままな泳ぎに戻る。
+  // 連打しても増えないよう、前の餌は片づけてから置く。
+  function _gardenDropFeed() {
+    try {
+      if (window._gardenFeed) {
+        if (window._gardenFeed.mesh) scene.remove(window._gardenFeed.mesh);
+        if (window._gardenFeed.ripple) scene.remove(window._gardenFeed.ripple);
+      }
+      var _fx = (Math.random() - 0.5) * 3.0;
+      var _fz = (Math.random() - 0.5) * 3.0;
+      // 餌そのもの（水面に浮かぶ小さな粒）
+      var _feedMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.9, fog: false })
+      );
+      _feedMesh.position.set(_fx, 0.02, _fz);
+      scene.add(_feedMesh);
+      // 落ちた瞬間の波紋
+      var _ripple = new THREE.Mesh(
+        new THREE.RingGeometry(0.5, 0.62, 24),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, fog: false })
+      );
+      _ripple.rotation.x = -Math.PI / 2;
+      _ripple.position.set(_fx, 0.035, _fz);
+      _ripple.scale.set(0.3, 0.3, 1);
+      scene.add(_ripple);
+      window._gardenFeed = { x: _fx, z: _fz, life: 6, maxLife: 6, mesh: _feedMesh, ripple: _ripple };
+      // 跳ねる印を一度消して、全員がもう一度跳べるようにする
+      koiList.forEach(function(k) { k.userData.jump = undefined; k.rotation.z = 0; });
+    } catch(e) { console.warn('[Garden] 餌やりに失敗:', e && e.message); }
+  }
+  window._gardenDropFeed = _gardenDropFeed;
 
   // ===== 龍口（りゅうこう）：日本庭園の手水鉢に実在する意匠 =====
   // v0.45.1487: 【権威】2026-08-03、①池の縁の内側に置かれ龍の顔が池の外を向いて
