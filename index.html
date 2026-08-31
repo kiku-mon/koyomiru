@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1820 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1826 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1820';
+    const APP_VERSION = 'v0.45.1826';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -21220,6 +21220,21 @@ function openSidebarNewForm(dateStr) {
     var _calId = (typeof _monthlySidebarTargetCalId === 'function')
       ? _monthlySidebarTargetCalId()
       : ((allSettings.calendar && allSettings.calendar.mainId) || null);
+    // v0.45.1821: 既定の行き先が受け皿（行き先のない記録）にならないようにする。
+    // 受け皿はどこへも届かないので、そこが初期選択だと、書いた本人は
+    // 保存できたつもりでも相手に永久に届かない。実際にそれが起きた。
+    // 受け皿だったときは、書ける先へ寄せる。共有カレンダーがあればそれを優先する。
+    try {
+      var _picked = (calendars || []).filter(function(c){ return c && c.id === _calId; })[0];
+      if (_picked && typeof isWritableCalendar === 'function' && !isWritableCalendar(_picked)) {
+        var _writable = (calendars || []).filter(function(c){
+          return c && c.visible !== false && isWritableCalendar(c);
+        });
+        var _shared = _writable.filter(function(c){ return c.cloudCalendarId; })[0];
+        var _fallback = _shared || _writable[0];
+        _calId = _fallback ? _fallback.id : null;
+      }
+    } catch(eCal) { console.warn('[月間] 既定カレンダーの選び直しに失敗:', eCal && eCal.message); }
     openSidebarEditForm(null, {
       id: '', text: '', date: _d, time: '', endTime: '', endDate: null,
       memo: '', calendarId: _calId, capacity: null, repeat: 'none',
@@ -21281,7 +21296,17 @@ function openSidebarEditForm(item, task) {
       try {
         var _calSel = document.getElementById('msbEditCalendar');
         if (_calSel) {
-          _calSel.innerHTML = (calendars || []).map(function(c) {
+          // v0.45.1821: 受け皿（行き先のない記録）は書き込み先に選ばせない。
+          // どこへも届かないため、そこへ入れた予定は共有相手に永久に届かない。
+          // ただし、いまその受け皿を指している予定を開いたときは選択肢に残す。
+          // 外すと自分の所属が消え、勝手に別のカレンダーへ移ってしまう。
+          _calSel.innerHTML = (calendars || []).filter(function(c) {
+            if (!c) return false;
+            if (typeof isWritableCalendar === 'function' && !isWritableCalendar(c)) {
+              return c.id === task.calendarId;   // 今それを指しているものだけ残す
+            }
+            return true;
+          }).map(function(c) {
             var _lbl = c.name + (c.cloudCalendarId ? '　👥 共有中' : '');
             return '<option value="' + c.id + '"' + (c.id === task.calendarId ? ' selected' : '') + '>' +
                    _lbl.replace(/</g, '&lt;') + '</option>';
@@ -21665,7 +21690,18 @@ function saveMsbEdit() {
       typeof renderMonthlyView  === 'function' && renderMonthlyView();
       typeof renderWeeklyView   === 'function' && renderWeeklyView();
       typeof renderAllSections  === 'function' && renderAllSections(null);
-      showToast('\u4fdd\u5b58\u3057\u307e\u3057\u305f', {type:'ok'});
+      // v0.45.1821: 保存でも行き先を言う。追加のときだけ言って保存で黙るのは
+        // 筋が通らない。カレンダーを変えて保存し直したときこそ確かめたい。
+        try {
+          var _calS = (calendars || []).filter(function(c) { return c && c.id === (_newCalId || ''); })[0];
+          if (_calS && typeof isWritableCalendar === 'function' && !isWritableCalendar(_calS)) {
+            showToast('\u26a0\ufe0f\u300c' + _calS.name + '\u300d\u306b\u4fdd\u5b58\u3057\u307e\u3057\u305f\u3002\u3053\u3053\u306f\u5171\u6709\u76f8\u624b\u306b\u5c4a\u304d\u307e\u305b\u3093', {type:'warn', duration: 5000});
+          } else {
+            showToast(_calS
+              ? ('\u300c' + _calS.name + '\u300d\u306b\u4fdd\u5b58\u3057\u307e\u3057\u305f' + (_calS.cloudCalendarId ? '\uff08\u5171\u6709\u4e2d\uff09' : ''))
+              : '\u4fdd\u5b58\u3057\u307e\u3057\u305f', {type:'ok'});
+          }
+        } catch(eT3) { showToast('\u4fdd\u5b58\u3057\u307e\u3057\u305f', {type:'ok'}); }
     }
 
     function deleteMsbTask() {
@@ -26824,7 +26860,17 @@ function saveMsbEdit() {
           // プレースホルダーとして自動追加する（クラウド由来のIDを尊重・保持）。
           var _uuidReCal = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
           if (_uuidReCal.test(t.calendarId) && !_placeholderAdded[t.calendarId]) {
-            _calList.push({ id: t.calendarId, name: '（他端末のカレンダー）', color: '#b0b0b0', visible: true, shareable: false });
+            // v0.45.1821: 【権威】2026-08-31、共有カレンダーに参加した人が予定を入れても
+            // 相手に届かない、との報告。調べたところ、書き込み先として
+            // この受け皿が選ばれていた。受け皿はクラウド上のどこにも対応しないため、
+            // ここに入れた予定は個人用へ落ち、共有相手には永久に届かない。
+            //
+            // 受け皿は「行き先を失った予定を落とさないための箱」であって、
+            // 新しく書き込む先ではない。受け皿であって投函口ではない。
+            // 印（isOrphanReceptacle）を付けて、書き込み先の選択肢から外せるようにする。
+            // 名前も実態に合わせる。「他端末のカレンダー」では、そこへ書いて
+            // よいものだと誤解される。実際に誤解が起きた。
+            _calList.push({ id: t.calendarId, name: 'カレンダーが決まっていない予定', color: '#b0b0b0', visible: true, shareable: false, isOrphanReceptacle: true });
             _validCalIds.add(t.calendarId);
             _placeholderAdded[t.calendarId] = true;
             _calListChanged = true;
@@ -42949,6 +42995,22 @@ async function refreshSharedCalendarList() {
         '</div>' +
       '</details>';
 
+    // v0.45.1823: 行き先のない予定が手元にあるかどうか。
+    // あるときだけ「ここに移す」の入口を出す。無いのに出すと、何のことか分からない。
+    var _hasOrphans = false;
+    try {
+      var _orphanIdsUI = (calendars || [])
+        .filter(function(oc){ return oc && oc.isOrphanReceptacle; })
+        .map(function(oc){ return oc.id; });
+      // v0.45.1825: 数える条件は、実際に移す条件と必ず同じにする。
+      // 食い違うと「ボタンは出るのに0件」「あるのにボタンが出ない」が起きる。
+      _hasOrphans = _orphanIdsUI.length > 0 &&
+        (allTasks || []).some(function(t){
+          return t && _orphanIdsUI.indexOf(t.calendarId) !== -1 &&
+                 !t.deletedAt && (t.kind || 'task') === 'task';
+        });
+    } catch(eHo) {}
+
     return '<div style="border:1px solid #eee;border-radius:14px;padding:16px;margin-bottom:12px;">' +
       // v0.45.1680: 【権威】2026-08-20、誰が作ったカレンダーか忘れてしまう、との指摘。
       // 名前を変えられるか・消していいかは「作った人かどうか」で決まるので、
@@ -42970,6 +43032,11 @@ async function refreshSharedCalendarList() {
       '</div>' +
       _memberHtml +
       '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + _safeName + '\')" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">招待する</button>' +
+      // v0.45.1823: すでに参加している人は、参加時の案内に出会えない。
+      // 後からでも引き取れる入口をここに置く。行き先のない予定が無ければ出さない。
+      (_hasOrphans
+        ? '<button onclick="offerAdoptOrphanTasks(\'' + c.id + '\', \'' + _safeName + '\')" style="width:100%;margin-top:8px;padding:10px;border:1px solid #d4a017;border-radius:10px;background:#fffaf0;color:#8a6d1f;font-size:0.82em;font-weight:600;cursor:pointer;">カレンダーが決まっていない予定をここに入れる</button>'
+        : '') +
       _manageHtml +
     '</div>';
   }).join('');
@@ -43197,6 +43264,123 @@ window.shareSharedCalendarInvite = shareSharedCalendarInvite;
 // 使えないという、あってはならない状態だった。
 // 参加時のコードをここに切り出し、作成時・参加時の両方から呼ぶ（第4条・唯一の処理）。
 // 戻り値：新しく追加したら true、既にあれば false。
+// v0.45.1821: 書き込み先に選べるかどうかの判定。ここ1か所を正とする。
+// 受け皿（行き先のない記録）は、どこへも届かないので選ばせない。
+// 見ることはできる。書けないだけ。
+function isWritableCalendar(cal) {
+  if (!cal) return false;
+  return !cal.isOrphanReceptacle;
+}
+window.isWritableCalendar = isWritableCalendar;
+
+// v0.45.1823: 【権威】2026-08-31、参加した人が予定を書いても相手に届かない件の続き。
+// ログインする前からこよみるを使っていた人には、必ず「行き先のない記録」の受け皿ができる。
+// 当時の端末のカレンダーを指した予定が、クラウドのどれにも当たらないためである。
+// これは特殊な経路ではなく、これから来る人のほとんどが通る道。
+//
+// 受け皿への書き込みは塞いだ（v0.45.1821）が、すでにそこに溜まっている予定は
+// 取り残されたままになる。参加した直後に、まとめて移せるようにする。
+// 勝手には動かさない。何件あるか見せて、本人に決めてもらう。
+function offerAdoptOrphanTasks(cloudCalendarId, calName) {
+  try {
+    if (!cloudCalendarId) return;
+    var _orphanIds = (calendars || [])
+      .filter(function(c){ return c && c.isOrphanReceptacle; })
+      .map(function(c){ return c.id; });
+    if (_orphanIds.length === 0) return;
+    // v0.45.1825: 移してよいのは「予定」だけ。
+    // 受け皿には日誌・雑記・思考・スタンプなども落ちている。
+    // 日誌は暦に紐づく記録であって、共有カレンダーに入れるものではない。
+    // 全部まとめて移すと、自動生成された日誌が相手の画面に大量に流れ込む。
+    // 実際、確認した10件のうち9件は自動生成の日誌だった。
+    // 消したものも生き返らせない。消したのは本人の意思である。
+    var _targets = (allTasks || []).filter(function(t){
+      if (!t || _orphanIds.indexOf(t.calendarId) === -1) return false;
+      if (t.deletedAt) return false;
+      var _kind = t.kind || 'task';
+      return _kind === 'task';
+    });
+    if (_targets.length === 0) {
+      showToast('カレンダーが決まっていない予定はありませんでした', {type:'ok'});
+      return;
+    }
+
+    var _dest = (calendars || []).filter(function(c){ return c && c.cloudCalendarId === cloudCalendarId; })[0];
+    if (!_dest) return;
+
+    if (document.getElementById('adoptOrphanOverlay')) return;
+    var ov = document.createElement('div');
+    ov.id = 'adoptOrphanOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99700;background:rgba(0,0,0,0.5);' +
+      'display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;';
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:18px;padding:24px 20px;max-width:360px;width:100%;color:#333;">' +
+        '<div style="font-size:1.02em;font-weight:700;margin-bottom:10px;">カレンダーが決まっていない予定が' + _targets.length + '件あります</div>' +
+        '<div style="font-size:0.85em;line-height:1.8;color:#666;margin-bottom:18px;">' +
+          'ログインする前に書いた予定です。手元には残っていますが、' +
+          'どのカレンダーにも入っていないため、共有相手には見えていません。<br><br>' +
+          '「' + (calName || _dest.name || '共有カレンダー') + '」に入れると、' +
+          'あなたが書いたものとして相手にも表示されます。</div>' +
+        '<button id="adoptOrphanYes" style="width:100%;padding:12px;border:none;border-radius:12px;background:#0b6bcb;color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">「' + (calName || _dest.name || '共有カレンダー') + '」に入れる</button>' +
+        '<button id="adoptOrphanNo" style="width:100%;padding:11px;border:none;border-radius:12px;background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">このままにする</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('adoptOrphanNo').onclick = function() { ov.remove(); };
+    document.getElementById('adoptOrphanYes').onclick = function() {
+      // v0.45.1825: 二度押しを止める。押した直後は保存と送信が走るので、
+      // その間にもう一度押されると同じ処理が重なる。
+      var _btn = this;
+      if (_btn.dataset.running === '1') return;
+      _btn.dataset.running = '1';
+      _btn.textContent = '入れています…';
+      _btn.style.opacity = '0.6';
+      try {
+        var _now = new Date().toISOString();
+        _targets.forEach(function(t) {
+          t.calendarId = _dest.id;
+          t.cloudCalendarId = cloudCalendarId;
+          t.updatedAt = _now;   // 第61条：差分同期の対象なので必ず更新する
+        });
+        if (typeof saveAllTasks === 'function') saveAllTasks();
+        // v0.45.1825: 手元で移すだけでは相手に届かない。届けるのが目的なので必ず送る。
+        // ここが抜けていると「入れました」と言いながら何も起きない、
+        // 今回いちばん困った形の不具合を、そのまま再生産することになる。
+        if (typeof unifiedPushTasks === 'function') {
+          Promise.resolve(unifiedPushTasks())
+            .then(function() {
+              showToast('✅ ' + _targets.length + '件を「' + (_dest.name || '共有カレンダー') + '」に入れました', {type:'ok'});
+            })
+            .catch(function(ePush) {
+              console.warn('[SharedCal] 送信に失敗:', ePush && ePush.message);
+              showToast('⚠️ 入れましたが、相手にはまだ届いていません。通信が戻ったら自動で送られます', {type:'warn', duration: 5000});
+            });
+        } else {
+          showToast('✅ ' + _targets.length + '件を「' + (_dest.name || '共有カレンダー') + '」に入れました', {type:'ok'});
+        }
+        // 空になった受け皿は片づける。中身が無いのに残ると、何の箱か分からない。
+        try {
+          var _stillUsed = (allTasks || []).some(function(t){
+            return t && _orphanIds.indexOf(t.calendarId) !== -1;
+          });
+          if (!_stillUsed) {
+            allSettings.calendar.list = (allSettings.calendar.list || [])
+              .filter(function(c){ return !(c && c.isOrphanReceptacle); });
+            calendars = allSettings.calendar.list;
+            if (typeof saveAllSettings === 'function') saveAllSettings();
+          }
+        } catch(eClean) { console.warn('[SharedCal] 受け皿の片づけに失敗:', eClean && eClean.message); }
+        if (typeof renderAllSections === 'function') renderAllSections(null);
+        if (typeof refreshSharedCalendarList === 'function') refreshSharedCalendarList();
+      } catch(eA) {
+        console.warn('[SharedCal] 引き取りに失敗:', eA && eA.message);
+        showToast('⚠️ 入れられませんでした', {type:'warn'});
+      }
+      ov.remove();
+    };
+  } catch(e) { console.warn('[SharedCal] 引き取りの案内に失敗:', e && e.message); }
+}
+window.offerAdoptOrphanTasks = offerAdoptOrphanTasks;
+
 function linkSharedCalendarToLocal(cloudCalendarId, name, color) {
   try {
     if (!cloudCalendarId) return false;
@@ -43310,6 +43494,12 @@ async function joinSharedCalendarFromModal() {
     // v0.45.1534: 統合処理は linkSharedCalendarToLocal に一本化した（第4条）。
     // 作成時と参加時で同じ道を通るので、片方だけ直して片方が漏れることがなくなる。
     if (_sharedCloudId) linkSharedCalendarToLocal(_sharedCloudId, lookup.data[0].calendar_name);
+    // v0.45.1823: 参加した直後に、行き先のない予定の引き取りを提案する。
+    // 参加した「いま」が、移し先がはっきりしている唯一の瞬間である。
+    // 予定の取り込みが落ち着いてから出す。
+    if (_sharedCloudId && typeof offerAdoptOrphanTasks === 'function') {
+      setTimeout(function() { offerAdoptOrphanTasks(_sharedCloudId, lookup.data[0].calendar_name); }, 2200);
+    }
     // v0.45.1410: 【権威】2026-07-26、招待した側が「相手が参加したこと」を知る手段が
     // まだなかった。既存の通知基盤（フェーズA）を再利用し、'joined'という種別で
     // 記録する。相手が予定を追加・完了させれば気づけたが、参加した瞬間自体は
