@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1812 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1814 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1812';
+    const APP_VERSION = 'v0.45.1814';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -371,6 +371,20 @@ async function _showInviteCard(code) {
     document.body.appendChild(ov);
 
     var data = await peekSharedCalendarByCode(code);
+    // v0.45.1813: 「確かめられなかった」と「本当に無効」を分けて伝える。
+    if (data && data._failed) {
+      ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
+        '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:8px;">招待を確かめられませんでした</div>' +
+        '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
+          '通信がうまくいかなかったようです。招待が無効とは限りません。<br>' +
+          '少し待ってから、もう一度リンクを開いてみてください。</div>' +
+        '<button onclick="location.reload()" ' +
+          'style="width:100%;padding:12px;border:none;border-radius:12px;background:#7a6540;color:#fff;font-size:0.9em;cursor:pointer;font-family:inherit;margin-bottom:8px;">もう一度試す</button>' +
+        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
+          'style="width:100%;padding:11px;border:none;border-radius:12px;background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">閉じる</button>' +
+      '</div>';
+      return;
+    }
     if (!data) {
       ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
         '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:8px;">この招待は使えません</div>' +
@@ -38836,7 +38850,13 @@ window.supabaseSignOutOtherDevices = supabaseSignOutOtherDevices;
 
 // 新しい共有カレンダーを作る
 async function createSharedCalendar(name) {
-  if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
+  // v0.45.1813: 【権威】2026-08-31、有効な招待リンクを踏んでも
+  // 「この招待は使えません／期限が切れています」と出る、との報告。
+  // 原因はこの行だった。テスト中は黙って空を返す作りで、
+  // 呼び出し側は空を「招待が無効」と解釈し、嘘の期限切れを表示していた。
+  // 招待の確認は読むだけで、本物のデータを一切変えない。
+  // 守る必要がないところに見張りを置き、一番大事な入口を塞いでいた。
+  // 実際に半日、期限のせいだと思い込んで回り道をした。読むだけの経路から外す。
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
   var u = await window.supabaseClient.auth.getUser();
   if (!u.data || !u.data.user) { console.warn('[SharedCal] 未ログインのため作成不可'); return null; }
@@ -38867,7 +38887,13 @@ async function createSharedCalendar(name) {
 
 // 招待コードの有効性・カレンダー名を確認（まだメンバーでなくても呼べる）
 async function lookupInviteCode(code) {
-  if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1391: 総点検で発見・追加
+  // v0.45.1813: 【権威】2026-08-31、有効な招待リンクを踏んでも
+  // 「この招待は使えません／期限が切れています」と出る、との報告。
+  // 原因はこの行だった。テスト中は黙って空を返す作りで、
+  // 呼び出し側は空を「招待が無効」と解釈し、嘘の期限切れを表示していた。
+  // 招待の確認は読むだけで、本物のデータを一切変えない。
+  // 守る必要がないところに見張りを置き、一番大事な入口を塞いでいた。
+  // 実際に半日、期限のせいだと思い込んで回り道をした。読むだけの経路から外す。
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
   var r = await window.supabaseClient.rpc('koyomiru_lookup_invite', { code: code });
   if (r.error) { console.error('[SharedCal] コード確認失敗:', r.error.message); }
@@ -38885,13 +38911,28 @@ async function lookupInviteCode(code) {
 // クラウド側に koyomiru_peek_invite という関数が必要（未作成なら静かに何も出さない）。
 // 予定の中身は題名だけに絞る。参加していない人に、詳細まで見せるべきではない。
 async function peekSharedCalendarByCode(code) {
-  if (window._isTesting || window._smokeTestRunning) return null;
+  // v0.45.1813: 【権威】2026-08-31、有効な招待リンクを踏んでも
+  // 「この招待は使えません／期限が切れています」と出る、との報告。
+  // 原因はこの行だった。テスト中は黙って空を返す作りで、
+  // 呼び出し側は空を「招待が無効」と解釈し、嘘の期限切れを表示していた。
+  // 招待の確認は読むだけで、本物のデータを一切変えない。
+  // 守る必要がないところに見張りを置き、一番大事な入口を塞いでいた。
+  // 実際に半日、期限のせいだと思い込んで回り道をした。読むだけの経路から外す。
   if (!window.supabaseClient || !code) return null;
   try {
     var r = await window.supabaseClient.rpc('koyomiru_peek_invite', { code: code });
-    if (r.error) { console.log('[SharedCal] 覗き見は未対応:', r.error.message); return null; }
-    return r.data || null;
-  } catch (e) { return null; }
+    // v0.45.1813: 失敗の理由を分ける。これまでは何が起きても空を返していたため、
+    // 呼び出し側は全部「期限切れ」として表示していた。実際には期限が切れておらず、
+    // 通信や権限で失敗しただけのことがある。嘘の説明は調査を丸ごと誤らせる。
+    if (r.error) {
+      console.warn('[SharedCal] 招待の確認に失敗:', r.error.message);
+      return { _failed: true, _reason: r.error.message || '' };
+    }
+    if (!r.data) return null;   // 本当に見つからない（期限切れ・取り消し）
+    return r.data;
+  } catch (e) {
+    return { _failed: true, _reason: (e && e.message) || '' };
+  }
 }
 window.peekSharedCalendarByCode = peekSharedCalendarByCode;
 
