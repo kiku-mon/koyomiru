@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1778 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1782 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1778';
+    const APP_VERSION = 'v0.45.1782';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -254,10 +254,54 @@
     var _emParams = new URLSearchParams(window.location.search);
     if (_emParams.get('view'))      window._koyomiruEntryMode = 'view';
     else if (_emParams.get('join')) window._koyomiruEntryMode = 'join';
+    // v0.45.1779: 【権威】2026-08-31、Googleログインから戻ってきた回を数え忘れていた。
+    // ログインは別サイトへ飛んで戻ってくるので、戻り道のURLに ?join= は付いていない。
+    // そのままだと戻った瞬間に起動アニメとセットアップ画面が復活し、
+    // 900ミリ秒後に出るはずの招待カードの前に立ちはだかる。行きだけ塞いでも意味がない。
+    // 預かった招待コードは sessionStorage に残っている（同じタブなら往復しても消えない）ので、
+    // それがある間は「まだ招待の途中」とみなす。
+    if (!window._koyomiruEntryMode &&
+        sessionStorage.getItem('koyomiru_pending_join')) {
+      window._koyomiruEntryMode = 'join';
+    }
   } catch(e) {}
   // 保留したセットアップ画面を、招待が片付いてから出すための旗。
   // 「出さない」だけにすると、断った人がカレンダーの選び直しに一生たどり着けない。
   window._koyomiruSetupPending = false;
+
+  // v0.45.1780: 【権威】2026-08-31、パスワード再設定のリンクを踏んだのに、
+  // 再設定画面が出ずログインもされず、ただこよみるに入っただけだった、との報告。
+  // 原因は、申し込んだブラウザ（Chrome）とリンクを開いたブラウザ（Safari）が
+  // 違ったこと。合言葉は申し込んだブラウザの中にしか無いので、別のブラウザで
+  // 開くと照合できず、黙って失敗して素通りする。
+  //
+  // メールアプリから踏めば勝手にSafariが開くのが普通で、揃えられる人のほうが少ない。
+  // 使う人の落ち度ではないのに、何が起きたか一切知らされないのが最大の問題である。
+  // まず「黙って落ちる」のをやめ、何が起きたか・どうすれば通るかを画面で伝える。
+  //
+  // ここで拾うのは、この先の画面切り替えが location.hash を書き換えて
+  // 合言葉ごと消してしまうため。消えたあとでは、何から戻ったのか分からない。
+  window._koyomiruAuthArrival = null;
+  try {
+    var _aaH = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    var _aaQ = new URLSearchParams((window.location.search || '').replace(/^\?/, ''));
+    var _aaGet = function(k) { return _aaQ.get(k) || _aaH.get(k) || ''; };
+    var _aaErr  = _aaGet('error_code') || _aaGet('error');
+    var _aaType = _aaGet('type');
+    var _aaCode = _aaQ.get('code') || '';
+    var _aaTok  = _aaH.get('access_token') || '';
+    if (_aaErr || _aaType || _aaCode || _aaTok) {
+      window._koyomiruAuthArrival = {
+        error: _aaErr,
+        errorDesc: _aaGet('error_description'),
+        type: _aaType,
+        hasCode: !!_aaCode,
+        hasToken: !!_aaTok
+      };
+    }
+  } catch(e) {}
+  // 再設定画面がちゃんと開けたかどうかの印。開けたなら見張りは何もしない。
+  window._koyomiruRecoveryHandled = false;
 
   // v0.45.1619: 見るだけリンク（?view=TOKEN）で開かれたとき。
   // ログインを求めず、そのまま読める画面を出す。
@@ -377,6 +421,80 @@ async function _showInviteCard(code) {
   } catch(e) { console.warn('[招待] 表示に失敗:', e && e.message); }
 }
 window._showInviteCard = _showInviteCard;
+
+// v0.45.1780: メールのリンクから戻ったのに何も起きなかったとき、画面で伝える。
+// 黙って素通りさせると、使う人は「押したのに何も起きない」としか分からず、
+// 何度も同じことを繰り返して離脱する。実際にそれが起きた。
+//
+// 3秒待つのは、正常なときは合言葉の照合とログインがその間に済むため。
+// 済んでいれば何も出さない。済んでいなければ、何かが失敗している。
+function _showAuthArrivalHelp(reason) {
+  try {
+    if (document.getElementById('authArrivalHelp')) return;
+    var ov = document.createElement('div');
+    ov.id = 'authArrivalHelp';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99995;background:rgba(0,0,0,0.55);' +
+      'display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;';
+    ov.innerHTML =
+      '<div style="background:#fffdf7;border-radius:16px;padding:22px 20px;max-width:340px;width:100%;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,0.3);font-family:inherit;color:#4a3f30;">' +
+        '<div style="font-size:1.05em;font-weight:700;margin-bottom:12px;">リンクからの手続きが終わりませんでした</div>' +
+        '<div style="font-size:0.86em;line-height:1.7;margin-bottom:16px;">' + reason + '</div>' +
+        '<button id="authArrivalRetryBtn" style="width:100%;padding:12px;border:none;border-radius:12px;' +
+        'background:#7a6540;color:#fff;font-size:0.9em;cursor:pointer;font-family:inherit;margin-bottom:8px;">' +
+        'このブラウザで申し込み直す</button>' +
+        '<button id="authArrivalHelpBtn" style="width:100%;padding:11px;border:none;border-radius:12px;' +
+        'background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">閉じる</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('authArrivalHelpBtn').onclick = function() { ov.remove(); };
+    // v0.45.1781: 「コピーして貼り付けて」と押し戻すのをやめ、その場で解決できるようにする。
+    // カードが出ているのはこよみるの画面上で、メールはもう閉じている。
+    // どのリンクのことか特定できない案内は、案内になっていない。
+    // いま開いているこのブラウザから申し込み直せば、届いたメールをこのまま開ける。
+    document.getElementById('authArrivalRetryBtn').onclick = function() {
+      ov.remove();
+      try {
+        if (typeof window.openCloudLoginModal === 'function') window.openCloudLoginModal();
+        setTimeout(function() {
+          var em = document.getElementById('cloudLoginEmail');
+          if (em) { em.focus(); }
+        }, 300);
+      } catch(eR) { console.warn('[Auth] ログイン画面を開けませんでした:', eR && eR.message); }
+    };
+  } catch(e) { console.warn('[Auth] 案内の表示に失敗:', e && e.message); }
+}
+window._showAuthArrivalHelp = _showAuthArrivalHelp;
+
+(function _watchAuthArrival() {
+  try {
+    var a = window._koyomiruAuthArrival;
+    if (!a) return;
+    setTimeout(function() {
+      // 再設定画面が開けた、またはログインできた ＝ 成功。何も出さない。
+      if (window._koyomiruRecoveryHandled || window._cloudIsLoggedIn) return;
+
+      var msg;
+      if (a.error) {
+        // リンク切れ・使用済みなど、原因がURLに書かれて戻ってきた場合。
+        msg = 'メールのリンクの期限が切れているか、すでに使われています。' +
+              '下のボタンから申し込み直して、届いたメールをすぐに開いてください。';
+      } else if (localStorage.getItem('koyomiru_pw_reset_from_here')) {
+        // このブラウザで申し込んだ形跡がある＝ブラウザ違いではない。
+        msg = '確認ができませんでした。リンクの期限が切れている可能性があります。' +
+              '下のボタンから申し込み直して、届いたメールをすぐに開いてください。' +
+              '<br><br><span style="color:#8a7a60;">※ メールが2通になります。<b>あとから届いたほう</b>を開いてください。</span>';
+      } else {
+        // 申し込んだ形跡が無い＝別のブラウザで開いた可能性が高い。今回の報告がこれ。
+        msg = 'パスワード再設定のリンクは、<b>申し込んだときと同じブラウザ</b>で開く必要があります。' +
+              'メールアプリから押すと、別のブラウザが立ち上がってしまうことがあります。<br><br>' +
+              'このまま、いま開いているブラウザで申し込み直すのが確実です。' +
+              '<br><br><span style="color:#8a7a60;">※ メールが2通になります。<b>あとから届いたほう</b>を開いてください。</span>';
+      }
+      _showAuthArrivalHelp(msg);
+    }, 3000);
+  } catch(e) {}
+})();
 
 // v0.45.1778: 保留していた初回セットアップ画面を出す。
 // 招待が片付いたとき（参加した／あとにした／見るだけを終えた）にだけ呼ぶ。
@@ -38731,11 +38849,18 @@ async function peekSharedCalendarByCode(code) {
 window.peekSharedCalendarByCode = peekSharedCalendarByCode;
 
 // 覗いた中身を、参加ボタンの手前に出す。
-async // v0.45.1775: 【権威】2026-08-27、招待リンクを踏んでも「参加する」が出ない、
+// v0.45.1775: 【権威】2026-08-27、招待リンクを踏んでも「参加する」が出ない、
 // 代わりに新規作成のボタンだけ見えるとの報告。
 // 原因は、この関数に async が付いていないのに await を使っていたこと。
 // 構文として成立しないため、呼ばれた時点で処理全体が止まり、
 // 招待の画面が組み上がる前に中断していた。
+//
+// v0.45.1782: 【権威】2026-08-31、その修正のときに async を「コメントの前」に
+// 置いてしまい、async だけが行末に取り残されていた。文法としては正しいので
+// 構文チェックは通るが、実行すると「async という名前は無い」で止まる。
+// しかもここは巨大なブロックの途中なので、これ以降の定義がすべて失われる。
+// 38831行の注記にあるとおり、同じ壊し方は二度目である。
+// async は必ず function の直前に置くこと。あいだにコメントを挟まない。
 async function renderInvitePreview(code) {
   var box = document.getElementById('sharedCalendarPeek');
   if (!box) return;
@@ -43500,8 +43625,12 @@ async function cloudSendPasswordReset() {
       var _re = _cloudTranslateAuthError(r.error.message);
       _cloudLoginSetStatus('⚠️ ' + _re.msg, 'error', _re.field);
     } else {
+      // v0.45.1780: このブラウザで申し込んだ、という印を残す。
+      // リンクが通らなかったとき、原因が「別のブラウザで開いた」のか
+      // 「期限切れ」なのかを見分けるために使う。案内の文面が変わる。
+      try { localStorage.setItem('koyomiru_pw_reset_from_here', String(Date.now())); } catch(eM) {}
       // 存在しないアドレスでも同じ文言を返す（アカウントの有無を外部に漏らさないため）
-      _cloudLoginSetStatus('📬 ' + email + ' にパスワード再設定用のメールを送りました。メール内のリンクを開いて新しいパスワードを設定してください。', 'success');
+      _cloudLoginSetStatus('📬 ' + email + ' にパスワード再設定用のメールを送りました。同じブラウザでメール内のリンクを開いて、新しいパスワードを設定してください。', 'success');
     }
   } catch(e) {
     var _re2 = _cloudTranslateAuthError(e.message);
@@ -44194,6 +44323,8 @@ try {
       // 離脱して当然の作りだった。
       if (event === 'PASSWORD_RECOVERY') {
         try {
+          // v0.45.1780: ここまで来たなら成功。見張りに「出さなくていい」と伝える。
+          window._koyomiruRecoveryHandled = true;
           if (typeof window.openPasswordResetForm === 'function') window.openPasswordResetForm();
         } catch(ePr) { console.warn('[Auth] 再設定画面の表示に失敗:', ePr); }
         return;
