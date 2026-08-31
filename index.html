@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1803 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1810 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1803';
+    const APP_VERSION = 'v0.45.1810';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -3453,6 +3453,18 @@ function _showInviteWelcome() {
       color: #c47a3a;
     }
     .monthly-day-cell {
+      /* v0.45.1806: 升目ごとに高さを書くのをやめた（v0.45.1805）ため、
+         中身が少ない升目が行の高さまで伸びず、下に灰色の隙間が見えていた。
+         行の高さはグリッドが決め、升目はその行いっぱいに広がる、と役割を分ける。
+
+         v0.45.1807: 【権威】2026-08-31、ぐっと伸ばしている最中だけ隙間が見える、
+         との指摘。height:100% は親の高さが確定してから効くため一拍遅れる。
+         行の上端から下端までを埋めるよう直接指定すれば、遅れずについてくる。 */
+      /* v0.45.1808: グリッド任せ（align-self:stretch）では隙間が埋まらなかった。
+         升目の高さを共通の変数で決める。変数を1回書き換えるだけで全升目に同時に効くので、
+         42回書いていた頃と同じ見た目のまま、書き込みは左右のバーと同じ1回で済む。 */
+      height: var(--monthly-row-h, 130px);
+      box-sizing: border-box;
       background-color: white;
       border-right: 1px solid #e0e0e0;
       border-bottom: 1px solid #e0e0e0;
@@ -7232,8 +7244,8 @@ function _showInviteWelcome() {
         style="font-size:0.6em;color:#aaa;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 5px;cursor:pointer;flex-shrink:0;margin-left:4px;">↺</button>
       <!-- v0.45.1633: 【権威】2026-08-19、🏷 が何のアイコンか分からないとの指摘。
            絞り込みには世の中で意味の固定した記号が無いため、絵に頼らず文字で書く。 -->
-      <button id="monthlyFilterToggle" onclick="window.toggleMonthlyFilterBar()" title="絞り込みの表示を切り替える"
-        style="font-size:0.6em;color:#666;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 6px;cursor:pointer;flex-shrink:0;margin-left:4px;white-space:nowrap;">絞り込み ▾</button>
+      <button id="monthlyFilterToggle" onclick="window.toggleMonthlyFilterBar()" title="どのカレンダーを表示するか選ぶ"
+        style="font-size:0.6em;color:#666;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 6px;cursor:pointer;flex-shrink:0;margin-left:4px;white-space:nowrap;">表示するカレンダー ▾</button>
     </div>
     <!-- カレンダークイックフィルター -->
     <!-- v0.45.1623: 【権威】2026-08-19、カレンダー本体が下に埋もれるとの指摘。
@@ -11069,7 +11081,11 @@ var MONTHLY_KOYOMI_H = 24;   // 暦を出す最低の高さ（名前1行＋フ�
 // v0.45.1629: 【権威】2026-08-19、スマホでは上下の刻みが広すぎるとの指摘。
 // 下限が130pxだったため、いちばん縮めても画面に4行しか入らなかった。
 // 60pxまで詰められるようにする。ここを唯一の正とし、スライダーにも同じ値を当てる。
-var MONTHLY_ROWH_MIN = 60;
+// v0.45.1804: 【権威】2026-08-31、ピンクのスライダーを左に戻すと升目が小さすぎる、
+// との指摘。下限が60pxで、日付と気温だけで潰れ、カレンダーの下に空白が残っていた。
+// 縮める意味は「一度に多くを見る」ことなので、読めない高さまで縮められても使い道がない。
+// 日付・気温・二十四節気の3行が収まる高さを下限とする。
+var MONTHLY_ROWH_MIN = 110;
 var MONTHLY_ROWH_MAX = 500;
 
 // ===== v0.45.1621: TimeTree方式に組み替える =====
@@ -14160,6 +14176,8 @@ function myDeckApply(idx) {
       // PC(768px以上)はデフォルト行高を160pxに・スマホは130px
       var _defaultRowH = window.innerWidth >= 768 ? 160 : 130;
       var _mRowH = parseInt(allSettings.ui.monthlyRowH || _defaultRowH);
+      // v0.45.1804: 下限を上げたので、それ以前に保存した小さい値は下限に合わせる。
+      if (!(_mRowH >= MONTHLY_ROWH_MIN)) _mRowH = MONTHLY_ROWH_MIN;
       // v0.45.1594: 画面の高さに収める。固定高だと必ずはみ出し、
       // 「今月どうなっているか」を一目で掴めなくなる。実際に使える高さから逆算する。
       // v0.45.1622: 6ではなく実際の週数で割る。5週の月はその分だけ1行が高くなる。
@@ -14188,6 +14206,8 @@ function myDeckApply(idx) {
       // v0.45.1639: 行の高さはグリッド側でも固定する。
       // 升目の height だけでは、中身が多い日に行が押し広げられて画面から溢れる。
       calendar.style.gridTemplateRows = 'auto repeat(' + _weeks + ',' + _mRowH + 'px)';
+      // v0.45.1808: 升目の高さを決める共通の変数も、ここで合わせておく。
+      document.documentElement.style.setProperty('--monthly-row-h', _mRowH + 'px');
       // スライダーの初期値を反映
       var _mRhSlider = document.getElementById('monthlyRowHSlider');
       if (_mRhSlider) {
@@ -14243,7 +14263,8 @@ function myDeckApply(idx) {
       for (let i = 0; i < _cellCount; i++) {
         const cell = document.createElement('div');
         cell.className = 'monthly-day-cell';
-        cell.style.height = _mRowH + 'px';
+        // v0.45.1805: 升目ごとに高さを書くのをやめた。行の高さはグリッド側
+        // （gridTemplateRows）だけが決める。詳しくは _applyMonthlyRowHFast の注記。
         let dateStr;
         let dayNumber;
         let isOtherMonth = false;
@@ -14968,11 +14989,20 @@ function myDeckApply(idx) {
       try {
         var cal = document.getElementById('monthlyCalendar');
         if (!cal) return;
+        // v0.45.1805: 【権威】2026-08-31、上下だけ動きが引っかかる、
+        // 左右のように滑らかにしてほしい、との指摘。
+        // 原因は書き込む回数だった。左右はカレンダー全体に幅を1回書くだけなのに、
+        // 上下は42個の升目それぞれに高さを書き、さらに帯の行寸法も書いていた。
+        // 指を1回動かすたびに40回以上の書き込みが走っていた。
+        // 行の高さはグリッド側だけが決める形にして、書き込みを1回にする。
+        // v0.45.1808: 升目の高さは共通の変数で決める。ここを1回書き換えるだけで
+        // 全部の升目に同時に効く。左右のバーと同じ「1回書くだけ」になる。
+        //
+        // v0.45.1810: 行の高さにも同じ変数を使ってみたが（v0.45.1809）、
+        // かえって隙間が目立った。行は数値で、升目は変数で、という組み合わせが
+        // 実際には一番きれいだったため、1808の形に戻す。
+        document.documentElement.style.setProperty('--monthly-row-h', v + 'px');
         var cells = cal.querySelectorAll('.monthly-day-cell');
-        for (var i = 0; i < cells.length; i++) {
-          cells[i].style.height = v + 'px';
-          if (cells[i].style.maxHeight !== 'none') cells[i].style.maxHeight = v + 'px';
-        }
         // 帯は升目に重ねているので、行の高さが変われば一緒に伸ばさないとずれる
         //
         // v0.45.1799: 直前の版で「実測した高さで帯を並べる」ようにしたところ、
@@ -14981,9 +15011,12 @@ function myDeckApply(idx) {
         // 本当の行の高さと一致せず、足りない分が隙間として見えていた。
         // 直し方を誤ったので、いったん元の方式に戻す。
         // ずれの問題自体は残っているので、別途あらためて設計すること。
+        var weeks = Math.max(1, Math.round(cells.length / 7));
+        // 行の高さは変数を見る。数値を直接書かないので、升目とずれない。
+        cal.style.gridTemplateRows = 'auto repeat(' + weeks + ',' + v + 'px)';
+        // 帯は升目に重ねているので、行の高さが変われば一緒に伸ばさないとずれる
         var layer = document.getElementById('monthlyBandLayer');
         if (layer) {
-          var weeks = Math.max(1, Math.round(cells.length / 7));
           var hdr = cal.querySelector('.monthly-weekday-header');
           var hdrH = hdr ? hdr.offsetHeight : 28;
           layer.style.gridTemplateRows = hdrH + 'px repeat(' + weeks + ',' + v + 'px)';
@@ -16931,7 +16964,9 @@ function applyMonthlyFilterBar() {
     var btn = document.getElementById('monthlyFilterToggle');
     var collapsed = !!(allSettings && allSettings.ui && allSettings.ui.monthlyFilterCollapsed);
     if (bar) bar.style.display = collapsed ? 'none' : 'flex';
-    if (btn) btn.textContent = collapsed ? '絞り込み ▸' : '絞り込み ▾';
+    // v0.45.1806: 開閉のたびにここで文字を書き換えるため、
+    // ボタンの初期表示だけ直しても押した瞬間に元へ戻っていた。
+    if (btn) btn.textContent = collapsed ? '表示するカレンダー ▸' : '表示するカレンダー ▾';
   } catch(e) {}
 }
 window.applyMonthlyFilterBar = applyMonthlyFilterBar;
