@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1810 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1811 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1810';
+    const APP_VERSION = 'v0.45.1811';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -25003,7 +25003,7 @@ function saveMsbEdit() {
           var _CONTENT_DUPE_KEYS = {
             task:        function(t) { return [t.text||'', t.date||'', t.section||'', t.time||'']; },
             stamp:       function(t) { return [t.name||'', t.color||'', t.startTime||'', t.endTime||'']; },
-            journal:     function(t) { return [t.date||'']; },
+            journal:     function(t) { return [t.date||'', t.text||'']; },  // v0.45.1811: 日付だけで消していた（同じ日に二度書くと消える）
             blueprint:   function(t) { return [t.title||'', t.grandvisionId||'']; },
             gantt:       function(t) { return [t.title||'', t.blueprintId||'']; },
             grandvision: function(t) { return [t.title||'']; },
@@ -26213,7 +26213,7 @@ function saveMsbEdit() {
       // 検出対象kind と キー生成関数
       var DEDUP_KEYS = {
         stamp:       function(t) { return [t.name||'', t.color||'', t.startTime||'', t.endTime||'']; },
-        journal:     function(t) { return [t.date||'']; },
+        journal:     function(t) { return [t.date||'', t.text||'']; },  // v0.45.1811: 日付だけで消していた（同じ日に二度書くと消える）
         blueprint:   function(t) { return [t.title||'', t.grandvisionId||'']; },
         gantt:       function(t) { return [t.title||'', t.blueprintId||'']; },
         grandvision: function(t) { return [t.title||'']; },
@@ -41671,7 +41671,7 @@ window._loadGardenVisitList = _loadGardenVisitList;
 var _PURGE_DUPE_KEYS = {
   task:        function(t) { return [t.text||'', t.date||'', t.section||'', t.time||'']; },
   stamp:       function(t) { return [t.name||'', t.color||'', t.startTime||'', t.endTime||'']; },
-  journal:     function(t) { return [t.date||'']; },
+  journal:     function(t) { return [t.date||'', t.text||'']; },  // v0.45.1811: 日付だけで消していた（同じ日に二度書くと消える）
   blueprint:   function(t) { return [t.title||'', t.grandvisionId||'']; },
   gantt:       function(t) { return [t.title||'', t.blueprintId||'']; },
   grandvision: function(t) { return [t.title||'']; },
@@ -41689,10 +41689,17 @@ function _purgeDupeKey(t) {
     return kind + '|' + parts.join('|');
   } catch(e) { return null; }
 }
-function purgeDuplicateContent() {
-  var before = allTasks.length;
+// v0.45.1811: 【権威】2026-08-31、スモークテストを回すたびに予定が42件減る、との報告。
+// 原因はST-296が、テスト用の2件を確かめるために本物のデータ全体へ
+// 重複除去を走らせていたこと。巻き添えで消えた本物の予定は戻らない。
+// 引数に一覧を渡すと、その一覧だけを対象に判定し、保存も削除の伝播も
+// 画面の描き直しも行わない。引数なしのときは、これまでどおり本物に対して実行する。
+function purgeDuplicateContent(_targetList) {
+  var _isDry = Array.isArray(_targetList);
+  var _work = _isDry ? _targetList : allTasks;
+  var before = _work.length;
   // updatedAtが新しい方を残すため、新しい順に並べてから重複判定する
-  var sorted = allTasks.slice().sort(function(a, b) {
+  var sorted = _work.slice().sort(function(a, b) {
     var au = a.updatedAt || a.createdAt || '';
     var bu = b.updatedAt || b.createdAt || '';
     return bu.localeCompare(au);
@@ -41707,7 +41714,14 @@ function purgeDuplicateContent() {
     seenKeys[key] = true;
     keepIds[t.id] = true;
   });
-  allTasks = allTasks.filter(function(t) { return keepIds[t.id]; });
+  var kept = _work.filter(function(t) { return keepIds[t.id]; });
+  if (_isDry) {
+    // 試しただけ。本物のデータには触れない。
+    _targetList.length = 0;
+    kept.forEach(function(t) { _targetList.push(t); });
+    return { before: before, after: _targetList.length, removed: removedIds.length };
+  }
+  allTasks = kept;
   removedIds.forEach(function(id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(id); });
   saveAllTasks();
   if (typeof renderAllSections === 'function') renderAllSections();
@@ -60087,18 +60101,19 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-296·①: 管理者パネルへのボタン組み込み確認')
          : ng('ST-296·①: ボタンが見つからない', '');
        // ② 実挙動：意図的に重複したnoteを作り、1件だけ残って削除されるか確認
+       // v0.45.1811: 以前はテスト用の2件を本物の allTasks に混ぜ、
+       // 本物全体に重複除去を走らせていた。巻き添えで本物の予定が消えていた。
+       // テスト用の2件だけを入れた別の一覧で試す。本物には一切触れない。
        var _st296before = allTasks.length;
        var _dup1 = { id: generateTaskId(), kind: 'note', title: 'ST296テスト', dateL: '2026-01-01', dateR: '', textL: '', textR: '', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
        var _dup2 = { id: generateTaskId(), kind: 'note', title: 'ST296テスト', dateL: '2026-01-01', dateR: '', textL: '', textR: '', createdAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' };
-       allTasks.push(_dup1, _dup2);
-       var _st296result = purgeDuplicateContent();
-       var _st296remaining = allTasks.filter(function(t){ return t.title === 'ST296テスト'; });
+       var _st296list = [_dup1, _dup2];
+       var _st296result = purgeDuplicateContent(_st296list);
+       var _st296remaining = _st296list.filter(function(t){ return t.title === 'ST296テスト'; });
        (_st296result.removed >= 1 && _st296remaining.length === 1 && _st296remaining[0].id === _dup2.id)
          ? ok('ST-296·②: 重複除去の実挙動確認（新しい方が残る・' + _st296result.removed + '件削除）')
          : ng('ST-296·②: 想定通りに除去されない', JSON.stringify(_st296result) + ' 残存=' + _st296remaining.length);
-       // クリーンアップ
-       allTasks = allTasks.filter(function(t){ return t.title !== 'ST296テスト'; });
-       saveAllTasks();
+       // 本物には触れていないので、片づけるものは無い。件数が変わっていないことだけ確かめる。
        (allTasks.length === _st296before)
          ? ok('ST-296·③: クリーンアップ完了（件数復元）')
          : ng('ST-296·③: 件数が復元されない', '');
