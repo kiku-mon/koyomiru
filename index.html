@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1814 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1815 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,8 +157,80 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1814';
+    const APP_VERSION = 'v0.45.1815';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
+    // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
+    // 原因は置き場所だった。「どこから来たか」を記録する処理を
+    // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
+    // 終わってから。カレンダーの初期化はそれより先に走るので、
+    // 判定は必ず空振りしていた。どれだけ判定を直しても効かないはずである。
+    // 読み込みを待たず、いちばん最初に実行されるようここへ移す。
+  // v0.45.1778: 【権威】2026-08-31、招待リンクを踏んだ新規の人が、招待の案内ではなく
+  // 初回セットアップ画面（使うカレンダーを選ぶ）を見せられ、その下にあるログインへ
+  // 手が届かなかった、との報告。重なり順がセットアップ画面（999999）＞招待（99600）で、
+  // かつセットアップ画面は「必ず選ばせる」設計で閉じるボタンが隠してあるため。
+  //
+  // 招待された人の目的は「相手のカレンダーを見る」の一点。自分のカレンダー選びを
+  // 先にやらせるのは、目的と関係ない作業を先に強いることになる。
+  // そこで「どういう入口から来たか」を最初に記録し、招待・見るだけの間は
+  // 起動アニメも風だよりもセットアップ画面も出さないようにする。
+  //
+  // ここで判定するのは、この直後の history.replaceState で ?join= や ?view= が
+  // URLから消えるため。消えたあとでは、もうどこから来たか分からない。
+  window._koyomiruEntryMode = null;   // 'join'（招待）／'view'（見るだけ）／null（通常）
+  try {
+    var _emParams = new URLSearchParams(window.location.search);
+    if (_emParams.get('view'))      window._koyomiruEntryMode = 'view';
+    else if (_emParams.get('join')) window._koyomiruEntryMode = 'join';
+    // v0.45.1779: 【権威】2026-08-31、Googleログインから戻ってきた回を数え忘れていた。
+    // ログインは別サイトへ飛んで戻ってくるので、戻り道のURLに ?join= は付いていない。
+    // そのままだと戻った瞬間に起動アニメとセットアップ画面が復活し、
+    // 900ミリ秒後に出るはずの招待カードの前に立ちはだかる。行きだけ塞いでも意味がない。
+    // 預かった招待コードは sessionStorage に残っている（同じタブなら往復しても消えない）ので、
+    // それがある間は「まだ招待の途中」とみなす。
+    if (!window._koyomiruEntryMode &&
+        sessionStorage.getItem('koyomiru_pending_join')) {
+      window._koyomiruEntryMode = 'join';
+    }
+  } catch(e) {}
+  // 保留したセットアップ画面を、招待が片付いてから出すための旗。
+  // 「出さない」だけにすると、断った人がカレンダーの選び直しに一生たどり着けない。
+  window._koyomiruSetupPending = false;
+
+  // v0.45.1780: 【権威】2026-08-31、パスワード再設定のリンクを踏んだのに、
+  // 再設定画面が出ずログインもされず、ただこよみるに入っただけだった、との報告。
+  // 原因は、申し込んだブラウザ（Chrome）とリンクを開いたブラウザ（Safari）が
+  // 違ったこと。合言葉は申し込んだブラウザの中にしか無いので、別のブラウザで
+  // 開くと照合できず、黙って失敗して素通りする。
+  //
+  // メールアプリから踏めば勝手にSafariが開くのが普通で、揃えられる人のほうが少ない。
+  // 使う人の落ち度ではないのに、何が起きたか一切知らされないのが最大の問題である。
+  // まず「黙って落ちる」のをやめ、何が起きたか・どうすれば通るかを画面で伝える。
+  //
+  // ここで拾うのは、この先の画面切り替えが location.hash を書き換えて
+  // 合言葉ごと消してしまうため。消えたあとでは、何から戻ったのか分からない。
+  window._koyomiruAuthArrival = null;
+  try {
+    var _aaH = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    var _aaQ = new URLSearchParams((window.location.search || '').replace(/^\?/, ''));
+    var _aaGet = function(k) { return _aaQ.get(k) || _aaH.get(k) || ''; };
+    var _aaErr  = _aaGet('error_code') || _aaGet('error');
+    var _aaType = _aaGet('type');
+    var _aaCode = _aaQ.get('code') || '';
+    var _aaTok  = _aaH.get('access_token') || '';
+    if (_aaErr || _aaType || _aaCode || _aaTok) {
+      window._koyomiruAuthArrival = {
+        error: _aaErr,
+        errorDesc: _aaGet('error_description'),
+        type: _aaType,
+        hasCode: !!_aaCode,
+        hasToken: !!_aaTok
+      };
+    }
+  } catch(e) {}
+  // 再設定画面がちゃんと開けたかどうかの印。開けたなら見張りは何もしない。
+  window._koyomiruRecoveryHandled = false;
+
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
       // URLパラメータ ?deck=DCK1:xxx でデッキ自動追加
@@ -237,71 +309,6 @@
           }, 800);
         } catch(e) {}
       })();
-  // v0.45.1778: 【権威】2026-08-31、招待リンクを踏んだ新規の人が、招待の案内ではなく
-  // 初回セットアップ画面（使うカレンダーを選ぶ）を見せられ、その下にあるログインへ
-  // 手が届かなかった、との報告。重なり順がセットアップ画面（999999）＞招待（99600）で、
-  // かつセットアップ画面は「必ず選ばせる」設計で閉じるボタンが隠してあるため。
-  //
-  // 招待された人の目的は「相手のカレンダーを見る」の一点。自分のカレンダー選びを
-  // 先にやらせるのは、目的と関係ない作業を先に強いることになる。
-  // そこで「どういう入口から来たか」を最初に記録し、招待・見るだけの間は
-  // 起動アニメも風だよりもセットアップ画面も出さないようにする。
-  //
-  // ここで判定するのは、この直後の history.replaceState で ?join= や ?view= が
-  // URLから消えるため。消えたあとでは、もうどこから来たか分からない。
-  window._koyomiruEntryMode = null;   // 'join'（招待）／'view'（見るだけ）／null（通常）
-  try {
-    var _emParams = new URLSearchParams(window.location.search);
-    if (_emParams.get('view'))      window._koyomiruEntryMode = 'view';
-    else if (_emParams.get('join')) window._koyomiruEntryMode = 'join';
-    // v0.45.1779: 【権威】2026-08-31、Googleログインから戻ってきた回を数え忘れていた。
-    // ログインは別サイトへ飛んで戻ってくるので、戻り道のURLに ?join= は付いていない。
-    // そのままだと戻った瞬間に起動アニメとセットアップ画面が復活し、
-    // 900ミリ秒後に出るはずの招待カードの前に立ちはだかる。行きだけ塞いでも意味がない。
-    // 預かった招待コードは sessionStorage に残っている（同じタブなら往復しても消えない）ので、
-    // それがある間は「まだ招待の途中」とみなす。
-    if (!window._koyomiruEntryMode &&
-        sessionStorage.getItem('koyomiru_pending_join')) {
-      window._koyomiruEntryMode = 'join';
-    }
-  } catch(e) {}
-  // 保留したセットアップ画面を、招待が片付いてから出すための旗。
-  // 「出さない」だけにすると、断った人がカレンダーの選び直しに一生たどり着けない。
-  window._koyomiruSetupPending = false;
-
-  // v0.45.1780: 【権威】2026-08-31、パスワード再設定のリンクを踏んだのに、
-  // 再設定画面が出ずログインもされず、ただこよみるに入っただけだった、との報告。
-  // 原因は、申し込んだブラウザ（Chrome）とリンクを開いたブラウザ（Safari）が
-  // 違ったこと。合言葉は申し込んだブラウザの中にしか無いので、別のブラウザで
-  // 開くと照合できず、黙って失敗して素通りする。
-  //
-  // メールアプリから踏めば勝手にSafariが開くのが普通で、揃えられる人のほうが少ない。
-  // 使う人の落ち度ではないのに、何が起きたか一切知らされないのが最大の問題である。
-  // まず「黙って落ちる」のをやめ、何が起きたか・どうすれば通るかを画面で伝える。
-  //
-  // ここで拾うのは、この先の画面切り替えが location.hash を書き換えて
-  // 合言葉ごと消してしまうため。消えたあとでは、何から戻ったのか分からない。
-  window._koyomiruAuthArrival = null;
-  try {
-    var _aaH = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
-    var _aaQ = new URLSearchParams((window.location.search || '').replace(/^\?/, ''));
-    var _aaGet = function(k) { return _aaQ.get(k) || _aaH.get(k) || ''; };
-    var _aaErr  = _aaGet('error_code') || _aaGet('error');
-    var _aaType = _aaGet('type');
-    var _aaCode = _aaQ.get('code') || '';
-    var _aaTok  = _aaH.get('access_token') || '';
-    if (_aaErr || _aaType || _aaCode || _aaTok) {
-      window._koyomiruAuthArrival = {
-        error: _aaErr,
-        errorDesc: _aaGet('error_description'),
-        type: _aaType,
-        hasCode: !!_aaCode,
-        hasToken: !!_aaTok
-      };
-    }
-  } catch(e) {}
-  // 再設定画面がちゃんと開けたかどうかの印。開けたなら見張りは何もしない。
-  window._koyomiruRecoveryHandled = false;
 
   // v0.45.1619: 見るだけリンク（?view=TOKEN）で開かれたとき。
   // ログインを求めず、そのまま読める画面を出す。
