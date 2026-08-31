@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1818 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1820 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1818';
+    const APP_VERSION = 'v0.45.1820';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -31013,6 +31013,21 @@ function loadCalendarSettingsUI() {
         if (field === 'name') {
           renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
           renderCalendarFilter('weeklyCalendarFilter', renderWeeklyView);
+          // v0.45.1819: 【権威】2026-08-31、共有カレンダーの名前を設定画面で変えても
+          // 相手の画面に反映されない、との報告。ここは手元の一覧を直すだけで、
+          // クラウドへ送っていなかった。共有相手には古い名前のまま見え続ける。
+          // 共有しているものだけ、名前をクラウドにも送る。
+          var _cal = calendars[idx];
+          if (_cal && _cal.cloudCalendarId && typeof renameSharedCalendar === 'function') {
+            Promise.resolve(renameSharedCalendar(_cal.cloudCalendarId, value))
+              .then(function(r) {
+                if (r && r.error) {
+                  console.warn('[SharedCal] 名前の同期に失敗:', r.error.message);
+                  if (typeof showToast === 'function') showToast('⚠️ 名前を共有相手に反映できませんでした', {type:'warn'});
+                }
+              })
+              .catch(function(e) { console.warn('[SharedCal] 名前の同期に失敗:', e && e.message); });
+          }
         }
       }
     }
@@ -42973,6 +42988,19 @@ async function renameSharedCalendarFromModal(calendarId, safeId) {
     _sharedCalSetStatus('⚠️ ' + _m, 'error');
     return;
   }
+  // v0.45.1820: 【権威】2026-08-31、名前を変える場所が2つあり、
+  // それぞれ片側にしか届いていなかった。
+  //   ・設定のカレンダー一覧 → 手元だけ直り、相手には古い名前のまま
+  //   ・ここ（共有カレンダー画面）→ クラウドだけ直り、自分の画面に古い名前が残る
+  // どちらから変えても両方に届くよう揃える。ここでは手元の名前も書き換える。
+  try {
+    var _localCal = calendars.filter(function(c){ return c.cloudCalendarId === calendarId; })[0];
+    if (_localCal && _localCal.name !== newName) {
+      _localCal.name = newName;
+      saveCalendars();
+      if (typeof loadCalendarSettingsUI === 'function') loadCalendarSettingsUI();
+    }
+  } catch(eLocal) { console.warn('[SharedCal] 手元の名前の反映に失敗:', eLocal && eLocal.message); }
   _sharedCalSetStatus('✅ 名前を変更しました', 'success');
   // v0.45.1680: 月間の絞り込みチップにも新しい名前を出す（古い名前が残るため）
   try {
