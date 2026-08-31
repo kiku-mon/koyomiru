@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1815 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1818 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1815';
+    const APP_VERSION = 'v0.45.1818';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -4497,6 +4497,17 @@ function _showInviteWelcome() {
     .nav-tab-settings.active .settings-gear-only {
       transform: scale(1.12);
     }
+    /* v0.45.1816: ナビの設定タブ。歯車はホバーでくるっと回る。 */
+    .nav-gear-icon {
+      display: inline-block;
+      transition: transform 0.45s cubic-bezier(.34,1.4,.64,1);
+    }
+    .nav-tab-gear:hover .nav-gear-icon {
+      transform: rotate(180deg);
+    }
+    .nav-tab-gear.active .nav-gear-icon {
+      transform: rotate(180deg);
+    }
     /* 設定の歯車：ホバーでくるっと回る（メニュー内） */
     .msb-gear {
       display: inline-block;
@@ -6472,6 +6483,12 @@ function _showInviteWelcome() {
     <div id="navFocusBadge" style="display:none;align-items:center;position:sticky;right:0;background:#fff;padding:0 6px 0 4px;flex-shrink:0;z-index:1;">
       <span id="navFocusText" style="font-size:0.68em;color:#f59e0b;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.01em;cursor:default;" title=""></span>
     </div>
+    <!-- v0.45.1816: 【権威】2026-08-31、設定はナビに独立して出ていた頃のほうが分かりやすい、
+         との判断。v0.45.1524でアカウントの中へ入れたが、設定は日々よく使う場所であり、
+         初めての人にとっても「アカウント」の奥にあるとは思い至りにくい。
+         アカウントは残したまま、設定を独立したタブとして戻す。
+         歯車はホバーでくるっと回る（v0.45.1524でメニュー内に移した動きをここへ戻す）。 -->
+    <button class="nav-tab nav-tab-gear" id="navSettingsTab" onclick="switchView('settings')" title="設定"><span class="nav-tab-icon nav-gear-icon">⚙️</span><span class="nav-tab-label">設定</span></button>
     <button class="nav-tab nav-tab-settings" id="navSettings" onclick="toggleAccountMenu(event)">
       <div class="nav-avatar-wrapper" id="navAvatarWrapper" style="display: none;">
         <img id="navAvatar" src="" alt="" class="nav-avatar">
@@ -16848,7 +16865,10 @@ var NAV_TAB_DEFS = [
   // v0.45.1531: 検索も並び替えの対象に加える。よく使う人は左に置きたいため。
   // アカウント（右端のアバター）だけは並びから外す。あれは別のまとまりにあり、
   // 「自分に関することは右上」という共通の作法なので、動かすと迷子になる。
-  { id: 'navSearch',     key: 'search',    label: '🔍 検索' }
+  { id: 'navSearch',     key: 'search',    label: '🔍 検索' },
+  // v0.45.1818: 設定を独立したタブに戻した（v0.45.1816）ので、並び替えの対象に加える。
+  // ただし非表示にはできない。設定を隠すと、隠したことを取り消す場所へ行けなくなる。
+  { id: 'navSettingsTab', key: 'settings',  label: '⚙️ 設定', alwaysVisible: true }
 ];
 window.NAV_TAB_DEFS = NAV_TAB_DEFS;
 
@@ -16900,9 +16920,11 @@ function renderNavTabOrderUI() {
     var def = NAV_TAB_DEFS.filter(function(t) { return t.key === key; })[0];
     if (!def) return '';
     // 非表示のタブは薄く見せる（並びは保持されるが今は出ていない、と伝える）
-    var hidden = (key === 'gant')
-      ? !(typeof isGantTabVisible === 'function' && isGantTabVisible())
-      : (allSettings.ui.visibleTabs && allSettings.ui.visibleTabs[key] === false);
+    // v0.45.1818: 常に出すタブは、設定がどうであれ「非表示」と見せない。
+    var hidden = def.alwaysVisible ? false
+      : (key === 'gant')
+        ? !(typeof isGantTabVisible === 'function' && isGantTabVisible())
+        : (allSettings.ui.visibleTabs && allSettings.ui.visibleTabs[key] === false);
     return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #eee;border-radius:8px;background:' + (hidden ? '#fafafa' : '#fff') + ';">' +
       '<span style="flex:1;font-size:0.88em;color:' + (hidden ? '#bbb' : '#333') + ';">' + def.label + (hidden ? '（非表示）' : '') + '</span>' +
       '<button onclick="moveNavTab(' + i + ',-1)" ' + (i === 0 ? 'disabled' : '') +
@@ -18174,6 +18196,17 @@ function applySettingsSectionVisibility() {
 
 function toggleVisibleTab(key, checked) {
   if (!allSettings.ui.visibleTabs) allSettings.ui.visibleTabs = {};
+  // v0.45.1818: 設定タブは隠せない。隠すと、隠したことを取り消す場所へ
+  // たどり着けなくなる。出口を塞ぐ設定は置いてはいけない。
+  var _alwaysOn = (typeof NAV_TAB_DEFS !== 'undefined')
+    ? NAV_TAB_DEFS.filter(function(t){ return t.alwaysVisible; }).map(function(t){ return t.key; })
+    : ['settings'];
+  if (_alwaysOn.indexOf(key) !== -1 && !checked) {
+    showToast('⚙️ 設定は隠せません（戻れなくなるため）', { type: 'info', duration: 3000 });
+    var _fixEl = document.getElementById('visTab' + key.charAt(0).toUpperCase() + key.slice(1));
+    if (_fixEl) _fixEl.checked = true;
+    return;
+  }
   // モード制限チェック：現在のモードでOFFになっているタブをONにしようとしたら警告
   if (checked) {
     var _km = (typeof KINGDOM_MODES !== 'undefined' && allSettings.ui.kingdomMode)
@@ -28840,7 +28873,11 @@ function saveMsbEdit() {
           _settingsEraEl.style.display = 'block';
         }
         if (typeof updateGuildUI === 'function') updateGuildUI();
-        document.getElementById('navSettings').classList.add('active');
+        // v0.45.1816: 設定を独立したタブに戻したので、印はそちらに付ける。
+        // アカウントは押しても画面が変わらない（メニューが開くだけ）ので、
+        // 「いまここにいる」の印を付けるのは筋が違う。
+        var _navGear = document.getElementById('navSettingsTab');
+        if (_navGear) _navGear.classList.add('active');
         loadSettingsUI();
         // 設定のバックアップラベルを更新
         (function(){
