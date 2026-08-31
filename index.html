@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1796 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1797 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1796';
+    const APP_VERSION = 'v0.45.1797';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -40450,7 +40450,7 @@ function gardenFeedKoi() {
     return;
   }
   window._gardenDropFeed();
-  if (typeof showToast === 'function') showToast('🍚 餌をまきました');
+  if (typeof showToast === 'function') showToast('🍚 えさをあげました');
 }
 window.gardenFeedKoi = gardenFeedKoi;
 
@@ -41065,6 +41065,18 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
         _fd.mesh.position.y = 0.02 + Math.sin(t * 4) * 0.008;
         if (_fd.mesh.material) _fd.mesh.material.opacity = Math.max(0, Math.min(0.9, _fd.life * 0.5));
       }
+      // v0.45.1797: まいた粒が落ちていく。水面(y=0.03)に着いたら消す。
+      if (_fd.grains && _fd.grains.length) {
+        for (var _gj = _fd.grains.length - 1; _gj >= 0; _gj--) {
+          var _g = _fd.grains[_gj];
+          _g.userData.vy -= 0.0012;              // だんだん速く落ちる
+          _g.position.y += _g.userData.vy;
+          if (_g.position.y <= 0.03) {
+            try { scene.remove(_g); } catch(eG) {}
+            _fd.grains.splice(_gj, 1);
+          }
+        }
+      }
       if (_fd.ripple) {
         var _rp = 1 - Math.max(0, _fd.life) / _fd.maxLife;
         _fd.ripple.scale.set(0.3 + _rp * 3.2, 0.3 + _rp * 3.2, 1);
@@ -41074,6 +41086,8 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
         try {
           if (_fd.mesh) scene.remove(_fd.mesh);
           if (_fd.ripple) scene.remove(_fd.ripple);
+          // まだ落ちきっていない粒も一緒に片づける
+          if (_fd.grains) _fd.grains.forEach(function(_g2) { try { scene.remove(_g2); } catch(eG2) {} });
         } catch(eFd) {}
         window._gardenFeed = null;
       }
@@ -41240,6 +41254,7 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
       if (window._gardenFeed) {
         if (window._gardenFeed.mesh) scene.remove(window._gardenFeed.mesh);
         if (window._gardenFeed.ripple) scene.remove(window._gardenFeed.ripple);
+        if (window._gardenFeed.grains) window._gardenFeed.grains.forEach(function(_g3) { try { scene.remove(_g3); } catch(eG3) {} });
       }
       var _fx = (Math.random() - 0.5) * 3.0;
       var _fz = (Math.random() - 0.5) * 3.0;
@@ -41259,7 +41274,24 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
       _ripple.position.set(_fx, 0.035, _fz);
       _ripple.scale.set(0.3, 0.3, 1);
       scene.add(_ripple);
-      window._gardenFeed = { x: _fx, z: _fz, life: 6, maxLife: 6, mesh: _feedMesh, ripple: _ripple };
+      // v0.45.1797: 「ぱらっとまいた」感じを出す。小さな粒を数個、
+      // 少し散らして空から落とす。水面に着いたら消える。
+      // 粒は見た目だけのもので、鯉の行き先には関わらない。
+      var _grains = [];
+      var _grainMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.95, fog: false });
+      var _grainGeo = new THREE.SphereGeometry(0.028, 6, 6);
+      for (var _gi = 0; _gi < 7; _gi++) {
+        var _gm = new THREE.Mesh(_grainGeo, _grainMat.clone());
+        _gm.position.set(
+          _fx + (Math.random() - 0.5) * 0.7,
+          0.75 + Math.random() * 0.35,
+          _fz + (Math.random() - 0.5) * 0.7
+        );
+        _gm.userData.vy = -0.012 - Math.random() * 0.008;
+        scene.add(_gm);
+        _grains.push(_gm);
+      }
+      window._gardenFeed = { x: _fx, z: _fz, life: 6, maxLife: 6, mesh: _feedMesh, ripple: _ripple, grains: _grains };
       // 跳ねる印を一度消して、全員がもう一度跳べるようにする
       koiList.forEach(function(k) { k.userData.jump = undefined; k.rotation.z = 0; });
     } catch(e) { console.warn('[Garden] 餌やりに失敗:', e && e.message); }
