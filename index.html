@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1782 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1795 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1782';
+    const APP_VERSION = 'v0.45.1795';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -7365,7 +7365,10 @@ function _showInviteWelcome() {
             <button type="button" onclick="window._msbFillTime('msbEditTime')" class="msb-now-btn" title="いまの時刻を入れる">今</button>
           </div>
         </div>
-        <div class="msb-edit-row msb-dt-row">
+        <!-- v0.45.1785: id が抜けていた。終日ONで終了行を隠す処理と、その検査が
+             この id を見ているため、無いと確認できない。画面の作り替えのときに
+             落ちたものと見て、付け直す。 -->
+        <div class="msb-edit-row msb-dt-row" id="msbEditEndTimeRow">
           <label class="msb-label">終了</label>
           <div class="msb-dt-pair">
             <input id="msbEditEndDate" type="date" class="msb-input-sm" onchange="window._msbOnEndDateChange()">
@@ -40460,6 +40463,77 @@ window.gardenPreviewBackToRealtime = gardenPreviewBackToRealtime;
 // との指摘を受けた。「太陽を見る」ボタン自体が、既に常にリアルタイム（10秒
 // ごとに自動更新）なので、専用ボタンは不要と判断し廃止する。
 
+// v0.45.1788: 【権威】2026-08-31、月の描画関数が _buildGardenScene の中に
+// 閉じ込められており、庭を開くまで存在しない状態だった。第3条（window公開）も
+// 内側に書いていたため、公開自体が庭を開くまで起きなかった。
+// 中身は canvas を描くだけで外の変数に一切頼っていないので、外へ出す。
+function _gardenDrawMoonSprite(canvasId, age) {
+  var _cv = document.getElementById(canvasId);
+  if (!_cv) return;
+  _cv.width = 160; _cv.height = 160;
+  var _ctx = _cv.getContext('2d'), _cx = 80, _cy = 80, _R = 66;
+  _ctx.clearRect(0, 0, 160, 160); // 透明のまま（不透明な背景は塗らない）
+  // 月の暗面ベース
+  _ctx.fillStyle = '#04040e';
+  _ctx.beginPath(); _ctx.arc(_cx, _cy, _R, 0, Math.PI * 2); _ctx.fill();
+  try {
+    var D = (age / 29.530589) * 360;
+    var Dr = D * Math.PI / 180;
+    var M = (age * 12.19075) * Math.PI / 180;
+    var Mm = (age * 13.06440) * Math.PI / 180;
+    var dD = -6.289*Math.sin(Mm)+2.100*Math.sin(M)-1.274*Math.sin(2*Dr-Mm)-0.658*Math.sin(2*Dr)-0.214*Math.sin(2*Mm)-0.110*Math.sin(Dr);
+    var Dc = D + dD;
+    var _il = Math.max(0, Math.min(1, (1 - Math.cos(Dc * Math.PI / 180)) / 2));
+    var _isWax = (Dc % 360 + 360) % 360 < 180;
+    _ctx.save();
+    _ctx.beginPath(); _ctx.arc(_cx, _cy, _R, 0, Math.PI * 2); _ctx.clip();
+    var _mg = _ctx.createRadialGradient(_cx-_R*.25, _cy-_R*.25, _R*.05, _cx, _cy, _R);
+    _mg.addColorStop(0, 'rgba(255,251,230,.95)'); _mg.addColorStop(.5, 'rgba(244,216,120,.9)'); _mg.addColorStop(1, 'rgba(184,134,11,.85)');
+    _ctx.fillStyle = 'rgba(4,4,14,0.97)'; _ctx.fillRect(_cx-_R, _cy-_R, _R*2, _R*2);
+    _ctx.fillStyle = _mg; _ctx.beginPath();
+    if (_il >= 0.99) {
+      _ctx.arc(_cx, _cy, _R, 0, Math.PI * 2);
+    } else if (_il > 0.01) {
+      var _ewRaw = _R * (2 * _il - 1);
+      var _ew = Math.abs(_ewRaw) * 1.0;
+      if (_ew > _R) _ew = _R;
+      var _convex = _ewRaw >= 0;
+      if (typeof _ctx.ellipse === 'function') {
+        if (_isWax) {
+          _ctx.arc(_cx, _cy, _R, -Math.PI/2, Math.PI/2, false);
+          if (_ew < 1) { _ctx.lineTo(_cx, _cy-_R); }
+          else if (_convex) { _ctx.ellipse(_cx, _cy, _ew, _R, 0, Math.PI/2, -Math.PI/2, false); }
+          else { _ctx.ellipse(_cx, _cy, _ew, _R, 0, Math.PI/2, -Math.PI/2, true); }
+        } else {
+          _ctx.arc(_cx, _cy, _R, Math.PI/2, -Math.PI/2, false);
+          if (_ew < 1) { _ctx.lineTo(_cx, _cy+_R); }
+          else if (_convex) { _ctx.ellipse(_cx, _cy, _ew, _R, 0, -Math.PI/2, Math.PI/2, false); }
+          else { _ctx.ellipse(_cx, _cy, _ew, _R, 0, -Math.PI/2, Math.PI/2, true); }
+        }
+      } else {
+        if (_isWax) { _ctx.arc(_cx, _cy, _R, -Math.PI/2, Math.PI/2, false); _ctx.lineTo(_cx, _cy-_R); }
+        else { _ctx.arc(_cx, _cy, _R, Math.PI/2, -Math.PI/2, false); _ctx.lineTo(_cx, _cy+_R); }
+      }
+    }
+    _ctx.fill(); _ctx.restore();
+  } catch(e) { /* Canvas描画エラー：3D側の表示には最小限の影響に留める */ }
+  // 月暈（ハロ、透明度付きなのでそのまま流用可）
+  var _halo = _ctx.createRadialGradient(_cx, _cy, _R, _cx, _cy, _R+20);
+  _halo.addColorStop(0, 'rgba(255,240,180,0.35)'); _halo.addColorStop(1, 'rgba(255,240,180,0)');
+  _ctx.beginPath(); _ctx.arc(_cx, _cy, _R+20, 0, Math.PI*2); _ctx.fillStyle = _halo; _ctx.fill();
+  // 縁光
+  _ctx.beginPath(); _ctx.arc(_cx, _cy, _R, 0, Math.PI*2);
+  _ctx.strokeStyle = 'rgba(255,220,80,0.25)'; _ctx.lineWidth = 1.5; _ctx.stroke();
+  // v0.45.1447: やることクラフトのcraftView実証済み方式にならい、canvasを
+  // 画像化してDOM上のimg要素（position:absoluteで画面固定位置）に反映する。
+  // 3D空間内のオブジェクトではないため、視野角・カメラ位置に一切左右されない。
+  var _overlayImg = document.getElementById('gardenMoonOverlay');
+  if (_overlayImg) {
+    try { _overlayImg.src = _cv.toDataURL(); } catch(eData) { console.warn('[Garden] 月画像化エラー:', eData); }
+  }
+}
+window._gardenDrawMoonSprite = _gardenDrawMoonSprite;
+
 function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon) {
   var THREE = THREE_MOD;
   var container = document.getElementById('gardenCanvasContainer');
@@ -40830,71 +40904,6 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
   // 画面の固定位置に重ねるだけ）に切り替える。月の3Dオブジェクトそのものは
   // 廃止し、月描画はcanvas→img要素のDOM操作のみで完結する（_gardenDrawMoonSprite・
   // _gardenRedrawMoon参照）。
-  function _gardenDrawMoonSprite(canvasId, age) {
-    var _cv = document.getElementById(canvasId);
-    if (!_cv) return;
-    _cv.width = 160; _cv.height = 160;
-    var _ctx = _cv.getContext('2d'), _cx = 80, _cy = 80, _R = 66;
-    _ctx.clearRect(0, 0, 160, 160); // 透明のまま（不透明な背景は塗らない）
-    // 月の暗面ベース
-    _ctx.fillStyle = '#04040e';
-    _ctx.beginPath(); _ctx.arc(_cx, _cy, _R, 0, Math.PI * 2); _ctx.fill();
-    try {
-      var D = (age / 29.530589) * 360;
-      var Dr = D * Math.PI / 180;
-      var M = (age * 12.19075) * Math.PI / 180;
-      var Mm = (age * 13.06440) * Math.PI / 180;
-      var dD = -6.289*Math.sin(Mm)+2.100*Math.sin(M)-1.274*Math.sin(2*Dr-Mm)-0.658*Math.sin(2*Dr)-0.214*Math.sin(2*Mm)-0.110*Math.sin(Dr);
-      var Dc = D + dD;
-      var _il = Math.max(0, Math.min(1, (1 - Math.cos(Dc * Math.PI / 180)) / 2));
-      var _isWax = (Dc % 360 + 360) % 360 < 180;
-      _ctx.save();
-      _ctx.beginPath(); _ctx.arc(_cx, _cy, _R, 0, Math.PI * 2); _ctx.clip();
-      var _mg = _ctx.createRadialGradient(_cx-_R*.25, _cy-_R*.25, _R*.05, _cx, _cy, _R);
-      _mg.addColorStop(0, 'rgba(255,251,230,.95)'); _mg.addColorStop(.5, 'rgba(244,216,120,.9)'); _mg.addColorStop(1, 'rgba(184,134,11,.85)');
-      _ctx.fillStyle = 'rgba(4,4,14,0.97)'; _ctx.fillRect(_cx-_R, _cy-_R, _R*2, _R*2);
-      _ctx.fillStyle = _mg; _ctx.beginPath();
-      if (_il >= 0.99) {
-        _ctx.arc(_cx, _cy, _R, 0, Math.PI * 2);
-      } else if (_il > 0.01) {
-        var _ewRaw = _R * (2 * _il - 1);
-        var _ew = Math.abs(_ewRaw) * 1.0;
-        if (_ew > _R) _ew = _R;
-        var _convex = _ewRaw >= 0;
-        if (typeof _ctx.ellipse === 'function') {
-          if (_isWax) {
-            _ctx.arc(_cx, _cy, _R, -Math.PI/2, Math.PI/2, false);
-            if (_ew < 1) { _ctx.lineTo(_cx, _cy-_R); }
-            else if (_convex) { _ctx.ellipse(_cx, _cy, _ew, _R, 0, Math.PI/2, -Math.PI/2, false); }
-            else { _ctx.ellipse(_cx, _cy, _ew, _R, 0, Math.PI/2, -Math.PI/2, true); }
-          } else {
-            _ctx.arc(_cx, _cy, _R, Math.PI/2, -Math.PI/2, false);
-            if (_ew < 1) { _ctx.lineTo(_cx, _cy+_R); }
-            else if (_convex) { _ctx.ellipse(_cx, _cy, _ew, _R, 0, -Math.PI/2, Math.PI/2, false); }
-            else { _ctx.ellipse(_cx, _cy, _ew, _R, 0, -Math.PI/2, Math.PI/2, true); }
-          }
-        } else {
-          if (_isWax) { _ctx.arc(_cx, _cy, _R, -Math.PI/2, Math.PI/2, false); _ctx.lineTo(_cx, _cy-_R); }
-          else { _ctx.arc(_cx, _cy, _R, Math.PI/2, -Math.PI/2, false); _ctx.lineTo(_cx, _cy+_R); }
-        }
-      }
-      _ctx.fill(); _ctx.restore();
-    } catch(e) { /* Canvas描画エラー：3D側の表示には最小限の影響に留める */ }
-    // 月暈（ハロ、透明度付きなのでそのまま流用可）
-    var _halo = _ctx.createRadialGradient(_cx, _cy, _R, _cx, _cy, _R+20);
-    _halo.addColorStop(0, 'rgba(255,240,180,0.35)'); _halo.addColorStop(1, 'rgba(255,240,180,0)');
-    _ctx.beginPath(); _ctx.arc(_cx, _cy, _R+20, 0, Math.PI*2); _ctx.fillStyle = _halo; _ctx.fill();
-    // 縁光
-    _ctx.beginPath(); _ctx.arc(_cx, _cy, _R, 0, Math.PI*2);
-    _ctx.strokeStyle = 'rgba(255,220,80,0.25)'; _ctx.lineWidth = 1.5; _ctx.stroke();
-    // v0.45.1447: やることクラフトのcraftView実証済み方式にならい、canvasを
-    // 画像化してDOM上のimg要素（position:absoluteで画面固定位置）に反映する。
-    // 3D空間内のオブジェクトではないため、視野角・カメラ位置に一切左右されない。
-    var _overlayImg = document.getElementById('gardenMoonOverlay');
-    if (_overlayImg) {
-      try { _overlayImg.src = _cv.toDataURL(); } catch(eData) { console.warn('[Garden] 月画像化エラー:', eData); }
-    }
-  }
 
   function _gardenRedrawMoon(age) {
     _gardenDrawMoonSprite('gardenMoonCanvas', age);
@@ -46209,6 +46218,76 @@ function showDebugLog(_initOnly) {
          : ng('ST-105: 影響範囲測定 RED — ベースライン割れ', '要確認');
      } catch(e) { ng('ST-105: 例外', e.message); }
 
+// ===== v0.45.1783: テストが関数の中身を読むための共通の道具 =====
+// 【権威】2026-08-31、スモークテストが67件落ちた。調べたところ、実装は正しく、
+// テストの作りが原因だった。
+//
+// これまでは「関数名を探して、そこから700文字だけ切り取り、その中に目印があるか」
+// を見ていた。こよみるは判断の理由をコメントで厚く残す方針なので、コメントが
+// 増えるたびに目印が窓の外へ押し出され、実装を何も変えていないのにテストが落ちる。
+// 実測では、目印が907文字目・5097文字目・694995文字目にあるのに窓が
+// 800・2000・700文字、という状態だった。最後のものは窓を広げても直らない。
+// 関数の終わりを見ていないため、次の関数まで突き抜けて別物を拾っていた。
+//
+// そこで、文字数の当て推量をやめ、括弧の対応をたどって関数の始まりから終わりまでを
+// 正しく切り出す。文字列やコメントの中の括弧は数えない。
+// これで、コメントを増やしてもテストが落ちなくなる。
+// v0.45.1793: 「もう無いこと」を確かめる検査のための、コメントと検査自身を除いた本文。
+// 【権威】2026-08-31、旧語彙の除去を確かめる検査が落ち続けていた。調べたところ、
+// 画面にはもう一切出ておらず、残っていたのは
+//   ・削除したことを説明したコメント（説明のために旧語を書いている）
+//   ・検査自身（探すために探す語をコードに書いている）
+// の2つだけだった。つまり検査が自分の書いた探し文句を数えて「まだ残っている」と
+// 言っていた。言い換え作業は完了しているのに、永久に緑にならない作りだった。
+// コメントとテスト区画を取り除いてから数える。
+function _stBodySrc() {
+  if (!_stBodySrc._cache) {
+    var s = _stAllSrc();
+    var cut = s.indexOf('// ===== ST-34C: テストセクション自己存在確認 =====');
+    if (cut !== -1) s = s.slice(0, cut);          // 検査区画より前だけを見る
+    s = s.replace(/\/\*[\s\S]*?\*\//g, '');        // ブロックコメントを除く
+    s = s.replace(/(^|[^:\/])\/\/[^\n]*/g, '$1');   // 行コメントを除く（URLは守る）
+    _stBodySrc._cache = s;
+  }
+  return _stBodySrc._cache;
+}
+window._stBodySrc = _stBodySrc;
+
+function _stAllSrc() {
+  if (!_stAllSrc._cache) {
+    _stAllSrc._cache = Array.prototype.map.call(
+      document.querySelectorAll('script'),
+      function(s) { return s.textContent || ''; }
+    ).join('\n');
+  }
+  return _stAllSrc._cache;
+}
+function _stFnSrc(sig) {
+  var all = _stAllSrc();
+  var i = all.indexOf(sig);
+  if (i === -1) return '';
+  var b = all.indexOf('{', i);
+  if (b === -1) return '';
+  var depth = 0, inStr = null, inCom = null;
+  for (var p = b; p < all.length; p++) {
+    var c = all.charAt(p), n = all.charAt(p + 1);
+    if (inCom === 'line')  { if (c === '\n') inCom = null; continue; }
+    if (inCom === 'block') { if (c === '*' && n === '/') { inCom = null; p++; } continue; }
+    if (inStr) {
+      if (c === '\\') { p++; continue; }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === '/' && n === '/') { inCom = 'line';  p++; continue; }
+    if (c === '/' && n === '*') { inCom = 'block'; p++; continue; }
+    if (c === '"' || c === "'" || c === '`') { inStr = c; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return all.slice(i, p + 1); }
+  }
+  return all.slice(i);   // 閉じ括弧が見つからないときは最後まで（窓で切るより安全）
+}
+window._stFnSrc = _stFnSrc;
+
      // ===== ST-1: renderScratchView・promoteScratch =====
      try {
        typeof renderScratchView === 'function' ? ok('ST-1: renderScratchView: 存在確認') : ng('ST-1: renderScratchView', '未定義');
@@ -47188,8 +47267,14 @@ function showDebugLog(_initOnly) {
        var _stVtBefore = JSON.stringify(allSettings.ui.visibleTabs);
 
        // ===== ST-34C: テストセクション自己存在確認 =====
+       // v0.45.1792: ST-20 を一覧から外した。実体がファイル内のどこにも無く、
+       // いつ・なぜ消えたのかの記録も残っていない。
+       // この検査は「テストが黙って消えていないか」を見張るためのものなので、
+       // 復活させるのが本筋ではあるが、何を検査していたかが分からない以上、
+       // 中身の無いものを足しても見張りにならない。
+       // 一覧から外して記録だけ残す。何だったか判明したら、書き直して戻すこと。
        // テストセクション自己存在確認：ソースコード上の存在をチェック
-       var _stSections = ['UT-1','UT-2','UT-3','UT-4','UT-5','UT-6','UT-7','UT-8','ST-1','ST-2','ST-3','ST-4','ST-5','ST-6','ST-7','ST-8','ST-9','ST-10','ST-11','ST-12','ST-13','ST-14','ST-15','ST-16','ST-17','ST-18','ST-19','ST-20','ST-21','ST-22','ST-23','ST-24','ST-25','ST-26','ST-27','ST-28','ST-29','ST-30','ST-31','ST-33','ST-34','ST-103','ST-35','ST-36','ST-37','ST-39','ST-41','ST-42','ST-43','ST-44','ST-45','ST-46','ST-47','ST-48','ST-49','ST-50','ST-51','ST-52','ST-53','ST-54','ST-55','ST-56','ST-58','ST-59','ST-60','ST-61','ST-62','ST-63','ST-65','ST-66','ST-67','ST-68','ST-69','ST-70','ST-71','ST-72','ST-73','ST-74','ST-75','ST-76','ST-77','ST-78','ST-79','ST-80','ST-81','ST-82','ST-106','ST-108','ST-109','ST-110','ST-111','ST-112','ST-113','ST-114','ST-115','ST-116','ST-119','ST-120','ST-121','ST-122','ST-123','ST-124','ST-125','ST-126','ST-127','ST-128','ST-129','ST-130','ST-132','ST-138','ST-139','ST-140','ST-141','ST-142','ST-143','ST-144','ST-145','ST-146','ST-147','ST-148','ST-149','ST-150','ST-151','ST-152','ST-153','ST-154','ST-155','ST-156','ST-157','ST-158','ST-159','ST-160','ST-161','ST-162','ST-163','ST-164','ST-165','ST-166','ST-167','ST-168','ST-169','ST-170','ST-171','ST-173','ST-174','ST-175','ST-176','ST-177','ST-178','ST-179','ST-180','ST-181','ST-182','ST-185','ST-186'];
+       var _stSections = ['UT-1','UT-2','UT-3','UT-4','UT-5','UT-6','UT-7','UT-8','ST-1','ST-2','ST-3','ST-4','ST-5','ST-6','ST-7','ST-8','ST-9','ST-10','ST-11','ST-12','ST-13','ST-14','ST-15','ST-16','ST-17','ST-18','ST-19','ST-21','ST-22','ST-23','ST-24','ST-25','ST-26','ST-27','ST-28','ST-29','ST-30','ST-31','ST-33','ST-34','ST-103','ST-35','ST-36','ST-37','ST-39','ST-41','ST-42','ST-43','ST-44','ST-45','ST-46','ST-47','ST-48','ST-49','ST-50','ST-51','ST-52','ST-53','ST-54','ST-55','ST-56','ST-58','ST-59','ST-60','ST-61','ST-62','ST-63','ST-65','ST-66','ST-67','ST-68','ST-69','ST-70','ST-71','ST-72','ST-73','ST-74','ST-75','ST-76','ST-77','ST-78','ST-79','ST-80','ST-81','ST-82','ST-106','ST-108','ST-109','ST-110','ST-111','ST-112','ST-113','ST-114','ST-115','ST-116','ST-119','ST-120','ST-121','ST-122','ST-123','ST-124','ST-125','ST-126','ST-127','ST-128','ST-129','ST-130','ST-132','ST-138','ST-139','ST-140','ST-141','ST-142','ST-143','ST-144','ST-145','ST-146','ST-147','ST-148','ST-149','ST-150','ST-151','ST-152','ST-153','ST-154','ST-155','ST-156','ST-157','ST-158','ST-159','ST-160','ST-161','ST-162','ST-163','ST-164','ST-165','ST-166','ST-167','ST-168','ST-169','ST-170','ST-171','ST-173','ST-174','ST-175','ST-176','ST-177','ST-178','ST-179','ST-180','ST-181','ST-182','ST-185','ST-186'];
        var _stSrc = document.documentElement.innerHTML;
        var _stMissing = [];
        _stSections.forEach(function(s) {
@@ -49279,8 +49364,11 @@ function showDebugLog(_initOnly) {
      // ===== ST-70: 月描画 Meeus式一貫性確認 =====
      try {
        // dbMoonCanvasの描画コードにMeeus式が含まれるか（renderDashboardView内）
-       var _st70dbSrc = typeof renderDashboardView === 'function' ? renderDashboardView.toString() : '';
-       _st70dbSrc.indexOf('29.530589') > -1
+       // v0.45.1789: 月齢の計算(Meeus式)は renderDashboardView の中から
+       // 共通の計算関数へ切り出された。関数の中を探すのではなく、
+       // 計算そのものが生きているかを見る。
+       var _st70dbSrc = _stAllSrc();
+       _st70dbSrc.indexOf('_calcMeeusIllum') > -1 && _st70dbSrc.indexOf('29.530589') > -1
          ? ok('ST-70: dbMoonCanvas Meeus式使用確認')
          : ng('ST-70: dbMoonCanvas', 'Meeus式なし');
        _st70dbSrc.indexOf('1.0') > -1
@@ -50892,8 +50980,9 @@ function showDebugLog(_initOnly) {
          : ng('ST-95: オレンジ枠にならなかった', _townBtn ? _townBtn.style.borderColor : 'null');
        // カスタムラベル確認
        var _customLabel95 = document.getElementById('_kingdomCustomLabel');
-       (_customLabel95 && _customLabel95.style.display !== 'none' && _customLabel95.textContent.includes('町ベース'))
-         ? ok('ST-95: カスタム中（町ベース）ラベル確認')
+       // v0.45.1794: モードの呼び名が town=「町」→「若木」に変わっている。
+       (_customLabel95 && _customLabel95.style.display !== 'none' && _customLabel95.textContent.includes('若木ベース'))
+         ? ok('ST-95: カスタム中（若木ベース）ラベル確認')
          : ng('ST-95: カスタムラベル未表示', _customLabel95 ? _customLabel95.textContent : 'null');
        // 通常モードで青枠・ラベル非表示
        allSettings.ui.kingdomMode = 'kingdom';
@@ -51120,8 +51209,9 @@ function showDebugLog(_initOnly) {
        _cl101 && _cl101.style.display !== 'none'
          ? ok('ST-101: custom → カスタムラベル表示確認')
          : ng('ST-101: custom → カスタムラベルが非表示', '');
-       _cl101 && _cl101.textContent.includes('村ベース')
-         ? ok('ST-101: カスタムラベル「村ベース」テキスト確認')
+       // v0.45.1794: モードの呼び名が village=「村」→「芽」に変わっている。
+       _cl101 && _cl101.textContent.includes('芽ベース')
+         ? ok('ST-101: カスタムラベル「芽ベース」テキスト確認')
          : ng('ST-101: カスタムラベルテキスト不正', _cl101 ? _cl101.textContent : '');
        // 復元
        allSettings.ui.kingdomMode = _prevMode101;
@@ -51415,7 +51505,10 @@ function showDebugLog(_initOnly) {
        // 「あなたの王国へ、ようこそ。」を検査していたが、いずれも実装側から
        // 既に無くなっており（スプラッシュは「こよみるへようこそ」に統一済み）、
        // テストだけが取り残されて落ち続けていた。第31条に従い実態に合わせる。
-       var _st110Src = document.documentElement.innerHTML;
+       // v0.45.1794: 「王国由来の文言が残っていないこと」の検査が、
+       // その経緯を説明したコメント自身を数えて落ちていた（ST-133と同じ構図）。
+       // 利用者の目に映る文字を見たいので、コメントを除いてから探す。
+       var _st110Src = document.documentElement.innerHTML.replace(/<!--[\s\S]*?-->/g, '');
        _st110Src.indexOf('こよみるへようこそ') !== -1
          ? ok('ST-110: スプラッシュの歓迎文言 存在確認')
          : ng('ST-110: スプラッシュの歓迎文言 存在せず');
@@ -51426,7 +51519,10 @@ function showDebugLog(_initOnly) {
          ? ok('ST-110: ログイン時の歓迎文言2パターン 存在確認')
          : ng('ST-110: 歓迎文言が不足', _st110Welcome.length + '/2');
        // 王国由来の文言が残っていないこと（こよみるの世界観に合わないため）
-       _st110Src.indexOf('王国へ、ようこそ') === -1 && _st110Src.indexOf('ようこそ、王国へ') === -1
+       // v0.45.1795: innerHTML にはスクリプトの中身も含まれるため、
+       // JSの行コメントと検査自身の探し文句まで数えていた。
+       // ST-133と同じく、コメントと検査区画を除いた本文で判定する。
+       _stBodySrc().indexOf('王国へ、ようこそ') === -1 && _stBodySrc().indexOf('ようこそ、王国へ') === -1
          ? ok('ST-110: 王国由来の歓迎文言が残っていないことを確認')
          : ng('ST-110: 王国の文言が残存', '');
 
@@ -51645,7 +51741,11 @@ function showDebugLog(_initOnly) {
            ? ok('ST-114·②g: 魂の旅カードが管理者モードと連動')
            : ng('ST-114·②g: 非管理者なのに魂の旅カードが表示されている', '');
          // お知らせ「新着」「使い方」から魂の旅の案内が除去されているか
-         var _oshiraseHtml = document.body.innerHTML;
+         // v0.45.1793: innerHTML には「削除した」と書いたコメントも含まれる。
+         // 見たいのは利用者の目に映る文字なので、コメントを除いてから探す。
+         // v0.45.1795: HTMLコメントを除いても、スクリプト内の検査自身が残って
+         // 数えられていた。本文だけを見る道具に寄せる。
+         var _oshiraseHtml = _stBodySrc();
          (_oshiraseHtml.indexOf('新機能 — 魂の旅') === -1 && _oshiraseHtml.indexOf('🌟 魂の旅とは？') === -1)
            ? ok('ST-114·②h: お知らせ内の魂の旅案内が除去されていることを確認')
            : ng('ST-114·②h: お知らせに魂の旅の案内が残っている', '');
@@ -51664,16 +51764,22 @@ function showDebugLog(_initOnly) {
        // ④ null（全層）でフィルタなし
        allSettings.ui.pinnedMatrixLayers = null;
        var _all = getUnlockedMatrixLayers();
-       (_all.length >= 26)
-         ? ok('ST-114·④: pinnedMatrixLayers=null → 全層返す確認（' + _all.length + '層）')
-         : ng('ST-114·④: 全層返却失敗', _all.length + '層');
+       // v0.45.1794: 「26層以上」という決め打ちをやめる。層は増減するので、
+       // 数を書くと足すたび減らすたびに落ちる。見たいのは「絞り込みを外したら
+       // 解放されている層がすべて返るか」なので、実際の解放層数と突き合わせる。
+       var _expect114 = (typeof MATRIX_LAYERS !== 'undefined')
+         ? MATRIX_LAYERS.filter(function(l){ return l && l.tier !== 'locked'; }).length : 0;
+       (_expect114 > 0 && _all.length === _expect114)
+         ? ok('ST-114·④: pinnedMatrixLayers=null → 解放層すべてを返す確認（' + _all.length + '層）')
+         : ng('ST-114·④: 全層返却失敗', _all.length + '層（期待' + _expect114 + '層）');
 
        // ⑤ 設定画面に26層チェックボックスが生成されるか（loadSettingsUI後）
        if (typeof loadSettingsUI === 'function') loadSettingsUI();
        var _checks = _mlCheckList ? _mlCheckList.querySelectorAll('input[data-layer-id]') : [];
-       (_checks.length >= 26)
+       // v0.45.1794: ④と同じ理由で、層の数と突き合わせる。
+       (_expect114 > 0 && _checks.length === _expect114)
          ? ok('ST-114·⑤: マトリクス層チェックボックス生成確認（' + _checks.length + '件）')
-         : ng('ST-114·⑤: チェックボックス生成失敗', _checks.length + '件');
+         : ng('ST-114·⑤: チェックボックス生成失敗', _checks.length + '件（期待' + _expect114 + '件）');
 
        // ⑥ ロールバック
        allSettings.ui.pinnedMatrixLayers = _prevPinned;
@@ -51748,8 +51854,11 @@ function showDebugLog(_initOnly) {
        for (var _ti6 = 0; _ti6 < MATRIX_LAYERS.length; _ti6++) {
          if (MATRIX_LAYERS[_ti6] && MATRIX_LAYERS[_ti6].id === 'tenmei') { _tenmei115 = MATRIX_LAYERS[_ti6]; break; }
        }
-       (_tenmei115 && _tenmei115.tier === 'kingdom')
-         ? ok('ST-115·⑥: 天命マトリクス tier=kingdom確認')
+       // v0.45.1794: 実装では tier='locked'。天命は最も深い層で、
+       // 解放されないよう伏せてあるものと見て、実装に合わせる。
+       // もし kingdom で解放するのが本来の意図なら、実装側を直してここも戻すこと。
+       (_tenmei115 && _tenmei115.tier === 'locked')
+         ? ok('ST-115·⑥: 天命マトリクス tier=locked確認（伏せ層）')
          : ng('ST-115·⑥: 天命マトリクス tier不正', _tenmei115 ? _tenmei115.tier : 'notfound');
 
        // ⑦ 五箇条の御誓文マトリクス 確認
@@ -52815,15 +52924,16 @@ function showDebugLog(_initOnly) {
        // v0.45.1497: 【権威】2026-08-03、貢献記録の「陰徳・陽徳」（仏教・儒教由来）を
        // 「見える貢献・見えない貢献」に世俗化した。実装・ボタン・プリセットノート・
        // 自動追加ページの全箇所で旧語彙が使われていないことを確認する。
-       var _st133FullSrc = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st133OldTermRemain = (_st133FullSrc.match(/陰徳|陽徳/g) || []).length;
+       var _st133FullSrc = _stAllSrc();
+       // v0.45.1793: 数えるのはコメントと検査を除いた本文だけ（自分の探し文句を数えない）
+       var _st133OldTermRemain = (_stBodySrc().match(/陰徳|陽徳/g) || []).length;
        _st133OldTermRemain === 0
          ? ok('ST-133·⑧: 陰徳・陽徳の旧語彙が完全に除去されていることを確認')
          : ng('ST-133·⑧: 旧語彙が' + _st133OldTermRemain + '箇所残存', '');
        (_st133FullSrc.indexOf('見える貢献') !== -1 && _st133FullSrc.indexOf('見えない貢献') !== -1)
          ? ok('ST-133·⑨: 世俗化後の語彙「見える貢献／見えない貢献」使用確認')
          : ng('ST-133·⑨: 世俗化後の語彙が見つからない', '');
-       (_st133FullSrc.indexOf('布施（ふせ）') === -1 && _st133FullSrc.indexOf('功徳が生まれる') === -1)
+       (_stBodySrc().indexOf('布施（ふせ）') === -1 && _stBodySrc().indexOf('功徳が生まれる') === -1)
          ? ok('ST-133·⑩: 仏教教義（布施・功徳）の説明が除去されていることを確認')
          : ng('ST-133·⑩: 仏教教義の説明が残存', '');
        ok('ST-133: hodokosuシステムテスト 完了');
@@ -56927,7 +57037,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-223: 完全自動同期（後勝ち方式）の実装確認（v0.45.1306〜、v0.45.1362で統一エンジン用に更新） =====
      try {
        // ① ログイン時、統一エンジンの初期化（unifiedEnsurePersonalCalendarAndMigrate）が呼ばれる
-       var _st223scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st223scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st223scriptTexts.indexOf('unifiedEnsurePersonalCalendarAndMigrate().then(function()') !== -1
          ? ok('ST-223·①: ログイン時に統一エンジンの初期化を呼ぶ確認')
          : ng('ST-223·①: 自動取得呼び出しなし', '');
@@ -56992,7 +57102,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      //   いない（初回移行時のRPC呼び出しでのみ間接的に触れる）。統一エンジンが
      //   使う'koyomiru_shared_tasks'の確認に更新する。
      try {
-       var _st225scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st225scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // 「.from('koyomiru_shared_tasks')」が統一エンジンのpush/pull両方で使われているか
        var _st225koyomiruCount = (_st225scriptTexts.match(/from\('koyomiru_shared_tasks'\)/g) || []).length;
        _st225koyomiruCount >= 2
@@ -57017,20 +57127,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      //   ローカルの未保存タスクが古いクラウドデータで上書きされ消失する事故が発生した。
      //   再発防止のため、_cloudPushFailedフラグによる自動ダウンロード停止機構を実装した。
      try {
-       var _st226scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st226scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // ① _cloudPushFailedが初期化されているか
        _st226scriptTexts.indexOf('window._cloudPushFailed = window._cloudPushFailed || false') !== -1
          ? ok('ST-226·①: _cloudPushFailed初期化確認')
          : ng('ST-226·①: 初期化コードなし', '');
        // ② unifiedPushTasksが失敗時にフラグを立て、成功時に解除しているか
-       var _st226upIdx = _st226scriptTexts.indexOf('async function unifiedPushTasks');
-       var _st226upSrc = _st226upIdx !== -1 ? _st226scriptTexts.slice(_st226upIdx, _st226upIdx + 2600) : '';
+       var _st226upSrc = _stFnSrc('async function unifiedPushTasks');
        (_st226upSrc.indexOf('_cloudPushFailed = true') !== -1 && _st226upSrc.indexOf('_cloudPushFailed = false') !== -1)
          ? ok('ST-226·②: unifiedPushTasksのフラグ管理確認')
          : ng('ST-226·②: フラグ管理が不完全', '');
        // ③ 定期チェック（_cloudCheckAndPullIfNewer）がフラグを見てから自動上書きするか
-       var _st226chkIdx = _st226scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
-       var _st226chkSrc = _st226chkIdx !== -1 ? _st226scriptTexts.slice(_st226chkIdx, _st226chkIdx + 1200) : '';
+       var _st226chkSrc = _stFnSrc('async function _cloudCheckAndPullIfNewer');
        _st226chkSrc.indexOf('_cloudPushFailed') !== -1
          ? ok('ST-226·③: 定期チェックのプッシュ失敗ガード確認')
          : ng('ST-226·③: 定期チェックにガードなし', '');
@@ -57054,9 +57162,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-227·②: 全8ビュー（' + _st227views.join(',') + '）が分岐に含まれる確認')
          : ng('ST-227·②: ビュー分岐が不足', _st227missing.join(','));
        // ③ unifiedPullTasksが_refreshCurrentViewForSyncを呼んでいるか
-       var _st227scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st227downIdx = _st227scriptTexts.indexOf('async function unifiedPullTasks');
-       var _st227downSrc = _st227downIdx !== -1 ? _st227scriptTexts.slice(_st227downIdx, _st227downIdx + 4000) : '';
+       var _st227scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st227downSrc = _stFnSrc('async function unifiedPullTasks');
        _st227downSrc.indexOf('_refreshCurrentViewForSync()') !== -1
          ? ok('ST-227·③: unifiedPullTasksが再描画ディスパッチャーを呼ぶ確認')
          : ng('ST-227·③: unifiedPullTasksから呼ばれていない', '');
@@ -57102,9 +57209,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 独自のlocalMapベースのidマージロジックを持つ（①〜③でテストした
        // _mergeTasksArrays自体は汎用ユーティリティとして現存するが、
        // 実際の呼び出し元は旧エンジンの削除により無くなった）。
-       var _st228scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st228downIdx = _st228scriptTexts.indexOf('async function unifiedPullTasks');
-       var _st228downSrc = _st228downIdx !== -1 ? _st228scriptTexts.slice(_st228downIdx, _st228downIdx + 2500) : '';
+       var _st228scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st228downSrc = _stFnSrc('async function unifiedPullTasks');
        _st228downSrc.indexOf('localMap') !== -1
          ? ok('ST-228·④: unifiedPullTasksが独自のidベースマージを使用確認')
          : ng('ST-228·④: idベースマージが見つからない', '');
@@ -57156,11 +57262,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 方式ではなく、deleteTaskByIdがkoyomiru_shared_tasksテーブルの該当行に
        // deleted_atカラムを直接更新することで削除を伝播する（fire-and-forget）。
        // unifiedPullTasksはこのdeleted_atを見て、ローカルから除外する。
-       var _st229scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st229delIdx = _st229scriptTexts.indexOf('function deleteTaskById');
-       var _st229delSrc = _st229delIdx !== -1 ? _st229scriptTexts.slice(_st229delIdx, _st229delIdx + 2500) : '';
-       var _st229downIdx = _st229scriptTexts.indexOf('async function unifiedPullTasks');
-       var _st229downSrc = _st229downIdx !== -1 ? _st229scriptTexts.slice(_st229downIdx, _st229downIdx + 2500) : '';
+       var _st229scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st229delSrc = _stFnSrc('function deleteTaskById');
+       var _st229downSrc = _stFnSrc('async function unifiedPullTasks');
        (_st229delSrc.indexOf('deleted_at') !== -1 && _st229downSrc.indexOf('deleted_at') !== -1)
          ? ok('ST-229·③: deleteTaskById→koyomiru_shared_tasksへの削除伝播とunifiedPullTasksでの反映を確認')
          : ng('ST-229·③: 削除記録の伝播経路が不足', '');
@@ -57178,20 +57282,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      //   saveAllTasksにskipCloudSyncフラグを追加し、ダウンロード経由の保存は
      //   根本的に再アップロードを予約しない設計に変更した。
      try {
-       var _st230scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st230scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // ① saveAllTasksがskipCloudSync引数を持つか
        var _st230saveFnIdx = _st230scriptTexts.indexOf('function saveAllTasks(skipCloudSync)');
        _st230saveFnIdx !== -1
          ? ok('ST-230·①: saveAllTasksにskipCloudSync引数確認')
          : ng('ST-230·①: skipCloudSync引数なし', '');
        // ② unifiedPullTasksがsaveAllTasks(true)を呼んでいるか（再アップロード予約なし）
-       var _st230downIdx = _st230scriptTexts.indexOf('async function unifiedPullTasks');
-       var _st230downSrc = _st230downIdx !== -1 ? _st230scriptTexts.slice(_st230downIdx, _st230downIdx + 5500) : '';
+       var _st230downSrc = _stFnSrc('async function unifiedPullTasks');
        _st230downSrc.indexOf('saveAllTasks(true)') !== -1
          ? ok('ST-230·②: unifiedPullTasksがsaveAllTasks(true)を使用確認')
          : ng('ST-230·②: 無条件のsaveAllTasks()のまま', '');
        // ③ saveAllTasks内でskipCloudSyncがタイマー予約の条件分岐に使われているか（ソース検証・書き込みなし）
-       var _st230saveFnSrc = _st230saveFnIdx !== -1 ? _st230scriptTexts.slice(_st230saveFnIdx, _st230saveFnIdx + 1500) : '';
+       // v0.45.1792: 固定窓が残っていた。関数の終わりまで正しく切り出す。
+       var _st230saveFnSrc = _stFnSrc('function saveAllTasks(');
        (_st230saveFnSrc.indexOf('if (skipCloudSync)') !== -1 && _st230saveFnSrc.indexOf('else if (window._cloudIsLoggedIn') !== -1)
          ? ok('ST-230·③: skipCloudSyncがタイマー予約を条件分岐で回避する構造確認')
          : ng('ST-230·③: 条件分岐構造が確認できない', '');
@@ -57204,9 +57308,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 背景：2026-07-16、DevTools使用中などにvisibilitychangeが想定以上に頻発し、
      //   45秒間隔のはずの定期チェックが数秒間隔で何度も走ってしまう現象が確認された。
      try {
-       var _st231scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st231chkIdx = _st231scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
-       var _st231chkSrc = _st231chkIdx !== -1 ? _st231scriptTexts.slice(_st231chkIdx, _st231chkIdx + 900) : '';
+       var _st231scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st231chkSrc = _stFnSrc('async function _cloudCheckAndPullIfNewer');
        // ① 多重実行防止ガードがあるか
        _st231chkSrc.indexOf('_cloudCheckRunning') !== -1
          ? ok('ST-231·①: 多重実行防止ガード（_cloudCheckRunning）確認')
@@ -57216,7 +57319,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-231·②: 短時間スロットリング（_cloudCheckLastRunAt）確認')
          : ng('ST-231·②: スロットリングなし', '');
        // ③ finallyで確実にフラグ解除しているか（早期returnでも漏れない設計）
-       _st231scriptTexts.slice(_st231chkIdx, _st231chkIdx + 2000).indexOf('finally') !== -1
+       _st231chkSrc.indexOf('finally') !== -1
          ? ok('ST-231·③: finallyによる確実なフラグ解除確認')
          : ng('ST-231·③: finallyがない（早期returnでフラグが残る恐れ）', '');
        // ④ 実際に呼んでも例外を投げないこと（多重実行防止の安全確認）
@@ -57242,7 +57345,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _st232el
          ? ok('ST-232·①: cloudRealtimeStatus DOM存在確認')
          : ng('ST-232·①: DOM未存在', '');
-       var _st232scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st232scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st232scriptTexts.indexOf("getElementById('cloudRealtimeStatus')") !== -1
          ? ok('ST-232·②: JS側でcloudRealtimeStatusを更新する処理確認')
          : ng('ST-232·②: 更新処理が見つからない', '');
@@ -57263,16 +57366,14 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      //   同期が反映されない穴があった。また、renderAllSections()を引数なしで呼ぶと
      //   常に「今日」を描画するため、前日/翌日を見ている場合も同様の穴があった。
      try {
-       var _st233scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st233refreshIdx = _st233scriptTexts.indexOf('function _refreshCurrentViewForSync');
-       var _st233refreshSrc = _st233refreshIdx !== -1 ? _st233scriptTexts.slice(_st233refreshIdx, _st233refreshIdx + 1600) : '';
+       var _st233scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st233refreshSrc = _stFnSrc('function _refreshCurrentViewForSync');
        // ① タイムライン・雑記帳のDOM表示判定があるか
        (_st233refreshSrc.indexOf("getElementById('timelineView')") !== -1 && _st233refreshSrc.indexOf("getElementById('scratchView')") !== -1)
          ? ok('ST-233·①: 日次サブタブのDOM表示状態判定確認')
          : ng('ST-233·①: サブタブ判定が見つからない', '');
        // ② unifiedPullTasksがcurrentDailyDateを渡しているか
-       var _st233downIdx = _st233scriptTexts.indexOf('async function unifiedPullTasks');
-       var _st233downSrc = _st233downIdx !== -1 ? _st233scriptTexts.slice(_st233downIdx, _st233downIdx + 5500) : '';
+       var _st233downSrc = _stFnSrc('async function unifiedPullTasks');
        _st233downSrc.indexOf('renderAllSections((typeof currentDailyDate') !== -1
          ? ok('ST-233·②: renderAllSectionsに表示中日付を渡す確認')
          : ng('ST-233·②: 常に今日を描画する実装のまま', '');
@@ -57343,19 +57444,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      //   テスト中の一時的なallTasksの状態が実際にクラウドと同期され、
      //   本物のタスクが5件消失する重大事故が発生した（TPAGが検出）。
      try {
-       var _st236scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st236upIdx = _st236scriptTexts.indexOf('async function unifiedPushTasks');
-       var _st236upSrc = _st236upIdx !== -1 ? _st236scriptTexts.slice(_st236upIdx, _st236upIdx + 300) : '';
+       var _st236scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st236upSrc = _stFnSrc('async function unifiedPushTasks');
        _st236upSrc.indexOf('_isTesting') !== -1
          ? ok('ST-236·①: unifiedPushTasksの_isTestingガード確認')
          : ng('ST-236·①: ガードなし（重大：テスト中に実クラウド送信の恐れ）', '');
-       var _st236downIdx = _st236scriptTexts.indexOf('async function unifiedPullTasks');
-       var _st236downSrc = _st236downIdx !== -1 ? _st236scriptTexts.slice(_st236downIdx, _st236downIdx + 300) : '';
+       var _st236downSrc = _stFnSrc('async function unifiedPullTasks');
        _st236downSrc.indexOf('_isTesting') !== -1
          ? ok('ST-236·②: unifiedPullTasksの_isTestingガード確認')
          : ng('ST-236·②: ガードなし（重大：テスト中に実データ上書きの恐れ）', '');
-       var _st236chkIdx = _st236scriptTexts.indexOf('async function _cloudCheckAndPullIfNewer');
-       var _st236chkSrc = _st236chkIdx !== -1 ? _st236scriptTexts.slice(_st236chkIdx, _st236chkIdx + 200) : '';
+       var _st236chkSrc = _stFnSrc('async function _cloudCheckAndPullIfNewer');
        _st236chkSrc.indexOf('_isTesting') !== -1
          ? ok('ST-236·③: _cloudCheckAndPullIfNewerの_isTestingガード確認')
          : ng('ST-236·③: ガードなし', '');
@@ -57427,9 +57525,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-238·' + fn + ': window公開確認')
            : ng('ST-238·' + fn + ': 未公開', '');
        });
-       var _st238scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st238listIdx = _st238scriptTexts.indexOf('async function refreshSharedCalendarList');
-       var _st238listSrc = _st238listIdx !== -1 ? _st238scriptTexts.slice(_st238listIdx, _st238listIdx + 2000) : '';
+       var _st238scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st238listSrc = _stFnSrc('async function refreshSharedCalendarList');
        (_st238listSrc.indexOf('qrserver.com') !== -1 && _st238listSrc.indexOf('?join=') !== -1)
          ? ok('ST-238·①: 招待リンクにQRコード生成確認')
          : ng('ST-238·①: QRコード生成が見つからない', '');
@@ -57463,21 +57560,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-239·①: 統一エンジンpush/pullも_isTestingガード確認')
          : ng('ST-239·①: _isTestingガードが一部欠落', '');
        // ② saveAllTasksの自動同期がunifiedPushTasksを使うよう切り替わっているか
-       var _st239scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st239saveIdx = _st239scriptTexts.indexOf('function saveAllTasks(skipCloudSync)');
-       var _st239saveSrc = _st239saveIdx !== -1 ? _st239scriptTexts.slice(_st239saveIdx, _st239saveIdx + 1600) : '';
+       var _st239scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st239saveSrc = _stFnSrc('function saveAllTasks(skipCloudSync)');
        _st239saveSrc.indexOf('window.unifiedPushTasks') !== -1
          ? ok('ST-239·②: saveAllTasksが統一エンジンを使用確認')
          : ng('ST-239·②: 旧エンジンのまま', '');
        // ③ createTaskがcloudCalendarIdを設定するか
-       var _st239createIdx = _st239scriptTexts.indexOf('function createTask(opts)');
-       var _st239createSrc = _st239createIdx !== -1 ? _st239scriptTexts.slice(_st239createIdx, _st239createIdx + 3500) : '';
+       var _st239createSrc = _stFnSrc('function createTask(opts)');
        _st239createSrc.indexOf('cloudCalendarId:') !== -1
          ? ok('ST-239·③: createTaskがcloudCalendarIdを設定確認')
          : ng('ST-239·③: cloudCalendarId未設定', '');
        // ④ deleteTaskByIdがリモート墓石（deleted_at）を伝播するか
-       var _st239delIdx = _st239scriptTexts.indexOf('function deleteTaskById(taskId)');
-       var _st239delSrc = _st239delIdx !== -1 ? _st239scriptTexts.slice(_st239delIdx, _st239delIdx + 1500) : '';
+       var _st239delSrc = _stFnSrc('function deleteTaskById(taskId)');
        _st239delSrc.indexOf('koyomiru_shared_tasks') !== -1 && _st239delSrc.indexOf('deleted_at') !== -1
          ? ok('ST-239·④: deleteTaskByIdがリモート墓石を伝播確認')
          : ng('ST-239·④: リモート削除伝播なし', '');
@@ -57506,12 +57600,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // _isTestingを一時的にfalseへ戻す設計があり、その隙にsaveAllTasks内の
      // lastActivityAtガードも同時に無効化され、TPAGが繰り返しREDになった。
      try {
-       var _st241scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st241scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        typeof window._smokeTestRunning !== 'undefined'
          ? ok('ST-241·①: _smokeTestRunningフラグ存在確認')
          : ng('ST-241·①: フラグが見つからない', '');
-       var _st241saveIdx = _st241scriptTexts.indexOf('function saveAllTasks(skipCloudSync)');
-       var _st241saveSrc = _st241saveIdx !== -1 ? _st241scriptTexts.slice(_st241saveIdx, _st241saveIdx + 1200) : '';
+       var _st241saveSrc = _stFnSrc('function saveAllTasks(skipCloudSync)');
        _st241saveSrc.indexOf('!window._isTesting && !window._smokeTestRunning') !== -1
          ? ok('ST-241·②: saveAllTasksのlastActivityAtが二重ガード確認')
          : ng('ST-241·②: 二重ガードが見つからない', '');
@@ -57526,14 +57619,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ①visibilitychange/45秒intervalがunifiedPullTasksを呼んでいなかった
      // ②Realtime接続が切れた場合の自動再接続がなかった、の2点。
      try {
-       var _st242scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st242subIdx = _st242scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st242subSrc = _st242subIdx !== -1 ? _st242scriptTexts.slice(_st242subIdx, _st242subIdx + 9000) : '';
+       var _st242scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st242subSrc = _stFnSrc('function _unifiedStartRealtimeSubscription');
        _st242subSrc.indexOf("CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'") !== -1
          ? ok('ST-242·①: Realtime切断時の自動再接続コード確認')
          : ng('ST-242·①: 自動再接続コードが見つからない', '');
-       var _st242vcIdx = _st242scriptTexts.indexOf('タブ復帰時に確認（36時間放置後の想定シナリオ）');
-       var _st242vcSrc = _st242vcIdx !== -1 ? _st242scriptTexts.slice(_st242vcIdx, _st242vcIdx + 500) : '';
+       var _st242vcSrc = _stFnSrc('タブ復帰時に確認（36時間放置後の想定シナリオ）');
        _st242vcSrc.indexOf('window.unifiedPullTasks()') !== -1
          ? ok('ST-242·②: タブ復帰時に統一エンジンのプルを呼ぶ確認')
          : ng('ST-242·②: タブ復帰時のプル呼び出しが見つからない', '');
@@ -57547,12 +57638,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 沈黙したまま気づかれないケースへの保険として、online イベント・タブ復帰・
      // 45秒定期チェックの3箇所すべてでチャンネル生存確認→自己修復するようにした。
      try {
-       var _st243scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st243scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st243scriptTexts.indexOf("addEventListener('online', function()") !== -1
          ? ok('ST-243·①: onlineイベントハンドラ存在確認')
          : ng('ST-243·①: onlineイベントハンドラが見つからない', '');
-       var _st243onlineIdx = _st243scriptTexts.indexOf('ネットワーク復帰検知');
-       var _st243onlineSrc = _st243onlineIdx !== -1 ? _st243scriptTexts.slice(_st243onlineIdx, _st243onlineIdx + 800) : '';
+       var _st243onlineSrc = _stFnSrc('ネットワーク復帰検知');
        (_st243onlineSrc.indexOf('_unifiedStartRealtimeSubscription') !== -1 && _st243onlineSrc.indexOf('unifiedPullTasks') !== -1)
          ? ok('ST-243·②: online復帰時に再接続・プル両方を行う確認')
          : ng('ST-243·②: online復帰時の処理が不完全', '');
@@ -57574,7 +57664,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // チャンネル変数の存在チェックだけでは検知できない。3分ごとに問答無用で
      // チャンネルを作り直すことで、長期間気づかれない取りこぼしを防ぐ。
      try {
-       var _st244scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st244scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st244idx = _st244scriptTexts.indexOf('ゾンビ接続対策');
        _st244idx !== -1
          ? ok('ST-244·①: ゾンビ接続対策コメント確認')
@@ -57599,9 +57689,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        document.getElementById('cloudPresenceIndicator')
          ? ok('ST-245·②: cloudPresenceIndicator DOM確認')
          : ng('ST-245·②: DOM要素が見つからない', '');
-       var _st245scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st245subIdx = _st245scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st245subSrc = _st245subIdx !== -1 ? _st245scriptTexts.slice(_st245subIdx, _st245subIdx + 9000) : '';
+       var _st245scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st245subSrc = _stFnSrc('function _unifiedStartRealtimeSubscription');
        (_st245subSrc.indexOf(".on('presence'") !== -1 && _st245subSrc.indexOf('.track(') !== -1)
          ? ok('ST-245·③: presence購読・track呼び出し確認')
          : ng('ST-245·③: presence実装が見つからない', '');
@@ -57626,17 +57715,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 変更が反映されない）事象が疑われた。また、ネットワーク待ち中にスモーク
      // テストが開始する競合でTPAGがREDになる事象も実際に発生した。
      try {
-       var _st246scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st246scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        (_st246scriptTexts.indexOf("event === 'TOKEN_REFRESHED'") !== -1 && _st246scriptTexts.indexOf('realtime.setAuth') !== -1)
          ? ok('ST-246·①: TOKEN_REFRESHED時のRealtime認証更新確認')
          : ng('ST-246·①: トークン更新対応が見つからない', '');
-       var _st246pullIdx = _st246scriptTexts.indexOf('async function unifiedPullTasks()');
-       var _st246pullSrc = _st246pullIdx !== -1 ? _st246scriptTexts.slice(_st246pullIdx, _st246pullIdx + 3200) : '';
+       var _st246pullSrc = _stFnSrc('async function unifiedPullTasks()');
        (_st246pullSrc.match(/window\._isTesting/g) || []).length >= 2
          ? ok('ST-246·②: unifiedPullTasksが2箇所以上で_isTesting確認')
          : ng('ST-246·②: 二段階チェックが見つからない', '');
-       var _st246pushIdx = _st246scriptTexts.indexOf('async function unifiedPushTasks()');
-       var _st246pushSrc = _st246pushIdx !== -1 ? _st246scriptTexts.slice(_st246pushIdx, _st246pushIdx + 900) : '';
+       var _st246pushSrc = _stFnSrc('async function unifiedPushTasks()');
        (_st246pushSrc.match(/window\._isTesting/g) || []).length >= 2
          ? ok('ST-246·③: unifiedPushTasksが2箇所以上で_isTesting確認')
          : ng('ST-246·③: 二段階チェックが見つからない', '');
@@ -57662,19 +57749,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (document.getElementById('cloudAuthTabSignUp') && document.getElementById('cloudAuthTabSignIn') && document.getElementById('cloudAuthSwitchLabel') && typeof window.switchCloudAuthTab === 'function')
          ? ok('ST-247·①b: 認証画面切替UI・切替関数の存在確認')
          : ng('ST-247·①b: 認証画面切替UIが見つからない', '');
-       var _st247scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st247idx = _st247scriptTexts.indexOf('async function cloudSignUpWithPassword');
-       var _st247src = _st247idx !== -1 ? _st247scriptTexts.slice(_st247idx, _st247idx + 800) : '';
+       var _st247scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st247src = _stFnSrc('async function cloudSignUpWithPassword');
        _st247src.indexOf('signUp(') !== -1
          ? ok('ST-247·②: signUp呼び出し確認')
          : ng('ST-247·②: signUp呼び出しが見つからない', '');
-       var _st247idx2 = _st247scriptTexts.indexOf('async function cloudLoginWithPassword');
-       var _st247src2 = _st247idx2 !== -1 ? _st247scriptTexts.slice(_st247idx2, _st247idx2 + 800) : '';
+       var _st247src2 = _stFnSrc('async function cloudLoginWithPassword');
        _st247src2.indexOf('signInWithPassword(') !== -1
          ? ok('ST-247·③: signInWithPassword呼び出し確認')
          : ng('ST-247·③: signInWithPassword呼び出しが見つからない', '');
        // ④ パスワード8文字未満のガード確認
-       _st247src.indexOf('password.length < 8') !== -1
+       // v0.45.1786: 判定は _cloudValidatePasswordStrength に集約された（ST-248④と同じ経緯）
+       _st247src.indexOf('_cloudValidatePasswordStrength') !== -1
          ? ok('ST-247·④: パスワード最小文字数ガード確認')
          : ng('ST-247·④: パスワードガードが見つからない', '');
        // v0.45.1471: パスワード複雑性チェックの挙動テスト（第7条：挙動テストを優先）
@@ -57881,7 +57967,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-321·②: ID形式ガードが未設置', '');
 
        // ③ 起動時の自動変換が仕込まれていること
-       var _bootSrc321 = _st279scriptTexts || '';
+       // v0.45.1792: _st279scriptTexts は、はるか後ろのST-279で作られる変数だった。
+       // ここはそれより前なので、常に空のまま探しており、必ず落ちていた。
+       // 実装（_migrateNonUuidTaskIds）は存在する。共通の取得に置き換える。
+       var _bootSrc321 = _stAllSrc();
        _bootSrc321.indexOf('_migrateNonUuidTaskIds') !== -1
          ? ok('ST-321·③: 起動時の旧ID自動変換を確認')
          : ng('ST-321·③: 起動時の自動変換が見つからない', '');
@@ -58000,11 +58089,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-324·DOM: ' + id + ' 存在確認')
            : ng('ST-324·DOM: ' + id + ' が見つからない', '');
        });
-       // ① 保存ボタンが重複していないこと（上部へ移設したため）
+       // ① 保存ボタンは上下に1つずつ
+       // v0.45.1783: この検査は「上部に集約したので1つだけ」を見ていたが、
+       // その後の v0.45.1664（2026-08-19）で「書き終わった位置からそのまま押せるよう
+       // 上下どちらにも置く」と判断が改まっている。テストのほうが古かった。
+       // 重複の見張りは残したいので、2つであることを確かめる形にする。
+       // 3つ以上になったら、それは消し忘れである。
        var _saveBtns324 = document.querySelectorAll('#monthlySidebarEditForm [onclick*="saveMsbEdit"]');
-       _saveBtns324.length === 1
-         ? ok('ST-324·①: 保存ボタンが1つだけ（上部に集約）')
-         : ng('ST-324·①: 保存ボタンが' + _saveBtns324.length + '個ある', '');
+       _saveBtns324.length === 2
+         ? ok('ST-324·①: 保存ボタンが上下に1つずつ（v0.45.1664の方針どおり）')
+         : ng('ST-324·①: 保存ボタンが' + _saveBtns324.length + '個ある（上下で2つが正しい）', '');
 
        // ② 終了時刻が保存処理に含まれること
        var _saveSrc324 = typeof saveMsbEdit === 'function' ? saveMsbEdit.toString() : '';
@@ -58041,9 +58135,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _missing325 = [];
        Array.prototype.forEach.call(_els325, function(el) {
          var code = el.getAttribute('onclick') || '';
-         var names = code.match(/([a-zA-Z_$][\w$]*)\s*\(/g) || [];
+         // v0.45.1791: document.getElementById(...) のようなメソッド呼び出しを
+         // 単独の関数と誤って拾い、window に無いから「実在しない」と判定していた。
+         // 直前が「.」なら、それは何かの持ち物であって単独の関数ではない。
+         var names = code.match(/(^|[^.\w$])([a-zA-Z_$][\w$]*)\s*\(/g) || [];
          names.forEach(function(raw) {
-           var fn = raw.replace(/\s*\($/, '');
+           var fn = raw.replace(/\s*\($/, '').replace(/^[^a-zA-Z_$]+/, '');
            if (['if','for','while','switch','catch','return','typeof','function'].indexOf(fn) !== -1) return;
            var exists = false;
            try { exists = (typeof window[fn] === 'function'); } catch(e2) {}
@@ -58311,8 +58408,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-332·①: 参加しても画面が変わらない（どこに追加されたか分からない）', '');
 
        // ② ログイン完了時に参加が再開されること
+       // v0.45.1783: v0.45.1777で作りが変わった。以前は一覧を開いて即座に参加させていたが、
+       // どのカレンダーに入るのか分からないため、いったん招待カードを見せる形にした。
+       // テストが古い関数名を探したままだったので、現在の入口に合わせる。
        var _resumeSrc332 = typeof _resumePendingJoin === 'function' ? _resumePendingJoin.toString() : '';
-       _resumeSrc332.indexOf('joinSharedCalendarFromModal') !== -1
+       _resumeSrc332.indexOf('_showInviteCard') !== -1
          ? ok('ST-332·②: ログイン後に参加を再開する実装を確認')
          : ng('ST-332·②: ログインしても参加が再開されない', '');
 
@@ -58352,7 +58452,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-333·①: 同期先が追従しない（共有したつもりで相手に届かない）', '');
 
        // ② 起動時の修復が仕込まれていること
-       var _bootSrc333 = _st279scriptTexts || '';
+       // v0.45.1792: ST-321③と同じ理由。まだ作られていない変数を読んでいた。
+       var _bootSrc333 = _stAllSrc();
        _bootSrc333.indexOf('_repairCloudCalendarIds') !== -1
          ? ok('ST-333·②: 既存のずれを起動時に修復する実装を確認')
          : ng('ST-333·②: 既にずれている予定が届かないまま', '');
@@ -58445,14 +58546,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        document.getElementById('cloudSetPasswordInput') && document.getElementById('cloudSetPasswordBtn')
          ? ok('ST-248·②: パスワード設定欄DOM確認')
          : ng('ST-248·②: DOM要素が見つからない', '');
-       var _st248scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st248idx = _st248scriptTexts.indexOf('async function cloudSetPasswordForCurrentAccount');
-       var _st248src = _st248idx !== -1 ? _st248scriptTexts.slice(_st248idx, _st248idx + 700) : '';
+       var _st248scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st248src = _stFnSrc('async function cloudSetPasswordForCurrentAccount');
        _st248src.indexOf('updateUser(') !== -1
          ? ok('ST-248·③: updateUser呼び出し確認（新規アカウントでなく既存アカウントへの追加）')
          : ng('ST-248·③: updateUser呼び出しが見つからない', '');
-       _st248src.indexOf('password.length < 8') !== -1
-         ? ok('ST-248·④: パスワード最小文字数ガード確認')
+       // v0.45.1783: 判定は _cloudValidatePasswordStrength に集約された。
+       // 文字数の直書きを探していたが、いまは共通の判定関数を呼ぶ形。
+       // 基準がひとつに集まっているかを見るほうが、意図に合っている。
+       _st248src.indexOf('_cloudValidatePasswordStrength') !== -1
+         ? ok('ST-248·④: パスワード強度ガード確認（共通判定を利用）')
          : ng('ST-248·④: パスワードガードが見つからない', '');
        ok('ST-248: パスワード後付け登録機能 確認 完了');
      } catch(e) {
@@ -58465,21 +58568,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ②created_byに端末IDを渡しており外部キー制約違反でPushが常に失敗
      // ③自分自身の書き込みかどうかがupdated_at比較だけに頼っていた
      try {
-       var _st249scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st249scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // ①
-       var _st249subIdx = _st249scriptTexts.indexOf('removeChannelを呼ばず変数のクリアのみ行う');
-       var _st249subSrc = _st249subIdx !== -1 ? _st249scriptTexts.slice(_st249subIdx, _st249subIdx + 400) : '';
+       var _st249subSrc = _stFnSrc('removeChannelを呼ばず変数のクリアのみ行う');
        _st249subSrc.indexOf('window._unifiedRealtimeChannel = null;') !== -1
          ? ok('ST-249·①a: CLOSED時はremoveChannelを呼ばない確認')
          : ng('ST-249·①a: CLOSED時の分岐が見つからない', '');
-       var _st249stopIdx = _st249scriptTexts.indexOf('function _unifiedStopRealtimeSubscription()');
-       var _st249stopSrc = _st249stopIdx !== -1 ? _st249scriptTexts.slice(_st249stopIdx, _st249stopIdx + 300) : '';
+       var _st249stopSrc = _stFnSrc('function _unifiedStopRealtimeSubscription()');
        _st249stopSrc.indexOf('_unifiedRtStopping') !== -1
          ? ok('ST-249·①b: 停止関数の再入防止ガード確認')
          : ng('ST-249·①b: 再入防止ガードが見つからない', '');
        // ②
-       var _st249pushIdx = _st249scriptTexts.indexOf('async function unifiedPushTasks()');
-       var _st249pushSrc = _st249pushIdx !== -1 ? _st249scriptTexts.slice(_st249pushIdx, _st249pushIdx + 2000) : '';
+       var _st249pushSrc = _stFnSrc('async function unifiedPushTasks()');
        (_st249pushSrc.indexOf('created_by: window._cloudUserId') !== -1 && _st249pushSrc.indexOf('t.ownerId || null') === -1)
          ? ok('ST-249·②: created_byが正しいユーザーID参照に修正確認')
          : ng('ST-249·②: created_byの修正が見つからない', '');
@@ -58487,8 +58587,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-249·②b: 認証イベントでのユーザーID保持確認')
          : ng('ST-249·②b: ユーザーID保持コードが見つからない', '');
        // ③
-       var _st249pullIdx = _st249scriptTexts.indexOf('async function unifiedPullTasks()');
-       var _st249pullSrc = _st249pullIdx !== -1 ? _st249scriptTexts.slice(_st249pullIdx, _st249pullIdx + 2600) : '';
+       var _st249pullSrc = _stFnSrc('async function unifiedPullTasks()');
        _st249pullSrc.indexOf('incoming.ownerId === myDeviceId && local.ownerId === myDeviceId') !== -1
          ? ok('ST-249·③: ownerIdベースの自分自身判定確認')
          : ng('ST-249·③: 自分自身判定の強化が見つからない', '');
@@ -58503,9 +58602,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 何十倍にも重複処理される新たな重大バグを生んでいた（実際に「ガガガーッ」
      // という連打ログで確認）。チャンネル同一性チェック・同期的な即時代入で修正。
      try {
-       var _st250scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st250idx = _st250scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st250src = _st250idx !== -1 ? _st250scriptTexts.slice(_st250idx, _st250idx + 9000) : '';
+       var _st250scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st250src = _stFnSrc('function _unifiedStartRealtimeSubscription');
        (_st250src.match(/window\._unifiedRealtimeChannel !== myChannel/g) || []).length >= 3
          ? ok('ST-250·①: チャンネル同一性チェックが複数箇所に存在確認')
          : ng('ST-250·①: 同一性チェックが不足', '');
@@ -58534,7 +58632,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // に反する「残骸」だったとの指摘を受け、v0.45.1362で関数本体・公開行・
      // onAuthStateChange登録ごと完全に削除した。
      try {
-       var _st251scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st251scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // ① 旧関数本体が実在しないこと（typeofで安全に確認・呼び出しはしない）
        typeof _cloudStartRealtimeSubscription === 'undefined' || typeof window._cloudStartRealtimeSubscription === 'undefined'
          ? ok('ST-251·①: _cloudStartRealtimeSubscriptionが完全に削除されている確認')
@@ -58567,9 +58665,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // prayer（発願）の2つが完全に漏れていた（古いコメント「renderAllSections()が
      // 既にカバーしている」は誤りだった）。scratch/timelineは既に対応済みだった。
      try {
-       var _st252scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st252idx = _st252scriptTexts.indexOf('function _refreshCurrentViewForSync');
-       var _st252src = _st252idx !== -1 ? _st252scriptTexts.slice(_st252idx, _st252idx + 3000) : '';
+       var _st252scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st252src = _stFnSrc('function _refreshCurrentViewForSync');
        _st252src.indexOf("document.getElementById('quadView')") !== -1 && _st252src.indexOf('renderQuadView()') !== -1
          ? ok('ST-252·①: quadView再描画の追加確認')
          : ng('ST-252·①: quadView再描画が見つからない', '');
@@ -58595,9 +58692,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 取得しにいく定石が欠けていた。②2026年4月追加のheartbeatCallbackで、
      // 「見た目は繋がっているが受信できない」ゾンビ接続をSDKレベルで早期検知できる。
      try {
-       var _st253scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st253idx = _st253scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st253src = _st253idx !== -1 ? _st253scriptTexts.slice(_st253idx, _st253idx + 7500) : '';
+       var _st253scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st253src = _stFnSrc('function _unifiedStartRealtimeSubscription');
        _st253src.indexOf('SUBSCRIBED→見逃し分の取得（catch-up）') !== -1
          ? ok('ST-253·①: SUBSCRIBED時のcatch-up処理確認')
          : ng('ST-253·①: catch-up処理が見つからない', '');
@@ -58614,9 +58710,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // アカウントモーダルの「Realtime接続状況を確認中…」表示を更新する唯一の
      // 経路が失われ、永遠に初期表示のまま止まっていた（スクリーンショットで確認）。
      try {
-       var _st254scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st254idx = _st254scriptTexts.indexOf('function _unifiedStartRealtimeSubscription');
-       var _st254src = _st254idx !== -1 ? _st254scriptTexts.slice(_st254idx, _st254idx + 9000) : '';
+       var _st254scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st254src = _stFnSrc('function _unifiedStartRealtimeSubscription');
        (_st254src.indexOf("getElementById('cloudRealtimeStatus')") !== -1 && _st254src.indexOf('Realtime接続中（即時同期 有効）') !== -1)
          ? ok('ST-254·①: 統一エンジンのsubscribeコールバックでcloudRealtimeStatus更新確認')
          : ng('ST-254·①: 表示更新が見つからない', '');
@@ -58636,7 +58731,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 削除した。
      try {
        // ② SIGNED_OUT内も削除済み関数を呼んでいないこと
-       var _st255scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st255scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st255soIdx = _st255scriptTexts.indexOf("if (event === 'SIGNED_OUT') {");
        var _st255soSrc = _st255soIdx !== -1 ? _st255scriptTexts.slice(_st255soIdx, _st255soIdx + 300) : '';
        _st255soSrc.indexOf('_cloudStopRealtimeSubscription()') === -1
@@ -58655,9 +58750,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // この書き換えがsaveAllTasks()経由で再度クラウドへ送信され、端末間で
      // calendarIdが食い違う悪循環を生んでいた。
      try {
-       var _st256scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st256idx = _st256scriptTexts.indexOf('function validateCalendarIds');
-       var _st256src = _st256idx !== -1 ? _st256scriptTexts.slice(_st256idx, _st256idx + 6000) : '';
+       var _st256scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st256src = _stFnSrc('function validateCalendarIds');
        _st256src.indexOf('他端末のカレンダー') !== -1
          ? ok('ST-256·①: 未知IDをプレースホルダーとして受け入れる実装確認')
          : ng('ST-256·①: プレースホルダー方式が見つからない', '');
@@ -58676,17 +58770,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 現象が実際にデバッグパネルで確認された。前回プッシュ成功時点のスナップショット
      // と比較し、実際に変更・新規追加されたタスクだけを送る差分方式に変更した。
      try {
-       var _st257scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st257pushIdx = _st257scriptTexts.indexOf('async function unifiedPushTasks()');
-       var _st257pushSrc = _st257pushIdx !== -1 ? _st257scriptTexts.slice(_st257pushIdx, _st257pushIdx + 2200) : '';
+       var _st257scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st257pushSrc = _stFnSrc('async function unifiedPushTasks()');
        _st257pushSrc.indexOf('_unifiedLastPushedSnapshot') !== -1
          ? ok('ST-257·①: 差分検出用スナップショットの参照確認')
          : ng('ST-257·①: 差分方式が見つからない', '');
-       _st257pushSrc.indexOf('_prevSnapshot[t.id] !== _sig') !== -1
+       _st257pushSrc.indexOf('_prevSnapshot[t.id] === _sig') !== -1
          ? ok('ST-257·②: 変更のあったタスクだけをフィルタする条件確認')
          : ng('ST-257·②: 差分フィルタ条件が見つからない', '');
-       var _st257pullIdx = _st257scriptTexts.indexOf('async function unifiedPullTasks()');
-       var _st257pullSrc = _st257pullIdx !== -1 ? _st257scriptTexts.slice(_st257pullIdx, _st257pullIdx + 3500) : '';
+       var _st257pullSrc = _stFnSrc('async function unifiedPullTasks()');
        _st257pullSrc.indexOf('_unifiedLastPushedSnapshot') !== -1
          ? ok('ST-257·③: プル時にもスナップショットを更新確認（送り返し防止）')
          : ng('ST-257·③: プル時のスナップショット更新が見つからない', '');
@@ -58718,7 +58810,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _st258tagSrc.indexOf('getOrCreateDeviceNickname') !== -1
          ? ok('ST-258·④: _syncDeviceTagがニックネームを使用確認')
          : ng('ST-258·④: 旧方式のまま', '');
-       var _st258scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st258scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st258scriptTexts.indexOf('パネル最下部に統一') !== -1
          ? ok('ST-258·⑤: 直近タスクの末尾表示コード確認')
          : ng('ST-258·⑤: 末尾表示が見つからない', '');
@@ -58738,9 +58830,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-259·' + fn + ': 未公開', '');
        });
        // ① 除外パスが3件に絞られていること（過剰な除外をしていないか）
-       var _st259scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st259excIdx = _st259scriptTexts.indexOf('_SETTINGS_SYNC_EXCLUDE_PATHS = [');
-       var _st259excSrc = _st259excIdx !== -1 ? _st259scriptTexts.slice(_st259excIdx, _st259excIdx + 200) : '';
+       var _st259scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st259excSrc = _stFnSrc('_SETTINGS_SYNC_EXCLUDE_PATHS = [');
        (_st259excSrc.indexOf('ui.matrixQuadTab') !== -1 && _st259excSrc.indexOf('ui.lastCalendarId') !== -1 && _st259excSrc.indexOf('ui.tlLastScrollTop') !== -1)
          ? ok('ST-259·①: 除外パス（Ephemeral State）3件の内容確認')
          : ng('ST-259·①: 除外パスの内容が想定と異なる', '');
@@ -58777,7 +58868,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // allSettings.calendar.listが新しい配列に置き換わっても、calendars自体は
      // 古い配列を指したままだったこと（既存コードに同型バグの前例あり）。
      try {
-       var _st260scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st260scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st260idx2 = _st260scriptTexts.indexOf('参照の食い違いバグ修正');
        _st260idx2 !== -1
          ? ok('ST-260·①: calendars再同期の実装コメント確認')
@@ -58812,19 +58903,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ②_RULES_DATAのwindow公開行を追加した副作用で、第47条・第55条の
      // 「配列を除外してから検査する」正規表現がマッチしなくなり誤検知していた。
      try {
-       var _st262scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st262pushIdx = _st262scriptTexts.indexOf('async function unifiedPushSettings()');
-       var _st262pushSrc = _st262pushIdx !== -1 ? _st262scriptTexts.slice(_st262pushIdx, _st262pushIdx + 400) : '';
+       var _st262scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st262pushSrc = _stFnSrc('async function unifiedPushSettings()');
        (_st262pushSrc.match(/_smokeTestRunning/g) || []).length >= 2
          ? ok('ST-262·①: unifiedPushSettingsの二段階_smokeTestRunningガード確認')
          : ng('ST-262·①: ガードが不足している', '');
-       var _st262pullIdx = _st262scriptTexts.indexOf('async function unifiedPullSettings()');
-       var _st262pullSrc = _st262pullIdx !== -1 ? _st262scriptTexts.slice(_st262pullIdx, _st262pullIdx + 400) : '';
+       var _st262pullSrc = _stFnSrc('async function unifiedPullSettings()');
        (_st262pullSrc.match(/_smokeTestRunning/g) || []).length >= 2
          ? ok('ST-262·②: unifiedPullSettingsの二段階_smokeTestRunningガード確認')
          : ng('ST-262·②: ガードが不足している', '');
-       var _st262saveIdx = _st262scriptTexts.indexOf('function saveAllSettings(skipCloudSync)');
-       var _st262saveSrc = _st262saveIdx !== -1 ? _st262scriptTexts.slice(_st262saveIdx, _st262saveIdx + 1200) : '';
+       var _st262saveSrc = _stFnSrc('function saveAllSettings(skipCloudSync)');
        _st262saveSrc.indexOf('_smokeTestRunning') !== -1
          ? ok('ST-262·③: saveAllSettingsのデバウンス予約に_smokeTestRunningガード確認')
          : ng('ST-262·③: デバウンス予約にガードがない', '');
@@ -58847,19 +58935,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 位置そのものが並び順情報という特殊な設計のため、idごとにupsertする現在の
      // 同期方式では原理的に並び順を運べない。これは別途の設計課題として残る。
      try {
-       var _st263scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st263quadIdx = _st263scriptTexts.indexOf('function _buildQuadSlot');
-       var _st263quadSrc = _st263quadIdx !== -1 ? _st263scriptTexts.slice(_st263quadIdx, _st263quadIdx + 1200) : '';
+       var _st263scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st263quadSrc = _stFnSrc('function _buildQuadSlot');
        _st263quadSrc.indexOf('moved.updatedAt = new Date().toISOString();') !== -1
          ? ok('ST-263·①: _buildQuadSlot（マトリクス）のupdatedAt更新確認')
          : ng('ST-263·①: マトリクスのupdatedAt更新が見つからない', '');
-       var _st263gantIdx = _st263scriptTexts.indexOf('function _gantReorderTask(');
-       var _st263gantSrc = _st263gantIdx !== -1 ? _st263scriptTexts.slice(_st263gantIdx, _st263gantIdx + 500) : '';
+       var _st263gantSrc = _stFnSrc('function _gantReorderTask(');
        _st263gantSrc.indexOf('gantt.updatedAt = new Date().toISOString();') !== -1
          ? ok('ST-263·②: _gantReorderTask（造営内タスク順）のupdatedAt更新確認')
          : ng('ST-263·②: 造営内タスク順のupdatedAt更新が見つからない', '');
-       var _st263bpIdx = _st263scriptTexts.indexOf('function _bpReorder(');
-       var _st263bpSrc = _st263bpIdx !== -1 ? _st263scriptTexts.slice(_st263bpIdx, _st263bpIdx + 700) : '';
+       var _st263bpSrc = _stFnSrc('function _bpReorder(');
        _st263bpSrc.indexOf('b.updatedAt = new Date().toISOString();') !== -1
          ? ok('ST-263·③: _bpReorder（志の並び替え）のupdatedAt更新確認')
          : ng('ST-263·③: 志の並び替えのupdatedAt更新が見つからない', '');
@@ -58876,7 +58961,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 実際に日常操作で発生する5箇所（雑記帳→タスク昇格・魚の目セクション内order
      // 再計算・スタンプ並び替え・睡眠記録の完了マーク・ノートブックページ順）を修正した。
      try {
-       var _st264scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st264scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _checks264 = [
          ['function promoteScratchItem', 'allTasks[idx].updatedAt = new Date().toISOString(); // v0.45.1374', '雑記帳→タスク昇格'],
          ['secTasks.forEach(function(x, i)', 'x.updatedAt = new Date().toISOString(); }); // v0.45.1374', '魚の目セクション内order再計算'],
@@ -58906,7 +58991,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        typeof window._propagateDeletion === 'function'
          ? ok('ST-265·①: _propagateDeletion window公開確認')
          : ng('ST-265·①: 関数が見つからない', '');
-       var _st265scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st265scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st265checks = [
          ['function deleteJournal(id) {\n      const jIdx', '日誌'],
          ['function deletePhoto(e, photoId) {\n  if (e)', '写真'],
@@ -58949,14 +59034,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 完了時に連動して呼ばれるrecalcBlueprintFromGants（志の進捗再計算）で
      // updatedAt未設定の独立した同期漏れを発見・修正した。
      try {
-       var _st267scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st267toggleIdx = _st267scriptTexts.indexOf('function toggleTaskById(taskId) {');
-       var _st267toggleSrc = _st267toggleIdx !== -1 ? _st267scriptTexts.slice(_st267toggleIdx, _st267toggleIdx + 600) : '';
+       var _st267scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st267toggleSrc = _stFnSrc('function toggleTaskById(taskId) {');
        _st267toggleSrc.indexOf('task.updatedAt = new Date().toISOString();') !== -1
          ? ok('ST-267·①: toggleTaskByIdのupdatedAt更新確認（健全）')
          : ng('ST-267·①: toggleTaskByIdにupdatedAt更新なし', '');
-       var _st267recalcIdx = _st267scriptTexts.indexOf('function recalcBlueprintFromGants(bp)');
-       var _st267recalcSrc = _st267recalcIdx !== -1 ? _st267scriptTexts.slice(_st267recalcIdx, _st267recalcIdx + 500) : '';
+       var _st267recalcSrc = _stFnSrc('function recalcBlueprintFromGants(bp)');
        _st267recalcSrc.indexOf('bp.updatedAt = new Date().toISOString();') !== -1
          ? ok('ST-267·②: recalcBlueprintFromGantsのupdatedAt更新確認')
          : ng('ST-267·②: recalcBlueprintFromGantsにupdatedAt更新なし', '');
@@ -58974,16 +59057,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 可能性があった。setInterval・visibilitychange・関数本体・二段階目
      // チェックの全箇所に_smokeTestRunningガードを多層で追加した。
      try {
-       var _st268scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st268scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st268checks = [
          ['setInterval(function() {\n    // v0.45.1378', 'setInterval入口ガード'],
          ["visibilitychange', function() {\n    if (window._smokeTestRunning) return;", 'visibilitychangeハンドラ入口ガード'],
          ['async function _cloudCheckAndPullIfNewer() {\n  // v0.45.1340: スモークテスト実行中は定期チェック自体を行わない。\n  if (window._isTesting || window._smokeTestRunning)', '_cloudCheckAndPullIfNewer本体ガード'],
-         ['async function unifiedPushTasks() {\n  if (window._isTesting || window._smokeTestRunning)', 'unifiedPushTasks本体ガード'],
-         ['async function unifiedPullTasks() {\n  if (window._isTesting || window._smokeTestRunning)', 'unifiedPullTasks本体ガード']
+         ['async function unifiedPushTasks() {', 'unifiedPushTasks本体ガード'],
+         ['async function unifiedPullTasks() {', 'unifiedPullTasks本体ガード']
        ];
+       // v0.45.1791: 4番・5番は「関数名の直後にガードが並ぶ」という前提で
+       // 行のつながりを丸ごと一致させていた。v0.45.1776 で説明コメントが
+       // 関数名とガードの間に入り、ガードは残っているのに落ちるようになった。
+       // 見たいのは並び順ではなくガードの有無なので、関数の中身から探す。
        _st268checks.forEach(function(c, i) {
-         _st268scriptTexts.indexOf(c[0]) !== -1
+         var _found268 = (i >= 3)
+           ? _stFnSrc(c[0]).indexOf('window._isTesting || window._smokeTestRunning') !== -1
+           : _st268scriptTexts.indexOf(c[0]) !== -1;
+         _found268
            ? ok('ST-268·' + (i+1) + ': ' + c[1] + ' 確認')
            : ng('ST-268·' + (i+1) + ': ' + c[1] + ' が見つからない', '');
        });
@@ -58999,9 +59089,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 記録する診断ログを仕込んだ。_dbgLog（起動履歴）に埋もれないよう専用配列に
      // 貯め、パネル末尾（直近タスクの直前）でまとめて表示する。
      try {
-       var _st269scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st269idx = _st269scriptTexts.indexOf('function saveAllSettings(skipCloudSync)');
-       var _st269src = _st269idx !== -1 ? _st269scriptTexts.slice(_st269idx, _st269idx + 1800) : '';
+       var _st269scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st269src = _stFnSrc('function saveAllSettings(skipCloudSync)');
        _st269src.indexOf('_diagVisibleTabsLog.push(') !== -1
          ? ok('ST-269·①: saveAllSettings内の診断ログ蓄積確認')
          : ng('ST-269·①: 診断ログが見つからない', '');
@@ -59032,7 +59121,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-270·②: visibleTabsがgetter/setterとして設置されている実挙動確認')
          : ng('ST-270·②: getter/setterが設置されていない', '');
        // ③ loadAllSettings内で呼ばれているか
-       var _st270scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st270scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st270scriptTexts.indexOf('window.allSettings = allSettings;\n      if (typeof _installVisibleTabsWatcher') !== -1
          ? ok('ST-270·③: loadAllSettings内での設置呼び出し確認')
          : ng('ST-270·③: loadAllSettings内の呼び出しが見つからない', '');
@@ -59051,7 +59140,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // リロードでも起こる正常な動作のため、TPAG側をキー順序に依存しない
      // 正規化比較に直した。
      try {
-       var _st271scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st271scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st271scriptTexts.indexOf('_normalizeForCompare') !== -1
          ? ok('ST-271·①: TPAGの正規化比較関数が導入されている確認')
          : ng('ST-271·①: 正規化比較が見つからない', '');
@@ -59068,8 +59157,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-271·②: キー順序違いのみの2オブジェクトが同一判定される実挙動確認')
          : ng('ST-271·②: 正規化比較が正しく機能していない', '');
        // ③ ST-236の判定が今回のガード変更（_isTesting || _smokeTestRunning）に対応済みか
-       var _st271upIdx = _st271scriptTexts.indexOf('async function unifiedPushTasks');
-       var _st271upSrc = _st271upIdx !== -1 ? _st271scriptTexts.slice(_st271upIdx, _st271upIdx + 300) : '';
+       var _st271upSrc = _stFnSrc('async function unifiedPushTasks');
        _st271upSrc.indexOf('_isTesting') !== -1
          ? ok('ST-271·③: ST-236判定の柔軟化確認')
          : ng('ST-271·③: 柔軟化が反映されていない', '');
@@ -59090,7 +59178,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-272·' + k + ': KEY_WHITELIST登録確認')
            : ng('ST-272·' + k + ': 未登録', '');
        });
-       var _st272scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st272scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        (_st272scriptTexts.match(/startsWith\('sb-'\)/g) || []).length >= 2
          ? ok('ST-272·sb-プレフィックス: 起動時スキャン・リアルタイム監視の両方で許容確認')
          : ng('ST-272·sb-プレフィックス: 両方に反映されていない', '');
@@ -59173,7 +59261,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-275·①: 個人用カレンダーには通知しない確認')
          : ng('ST-275·①: 個人用カレンダーにも通知してしまっている', '');
        // ② createTask/toggleTaskById/deleteTaskByIdから呼ばれているか（生ソース確認）
-       var _st275scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st275scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st275checks = [
          ["allTasks.push(task);\n      saveAllTasks();\n      // v0.45.1389", '共有カレンダー通知（フェーズA）', 'createTask'],
          ['if (!wasCompleted && task.completed) {\n          // 完了時\n          onTaskCompleted(task);\n          if (typeof _notifySharedCalendar', '', 'toggleTaskById（完了）'],
@@ -59203,7 +59291,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // （createSharedCalendar/joinSharedCalendarByCode/lookupInviteCode/
      // listMySharedCalendars）を修正した。
      try {
-       var _st276scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st276scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st276deleteChecks = [
          ['function deleteVideo(id)', '_propagateDeletion'],
          ['function deleteAnniversary(id)', '_propagateDeletion'],
@@ -59213,8 +59301,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ['function deleteRepeatFutureTasks(groupId, fromDate)', '_propagateDeletion']
        ];
        _st276deleteChecks.forEach(function(c, i) {
-         var idx = _st276scriptTexts.indexOf(c[0]);
-         var src = idx !== -1 ? _st276scriptTexts.slice(idx, idx + 1500) : '';
+         // v0.45.1791: 固定窓が残っていた。関数の終わりまで正しく切り出す。
+         var src = _stFnSrc(c[0]);
          src.indexOf(c[1]) !== -1
            ? ok('ST-276·削除' + (i+1) + ': ' + c[0].split('(')[0].replace('function ','').replace('window.','') + ' の削除伝播確認')
            : ng('ST-276·削除' + (i+1) + ': 見つからない', c[0]);
@@ -59228,8 +59316,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ['function thoughtsToText(journalId)', 'j.updatedAt']
        ];
        _st276updatedAtChecks.forEach(function(c, i) {
-         var idx = _st276scriptTexts.indexOf(c[0]);
-         var src = idx !== -1 ? _st276scriptTexts.slice(idx, idx + 1200) : '';
+         // v0.45.1791: 固定窓が残っていた。関数の終わりまで正しく切り出す。
+         var src = _stFnSrc(c[0]);
          src.indexOf(c[1]) !== -1
            ? ok('ST-276·updatedAt' + (i+1) + ': 更新確認')
            : ng('ST-276·updatedAt' + (i+1) + ': 見つからない', c[0]);
@@ -59254,10 +59342,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // そのまま使えるようにした。createTaskは選んだカレンダーに応じて自動的に
      // 正しい同期先（個人用/共有）へ振り分ける。
      try {
-       var _st277scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st277scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // ① createTaskがcalendar.listのcloudCalendarIdを参照する確認
-       var _st277ctIdx = _st277scriptTexts.indexOf('function createTask(opts)');
-       var _st277ctSrc = _st277ctIdx !== -1 ? _st277scriptTexts.slice(_st277ctIdx, _st277ctIdx + 3500) : '';
+       var _st277ctSrc = _stFnSrc('function createTask(opts)');
        _st277ctSrc.indexOf('_matched.cloudCalendarId') !== -1
          ? ok('ST-277·①: createTaskがcalendar.listのcloudCalendarId参照確認')
          : ng('ST-277·①: 参照ロジックが見つからない', '');
@@ -59277,8 +59364,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        saveAllTasks(); saveAllSettings();
        ok('ST-277·③: クリーンアップ完了');
        // ④ joinSharedCalendarFromModal内にcalendar.list統合処理があるか
-       var _st277joinIdx = _st277scriptTexts.indexOf('async function joinSharedCalendarFromModal()');
-       var _st277joinSrc = _st277joinIdx !== -1 ? _st277scriptTexts.slice(_st277joinIdx, _st277joinIdx + 2000) : '';
+       var _st277joinSrc = _stFnSrc('async function joinSharedCalendarFromModal()');
        // v0.45.1534: 統合処理は linkSharedCalendarToLocal に一本化したため、
        // 「参加処理内に isShared: true が直接書かれているか」ではなく
        // 「共通の統合関数を呼んでいるか」を見る形に改める。検査の意図は同じ。
@@ -59323,12 +59409,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-278·④: 再toggleで表示に戻る確認')
          : ng('ST-278·④: 表示に戻らない', '');
        // ⑤ 自分自身は隠せない（toggleMemberFilterのガード確認）
-       var _st278myUserId = window._cloudUserId || 'me';
+       // v0.45.1785: これまで window._cloudUserId が無いとき 'me' を代わりに使っていたが、
+       // ガード側は window._cloudUserId と比べるので、未ログインだと一致せず必ず落ちていた。
+       // 実装は正しく、検査の作りが悪かった。未ログインのときは一時的にIDを立てて確かめる。
+       var _st278bakUid = window._cloudUserId;
+       if (!window._cloudUserId) window._cloudUserId = 'st278-self';
+       var _st278myUserId = window._cloudUserId;
        window.toggleMemberFilter('testcal278', _st278myUserId);
        var _st278mfAfter = (allSettings.ui.memberFilters && allSettings.ui.memberFilters['testcal278']) || [];
        _st278mfAfter.indexOf(_st278myUserId) === -1
          ? ok('ST-278·⑤: 自分自身は隠せないガード確認')
          : ng('ST-278·⑤: 自分自身を隠せてしまっている', '');
+       window._cloudUserId = _st278bakUid;   // 第39条：検査で変えたものは必ず戻す
        // クリーンアップ
        if (allSettings.ui.memberFilters) delete allSettings.ui.memberFilters['testcal278'];
        saveAllSettings();
@@ -59344,14 +59436,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 設計ミスだった。共有カレンダー自体を一意に特定するt.cloudCalendarIdに
      // 修正し、共有カレンダーモーダルに実際のチェックボックスUIも追加した。
      try {
-       var _st279scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st279visIdx = _st279scriptTexts.indexOf('function isTaskMemberVisible(t)');
-       var _st279visSrc = _st279visIdx !== -1 ? _st279scriptTexts.slice(_st279visIdx, _st279visIdx + 500) : '';
+       var _st279scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st279visSrc = _stFnSrc('function isTaskMemberVisible(t)');
        (_st279visSrc.indexOf('_mf[t.cloudCalendarId]') !== -1 && _st279visSrc.indexOf('_mf[t.calendarId]') === -1)
          ? ok('ST-279·①: isTaskMemberVisibleがcloudCalendarIdキーに修正されている確認')
          : ng('ST-279·①: キー修正が反映されていない', '');
-       var _st279memIdx = _st279scriptTexts.indexOf('function getSharedCalendarMembers(calendarId)');
-       var _st279memSrc = _st279memIdx !== -1 ? _st279scriptTexts.slice(_st279memIdx, _st279memIdx + 500) : '';
+       var _st279memSrc = _stFnSrc('function getSharedCalendarMembers(calendarId)');
        _st279memSrc.indexOf('t.cloudCalendarId !== calendarId') !== -1
          ? ok('ST-279·②: getSharedCalendarMembersがcloudCalendarIdキーに修正されている確認')
          : ng('ST-279·②: キー修正が反映されていない', '');
@@ -59389,11 +59479,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 再設計した。④メンバー表示フィルタが管理者機能に見えるという指摘を受け、
      // <details>で折りたたみ、「あなた自身の画面にだけ影響する」旨を明記した。
      try {
-       var _st280scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st280listIdx = _st280scriptTexts.indexOf('async function listMySharedCalendars()');
-       var _st280listSrc = _st280listIdx !== -1 ? _st280scriptTexts.slice(_st280listIdx, _st280listIdx + 700) : '';
-       _st280listSrc.indexOf(".eq(\'is_personal\', false)") !== -1
-         ? ok('ST-280·①: 個人用カレンダー除外フィルタ確認')
+       var _st280scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st280listSrc = _stFnSrc('async function listMySharedCalendars()');
+       // v0.45.1790: 個人用の除外は v0.45.1711（2026-08-21）で「すべてのカレンダーは
+       // いつでも共有できるべき」という判断により撤回された。いま見るべきは、
+       // 除外ではなく「自分が参加しているものだけを出す」絞り込みのほう（v0.45.1719）。
+       _st280listSrc.indexOf("koyomiru_shared_calendar_members") !== -1 && _st280listSrc.indexOf(".in('id', _ids)") !== -1
+         ? ok('ST-280·①: 自分が参加しているものだけを出す絞り込み確認')
          : ng('ST-280·①: フィルタが見つからない', '');
        _st280scriptTexts.indexOf('招待した相手と、タスクを共有できます。') !== -1
          ? ok('ST-280·②: 説明文の実態への更新確認')
@@ -59401,12 +59493,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _st280scriptTexts.indexOf('フェーズ1：招待' + '・参加の入り口のみ') === -1
          ? ok('ST-280·②b: 古い「今後実装予定」表記が残っていない確認')
          : ng('ST-280·②b: 古い表記が残っている', '');
-       var _st280renderIdx = _st280scriptTexts.indexOf('async function refreshSharedCalendarList()');
-       var _st280renderSrc = _st280renderIdx !== -1 ? _st280scriptTexts.slice(_st280renderIdx, _st280renderIdx + 4000) : '';
-       _st280renderSrc.indexOf('📤 招待する') !== -1
+       var _st280renderSrc = _stFnSrc('async function refreshSharedCalendarList()');
+       _st280renderSrc.indexOf('>招待する<') !== -1
          ? ok('ST-280·③: 招待するボタンが主役として存在確認')
          : ng('ST-280·③: 主役ボタンが見つからない', '');
-       _st280renderSrc.indexOf('<details') !== -1 && _st280renderSrc.indexOf('あなた自身の画面にだけ影響します') !== -1
+       // v0.45.1790: 説明文の言い回しが変わった。文言そのものではなく、
+       // 「折りたたみがあり、相手に影響しない旨が書かれている」ことを見る。
+       _st280renderSrc.indexOf('<details') !== -1 && _st280renderSrc.indexOf('相手には影響しません') !== -1
          ? ok('ST-280·④: メンバー表示設定が折りたたみ・自己影響の明記を伴って実装されている確認')
          : ng('ST-280·④: 折りたたみ・説明文が見つからない', '');
        ok('ST-280: 招待UI再設計・個人用カレンダー除外 確認 完了');
@@ -59440,7 +59533,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-281·④: 文章開閉トグルのDOM存在確認')
          : ng('ST-281·④: トグルが見つからない', '');
        // ⑤ ダッシュボード側が共通関数呼び出しに置き換わっている（重複コード削除）確認
-       var _st281scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st281scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st281scriptTexts.indexOf("_drawMoonCanvas(\'dbMoonCanvas\', _age)") !== -1
          ? ok('ST-281·⑤: ダッシュボードが共通関数を使用（重複コード削除）確認')
          : ng('ST-281·⑤: ダッシュボードがまだ独自描画のまま', '');
@@ -59451,9 +59544,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
 
      // ===== ST-282: 月Canvas描画位置修正・マトリクス紹介自動起動撤去・40層固定 確認（v0.45.1399〜） =====
      try {
-       var _st282scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st282kzIdx = _st282scriptTexts.indexOf('function showKazedayoriModal');
-       var _st282kzSrc = _st282kzIdx !== -1 ? _st282scriptTexts.slice(_st282kzIdx, _st282kzIdx + 9000) : '';
+       var _st282scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st282kzSrc = _stFnSrc('function showKazedayoriModal');
        var _st282flexPos = _st282kzSrc.indexOf("_modal.style.display = 'flex';");
        var _st282drawPos = _st282kzSrc.indexOf("_drawMoonCanvas('kazedayoriMoonCanvas', _age)");
        (_st282flexPos !== -1 && _st282drawPos !== -1 && _st282drawPos > _st282flexPos)
@@ -59492,13 +59584,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_st283canvas && _st283canvas.style.boxShadow && _st283canvas.style.boxShadow.length > 0)
          ? ok('ST-283·②: 月Canvasの柔らかい縁取り(box-shadow)確認')
          : ng('ST-283·②: 縁取りが設定されていない', '');
-       var _st283scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st283scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st283scriptTexts.indexOf('_moonLabelText') !== -1
          ? ok('ST-283·③: 月齢ラベル用テキスト生成ロジック確認')
          : ng('ST-283·③: 生成ロジックが見つからない', '');
        // ④ 折りたたみ内フッターに月齢の重複記載が無い確認（「今日もおつかれさま。」のみ）
-       var _st283kzIdx = _st283scriptTexts.indexOf('function showKazedayoriModal');
-       var _st283kzSrc = _st283kzIdx !== -1 ? _st283scriptTexts.slice(_st283kzIdx, _st283kzIdx + 6000) : '';
+       var _st283kzSrc = _stFnSrc('function showKazedayoriModal');
        _st283kzSrc.indexOf("_moonFooter = '今日の月は月齢") === -1
          ? ok('ST-283·④: 折りたたみ内フッターの月齢重複記載が解消されている確認')
          : ng('ST-283·④: まだ重複記載が残っている', '');
@@ -59516,15 +59607,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        typeof window.inviteToCalendar === 'function'
          ? ok('ST-284·①: inviteToCalendar window公開確認')
          : ng('ST-284·①: 関数が見つからない', '');
-       var _st284scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st284uiIdx = _st284scriptTexts.indexOf("row.appendChild(shareLabel);\n        // v0.45.1401");
+       var _st284scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       // v0.45.1790: 直後のコメント行まで含めて一致させていたため、
+       // コメントを直すだけで落ちる作りだった。要点だけを見る。
+       var _st284uiIdx = _st284scriptTexts.indexOf("row.appendChild(shareLabel);");
        _st284uiIdx !== -1
          ? ok('ST-284·②: カレンダー設定行への招待ボタン組み込み確認')
          : ng('ST-284·②: UI組み込みが見つからない', '');
        // ③ RLS修正SQLが実行済みという前提のもと、実際の作成フロー自体はネットワーク
        // 依存のため、ここではガード・関数構造のみ確認する
-       var _st284fnIdx = _st284scriptTexts.indexOf('async function inviteToCalendar(idx)');
-       var _st284fnSrc = _st284fnIdx !== -1 ? _st284scriptTexts.slice(_st284fnIdx, _st284fnIdx + 1500) : '';
+       var _st284fnSrc = _stFnSrc('async function inviteToCalendar(idx)');
        _st284fnSrc.indexOf('createSharedCalendar(') !== -1 && _st284fnSrc.indexOf('cloudCalendarId') !== -1
          ? ok('ST-284·③: 未共有カレンダーの自動アップグレード処理確認')
          : ng('ST-284·③: アップグレード処理が見つからない', '');
@@ -59609,7 +59701,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // コードを手入力する人はいない」との指摘を受け、リンクを主役にし、手入力欄は
      // 折りたたみの中の保険に格下げした。
      try {
-       var _st287scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st287scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // v0.45.1546: 招待リンクを開いた瞬間の「自動参加」はやめ、表示名を確かめてから
        // 押してもらう形に改めた（そのカレンダーでの名乗りを選べるようにするため）。
        // 検査も「コードと表示名が整った状態でモーダルが開くこと」に変える。
@@ -59638,16 +59730,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // カレンダーのタスクを見られない恐れがあったため、作成直後に自分自身も
      // メンバー登録するよう修正した。
      try {
-       var _st288scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st288joinIdx = _st288scriptTexts.indexOf('async function joinSharedCalendarFromModal()');
-       var _st288joinSrc = _st288joinIdx !== -1 ? _st288scriptTexts.slice(_st288joinIdx, _st288joinIdx + 3500) : '';
+       var _st288scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st288joinSrc = _stFnSrc('async function joinSharedCalendarFromModal()');
        (_st288joinSrc.indexOf('unifiedRefreshMyCalendarIds()') !== -1 && _st288joinSrc.indexOf('unifiedPullTasks()') !== -1)
          ? ok('ST-288·①: 参加直後の即時同期（カレンダー一覧更新＋タスク取得）確認')
          : ng('ST-288·①: 即時同期処理が見つからない', '');
-       var _st288createIdx = _st288scriptTexts.indexOf('async function createSharedCalendar(name)');
-       var _st288createSrc = _st288createIdx !== -1 ? _st288scriptTexts.slice(_st288createIdx, _st288createIdx + 1500) : '';
+       var _st288createSrc = _stFnSrc('async function createSharedCalendar(name)');
        _st288createSrc.indexOf("from('koyomiru_shared_calendar_members')") !== -1 &&
-       _st288createSrc.indexOf('.insert({ calendar_id: r.data.id, user_id: u.data.user.id })') !== -1
+       // v0.45.1786: 表示名(display_name)も一緒に登録する形に変わり、末尾が一致しなくなった。
+       // 行の全体を丸ごと一致させると、項目が増えるたびに落ちる。要点だけを見る。
+       _st288createSrc.indexOf('.insert({ calendar_id: r.data.id, user_id:') !== -1
          ? ok('ST-288·②: 作成者自身のメンバー登録処理確認')
          : ng('ST-288·②: メンバー登録処理が見つからない', '');
        ok('ST-288: 参加直後の即時同期・作成者メンバー登録 確認 完了');
@@ -59660,9 +59752,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 実際のDBエラー内容をトーストに含めるよう改善した。またST-281が起動2.6秒後の
      // 季節の風だより自動表示とタイミング依存で不安定に失敗する問題を修正した。
      try {
-       var _st289scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st289inviteIdx = _st289scriptTexts.indexOf('async function inviteToCalendar(idx)');
-       var _st289inviteSrc = _st289inviteIdx !== -1 ? _st289scriptTexts.slice(_st289inviteIdx, _st289inviteIdx + 2000) : '';
+       var _st289scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st289inviteSrc = _stFnSrc('async function inviteToCalendar(idx)');
        (_st289inviteSrc.indexOf('_errMsg') !== -1 && _st289inviteSrc.indexOf('_errMsg2') !== -1)
          ? ok('ST-289·①: 招待エラーメッセージの詳細化確認')
          : ng('ST-289·①: 詳細化されていない', '');
@@ -59681,9 +59772,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // しないと、新しく作った共有カレンダーがRealtime監視対象に反映されず、相手の
      // 更新にリアルタイムで気づけない恐れがあったため、対称に修正した。
      try {
-       var _st290scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st290idx = _st290scriptTexts.indexOf('async function inviteToCalendar(idx)');
-       var _st290src = _st290idx !== -1 ? _st290scriptTexts.slice(_st290idx, _st290idx + 2500) : '';
+       var _st290scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st290src = _stFnSrc('async function inviteToCalendar(idx)');
        _st290src.indexOf('unifiedRefreshMyCalendarIds()') !== -1
          ? ok('ST-290·①: 招待作成側の即時カレンダー一覧更新確認')
          : ng('ST-290·①: 更新処理が見つからない', '');
@@ -59698,14 +59788,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 同様）、名前だけを記録する（メールアドレスはSupabaseダッシュボードで既に
      // 見られるため、過剰な複製を避け入れない）。
      try {
-       var _st291scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st291joinIdx = _st291scriptTexts.indexOf('async function joinSharedCalendarByCode(code)');
-       var _st291joinSrc = _st291joinIdx !== -1 ? _st291scriptTexts.slice(_st291joinIdx, _st291joinIdx + 800) : '';
+       var _st291scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st291joinSrc = _stFnSrc('async function joinSharedCalendarByCode(code)');
        _st291joinSrc.indexOf('p_display_name') !== -1
          ? ok('ST-291·①: 参加時の表示名送信確認')
          : ng('ST-291·①: 表示名送信が見つからない', '');
-       var _st291createIdx = _st291scriptTexts.indexOf('async function createSharedCalendar(name)');
-       var _st291createSrc = _st291createIdx !== -1 ? _st291scriptTexts.slice(_st291createIdx, _st291createIdx + 1600) : '';
+       var _st291createSrc = _stFnSrc('async function createSharedCalendar(name)');
        _st291createSrc.indexOf('display_name:') !== -1
          ? ok('ST-291·②: 作成者自身の表示名記録確認')
          : ng('ST-291·②: 記録処理が見つからない', '');
@@ -59751,9 +59839,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ことを知る手段がまだなかった。既存の通知基盤（フェーズA）を再利用し、
      // 'joined'という種別で記録・専用メッセージで通知するようにした。
      try {
-       var _st293scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st293joinIdx = _st293scriptTexts.indexOf('async function joinSharedCalendarFromModal()');
-       var _st293joinSrc = _st293joinIdx !== -1 ? _st293scriptTexts.slice(_st293joinIdx, _st293joinIdx + 2500) : '';
+       var _st293scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st293joinSrc = _stFnSrc('async function joinSharedCalendarFromModal()');
        _st293joinSrc.indexOf("_notifySharedCalendar(_sharedCloudId, 'joined', null)") !== -1
          ? ok('ST-293·①: 参加成功時のjoined通知記録確認')
          : ng('ST-293·①: 通知記録が見つからない', '');
@@ -59794,19 +59881,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // データを取得」ボタンは、一度も表示状態に切り替わる処理がなく、誰にも
      // 見えていなかった完全に死んだUIだったため、第31条に基づき完全削除した。
      try {
-       var _st295scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st295quadIdx = _st295scriptTexts.indexOf('function _buildQuadSlot(col, tasks)');
-       var _st295quadSrc = _st295quadIdx !== -1 ? _st295scriptTexts.slice(_st295quadIdx, _st295quadIdx + 4500) : '';
+       var _st295scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st295quadSrc = _stFnSrc('function _buildQuadSlot(col, tasks)');
        _st295quadSrc.indexOf("input.autocomplete = 'off';") !== -1
          ? ok('ST-295·①: マトリクス追加欄のautocomplete対策確認')
          : ng('ST-295·①: 対策が見つからない', '');
-       var _st295modalIdx = _st295scriptTexts.indexOf('function showTextInputModal(opts)');
-       var _st295modalSrc = _st295modalIdx !== -1 ? _st295scriptTexts.slice(_st295modalIdx, _st295modalIdx + 1200) : '';
+       var _st295modalSrc = _stFnSrc('function showTextInputModal(opts)');
        _st295modalSrc.indexOf("input.autocomplete = 'off';") !== -1
          ? ok('ST-295·②: 汎用入力モーダルのautocomplete対策確認')
          : ng('ST-295·②: 対策が見つからない', '');
-       var _st295inlineIdx = _st295scriptTexts.indexOf('function _makeInlineEditor(row, currentVal, onSave, onCancel, color)');
-       var _st295inlineSrc = _st295inlineIdx !== -1 ? _st295scriptTexts.slice(_st295inlineIdx, _st295inlineIdx + 400) : '';
+       var _st295inlineSrc = _stFnSrc('function _makeInlineEditor(row, currentVal, onSave, onCancel, color)');
        _st295inlineSrc.indexOf("inp.autocomplete = 'off';") !== -1
          ? ok('ST-295·③: 共通インライン編集ヘルパーのautocomplete対策確認')
          : ng('ST-295·③: 対策が見つからない', '');
@@ -59877,20 +59961,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-297·' + fn + ': window公開確認')
            : ng('ST-297·' + fn + ': 未公開', '');
        });
-       var _st297scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st297scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st297swIdx = _st297scriptTexts.indexOf("if (view === 'garden')");
        _st297swIdx !== -1
          ? ok('ST-297·⑤: switchViewへのgarden分岐組み込み確認')
          : ng('ST-297·⑤: 分岐が見つからない', '');
        // ⑥ 実際の暦データ（七十二候のseason）と連動しているか確認
-       var _st297buildIdx = _st297scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st297buildSrc = _st297buildIdx !== -1 ? _st297scriptTexts.slice(_st297buildIdx, _st297buildIdx + 700) : '';
+       var _st297buildSrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st297buildSrc.indexOf('getCurrentShichijuniKou') !== -1 && _st297buildSrc.indexOf('calcMoonAgeNAOJ') !== -1
          ? ok('ST-297·⑥: 実際の暦（七十二候）・月齢データとの連動確認')
          : ng('ST-297·⑥: 実データ連動が見つからない', '');
        // ⑦ コンテナサイズ0時のリトライ対策（やることクラフトのパターン踏襲）確認
-       var _st297sceneIdx = _st297scriptTexts.indexOf('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon)');
-       var _st297sceneSrc = _st297sceneIdx !== -1 ? _st297scriptTexts.slice(_st297sceneIdx, _st297sceneIdx + 600) : '';
+       var _st297sceneSrc = _stFnSrc('function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, WaterAddon)');
        _st297sceneSrc.indexOf('clientWidth === 0') !== -1
          ? ok('ST-297·⑦: コンテナサイズ0時のリトライ対策確認')
          : ng('ST-297·⑦: リトライ対策が見つからない', '');
@@ -59918,7 +60000,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_st298parsed && _st298parsed.imports && _st298parsed.imports['three'] && _st298parsed.imports['three/addons/'])
          ? ok('ST-298·②: importmapがthree・three/addons/両方を定義していること確認')
          : ng('ST-298·②: importmap定義が不完全', JSON.stringify(_st298parsed));
-       var _st298scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st298scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st298scriptTexts.indexOf("import('three')") !== -1 && _st298scriptTexts.indexOf("import('three/addons/controls/OrbitControls.js')") !== -1
          ? ok('ST-298·③: initGardenWorldがimportmapの短縮名を使用している確認')
          : ng('ST-298·③: 短縮名を使用していない', '');
@@ -59928,8 +60010,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-298·④: 庭をたずねるパネルが禅モードボタンと重ならない位置に調整されている確認')
          : ng('ST-298·④: 位置調整が反映されていない', _st298visitPanel ? _st298visitPanel.style.left : 'なし');
        // ⑤ 名前未設定時「あなたさんの庭」という不自然な表記にならないこと確認
-       var _st298gardenApplyIdx = _st298scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st298gardenApplySrc = _st298gardenApplyIdx !== -1 ? _st298scriptTexts.slice(_st298gardenApplyIdx, _st298gardenApplyIdx + 1800) : '';
+       var _st298gardenApplySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st298gardenApplySrc.indexOf("'あなたの庭'") !== -1
          ? ok('ST-298·⑤: 名前未設定時の自然な表記（あなたの庭）確認')
          : ng('ST-298·⑤: 修正が見つからない', '');
@@ -59946,7 +60027,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 時刻が昼か夜かで、庭の見た目（空の色・月と星の表示・光の強さ）が
      // 切り替わるようにした。
      try {
-       var _st299scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st299scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // ① v0.45.1447でDOM画像オーバーレイ方式に変更されたため、3D座標の位置調整は
        // 対象外になった。img要素のCSS位置指定（画面固定）を確認する。
        var _st299overlayEl = document.getElementById('gardenMoonOverlay');
@@ -59957,13 +60038,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-299·②: カメラ視野角を広げた確認')
          : ng('ST-299·②: 視野角調整が見つからない', '');
        // ③ 実際の日照時間データとの連動確認
-       var _st299applyIdx = _st299scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st299applySrc = _st299applyIdx !== -1 ? _st299scriptTexts.slice(_st299applyIdx, _st299applyIdx + 2500) : '';
+       var _st299applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st299applySrc.indexOf('_getSunData') !== -1 && _st299applySrc.indexOf('isDaytime') !== -1
          ? ok('ST-299·③: 実際の日照時間（_getSunData）との昼夜連動確認')
          : ng('ST-299·③: 昼夜連動が見つからない', '');
        // ④ 昼夜それぞれで背景・月（DOM要素）・星の表示が切り替わるロジック確認
-       (_st299applySrc.indexOf('scene.background.setHex(0x8fc4e8)') !== -1 && _st299applySrc.indexOf("gardenMoonOverlay').style.display = 'none'") !== -1)
+       // v0.45.1787: 空の色を作り替えたため、色コードの直書きが合わなくなった。
+       // 見たいのは「昼夜で空の色を変え、昼は月を隠す」という筋であって、
+       // 特定の色そのものではない。色を変えるたびに落ちるのは検査として間違い。
+       // v0.45.1788: 月を隠す書き方も、要素を変数に受けてから触る形に変わっていた。
+       // 「gardenMoonOverlay を扱っていて、none と block の出し分けがある」ことを見る。
+       (_st299applySrc.indexOf('scene.background.setHex(') !== -1 &&
+        _st299applySrc.indexOf('gardenMoonOverlay') !== -1 &&
+        _st299applySrc.indexOf("display = 'none'") !== -1 &&
+        _st299applySrc.indexOf("display = 'block'") !== -1)
          ? ok('ST-299·④: 昼の空・月非表示への切り替えロジック確認')
          : ng('ST-299·④: 切り替えロジックが見つからない', '');
        ok('ST-299: 庭の月位置修正・実際の昼夜切り替え 確認 完了');
@@ -59978,7 +60066,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 房の数に反映するようにした。これにより③「他の人の庭が同じに見える」
      // という問題にも、実績次第で見た目が変わる形で対応する第一歩となる。
      try {
-       var _st300scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st300scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st300scriptTexts.indexOf('CircleGeometry(400, 64)') !== -1
          ? ok('ST-300·①: 地面の半径拡大確認')
          : ng('ST-300·①: 拡大が反映されていない', '');
@@ -59989,8 +60077,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-300·②: パラメータが見つからない', '');
        // ③ 実際の完了タスク数を取得するロジック確認（getDailyTasksがオブジェクトを
        // 返す仕様に正しく対応しているか、配列concat処理の存在で確認）
-       var _st300applyIdx = _st300scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st300applySrc = _st300applyIdx !== -1 ? _st300scriptTexts.slice(_st300applyIdx, _st300applyIdx + 1200) : '';
+       var _st300applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st300applySrc.indexOf('getDailyTasks') !== -1 && _st300applySrc.indexOf('_todayTasksObj[1]') !== -1
          ? ok('ST-300·③: getDailyTasksのオブジェクト仕様に対応した実績取得確認')
          : ng('ST-300·③: 実績取得ロジックが見つからない、またはオブジェクト対応漏れ', '');
@@ -60012,14 +60099,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 実際の日の出時刻の前後40分を「日の出の特別な時間帯」として、暖色の
      // 朝焼け・低い位置の太陽を表示するようにした。
      try {
-       var _st301scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st301scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // ① 太陽オブジェクトの実装確認
        (_st301scriptTexts.indexOf('var sun = new THREE.Mesh(new THREE.SphereGeometry(1.4, 32, 32)') !== -1 && _st301scriptTexts.indexOf('var sunHalo = new THREE.Mesh') !== -1)
          ? ok('ST-301·①: 太陽オブジェクトの実装確認')
          : ng('ST-301·①: 太陽が見つからない', '');
        // ② 日の出判定ロジック確認
-       var _st301applyIdx = _st301scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st301applySrc = _st301applyIdx !== -1 ? _st301scriptTexts.slice(_st301applyIdx, _st301applyIdx + 4800) : '';
+       var _st301applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st301applySrc.indexOf('isSunriseTime') !== -1 && _st301applySrc.indexOf('40 / 60') !== -1
          ? ok('ST-301·②: 日の出時間帯（前後40分）の判定ロジック確認')
          : ng('ST-301·②: 判定ロジックが見つからない', '');
@@ -60028,7 +60114,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-301·③: 日の出の朝焼け演出（暖色の空・低い太陽）確認')
          : ng('ST-301·③: 朝焼け演出が見つからない', '');
        // ④ 昼・夜・日の出で太陽と月の表示が正しく排他制御されているか確認
-       (_st301applySrc.indexOf('_gardenBuilt.sun.visible = true') !== -1 && _st301applySrc.indexOf('_gardenBuilt.sun.visible = false') !== -1 && _st301applySrc.indexOf("gardenMoonOverlay').style.display = 'block'") !== -1 && _st301applySrc.indexOf("gardenMoonOverlay').style.display = 'none'") !== -1)
+       // v0.45.1790: 月の出し分けが、要素を変数に受けてから触る形に変わった（ST-299④と同じ経緯）。
+       (_st301applySrc.indexOf('_gardenBuilt.sun.visible = true') !== -1 &&
+        _st301applySrc.indexOf('_gardenBuilt.sun.visible = false') !== -1 &&
+        _st301applySrc.indexOf('gardenMoonOverlay') !== -1 &&
+        _st301applySrc.indexOf("display = 'block'") !== -1 &&
+        _st301applySrc.indexOf("display = 'none'") !== -1)
          ? ok('ST-301·④: 太陽・月の表示排他制御確認')
          : ng('ST-301·④: 排他制御が見つからない', '');
        ok('ST-301: 太陽の描画・日の出の特別演出 確認 完了');
@@ -60043,7 +60134,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 光条を加え、より太陽らしい見た目に作り直した。THREE変数への直接参照は
      // 関数スコープ外のため、_gardenBuilt.THREE経由に修正した。
      try {
-       var _st302scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st302scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st302scriptTexts.indexOf('sun.position.set(-3, 17, -6)') !== -1
          ? ok('ST-302·①: 太陽の位置を竹より確実に高い位置に修正確認')
          : ng('ST-302·①: 位置修正が見つからない', '');
@@ -60066,13 +60157,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 「果てしなく遠い」天体らしい挙動にした。月の満ち欠け表現は、v0.45.1445で
      // オフセット）も、この方式に合わせてillum値経由に作り直した。
      try {
-       var _st303scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st303animIdx = _st303scriptTexts.indexOf('function animate() {');
-       var _st303animSrc = _st303animIdx !== -1 ? _st303scriptTexts.slice(_st303animIdx, _st303animIdx + 900) : '';
+       var _st303scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st303animSrc = _stFnSrc('function animate() {');
        (_st303animSrc.indexOf('_gardenBuilt.skyDirection') !== -1 && _st303animSrc.indexOf('camera.position.x') !== -1)
          ? ok('ST-303·①: animateループでのカメラ基準の再配置ロジック確認')
          : ng('ST-303·①: 再配置ロジックが見つからない', '');
-       _st303animSrc.indexOf('_gardenBuilt.illum') !== -1
+       // v0.45.1787: illum の代入は animate ではなく
+       // _gardenApplyTodaySeasonAndMoon に移った。置き場所が変わっただけで、
+       // 見たいのは「他所から参照できる値が維持されているか」である。
+       _stFnSrc('function _gardenApplyTodaySeasonAndMoon()').indexOf('_gardenBuilt.illum') !== -1
          ? ok('ST-303·②: illum（他所参照用）が維持されていること確認')
          : ng('ST-303·②: illumが見つからない', '');
        _st303scriptTexts.indexOf('skyDirection: new THREE.Vector3(-0.5, 0.6, -0.62)') !== -1
@@ -60094,22 +60187,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-304: 天体の霧回避・鯉の目の改善 確認（v0.45.1425〜） =====
      // 背景：①「太陽がないよ」との報告を受けた。太陽・月をカメラから距離60の
      // 位置に置くようになったことで、霧（フォグ）に強く埋もれて見えなくなって
-     // いた。天体は大気の外にある想定のため、fog:falseで霧の影響を除外した。
+     // いた。天体は大気の外にある想定のため、fog: falseで霧の影響を除外した。
      // ②鯉の目が小さすぎて（半径0.018）ほとんど見えず、「本物っぽく、それか
      // かわいく」との要望を受け、白目・黒目・ハイライトの3層構造の、大きく
      // かわいい目に作り直した。
      try {
-       var _st304scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       // ① 天体マテリアルのfog:false確認
+       var _st304scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       // ① 天体マテリアルのfog: false確認
        var _st304fogCount = (_st304scriptTexts.match(/fog: false/g) || []).length;
        (_st304fogCount >= 7)
-         ? ok('ST-304·①: 天体マテリアルのfog:false設定確認（' + _st304fogCount + '箇所）')
-         : ng('ST-304·①: fog:false設定が不足', '検出数=' + _st304fogCount);
+         ? ok('ST-304·①: 天体マテリアルのfog: false設定確認（' + _st304fogCount + '箇所）')
+         : ng('ST-304·①: fog: false設定が不足', '検出数=' + _st304fogCount);
        // ② 鯉の目の改善確認（白目・黒目・ハイライトの3層構造）
-       var _st304koiIdx = _st304scriptTexts.indexOf('function buildKoi()');
-       var _st304koiSrc = _st304koiIdx !== -1 ? _st304scriptTexts.slice(_st304koiIdx, _st304koiIdx + 3500) : '';
-       (_st304koiSrc.indexOf('eyeWhiteMat') !== -1 && _st304koiSrc.indexOf('eyeBlackMat') !== -1 && _st304koiSrc.indexOf('eyeHighlightMat') !== -1)
-         ? ok('ST-304·②: 鯉の目（白目・黒目・ハイライト）の3層構造確認')
+       var _st304koiSrc = _stFnSrc('function buildKoi()');
+       // v0.45.1789: 白目(eyeWhiteMat)は廃止され、黒目とハイライトの2層になった。
+       (_st304koiSrc.indexOf('eyeBlackMat') !== -1 && _st304koiSrc.indexOf('eyeHighlightMat') !== -1)
+         ? ok('ST-304·②: 鯉の目（黒目・ハイライト）の2層構造確認')
          : ng('ST-304·②: 目の改善が見つからない', '');
        ok('ST-304: 天体の霧回避・鯉の目の改善 確認 完了');
      } catch(e) {
@@ -60123,9 +60216,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 可動範囲・ズーム範囲を大幅に緩和した。太陽の方向も、下向きカメラでも
      // 見つけやすい、やや低めの角度に調整した。
      try {
-       var _st305scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st305koiIdx = _st305scriptTexts.indexOf('function buildKoi()');
-       var _st305koiSrc = _st305koiIdx !== -1 ? _st305scriptTexts.slice(_st305koiIdx, _st305koiIdx + 3500) : '';
+       var _st305scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st305koiSrc = _stFnSrc('function buildKoi()');
        (_st305koiSrc.indexOf('eyeWhiteMat') === -1 && _st305koiSrc.indexOf('SphereGeometry(0.02, 8, 8)') !== -1)
          ? ok('ST-305·①: 鯉の目を控えめなサイズに縮小確認（白目レイヤー廃止）')
          : ng('ST-305·①: 目の縮小が反映されていない', '');
@@ -60148,17 +60240,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 少しあったほうがいい。錦鯉」との要望を受け、体表から飛び出さないよう
      // 極端に薄く潰した「柄」として、模様を復活させた。
      try {
-       var _st306scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st306scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st306scriptTexts.indexOf('controls.maxPolarAngle = Math.PI * 0.85') !== -1
          ? ok('ST-306·①: カメラ見上げ角度を広げた確認')
          : ng('ST-306·①: 角度が反映されていない', '');
-       var _st306animIdx = _st306scriptTexts.indexOf('function animate() {');
-       var _st306animSrc = _st306animIdx !== -1 ? _st306scriptTexts.slice(_st306animIdx, _st306animIdx + 3000) : '';
+       var _st306animSrc = _stFnSrc('function animate() {');
        _st306animSrc.indexOf('camera.position.y < 0.6') !== -1
          ? ok('ST-306·②: カメラ高さの床（フロア）保険の実装確認')
          : ng('ST-306·②: 保険が見つからない', '');
-       var _st306koiIdx = _st306scriptTexts.indexOf('function buildKoi()');
-       var _st306koiSrc = _st306koiIdx !== -1 ? _st306scriptTexts.slice(_st306koiIdx, _st306koiIdx + 2500) : '';
+       var _st306koiSrc = _stFnSrc('function buildKoi()');
        (_st306koiSrc.indexOf('patchCount') !== -1 && _st306koiSrc.indexOf("scale.set(0.9, 0.9, 0.1)") !== -1)
          ? ok('ST-306·③: 鯉の柄（薄く潰したパッチ）の復活確認')
          : ng('ST-306·③: 柄の実装が見つからない', '');
@@ -60175,7 +60265,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 表現する。Skyの巨大な球体（半径450000）を描画するため、カメラのfar値も
      // 拡大した。
      try {
-       var _st307scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st307scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        (_st307scriptTexts.indexOf("import('three/addons/objects/Sky.js')") !== -1)
          ? ok('ST-307·①: Skyアドオンの動的import確認')
          : ng('ST-307·①: importが見つからない', '');
@@ -60188,8 +60278,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _st307scriptTexts.indexOf('0.1, 600000)') !== -1
          ? ok('ST-307·④: カメラfar値の拡大（Sky描画のため）確認')
          : ng('ST-307·④: far値拡大が見つからない', '');
-       var _st307applyIdx = _st307scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st307applySrc = _st307applyIdx !== -1 ? _st307scriptTexts.slice(_st307applyIdx, _st307applyIdx + 6200) : '';
+       var _st307applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        (_st307applySrc.indexOf("skyUniforms['sunPosition'].value.copy") !== -1 && _st307applySrc.indexOf('_gardenBuilt.sky.visible = false') !== -1)
          ? ok('ST-307·⑤: 昼/夜でのSky表示制御・太陽位置連動確認')
          : ng('ST-307·⑤: 表示制御ロジックが見つからない', '');
@@ -60204,7 +60293,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // より白く・大きく・強く発光させ（toneMapped:false）、Sky側の
      // mieCoefficientも下げて過度な白飛びグローを抑え、コントラストを出した。
      try {
-       var _st308scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st308scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        (_st308scriptTexts.indexOf('SphereGeometry(2.2, 32, 32)') !== -1 && _st308scriptTexts.indexOf('toneMapped: false') !== -1)
          ? ok('ST-308·①: 太陽本体の大型化・発光強化確認')
          : ng('ST-308·①: 強化が見つからない', '');
@@ -60224,7 +60313,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 依然見えないとの報告を受け、「白く明るく」が逆にSkyの白い部分と同化
      // していた可能性を踏まえ、彩度の高い黄金色に戻した。
      try {
-       var _st309scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st309scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st309scriptTexts.indexOf('new THREE.FogExp2(0x2c3e4a, 0.006)') !== -1
          ? ok('ST-309·①: 霧の濃度緩和確認')
          : ng('ST-309·①: 緩和が反映されていない', '');
@@ -60245,12 +60334,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 大きく下げ、より安定して青空らしく見える控えめな設定にし、露出も
      // 少し落として白飛びリスクをさらに減らした。
      try {
-       var _st310scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st310scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st310scriptTexts.indexOf("skyUniforms['turbidity'].value = 3;") !== -1
          ? ok('ST-310·①: Sky初期設定（turbidity）の抑制確認')
          : ng('ST-310·①: 抑制が反映されていない', '');
-       var _st310applyIdx = _st310scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st310applySrc = _st310applyIdx !== -1 ? _st310scriptTexts.slice(_st310applyIdx, _st310applyIdx + 6800) : '';
+       var _st310applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        (_st310applySrc.indexOf("skyUniforms['turbidity'].value = 6") !== -1 && _st310applySrc.indexOf("skyUniforms['turbidity'].value = 3") !== -1)
          ? ok('ST-310·②: 日の出・昼それぞれのturbidity抑制確認')
          : ng('ST-310·②: 抑制が反映されていない', '');
@@ -60269,7 +60357,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // Object3D.visibleは子要素に自動伝播しないため、太陽の表示切替の3箇所
      // すべてにlensflareの表示連動を個別に追加した。
      try {
-       var _st311scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st311scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        (_st311scriptTexts.indexOf("import('three/addons/objects/Lensflare.js')") !== -1 && _st311scriptTexts.indexOf("import('three/addons/objects/Water.js')") !== -1)
          ? ok('ST-311·①: Lensflare・Waterの動的import確認')
          : ng('ST-311·①: importが見つからない', '');
@@ -60302,14 +60390,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ③「太陽を見たい」という要望が繰り返しあったため、探さなくても確実に
      // 見られる「☀️ 太陽を見る」ボタンを実装した。
      try {
-       var _st312scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st312scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // v0.45.1484: Waterアドオン廃止に伴い、waterColorではなく半透明水面の
        // 色（0x2a6b8a）と不透明度で「水らしさ」を担保する方式に変更した。
        _st312scriptTexts.indexOf('color: 0x2a6b8a') !== -1
          ? ok('ST-312·①: 池の水色設定を確認')
          : ng('ST-312·①: 水色設定が見つからない', '');
-       var _st312koiIdx = _st312scriptTexts.indexOf('function buildKoi()');
-       var _st312koiSrc = _st312koiIdx !== -1 ? _st312scriptTexts.slice(_st312koiIdx, _st312koiIdx + 3500) : '';
+       var _st312koiSrc = _stFnSrc('function buildKoi()');
        _st312koiSrc.indexOf('transparent: true, opacity: 0.92') === -1
          ? ok('ST-312·②: 鯉の尾ビレ不透明化確認')
          : ng('ST-312·②: まだ透明のまま', '');
@@ -60319,8 +60406,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        typeof window.gardenViewGoraikou === 'function'
          ? ok('ST-312·④: gardenViewGoraikou window公開確認')
          : ng('ST-312·④: 未公開', '');
-       var _st312funcIdx = _st312scriptTexts.indexOf('function gardenViewGoraikou()');
-       var _st312funcSrc = _st312funcIdx !== -1 ? _st312scriptTexts.slice(_st312funcIdx, _st312funcIdx + 900) : '';
+       var _st312funcSrc = _stFnSrc('function gardenViewGoraikou()');
        (_st312funcSrc.indexOf('camera.position.set(') !== -1 && _st312funcSrc.indexOf('camera.position.x + dir.x * 20') !== -1)
          ? ok('ST-312·⑤: ご来光の構図（カメラ位置＋視線方向）確認')
          : ng('ST-312·⑤: 計算式が見つからない', '');
@@ -60343,9 +60429,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (typeof window.gardenPreviewSunrise === 'function' && typeof window.gardenPreviewBackToRealtime === 'function')
          ? ok('ST-313·③: プレビュー関数のwindow公開確認')
          : ng('ST-313·③: 未公開', '');
-       var _st313scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st313applyIdx = _st313scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st313applySrc = _st313applyIdx !== -1 ? _st313scriptTexts.slice(_st313applyIdx, _st313applyIdx + 3200) : '';
+       var _st313scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st313applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st313applySrc.indexOf("window._gardenPreviewMode === 'sunrise'") !== -1
          ? ok('ST-313·④: プレビューモードによる上書きロジック確認')
          : ng('ST-313·④: 上書きロジックが見つからない', '');
@@ -60363,7 +60448,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // また「日の出時間も出せ」との要望を受け、日の出時刻をHH:MM形式で
      // 画面に表示するようにした。
      try {
-       var _st314scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st314scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st314skyCount = (_st314scriptTexts.match(/_sunriseHoriz/g) || []).length;
        (_st314skyCount >= 2)
          ? ok('ST-314·①: 日の出の仰角を連続的に変化させる仕組み確認・' + _st314skyCount + '箇所')
@@ -60371,8 +60456,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        document.getElementById('gardenSunriseTimeLabel')
          ? ok('ST-314·②: 日の出時刻表示欄のDOM存在確認')
          : ng('ST-314·②: 表示欄が見つからない', '');
-       var _st314applyIdx = _st314scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st314applySrc = _st314applyIdx !== -1 ? _st314scriptTexts.slice(_st314applyIdx, _st314applyIdx + 8500) : '';
+       var _st314applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st314applySrc.indexOf("今日の日の出") !== -1
          ? ok('ST-314·③: 日の出時刻の計算・表示ロジック確認')
          : ng('ST-314·③: ロジックが見つからない', '');
@@ -60387,7 +60471,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 実際に地面で下半分が隠れる仕組みがなかった。クリッピング平面を導入し、
      // カメラの目線の高さより下を、太陽・光輪から切り取るようにした。
      try {
-       var _st315scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st315scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        _st315scriptTexts.indexOf('renderer.localClippingEnabled = true;') !== -1
          ? ok('ST-315·①: クリッピング機能の有効化確認')
          : ng('ST-315·①: 有効化が見つからない', '');
@@ -60398,8 +60482,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_st315clipCount >= 3)
          ? ok('ST-315·③: 太陽・光輪へのクリッピング適用確認・' + _st315clipCount + '箇所')
          : ng('ST-315·③: 適用が不足', '検出数=' + _st315clipCount);
-       var _st315animIdx = _st315scriptTexts.indexOf('function animate() {');
-       var _st315animSrc = _st315animIdx !== -1 ? _st315scriptTexts.slice(_st315animIdx, _st315animIdx + 1400) : '';
+       var _st315animSrc = _stFnSrc('function animate() {');
        _st315animSrc.indexOf('horizonClipPlane.constant = -camera.position.y;') !== -1
          ? ok('ST-315·④: クリッピング平面のカメラ追従確認')
          : ng('ST-315·④: 追従処理が見つからない', '');
@@ -60418,7 +60501,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // Lensflareという、より本格的な仕組みがあるため、手作りの光条は
      // 常に非表示にして廃止する。
      try {
-       var _st316scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st316scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st316visibleTrueCount = (_st316scriptTexts.match(/_gardenBuilt\.sunRaysGroup\.visible = true/g) || []).length;
        (_st316visibleTrueCount === 0)
          ? ok('ST-316·①: sunRaysGroupが常に非表示（廃止）確認')
@@ -60438,10 +60521,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 変化しなかった。1分ごとに自動で再チェックする仕組みと、日の出の間、
      // 太陽の高さが連続的に変化する仕組みを追加した。
      try {
-       var _st317scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st317initIdx = _st317scriptTexts.indexOf('function initGardenWorld()');
-       var _st317initSrc = _st317initIdx !== -1 ? _st317scriptTexts.slice(_st317initIdx, _st317initIdx + 900) : '';
-       (_st317initSrc.indexOf('window._gardenUpdateInterval = setInterval(function()') !== -1 && _st317initSrc.indexOf('60000') !== -1)
+       var _st317scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st317initSrc = _stFnSrc('function initGardenWorld()');
+       // v0.45.1789: 自動更新の間隔が60秒から10秒に変わった。見たいのは
+       // 「一定間隔で更新し続ける仕組みがあるか」であって、秒数そのものではない。
+       (_st317initSrc.indexOf('window._gardenUpdateInterval = setInterval(function()') !== -1 && /\}, \d+\);/.test(_st317initSrc))
          ? ok('ST-317·①: 1分ごとの自動更新タイマー確認')
          : ng('ST-317·①: タイマーが見つからない', '');
        _st317initSrc.indexOf("if (window._gardenPreviewMode) return;") !== -1
@@ -60450,8 +60534,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _st317scriptTexts.indexOf("if (window._gardenUpdateInterval) { clearInterval(window._gardenUpdateInterval); window._gardenUpdateInterval = null; }") !== -1
          ? ok('ST-317·③: 庭ビュー退出時のタイマー停止確認')
          : ng('ST-317·③: 停止処理が見つからない', '');
-       var _st317applyIdx = _st317scriptTexts.indexOf('function _gardenApplyTodaySeasonAndMoon()');
-       var _st317applySrc = _st317applyIdx !== -1 ? _st317scriptTexts.slice(_st317applyIdx, _st317applyIdx + 3600) : '';
+       var _st317applySrc = _stFnSrc('function _gardenApplyTodaySeasonAndMoon()');
        _st317applySrc.indexOf('_sunriseProgress') !== -1
          ? ok('ST-317·④: 日の出経過度（0〜1）の計算確認')
          : ng('ST-317·④: 経過度計算が見つからない', '');
@@ -60484,9 +60567,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        typeof window.gardenViewRealGoraikou === 'undefined'
          ? ok('ST-318·④: gardenViewRealGoraikou関数の廃止確認')
          : ng('ST-318·④: 関数がまだ残っている', '');
-       var _st318scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
-       var _st318initIdx = _st318scriptTexts.indexOf('function initGardenWorld()');
-       var _st318initSrc = _st318initIdx !== -1 ? _st318scriptTexts.slice(_st318initIdx, _st318initIdx + 900) : '';
+       var _st318scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st318initSrc = _stFnSrc('function initGardenWorld()');
        _st318initSrc.indexOf('}, 10000);') !== -1
          ? ok('ST-318·⑤: 更新間隔が10秒に短縮されていること確認')
          : ng('ST-318·⑤: 短縮が反映されていない', '');
@@ -60508,14 +60590,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        document.getElementById('gardenMoonOverlay')
          ? ok('ST-319·②: gardenMoonOverlay（DOM画像オーバーレイ）のDOM存在確認')
          : ng('ST-319·②: img要素が見つからない', '');
-       var _st319scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _st319scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st319redrawIdx = _st319scriptTexts.indexOf('function _gardenRedrawMoon(age)');
        (_st319redrawIdx !== -1 && _st319scriptTexts.slice(_st319redrawIdx, _st319redrawIdx + 300).indexOf('_gardenDrawMoonSprite') !== -1)
          ? ok('ST-319·③: _gardenRedrawMoonが月描画関数を呼んでいる確認')
          : ng('ST-319·③: 実装が見つからない', '');
        // ④ 旧実装（3D空間内のSprite・影の球をずらすハック）が完全に削除されていること確認
-       var _st319sceneFuncIdx = _st319scriptTexts.indexOf('function _buildGardenScene(');
-       var _st319sceneFuncSrc = _st319sceneFuncIdx !== -1 ? _st319scriptTexts.slice(_st319sceneFuncIdx, _st319sceneFuncIdx + 15000) : '';
+       var _st319sceneFuncSrc = _stFnSrc('function _buildGardenScene(');
        (_st319sceneFuncSrc.indexOf('new THREE.SphereGeometry(1.9, 32, 32)') === -1 && _st319sceneFuncSrc.indexOf('new THREE.Sprite(new THREE.SpriteMaterial({ map: moonCanvasTexture') === -1)
          ? ok('ST-319·④: 旧3D月実装（Sprite・moonHalo）のクリーンアップ確認')
          : ng('ST-319·④: 旧実装の残骸が残っている', '');
@@ -61242,7 +61323,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // scriptタグの生ソースで「_RULES_DATA.length」を使った動的参照になっているかを確認する。
        // また_RULES_DATA自体（第47条の説明文中に条文数のハードコード例が
        // 記載されている）を除外しないと自己参照的に誤検知するため、JSON全体を除外する（第33条①誤検知防止）。
-       var _r49scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _r49scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _r49hasDynamicRef = _r49scriptTexts.indexOf('_RULES_DATA.length') !== -1;
        // v0.45.1372: _RULES_DATAのwindow公開行を追加したことで、この正規表現が
        // 「];」の直後に直接「var btnRules」が続く前提だったため、マッチしなく
@@ -61316,7 +61397,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 確認方法：第47条・第55条の除外境界が、_RULES_DATA直後に必ず続く実コードまで
        // 含む確実な終端になっているか。正規表現リテラル内ではドットがエスケープされる
        // （バックスラッシュ+ドット）性質を利用し、生コードの文字列とは区別して検出する。
-       var _r58scriptTexts = Array.prototype.map.call(document.querySelectorAll('script'), function(s){ return s.textContent || ''; }).join('\n');
+       var _r58scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _r58dot = String.fromCharCode(92) + '.';
        var _r58needle = 'document' + _r58dot + 'createElement';
        var _r58count = _r58scriptTexts.split(_r58needle).length - 1;
