@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1856 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1857 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1856';
+    const APP_VERSION = 'v0.45.1857';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11860,6 +11860,8 @@ function switchSearchTab(tab) {
   if (tab === 'todo') renderTodoList();
   if (tab === 'gou')  renderGouTaskList();
   if (tab === 'comment') {
+    // v0.45.1857: 開いた瞬間に一覧を出す。探す前に眺められるようにする。
+    if (typeof runCommentSearch === 'function') runCommentSearch();
     setTimeout(function(){ var el = document.getElementById('commentSearchInput'); if (el) el.focus(); }, 100);
   }
 }
@@ -36212,7 +36214,7 @@ window.addEventListener('afterprint', function() {
       </div>
       <div id="searchPaneComment" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
         <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <input type="text" id="commentSearchInput" placeholder="コメントの言葉で探す"
+          <input type="text" id="commentSearchInput" placeholder="言葉で絞り込む（空欄なら全部）"
             onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();runCommentSearch();}"
             style="flex:1;padding:10px;border:1px solid #ddd;border-radius:10px;font-size:0.9em;">
           <button onclick="runCommentSearch()" style="padding:0 16px;border:none;border-radius:10px;background:#333;color:#fff;font-size:0.82em;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;">探す</button>
@@ -40242,6 +40244,23 @@ async function searchTaskComments(keyword) {
 }
 window.searchTaskComments = searchTaskComments;
 
+// v0.45.1857: 【権威】2026-09-01、何を書いたか忘れているのだから、
+// 探す言葉も思い出せない、との指摘。そのとおりだった。
+// 検索は「覚えている人」のための道具で、忘れた人には効かない。
+// 開いた瞬間に新しい順で全部並べる。眺めていれば思い出せる。
+async function listAllTaskComments(limit) {
+  try {
+    if (!window.supabaseClient || !window._cloudIsLoggedIn) return [];
+    var r = await window.supabaseClient.from('koyomiru_task_comments')
+      .select('id, task_id, calendar_id, user_id, display_name, body, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit || 300);
+    if (r.error) { console.warn('[Comment] 一覧の取得に失敗:', r.error.message); return []; }
+    return r.data || [];
+  } catch (e) { console.warn('[Comment] 一覧の取得に失敗:', e && e.message); return []; }
+}
+window.listAllTaskComments = listAllTaskComments;
+
 // v0.45.1853: コメント検索を実行して結果を出す。
 // 押すのは「どの予定に書いたか」を思い出すためなので、
 // コメント本文だけでなく、その予定の題名と日付も併せて出す。
@@ -40251,18 +40270,20 @@ async function runCommentSearch() {
   var cnt  = document.getElementById('commentSearchCount');
   if (!inp || !box) return;
   var _kw = String(inp.value || '').trim();
-  if (!_kw) { showToast('探したい言葉を入れてください', {type:'warn'}); return; }
   if (!window._cloudIsLoggedIn) {
     box.innerHTML = '<div style="padding:24px 8px;text-align:center;color:#9aa3af;font-size:0.85em;line-height:1.9;">' +
       'コメントはクラウドに保存されています。<br>探すにはログインが必要です。</div>';
     if (cnt) cnt.textContent = '';
     return;
   }
-  box.innerHTML = '<div style="padding:20px 8px;text-align:center;color:#aaa;font-size:0.85em;">探しています…</div>';
-  var rows = await searchTaskComments(_kw);
-  if (cnt) cnt.textContent = rows.length + '件';
+  box.innerHTML = '<div style="padding:20px 8px;text-align:center;color:#aaa;font-size:0.85em;">' +
+    (_kw ? '探しています…' : '読み込んでいます…') + '</div>';
+  // v0.45.1857: 言葉が空なら全部出す。忘れているものは探せないので。
+  var rows = _kw ? await searchTaskComments(_kw) : await listAllTaskComments(300);
+  if (cnt) cnt.textContent = rows.length + '件' + (_kw ? '' : '（新しい順）');
   if (rows.length === 0) {
-    box.innerHTML = '<div style="padding:24px 8px;text-align:center;color:#bbb;font-size:0.85em;">見つかりませんでした</div>';
+    box.innerHTML = '<div style="padding:24px 8px;text-align:center;color:#bbb;font-size:0.85em;">' +
+      (_kw ? '見つかりませんでした' : 'コメントはまだありません') + '</div>';
     return;
   }
   var _esc = function(s){ return String(s == null ? '' : s).replace(/</g, '&lt;'); };
