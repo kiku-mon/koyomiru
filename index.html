@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1844 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1846 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1844';
+    const APP_VERSION = 'v0.45.1846';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -51011,8 +51011,17 @@ window._stFnSrc = _stFnSrc;
        ok('ST-76b: メモリ _photoImages件数=' + _st76bMemKeys.length + '件');
 
        // allTasksとphotoImagesの整合性確認
+       // v0.45.1846: 【権威】2026-09-01、写真は表示できているのに
+       // 「画像＝空」と報告され続けていた件。localStorage を見ていたのが誤り。
+       // 写真は容量の都合でIndexedDBへ移されており（写真館IDB移行）、
+       // localStorage には残っていない。実際に持っているかは、
+       // IndexedDBから読み込んだメモリ上の _photoImages を見るのが正しい。
+       // 見る場所が違うだけで、データは失われていない。
+       var _st76bHasImg = function(id) {
+         return !!(_st76bImgRaw[id] || (typeof _photoImages !== 'undefined' && _photoImages[id]));
+       };
        var _st76bOrphanTask = _st76bPhotoTasks.filter(function(t){
-         return !_st76bImgRaw[t.id];
+         return !_st76bHasImg(t.id);
        });
        var _st76bOrphanImg = _st76bImgKeys.filter(function(k){
          return !_st76bPhotoTasks.find(function(t){ return t.id === k; });
@@ -51023,7 +51032,7 @@ window._stFnSrc = _stFnSrc;
        // 各photoレコードのid・date表示
        if (_st76bPhotoTasks.length > 0) {
          _st76bPhotoTasks.forEach(function(t, i){
-           var hasImg = !!_st76bImgRaw[t.id];
+           var hasImg = _st76bHasImg(t.id);
            ok('ST-76b: photo[' + i + '] id=' + t.id.slice(-8) + ' date=' + t.date + ' 画像=' + (hasImg ? '✅' : '❌'));
          });
        } else {
@@ -54763,9 +54772,16 @@ window._stFnSrc = _stFnSrc;
          if (typeof _r144prevConfirm === 'function') window.confirm = _r144prevConfirm;
          if (typeof _r144prevToast !== 'undefined') window.showToast = _r144prevToast;
          if (typeof _r144initLen === 'number') {
+           // v0.45.1845: 【権威】2026-09-01、テストを回すたびに予定が29件減る件の犯人。
+           // 例外時の後片づけで autoFilled のものを「全部」消していた。
+           // テストが作った分だけでなく、実際の空日補完で作った本物の日誌まで巻き込む。
+           // しかも例外時にしか通らないため、原因の特定が遅れた。
+           // 正常時の後片づけは日付の範囲で絞っている。同じ条件に揃える。
            allTasks = allTasks.filter(function(t){
              if (t.id === 'st144-jr1' || t.id === 'st144-jr2') return false;
-             if (t.autoFilled === true) return false;
+             if (t.kind === 'journal' && t.autoFilled === true &&
+                 typeof _r144d7s !== 'undefined' && typeof _r144d7e !== 'undefined' &&
+                 t.date >= _r144d7s && t.date <= _r144d7e) return false;
              return true;
            });
          }
@@ -60536,7 +60552,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-276·updatedAt' + (i+1) + ': 更新確認')
            : ng('ST-276·updatedAt' + (i+1) + ': 見つからない', c[0]);
        });
-       var _st276guardChecks = ['createSharedCalendar', 'joinSharedCalendarByCode', 'lookupInviteCode', 'listMySharedCalendars'];
+       // v0.45.1845: 読むだけの3つ（覗く・確かめる・一覧を取る）からは
+       // v0.45.1814でガードを外した。本物のデータを一切変えないうえ、
+       // ガードがあると招待の確認が黙って失敗し、有効な招待まで
+       // 「期限切れ」と表示される事故が起きたため。
+       // 書き込む joinSharedCalendarByCode だけはガードを残す。
+       var _st276guardChecks = ['joinSharedCalendarByCode'];
        _st276guardChecks.forEach(function(fn) {
          var idx = _st276scriptTexts.indexOf('async function ' + fn + '(');
          var src = idx !== -1 ? _st276scriptTexts.slice(idx, idx + 200) : '';
