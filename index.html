@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1875 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1876 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1875';
+    const APP_VERSION = 'v0.45.1876';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40292,6 +40292,36 @@ async function runCommentSearch() {
       });
     } catch(eAcc) {}
   }
+  // v0.45.1876: 【権威】2026-09-01、検索結果に「この端末にない予定」が並ぶ、との指摘。
+  // 手元の allTasks だけを見ていたため、共有カレンダーの予定でまだ
+  // 降りてきていないもの、あるいは消された予定が、すべて同じ扱いになっていた。
+  // 共有の予定はクラウドにあるので、そこから題名を引き当てる。
+  // それでも見つからないものだけが、本当に消された予定である。
+  try {
+    var _missing = _taskRows.map(function(c){ return c.task_id; })
+      .filter(function(id, i, a) {
+        return id && a.indexOf(id) === i &&
+               !(allTasks || []).some(function(t){ return t && t.id === id; });
+      });
+    if (_missing.length && window.supabaseClient && window._cloudIsLoggedIn) {
+      if (!window._remoteTaskCache) window._remoteTaskCache = {};
+      var _need = _missing.filter(function(id){ return !window._remoteTaskCache[id]; });
+      if (_need.length) {
+        var _rt = await window.supabaseClient.from('koyomiru_shared_tasks')
+          .select('id, data, deleted_at')
+          .in('id', _need);
+        if (!_rt.error) {
+          (_rt.data || []).forEach(function(row) {
+            window._remoteTaskCache[row.id] = {
+              text: (row.data && row.data.text) || '',
+              date: (row.data && row.data.date) || '',
+              deleted: !!row.deleted_at
+            };
+          });
+        }
+      }
+    }
+  } catch(eRt) { console.warn('[Comment] 予定の引き当てに失敗:', eRt && eRt.message); }
   // 書いた人の名前は、放送コメント側は公開プロフィールから取る
   try {
     var _pids = _podRows.map(function(c){ return c.user_id; })
@@ -40334,8 +40364,14 @@ async function runCommentSearch() {
       '</div>';
     }
     var _t = (allTasks || []).filter(function(t){ return t && t.id === c.task_id; })[0];
-    var _title = _t ? (_t.text || '(無題)') : '(この端末にない予定)';
-    var _date  = _t ? (_t.date || '') : '';
+    // v0.45.1876: 手元に無ければクラウドの控えを使う。
+    // 「この端末にない予定」では、何が起きたのか分からない。
+    // 消えたのか、まだ届いていないのか、実態をそのまま書く。
+    var _r = (!_t && window._remoteTaskCache) ? window._remoteTaskCache[c.task_id] : null;
+    var _title = _t ? (_t.text || '(無題)')
+               : (_r ? ((_r.text || '(無題)') + (_r.deleted ? '（削除された予定）' : ''))
+                     : '（予定が見つかりません）');
+    var _date  = _t ? (_t.date || '') : (_r ? (_r.date || '') : '');
     return '<div ' + ((_t && _date) ? 'onclick="jumpToCommentTask(\'' + _date + '\')" style="cursor:pointer;"' : '') +
       ' style="padding:12px 4px;border-bottom:1px solid #f0f0f0;">' +
       '<div style="font-size:0.85em;color:#262626;line-height:1.7;margin-bottom:5px;">' + _hl(c.body) + '</div>' +
