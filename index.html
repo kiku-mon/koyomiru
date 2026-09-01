@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1837 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1840 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1837';
+    const APP_VERSION = 'v0.45.1840';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8963,6 +8963,9 @@ function _showInviteWelcome() {
   <div style="padding:22px 18px 14px;border-bottom:1px solid #eee;">
     <div style="font-size:1.5em;font-weight:800;color:#1a1a1a;letter-spacing:0.02em;">開発者の声</div>
     <div id="podcastSubtitle" style="font-size:0.76em;color:#8e8e8e;margin-top:4px;">こよみるを作っている人の話</div>
+    <!-- v0.45.1839: 番組の説明。初めて来た人が「何の番組か」を知る場所。
+         配信が無いうちはここが顔になる。文面は設定から書き換えられる。 -->
+    <div id="podcastAbout" style="display:none;font-size:0.8em;color:#6b6b6b;line-height:2;margin-top:14px;white-space:pre-wrap;"></div>
   </div>
   <div id="podcastNowPlaying" style="display:none;background:#111;color:#fff;padding:20px 18px;">
     <div style="font-size:0.66em;letter-spacing:0.18em;color:#888;margin-bottom:10px;">NOW PLAYING</div>
@@ -8980,6 +8983,11 @@ function _showInviteWelcome() {
       <button id="podcastRateBtn" onclick="podcastCycleRate()" style="margin-left:auto;padding:10px 16px;border:none;border-radius:20px;background:#2a2a2a;color:#fff;font-size:0.82em;font-weight:700;cursor:pointer;font-family:inherit;">1.0x</button>
     </div>
   </div>
+  <!-- v0.45.1838: 支援の入口。放送を聴いて「よかった」と思った直後が、
+       一番支援したくなる瞬間なので、プレイヤーの真下・コメントの上に置く。
+       決済はOFUSE側が持つ。こよみるはリンクを出すだけで、カード情報に一切触れない。
+       これにより特定商取引法の表示義務も自前で負わずに済む。 -->
+  <div id="podcastSupport" style="display:none;padding:18px;border-bottom:1px solid #eee;"></div>
   <!-- v0.45.1835: 再生中の放送へのコメント。放送1本ごとに紐づく。 -->
   <div id="podcastComments" style="display:none;padding:18px;border-bottom:8px solid #f4f1eb;"></div>
   <div style="display:flex;align-items:baseline;justify-content:space-between;padding:20px 18px 8px;">
@@ -9663,6 +9671,16 @@ function _showInviteWelcome() {
           <p style="margin:0 0 8px;font-size:0.75em;color:#8e8e8e;line-height:1.7;">配信のURL（RSS）を入れると、ナビの「開発者の声」に放送が並びます。空のままなら何も出ません。</p>
           <input type="url" id="podcastFeedUrlInput" placeholder="https://..."
             onchange="savePodcastFeedUrl(this.value)"
+            style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.85em;">
+          <p style="margin:12px 0 4px;font-size:0.8em;font-weight:700;color:#333;">📝 番組の説明</p>
+          <p style="margin:0 0 8px;font-size:0.75em;color:#8e8e8e;line-height:1.7;">「開発者の声」の上に出ます。何の番組かを短く書いてください。</p>
+          <textarea id="podcastAboutInput" rows="3" placeholder="こよみるを作りながら考えていることを話しています。"
+            onchange="savePodcastAbout(this.value)"
+            style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.85em;font-family:inherit;resize:vertical;"></textarea>
+          <p style="margin:12px 0 4px;font-size:0.8em;font-weight:700;color:#333;">☕ 支援ページ</p>
+          <p style="margin:0 0 8px;font-size:0.75em;color:#8e8e8e;line-height:1.7;">OFUSE等のURLを入れると、開発者の声に「支援する」が出ます。空のままなら何も出ません。</p>
+          <input type="url" id="supportUrlInput" placeholder="https://ofuse.me/..."
+            onchange="saveSupportUrl(this.value)"
             style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.85em;">
         </div>
         <!-- カレンダー一覧 -->
@@ -28954,6 +28972,8 @@ function saveMsbEdit() {
         var _pn = document.getElementById('navPodcast');
         if (_pn) _pn.classList.add('active');
         if (typeof loadPodcastView === 'function') loadPodcastView();
+        if (typeof renderPodcastAbout === 'function') renderPodcastAbout();
+        if (typeof renderPodcastSupport === 'function') renderPodcastSupport();
       } else if (view === 'settings') {
         if (gantView) gantView.style.display = 'none';
         settingsView.style.display = 'block';
@@ -28971,6 +28991,10 @@ function saveMsbEdit() {
         // v0.45.1830: 保存済みの配信URLを出す（空なら空のまま）
         var _pfEl = document.getElementById('podcastFeedUrlInput');
         if (_pfEl) _pfEl.value = (allSettings.ui && allSettings.ui.podcastFeedUrl) || '';
+        var _suEl = document.getElementById('supportUrlInput');
+        if (_suEl) _suEl.value = (allSettings.ui && allSettings.ui.supportUrl) || '';
+        var _paEl = document.getElementById('podcastAboutInput');
+        if (_paEl) _paEl.value = (allSettings.ui && allSettings.ui.podcastAbout) || '';
         loadSettingsUI();
         // 設定のバックアップラベルを更新
         (function(){
@@ -43730,6 +43754,71 @@ async function podcastReport(commentId) {
   setTimeout(function(){ if (window._podcastRepArmed === commentId) window._podcastRepArmed = null; }, 3000);
 }
 window.podcastReport = podcastReport;
+
+// v0.45.1838: 支援の入口を描く。URLが空なら何も出さない。
+// 「押したら外のページへ行く」ことを隠さない。金銭が絡む導線で不意打ちはしない。
+// v0.45.1839: 番組の説明を出す。空なら既定の文面を使う。
+// 何の番組か分からないまま放送だけ並んでいても、初めての人は聴き始められない。
+function renderPodcastAbout() {
+  var el = document.getElementById('podcastAbout');
+  if (!el) return;
+  var _txt = (allSettings.ui && allSettings.ui.podcastAbout) || '';
+  if (!_txt) {
+    // v0.45.1840: 【権威】2026-09-01、既定の文面が「説明」でしかなく印象に残らない、
+    // との指摘。そのとおりだった。事実を並べても心は動かない。
+    // 上段に何の番組かを置き、下段に開発者本人の言葉を置く。
+    // 苦労を隠さず、読み手を「私たち」に含め、問いで終える。続きを聴きたくさせるため。
+    _txt = 'こよみるを作りながら考えていることを話しています。\n' +
+           '開発の裏側、うまくいかなかったこと、季節のこと。\n' +
+           '\n' +
+           '〜開発者より〜\n' +
+           'ひょんなことから、開発をはじめたこよみる。\n' +
+           '幾多の試練やあまたの批判をのりこえてあなたに届けたい。\n' +
+           'あなたとのご縁に感謝します。\n' +
+           '一緒に本当にいいものを築き上げましょう。\n' +
+           '果たして、私たちはより良きものを作れるのか？';
+  }
+  el.textContent = _txt;
+  el.style.display = 'block';
+}
+window.renderPodcastAbout = renderPodcastAbout;
+
+function savePodcastAbout(text) {
+  if (!allSettings.ui) allSettings.ui = {};
+  allSettings.ui.podcastAbout = String(text || '').trim();
+  saveAllSettings();
+  showToast('✅ 番組の説明を保存しました', {type:'ok'});
+  if (typeof renderPodcastAbout === 'function') renderPodcastAbout();
+}
+window.savePodcastAbout = savePodcastAbout;
+
+function renderPodcastSupport() {
+  var box = document.getElementById('podcastSupport');
+  if (!box) return;
+  var url = (allSettings.ui && allSettings.ui.supportUrl) || '';
+  if (!url) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+  box.innerHTML =
+    '<div style="background:#fffaf2;border:1px solid #f0e2c8;border-radius:14px;padding:16px;text-align:center;">' +
+      '<div style="font-size:0.9em;font-weight:700;color:#7a5c1f;margin-bottom:6px;">この配信を支える</div>' +
+      '<div style="font-size:0.76em;color:#9a8460;line-height:1.8;margin-bottom:12px;">' +
+        'こよみるは無料で使えます。<br>続きが聴きたいと思ったら、支援していただけると励みになります。</div>' +
+      '<a href="' + url + '" target="_blank" rel="noopener noreferrer" ' +
+        'style="display:inline-block;padding:11px 26px;border-radius:22px;background:#d4a017;color:#fff;' +
+        'font-size:0.85em;font-weight:700;text-decoration:none;">☕ 支援する</a>' +
+      '<div style="font-size:0.66em;color:#b9a888;margin-top:8px;">外部のページが開きます</div>' +
+    '</div>';
+}
+window.renderPodcastSupport = renderPodcastSupport;
+
+function saveSupportUrl(url) {
+  if (!allSettings.ui) allSettings.ui = {};
+  allSettings.ui.supportUrl = String(url || '').trim();
+  saveAllSettings();
+  showToast(allSettings.ui.supportUrl ? '✅ 支援ページのURLを保存しました' : '支援ページのURLを空にしました', {type:'ok'});
+  if (typeof renderPodcastSupport === 'function') renderPodcastSupport();
+}
+window.saveSupportUrl = saveSupportUrl;
 
 function savePodcastFeedUrl(url) {
   if (!allSettings.ui) allSettings.ui = {};
