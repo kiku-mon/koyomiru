@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1865 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1869 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1865';
+    const APP_VERSION = 'v0.45.1869';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -20824,6 +20824,15 @@ function renderMonthlySidebarTasks() {
       // v0.45.1567: コメント件数を後から差し込む。
       // 一覧の描画を待たせないよう、描いてから取りに行って差し替える。
       try {
+        // v0.45.1866: 【権威】2026-09-01、開いた直後は件数が出ず、
+        // 少し経ってから現れる（検索から飛ぶと特に目立つ）、との指摘。
+        // 件数はクラウドへ問い合わせて取るため、届くまで間がある。
+        // ただし一度取ったものは手元に残っている。それを先に出せばよかった。
+        // まず手元の値で描き、届いたら差し替える。二段構えにする。
+        if (typeof applyCommentCountBadges === 'function' &&
+            window._commentCounts && Object.keys(window._commentCounts).length) {
+          applyCommentCountBadges();
+        }
         if (typeof loadCommentCounts === 'function' && window._cloudIsLoggedIn) {
           var _ids = sorted.map(function(x) { return x.id; });
           loadCommentCounts(_ids).then(function() {
@@ -39777,8 +39786,16 @@ async function loadCommentCounts(taskIds) {
       var _c = row.created_at || '';
       if (!latest[row.task_id] || _c > latest[row.task_id]) latest[row.task_id] = _c;
     });
-    window._commentCounts = counts;
-    window._commentLatest = latest;
+    // v0.45.1866: 取るたびに丸ごと置き換えると、別の日を開いた瞬間に
+    // 前の日の件数が消える。問い合わせたのは今回の予定だけなので、
+    // 今回ぶんだけを上書きし、他は残す。
+    // 0件だった予定も明示的に0にする（消えたコメントが残り続けないように）。
+    if (!window._commentCounts) window._commentCounts = {};
+    if (!window._commentLatest) window._commentLatest = {};
+    taskIds.forEach(function(id) {
+      window._commentCounts[id] = counts[id] || 0;
+      window._commentLatest[id] = latest[id] || '';
+    });
     return counts;
   } catch(e) { console.warn('[Comment] 件数取得エラー:', e && e.message); return {}; }
 }
@@ -40240,6 +40257,23 @@ async function runCommentSearch() {
   _taskRows.forEach(function(c){ c._src = 'task'; });
   _podRows.forEach(function(c){ c._src = 'podcast'; });
   var rows = _taskRows.concat(_podRows);
+  // v0.45.1868: 一覧を作った時点で「どの予定に何件あるか」は分かっている。
+  // わざわざ飛んでから取り直す必要はない。ここで手元に溜めておく。
+  // ただし絞り込み中は一部しか取れていないので、件数として使えるのは全件のときだけ。
+  if (!_kw) {
+    try {
+      if (!window._commentCounts) window._commentCounts = {};
+      if (!window._commentLatest) window._commentLatest = {};
+      _taskRows.forEach(function(c) {
+        if (!c || !c.task_id) return;
+        window._commentCounts[c.task_id] = (window._commentCounts[c.task_id] || 0) + 1;
+        var _at = c.created_at || '';
+        if (!window._commentLatest[c.task_id] || _at > window._commentLatest[c.task_id]) {
+          window._commentLatest[c.task_id] = _at;
+        }
+      });
+    } catch(eAcc) {}
+  }
   // 書いた人の名前は、放送コメント側は公開プロフィールから取る
   try {
     var _pids = _podRows.map(function(c){ return c.user_id; })
@@ -40321,9 +40355,20 @@ window.runCommentSearch = runCommentSearch;
 // v0.45.1853: 検索結果からその予定の日へ移る。
 // 探した目的は「その言葉を書いた場所へ戻ること」なので、
 // 見つけて終わりにせず、そこまで連れて行く。
-function jumpToCommentTask(dateStr) {
+// v0.45.1868: 【権威】2026-09-01、検索から飛ぶと件数が出ていない、との指摘。
+// 「あとから届くので」と説明したが、それは言い訳だった。
+// 飛ぶ前にその日の件数を取ってから移れば、待たせずに済む。
+// 移ったあとで慌てて取りに行くのは、順番が逆だった。
+async function jumpToCommentTask(dateStr) {
   try {
     if (typeof closeSearchModal === 'function') closeSearchModal();
+    // その日の予定の件数を、移る前に取っておく
+    try {
+      var _ids = (allTasks || []).filter(function(t) {
+        return t && !t.deletedAt && (t.kind || 'task') === 'task' && t.date === dateStr;
+      }).map(function(t) { return t.id; });
+      if (_ids.length && typeof loadCommentCounts === 'function') await loadCommentCounts(_ids);
+    } catch(ePre) {}
     if (typeof switchView === 'function') switchView('monthly');
     // 月間が組み上がってから開く（描き終わる前に呼ぶと空振りする）
     setTimeout(function() {
