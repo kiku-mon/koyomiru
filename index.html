@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1857 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1858 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1857';
+    const APP_VERSION = 'v0.45.1858';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40261,6 +40261,41 @@ async function listAllTaskComments(limit) {
 }
 window.listAllTaskComments = listAllTaskComments;
 
+// v0.45.1858: 【権威】2026-09-01、開発者の声のコメントも一覧に含めてほしい、との指摘。
+// そのとおりで、書いた本人にとって「予定に書いた」「放送に書いた」の区別は後付けである。
+// 探すときは「あのとき何を書いたか」であって、置き場所は覚えていない。
+// 2つの置き場から取ってきて、時系列でひとつに混ぜる。
+async function listAllPodcastComments(limit) {
+  try {
+    if (!window.supabaseClient || !window._cloudIsLoggedIn) return [];
+    var r = await window.supabaseClient.from('koyomiru_podcast_comments')
+      .select('id, episode_guid, user_id, parent_id, body, created_at')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(limit || 300);
+    if (r.error) { console.warn('[Comment] 放送コメントの取得に失敗:', r.error.message); return []; }
+    return r.data || [];
+  } catch (e) { console.warn('[Comment] 放送コメントの取得に失敗:', e && e.message); return []; }
+}
+window.listAllPodcastComments = listAllPodcastComments;
+
+async function searchPodcastCommentsByWord(keyword) {
+  try {
+    if (!window.supabaseClient || !window._cloudIsLoggedIn) return [];
+    var _kw = String(keyword || '').trim();
+    if (!_kw) return [];
+    var r = await window.supabaseClient.from('koyomiru_podcast_comments')
+      .select('id, episode_guid, user_id, parent_id, body, created_at')
+      .is('deleted_at', null)
+      .ilike('body', '%' + _kw + '%')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (r.error) { console.warn('[Comment] 放送コメントの検索に失敗:', r.error.message); return []; }
+    return r.data || [];
+  } catch (e) { console.warn('[Comment] 放送コメントの検索に失敗:', e && e.message); return []; }
+}
+window.searchPodcastCommentsByWord = searchPodcastCommentsByWord;
+
 // v0.45.1853: コメント検索を実行して結果を出す。
 // 押すのは「どの予定に書いたか」を思い出すためなので、
 // コメント本文だけでなく、その予定の題名と日付も併せて出す。
@@ -40279,7 +40314,20 @@ async function runCommentSearch() {
   box.innerHTML = '<div style="padding:20px 8px;text-align:center;color:#aaa;font-size:0.85em;">' +
     (_kw ? '探しています…' : '読み込んでいます…') + '</div>';
   // v0.45.1857: 言葉が空なら全部出す。忘れているものは探せないので。
-  var rows = _kw ? await searchTaskComments(_kw) : await listAllTaskComments(300);
+  // v0.45.1858: 予定のコメントと、開発者の声のコメントを両方取って混ぜる。
+  var _taskRows = _kw ? await searchTaskComments(_kw) : await listAllTaskComments(300);
+  var _podRows  = _kw ? await searchPodcastCommentsByWord(_kw) : await listAllPodcastComments(300);
+  _taskRows.forEach(function(c){ c._src = 'task'; });
+  _podRows.forEach(function(c){ c._src = 'podcast'; });
+  var rows = _taskRows.concat(_podRows).sort(function(a, b) {
+    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  });
+  // 書いた人の名前は、放送コメント側は公開プロフィールから取る
+  try {
+    var _pids = _podRows.map(function(c){ return c.user_id; })
+      .filter(function(v, i, a){ return v && a.indexOf(v) === i; });
+    if (_pids.length && typeof fetchPublicProfiles === 'function') await fetchPublicProfiles(_pids);
+  } catch(eP) {}
   if (cnt) cnt.textContent = rows.length + '件' + (_kw ? '' : '（新しい順）');
   if (rows.length === 0) {
     box.innerHTML = '<div style="padding:24px 8px;text-align:center;color:#bbb;font-size:0.85em;">' +
@@ -40296,11 +40344,24 @@ async function runCommentSearch() {
     } catch(e) { return _t; }
   };
   box.innerHTML = rows.map(function(c) {
+    var _d = new Date(c.created_at);
+    var _when = isNaN(_d) ? '' : ((_d.getMonth()+1) + '/' + _d.getDate());
+    // v0.45.1858: どちらに書いたコメントか、印で分かるようにする。
+    if (c._src === 'podcast') {
+      var _p = (window._publicProfileCache && window._publicProfileCache[c.user_id]) || null;
+      var _pname = (_p && _p.display_name) || '名無し';
+      return '<div onclick="jumpToPodcastComment()" style="cursor:pointer;padding:12px 4px;border-bottom:1px solid #f0f0f0;">' +
+        '<div style="font-size:0.85em;color:#262626;line-height:1.7;margin-bottom:5px;">' + _hl(c.body) + '</div>' +
+        '<div style="font-size:0.7em;color:#9aa3af;">' +
+          _esc(_pname) + '　' + _when +
+          '　→　<span style="color:#7a5c1f;">📻 開発者の声</span>' +
+          (c.parent_id ? '（返信）' : '') +
+        '</div>' +
+      '</div>';
+    }
     var _t = (allTasks || []).filter(function(t){ return t && t.id === c.task_id; })[0];
     var _title = _t ? (_t.text || '(無題)') : '(この端末にない予定)';
     var _date  = _t ? (_t.date || '') : '';
-    var _d = new Date(c.created_at);
-    var _when = isNaN(_d) ? '' : ((_d.getMonth()+1) + '/' + _d.getDate());
     return '<div ' + ((_t && _date) ? 'onclick="jumpToCommentTask(\'' + _date + '\')" style="cursor:pointer;"' : '') +
       ' style="padding:12px 4px;border-bottom:1px solid #f0f0f0;">' +
       '<div style="font-size:0.85em;color:#262626;line-height:1.7;margin-bottom:5px;">' + _hl(c.body) + '</div>' +
@@ -40330,6 +40391,15 @@ function jumpToCommentTask(dateStr) {
   } catch(e) { console.warn('[Comment] 移動に失敗:', e && e.message); }
 }
 window.jumpToCommentTask = jumpToCommentTask;
+
+// v0.45.1858: 放送のコメントからは、開発者の声の画面へ移る。
+function jumpToPodcastComment() {
+  try {
+    if (typeof closeSearchModal === 'function') closeSearchModal();
+    if (typeof switchView === 'function') switchView('podcast');
+  } catch(e) { console.warn('[Comment] 移動に失敗:', e && e.message); }
+}
+window.jumpToPodcastComment = jumpToPodcastComment;
 
 async function addTaskComment(taskId, body, calendarId) {
   if (window._isTesting || window._smokeTestRunning) return null;
