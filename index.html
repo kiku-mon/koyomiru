@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1883 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1888 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1883';
+    const APP_VERSION = 'v0.45.1888';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12357,7 +12357,7 @@ function renderTodoList() {
           info.style.cssText = 'flex:1;min-width:0;';
           const titleEl = document.createElement('div');
           titleEl.style.cssText = 'font-size:0.9em;font-weight:500;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-          titleEl.innerHTML = (p.title||'（無題）').replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'), '<mark style="background:#fff9c4;border-radius:2px;">$1</mark>');
+          titleEl.innerHTML = highlightSafe(p.title || '（無題）', q);
           const preview = document.createElement('div');
           preview.style.cssText = 'font-size:0.78em;color:#888;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
           const previewText = (p.textL || p.textR || '').slice(0, 60);
@@ -12387,7 +12387,7 @@ function renderTodoList() {
           info.style.cssText = 'flex:1;min-width:0;';
           const textEl = document.createElement('div');
           textEl.style.cssText = `font-size:0.9em;font-weight:500;color:${t.completed?'#bbb':'#333'};text-decoration:${t.completed?'line-through':''};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
-          textEl.innerHTML = (t.text||'').replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'), '<mark style="background:#fff9c4;border-radius:2px;">$1</mark>');
+          textEl.innerHTML = highlightSafe(t.text || '', q);
           const meta = document.createElement('div');
           meta.style.cssText = 'font-size:0.75em;color:#aaa;margin-top:2px;';
           meta.textContent = (t.date||'') + (t.time?' '+t.time:'') + '　' + (cal?.name||'');
@@ -39230,6 +39230,26 @@ async function peekSharedCalendarByCode(code) {
   // 守る必要がないところに見張りを置き、一番大事な入口を塞いでいた。
   // 実際に半日、期限のせいだと思い込んで回り道をした。読むだけの経路から外す。
   if (!window.supabaseClient || !code) return null;
+  // v0.45.1887: 【権威】2026-09-01、レッドチーム演習で見つかった穴。
+  // この覗き見はログイン不要で誰でも呼べ、回数制限が一切なかった。
+  // 招待コードは8桁の16進数で43億通りあるが、有効なコードが30個ほど存在するため、
+  // 毎秒100回投げれば平均6日で1つ当たる。当たれば、参加せずに
+  // カレンダー名・人数・直近の予定（実名の店舗と日時）が読める。
+  //
+  // 手元での制限は本気の攻撃者を止められない。相手はブラウザを使わないからである。
+  // それでも置くのは、正しい経路から来た人の誤操作や、
+  // 素朴な連打を止めるため。本丸はデータベース側の対策で、
+  // そちらは koyomiru_peek_invite に回数制限を入れる必要がある（未実施・要対応）。
+  try {
+    if (!window._peekLog) window._peekLog = [];
+    var _now = Date.now();
+    window._peekLog = window._peekLog.filter(function(t){ return _now - t < 60000; });
+    if (window._peekLog.length >= 10) {
+      console.warn('[SharedCal] 招待の確認が短時間に多すぎます');
+      return { _failed: true, _reason: 'too many attempts' };
+    }
+    window._peekLog.push(_now);
+  } catch(eRl) {}
   try {
     var r = await window.supabaseClient.rpc('koyomiru_peek_invite', { code: code });
     // v0.45.1813: 失敗の理由を分ける。これまでは何が起きても空を返していたため、
@@ -39300,6 +39320,20 @@ async function joinSharedCalendarByCode(code, displayName) {
   // 困る（Discordのサーバー別ニックネームと同じ需要）。呼び出し側から受け取る形に改める。
   var _displayName = (displayName && String(displayName).trim()) ||
     (window.allSettings && allSettings.profile && allSettings.profile.name) || null;
+  // v0.45.1886: 表示名に上限を置く。他人が決められる項目に上限が無いと、
+  // 極端に長い名前ひとつで一覧の見た目を壊せる。
+  // 攻撃と言うほどでなくても、迷惑をかけられる余地は塞いでおく。
+  if (_displayName && _displayName.length > 40) _displayName = _displayName.slice(0, 40);
+  // v0.45.1887: レッドチーム演習より。表示名は自由に決められるので、
+  // 「こよみる運営」「公式サポート」と名乗って偽の連絡先へ誘導できる。
+  // 技術的な攻撃より、こちらのほうが確実に成功する。
+  // 運営を騙る言葉を名前に含められないようにする。
+  // 完全には防げないが、思いつきでできることではなくなる。
+  if (_displayName && /(公式|運営|サポート|こよみる事務局|koyomiru\s*(official|support|staff))/i.test(_displayName)) {
+    _displayName = _displayName.replace(/(公式|運営|サポート|こよみる事務局)/g, '');
+    _displayName = _displayName.replace(/koyomiru\s*(official|support|staff)/ig, '');
+    _displayName = _displayName.trim() || 'メンバー';
+  }
   var r = await window.supabaseClient.rpc('koyomiru_join_by_invite', { code: code, p_display_name: _displayName });
   if (r.error) { console.error('[SharedCal] 参加失敗:', r.error.message); }
   else { console.log('[SharedCal] 参加OK。calendar_id=' + r.data); }
@@ -40354,17 +40388,10 @@ async function runCommentSearch() {
   }
   var _esc = function(s){ return String(s == null ? '' : s).replace(/</g, '&lt;'); };
   // 検索した言葉を目立たせる。どこが引っかかったのか分からないと探した意味がない。
-  var _hl = function(text) {
-    var _t = _esc(text);
-    // v0.45.1863: 【権威】2026-09-01、絞り込んでいないのに全文字が黄色くなる、との指摘。
-    // 空の言葉で作った正規表現が、すべての文字の隙間に当たっていた。
-    // 探していないときは、光らせるものが無い。そのまま返す。
-    if (!_kw) return _t;
-    try {
-      var _re = new RegExp(_kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      return _t.replace(_re, function(m){ return '<mark style="background:#fff3b0;padding:0 2px;">' + m + '</mark>'; });
-    } catch(e) { return _t; }
-  };
+  // v0.45.1884: 目印付けは共通の道具に揃える。
+  // 先に全部エスケープしてから目印だけを足す、という順番を一箇所で守る。
+  // 散らばると、どこかで順番が逆になって穴が開く。
+  var _hl = function(text) { return highlightSafe(text, _kw); };
   var _one = function(c) {
     var _d = new Date(c.created_at);
     var _when = isNaN(_d) ? '' : ((_d.getMonth()+1) + '/' + _d.getDate());
@@ -63662,6 +63689,27 @@ function initMemoPreview(textareaId, previewId) {
   var ta = document.getElementById(textareaId);
   if (ta) updateMemoPreview(textareaId, previewId);
 }
+// v0.45.1884: 【権威】2026-09-01、開発者の声の公開を前に守りを総点検した。
+// 検索結果が、予定の題名をエスケープせずにHTMLへ差し込んでいた。
+// 共有カレンダーの予定は他人が書けるので、そこに <img src=x onerror=...> を
+// 入れられると、検索した人の画面でその中身が動く。
+//
+// 探した言葉を目立たせるには、どうしてもHTMLを組む必要がある。
+// だから「先に全部エスケープしてから、目印だけを足す」順番を守る。
+// 逆順にすると、エスケープが目印ごと壊してしまう。
+function highlightSafe(text, keyword) {
+  var _t = escAttr(text == null ? '' : text);
+  var _k = String(keyword || '').trim();
+  if (!_k) return _t;
+  try {
+    var _re = new RegExp(escAttr(_k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    return _t.replace(_re, function(m) {
+      return '<mark style="background:#fff9c4;border-radius:2px;">' + m + '</mark>';
+    });
+  } catch (e) { return _t; }
+}
+window.highlightSafe = highlightSafe;
+
 function renderMemoWithLinks(el, memoText) {
   if (!memoText) { el.textContent = ''; return; }
   var urlRegex = /(https?:\/\/[^\s　、。！），]+)/g;
@@ -63670,6 +63718,10 @@ function renderMemoWithLinks(el, memoText) {
   parts.forEach(function(part) {
     if (urlRegex.test(part)) {
       var a = document.createElement('a');
+      // v0.45.1884: 行き先が http(s) であることを確かめてから貼る。
+      // 共有カレンダーのメモは他人が書けるため、javascript: を入れられると
+      // 押した人の画面でその中身が動く。
+      if (!/^https?:\/\//i.test(part)) { el.appendChild(document.createTextNode(part)); urlRegex.lastIndex = 0; return; }
       a.href = part;
       a.textContent = part;
       a.target = '_blank';
