@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1826 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1827 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1826';
+    const APP_VERSION = 'v0.45.1827';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -43032,6 +43032,10 @@ async function refreshSharedCalendarList() {
       '</div>' +
       _memberHtml +
       '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + _safeName + '\')" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">招待する</button>' +
+      // v0.45.1827: そのカレンダーの予定だけを縦に並べて見る入口。
+      // 「相手が何を入れたか」を確かめるのが共有の主目的なので、参加者の並びの
+      // すぐ下に置く。月間で絞り込むより手数が少なく、誰が入れたかも一目で分かる。
+      '<button onclick="openSharedCalendarAgenda(\'' + c.id + '\', \'' + _safeName + '\', \'month\')" style="width:100%;margin-top:8px;padding:10px;border:1px solid #0b6bcb;border-radius:10px;background:#fff;color:#0b5bb0;font-size:0.84em;font-weight:600;cursor:pointer;">予定を一覧で見る</button>' +
       // v0.45.1823: すでに参加している人は、参加時の案内に出会えない。
       // 後からでも引き取れる入口をここに置く。行き先のない予定が無ければ出さない。
       (_hasOrphans
@@ -43281,6 +43285,118 @@ window.isWritableCalendar = isWritableCalendar;
 // 受け皿への書き込みは塞いだ（v0.45.1821）が、すでにそこに溜まっている予定は
 // 取り残されたままになる。参加した直後に、まとめて移せるようにする。
 // 勝手には動かさない。何件あるか見せて、本人に決めてもらう。
+// v0.45.1827: 【権威】2026-08-31、共有カレンダーの予定を一覧で見たい、との要望。
+// 月間でも絞り込めば見られるが、縦に並べて「誰が入れたか」を一目で確かめる場が
+// 別に要る。共有は「相手が何を入れたか」を知る道具なので、その用途に素直な形にする。
+//
+// 並び順は期間によって自動で変える。設定は作らない。
+// 先の予定は「次に来るもの」が知りたいので古い順、
+// 過去を含むときは「直近の出来事」が知りたいので新しい順。向きが逆になる。
+// 迷う場所を増やさないため、ここは選ばせない。
+function openSharedCalendarAgenda(cloudCalendarId, calName, range) {
+  try {
+    range = range || 'month';
+    var _local = (calendars || []).filter(function(c){ return c && c.cloudCalendarId === cloudCalendarId; })[0];
+    if (!_local) { showToast('このカレンダーが手元に見つかりません', {type:'warn'}); return; }
+
+    var _today = new Date(); _today.setHours(0,0,0,0);
+    var _fmt = function(dt) {
+      return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+    };
+    var _from = null, _to = null, _newestFirst = false;
+    if (range === 'week') {
+      var _s = new Date(_today); _s.setDate(_s.getDate() - _s.getDay());
+      var _e = new Date(_s); _e.setDate(_e.getDate() + 6);
+      _from = _fmt(_s); _to = _fmt(_e);
+    } else if (range === 'month') {
+      _from = _fmt(new Date(_today.getFullYear(), _today.getMonth(), 1));
+      _to   = _fmt(new Date(_today.getFullYear(), _today.getMonth() + 1, 0));
+    } else if (range === 'future') {
+      _from = _fmt(_today); _to = null;
+    } else {   // all
+      _from = null; _to = null; _newestFirst = true;
+    }
+
+    var _rows = (allTasks || []).filter(function(t){
+      if (!t || t.deletedAt) return false;
+      if ((t.kind || 'task') !== 'task') return false;
+      if (t.calendarId !== _local.id) return false;
+      var _d = t.date || '';
+      if (!_d) return false;
+      if (_from && _d < _from) return false;
+      if (_to && _d > _to) return false;
+      return true;
+    });
+    _rows.sort(function(a, b) {
+      var _c = (a.date || '').localeCompare(b.date || '');
+      if (_c !== 0) return _newestFirst ? -_c : _c;
+      return (a.time || '').localeCompare(b.time || '');
+    });
+
+    var _old = document.getElementById('sharedAgendaOverlay');
+    if (_old) _old.remove();
+
+    var _btn = function(key, label) {
+      var _on = (range === key);
+      return '<button onclick="openSharedCalendarAgenda(\'' + cloudCalendarId + '\', \'' +
+        String(calName || '').replace(/'/g, "\\'") + '\', \'' + key + '\')" ' +
+        'style="padding:6px 12px;border:1px solid ' + (_on ? '#0b6bcb' : '#ddd') + ';border-radius:14px;' +
+        'background:' + (_on ? '#0b6bcb' : '#fff') + ';color:' + (_on ? '#fff' : '#666') + ';' +
+        'font-size:0.75em;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit;">' + label + '</button>';
+    };
+
+    var _esc = function(s) { return String(s == null ? '' : s).replace(/</g, '&lt;'); };
+    var _wd = ['日','月','火','水','木','金','土'];
+    var _list = _rows.length === 0
+      ? '<div style="padding:28px 8px;text-align:center;color:#9aa3af;font-size:0.85em;">この期間に予定はありません</div>'
+      : _rows.map(function(t) {
+          var _dt = new Date(t.date + 'T00:00:00');
+          var _dl = (_dt.getMonth()+1) + '/' + _dt.getDate() + '（' + _wd[_dt.getDay()] + '）';
+          var _isToday = (t.date === _fmt(_today));
+          return '<div onclick="closeSharedAgenda(); if(typeof openMonthlySidebar===\'function\') openMonthlySidebar(\'' + t.date + '\');" ' +
+            'style="padding:11px 4px;border-bottom:1px solid #f0f0f0;cursor:pointer;' + (_isToday ? 'background:#fffbea;' : '') + '">' +
+            '<div style="display:flex;gap:10px;align-items:baseline;">' +
+              '<span style="font-size:0.78em;color:' + (_isToday ? '#c98a00' : '#8e8e8e') + ';white-space:nowrap;min-width:66px;">' + _dl + '</span>' +
+              '<span style="font-size:0.78em;color:#8e8e8e;white-space:nowrap;min-width:38px;">' + _esc(t.time || '') + '</span>' +
+              '<span style="font-size:0.88em;color:#262626;flex:1;word-break:break-all;">' + _esc(t.text || '(無題)') + '</span>' +
+            '</div>' +
+            (t.owner ? '<div style="font-size:0.7em;color:#aaa;margin-top:3px;padding-left:76px;">' + _esc(t.owner) + '</div>' : '') +
+          '</div>';
+        }).join('');
+
+    var ov = document.createElement('div');
+    ov.id = 'sharedAgendaOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99650;background:rgba(0,0,0,0.5);' +
+      'display:flex;align-items:flex-end;justify-content:center;';
+    ov.onclick = function(ev) { if (ev.target === ov) closeSharedAgenda(); };
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:82vh;display:flex;flex-direction:column;">' +
+        '<div style="padding:16px 18px 10px;border-bottom:1px solid #f0f0f0;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+            '<div style="font-size:0.98em;font-weight:700;color:#262626;">' + _esc(calName || _local.name) + '　の予定</div>' +
+            '<button onclick="closeSharedAgenda()" style="border:none;background:none;font-size:1.3em;color:#aaa;cursor:pointer;line-height:1;">×</button>' +
+          '</div>' +
+          '<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;">' +
+            _btn('week', '今週') + _btn('month', '今月') + _btn('future', '今日から先') + _btn('all', '過去もふくめて全部') +
+          '</div>' +
+          '<div style="font-size:0.72em;color:#aaa;margin-top:8px;">' + _rows.length + '件</div>' +
+        '</div>' +
+        '<div style="overflow-y:auto;padding:4px 18px 24px;">' + _list + '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+  } catch(e) {
+    console.warn('[SharedCal] 一覧の表示に失敗:', e && e.message);
+    showToast('⚠️ 一覧を開けませんでした', {type:'warn'});
+  }
+}
+window.openSharedCalendarAgenda = openSharedCalendarAgenda;
+
+function closeSharedAgenda() {
+  var _o = document.getElementById('sharedAgendaOverlay');
+  if (_o) _o.remove();
+}
+window.closeSharedAgenda = closeSharedAgenda;
+
 function offerAdoptOrphanTasks(cloudCalendarId, calName) {
   try {
     if (!cloudCalendarId) return;
