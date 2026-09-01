@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1834 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1837 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1834';
+    const APP_VERSION = 'v0.45.1837';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8980,6 +8980,8 @@ function _showInviteWelcome() {
       <button id="podcastRateBtn" onclick="podcastCycleRate()" style="margin-left:auto;padding:10px 16px;border:none;border-radius:20px;background:#2a2a2a;color:#fff;font-size:0.82em;font-weight:700;cursor:pointer;font-family:inherit;">1.0x</button>
     </div>
   </div>
+  <!-- v0.45.1835: 再生中の放送へのコメント。放送1本ごとに紐づく。 -->
+  <div id="podcastComments" style="display:none;padding:18px;border-bottom:8px solid #f4f1eb;"></div>
   <div style="display:flex;align-items:baseline;justify-content:space-between;padding:20px 18px 8px;">
     <div style="font-size:1.1em;font-weight:700;color:#1a1a1a;">過去の放送</div>
     <div id="podcastCount" style="font-size:0.68em;color:#aaa;letter-spacing:0.1em;"></div>
@@ -43520,6 +43522,215 @@ function publicProfileAvatarHtml(prof, size) {
 }
 window.publicProfileAvatarHtml = publicProfileAvatarHtml;
 
+// ===== v0.45.1835: 開発者の声のコメント =====
+// 【権威】2026-09-01、応援メッセージのやりとりを載せたい、との要望。
+// YouTubeに準じる：本人は自分のを消せる、開発者は他人のも消せる、返信は2段まで。
+// 消すときは行を消さずdeleted_atを入れる。取り返しがつかない削除は作らない。
+var KOYOMIRU_ADMIN_UID = 'fcef1c30-599c-4c05-9730-af3059832e0a';
+
+async function fetchPodcastComments(episodeGuid) {
+  try {
+    if (!window.supabaseClient || !episodeGuid) return [];
+    var r = await window.supabaseClient
+      .from('koyomiru_podcast_comments')
+      .select('id, episode_guid, user_id, parent_id, body, created_at, deleted_at')
+      .eq('episode_guid', episodeGuid)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+    if (r.error) { console.warn('[Comment] 取得に失敗:', r.error.message); return []; }
+    var _rows = r.data || [];
+    // 書いた人の名前とアイコンをまとめて取る（1件ずつ取ると回数が増えるため）
+    var _ids = _rows.map(function(c){ return c.user_id; })
+      .filter(function(v, i, a){ return v && a.indexOf(v) === i; });
+    if (typeof fetchPublicProfiles === 'function') await fetchPublicProfiles(_ids);
+    return _rows;
+  } catch (e) { console.warn('[Comment] 取得に失敗:', e && e.message); return []; }
+}
+window.fetchPodcastComments = fetchPodcastComments;
+
+async function postPodcastComment(episodeGuid, body, parentId) {
+  try {
+    if (!window._cloudIsLoggedIn) {
+      showToast('コメントするにはログインが必要です', {type:'warn'});
+      return false;
+    }
+    var _b = String(body || '').trim();
+    if (!_b) { showToast('コメントを入力してください', {type:'warn'}); return false; }
+    if (_b.length > 1000) { showToast('コメントは1000文字までです', {type:'warn'}); return false; }
+    var _u = await window.supabaseClient.auth.getUser();
+    if (!_u || !_u.data || !_u.data.user) { showToast('ログインを確認できませんでした', {type:'warn'}); return false; }
+    var r = await window.supabaseClient.from('koyomiru_podcast_comments').insert({
+      episode_guid: episodeGuid,
+      user_id:      _u.data.user.id,
+      parent_id:    parentId || null,
+      body:         _b
+    });
+    if (r.error) { console.warn('[Comment] 投稿に失敗:', r.error.message); showToast('⚠️ 送れませんでした', {type:'warn'}); return false; }
+    // 自分の名前とアイコンを公開側にも合わせておく（初投稿でも名前が出るように）
+    if (typeof pushPublicProfile === 'function') await pushPublicProfile();
+    return true;
+  } catch (e) { console.warn('[Comment] 投稿に失敗:', e && e.message); return false; }
+}
+window.postPodcastComment = postPodcastComment;
+
+async function deletePodcastComment(commentId) {
+  try {
+    var r = await window.supabaseClient
+      .from('koyomiru_podcast_comments')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', commentId);
+    if (r.error) { console.warn('[Comment] 削除に失敗:', r.error.message); showToast('⚠️ 消せませんでした', {type:'warn'}); return false; }
+    showToast('コメントを削除しました', {type:'ok'});
+    return true;
+  } catch (e) { console.warn('[Comment] 削除に失敗:', e && e.message); return false; }
+}
+window.deletePodcastComment = deletePodcastComment;
+
+async function reportPodcastComment(commentId, reason) {
+  try {
+    if (!window._cloudIsLoggedIn) { showToast('通報するにはログインが必要です', {type:'warn'}); return false; }
+    var _u = await window.supabaseClient.auth.getUser();
+    if (!_u || !_u.data || !_u.data.user) return false;
+    var r = await window.supabaseClient.from('koyomiru_comment_reports').insert({
+      comment_id:  commentId,
+      reporter_id: _u.data.user.id,
+      reason:      reason || null
+    });
+    if (r.error) {
+      // 同じ人が同じコメントを二度通報した場合はここに来る。責める必要はない。
+      if (String(r.error.message || '').indexOf('duplicate') !== -1) {
+        showToast('すでに通報済みです', {type:'ok'});
+        return true;
+      }
+      console.warn('[Comment] 通報に失敗:', r.error.message);
+      showToast('⚠️ 通報できませんでした', {type:'warn'});
+      return false;
+    }
+    showToast('通報しました。確認します', {type:'ok'});
+    return true;
+  } catch (e) { console.warn('[Comment] 通報に失敗:', e && e.message); return false; }
+}
+window.reportPodcastComment = reportPodcastComment;
+
+// v0.45.1835: コメント欄を描く。返信は2段まで（返信への返信は親にぶら下げる）。
+// 深くしすぎると画面が右へ寄って読めなくなる。YouTubeも2段で止めている。
+async function renderPodcastComments(episodeGuid) {
+  var box = document.getElementById('podcastComments');
+  if (!box || !episodeGuid) return;
+  box.style.display = 'block';
+  box.innerHTML = '<div style="text-align:center;color:#aaa;font-size:0.82em;padding:16px;">コメントを読み込んでいます…</div>';
+
+  var rows = await fetchPodcastComments(episodeGuid);
+  var _me = window._cloudUserId || null;
+  var _isAdmin = (_me === KOYOMIRU_ADMIN_UID);
+  var _esc = function(s){ return String(s == null ? '' : s).replace(/</g, '&lt;'); };
+  var _when = function(iso) {
+    var _d = new Date(iso); if (isNaN(_d)) return '';
+    var _diff = (Date.now() - _d.getTime()) / 1000;
+    if (_diff < 60) return 'たった今';
+    if (_diff < 3600) return Math.floor(_diff / 60) + '分前';
+    if (_diff < 86400) return Math.floor(_diff / 3600) + '時間前';
+    if (_diff < 86400 * 30) return Math.floor(_diff / 86400) + '日前';
+    return (_d.getMonth() + 1) + '月' + _d.getDate() + '日';
+  };
+
+  var _one = function(c, isReply) {
+    var _p = (window._publicProfileCache && window._publicProfileCache[c.user_id]) || null;
+    var _nm = (_p && _p.display_name) || '名無しさん';
+    var _isDev = (c.user_id === KOYOMIRU_ADMIN_UID);
+    var _mine = (_me && c.user_id === _me);
+    return '<div style="display:flex;gap:10px;padding:12px 0;' + (isReply ? 'margin-left:44px;' : '') + '">' +
+      publicProfileAvatarHtml(_p, isReply ? 28 : 36) +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">' +
+          '<span style="font-size:0.8em;font-weight:700;color:' + (_isDev ? '#0b6bcb' : '#333') + ';">' + _esc(_nm) + '</span>' +
+          (_isDev ? '<span style="font-size:0.62em;background:#0b6bcb;color:#fff;padding:1px 6px;border-radius:8px;">開発者</span>' : '') +
+          '<span style="font-size:0.68em;color:#aaa;">' + _when(c.created_at) + '</span>' +
+        '</div>' +
+        '<div style="font-size:0.85em;line-height:1.7;color:#262626;white-space:pre-wrap;word-break:break-word;">' + _esc(c.body) + '</div>' +
+        '<div style="display:flex;gap:12px;margin-top:5px;">' +
+          (isReply ? '' : '<button onclick="podcastOpenReply(\'' + c.id + '\')" style="border:none;background:none;color:#8e8e8e;font-size:0.7em;cursor:pointer;padding:0;font-family:inherit;">返信</button>') +
+          ((_mine || _isAdmin) ? '<button onclick="podcastDeleteComment(\'' + c.id + '\')" style="border:none;background:none;color:#c0392b;font-size:0.7em;cursor:pointer;padding:0;font-family:inherit;">削除</button>' : '') +
+          (!_mine ? '<button onclick="podcastReport(\'' + c.id + '\')" style="border:none;background:none;color:#9aa3af;font-size:0.7em;cursor:pointer;padding:0;font-family:inherit;">通報</button>' : '') +
+        '</div>' +
+        '<div id="replyBox_' + c.id + '"></div>' +
+      '</div>' +
+    '</div>';
+  };
+
+  var _parents = rows.filter(function(c){ return !c.parent_id; });
+  var _html = _parents.map(function(p) {
+    var _kids = rows.filter(function(c){ return c.parent_id === p.id; });
+    return _one(p, false) + _kids.map(function(k){ return _one(k, true); }).join('');
+  }).join('');
+
+  box.innerHTML =
+    '<div style="font-size:1.0em;font-weight:700;color:#1a1a1a;margin-bottom:12px;">応援メッセージ　<span style="font-size:0.7em;color:#aaa;font-weight:400;">' + rows.length + '件</span></div>' +
+    (window._cloudIsLoggedIn
+      ? '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
+          '<textarea id="podcastCommentInput" rows="2" placeholder="感想や応援をどうぞ" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:10px;font-size:0.85em;font-family:inherit;resize:vertical;"></textarea>' +
+          '<button onclick="podcastSubmitComment()" style="padding:0 16px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.82em;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;">送る</button>' +
+        '</div>'
+      : '<div style="padding:12px;background:#f7f7f7;border-radius:10px;font-size:0.78em;color:#8e8e8e;margin-bottom:16px;">コメントするにはログインしてください。読むだけならログインは要りません。</div>') +
+    (_html || '<div style="text-align:center;color:#bbb;font-size:0.82em;padding:20px 0;">まだコメントはありません</div>');
+}
+window.renderPodcastComments = renderPodcastComments;
+
+async function podcastSubmitComment() {
+  var el = document.getElementById('podcastCommentInput');
+  if (!el || !window._podcastCurrentGuid) return;
+  var ok = await postPodcastComment(window._podcastCurrentGuid, el.value, null);
+  if (ok) { el.value = ''; renderPodcastComments(window._podcastCurrentGuid); }
+}
+window.podcastSubmitComment = podcastSubmitComment;
+
+function podcastOpenReply(parentId) {
+  var box = document.getElementById('replyBox_' + parentId);
+  if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }   // もう一度押したら閉じる
+  if (!window._cloudIsLoggedIn) { showToast('返信するにはログインが必要です', {type:'warn'}); return; }
+  box.innerHTML =
+    '<div style="display:flex;gap:6px;margin-top:8px;">' +
+      '<textarea id="replyInput_' + parentId + '" rows="2" placeholder="返信を書く" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:0.8em;font-family:inherit;resize:vertical;"></textarea>' +
+      '<button onclick="podcastSubmitReply(\'' + parentId + '\')" style="padding:0 12px;border:none;border-radius:8px;background:#0b6bcb;color:#fff;font-size:0.75em;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;">送る</button>' +
+    '</div>';
+}
+window.podcastOpenReply = podcastOpenReply;
+
+async function podcastSubmitReply(parentId) {
+  var el = document.getElementById('replyInput_' + parentId);
+  if (!el || !window._podcastCurrentGuid) return;
+  var ok = await postPodcastComment(window._podcastCurrentGuid, el.value, parentId);
+  if (ok) renderPodcastComments(window._podcastCurrentGuid);
+}
+window.podcastSubmitReply = podcastSubmitReply;
+
+async function podcastDeleteComment(commentId) {
+  // 第55条：ブラウザ標準の確認窓は使えない。2クリック方式で確かめる。
+  if (window._podcastDelArmed === commentId) {
+    window._podcastDelArmed = null;
+    var ok = await deletePodcastComment(commentId);
+    if (ok) renderPodcastComments(window._podcastCurrentGuid);
+    return;
+  }
+  window._podcastDelArmed = commentId;
+  showToast('もう一度「削除」を押すと消えます', {type:'warn'});
+  setTimeout(function(){ if (window._podcastDelArmed === commentId) window._podcastDelArmed = null; }, 3000);
+}
+window.podcastDeleteComment = podcastDeleteComment;
+
+async function podcastReport(commentId) {
+  if (window._podcastRepArmed === commentId) {
+    window._podcastRepArmed = null;
+    await reportPodcastComment(commentId, null);
+    return;
+  }
+  window._podcastRepArmed = commentId;
+  showToast('もう一度「通報」を押すと送られます', {type:'warn'});
+  setTimeout(function(){ if (window._podcastRepArmed === commentId) window._podcastRepArmed = null; }, 3000);
+}
+window.podcastReport = podcastReport;
+
 function savePodcastFeedUrl(url) {
   if (!allSettings.ui) allSettings.ui = {};
   allSettings.ui.podcastFeedUrl = String(url || '').trim();
@@ -43555,11 +43766,15 @@ async function loadPodcastView() {
     window._podcastEpisodes = items.map(function(it) {
       var _enc = it.querySelector('enclosure');
       var _dur = it.getElementsByTagName('itunes:duration')[0];
+      // v0.45.1836: guidは各回に必ず入っている一意な文字列。コメントの紐づけ先に使う。
+      // 無い配信もあるので、無ければ音声のURLで代用する（実質一意）。
+      var _g = it.querySelector('guid');
       return {
         title: (it.querySelector('title') || {}).textContent || '(無題)',
         date:  (it.querySelector('pubDate') || {}).textContent || '',
         audio: _enc ? _enc.getAttribute('url') : '',
-        dur:   _dur ? _dur.textContent : ''
+        dur:   _dur ? _dur.textContent : '',
+        guid:  (_g && _g.textContent) || (_enc ? _enc.getAttribute('url') : '')
       };
     }).filter(function(e){ return e.audio; });
 
@@ -43627,6 +43842,9 @@ function podcastPlay(idx) {
   }
   var _b = document.getElementById('podcastPlayBtn');
   if (_b) _b.textContent = '❚❚';
+  // v0.45.1836: この回へのコメントを出す。放送1本ごとに紐づく。
+  window._podcastCurrentGuid = ep.guid || ep.audio;
+  if (typeof renderPodcastComments === 'function') renderPodcastComments(window._podcastCurrentGuid);
 }
 window.podcastPlay = podcastPlay;
 
