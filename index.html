@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1843 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1844 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1843';
+    const APP_VERSION = 'v0.45.1844';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -43817,8 +43817,24 @@ window.renderPodcastSupport = renderPodcastSupport;
 
 // v0.45.1843: 支援ページを開く。#ofuse と同じく、押された記録を取ってから飛ばす。
 // 記録に失敗しても必ず飛ばす。支援したい気持ちを、計測の都合で妨げない。
+// v0.45.1844: 【権威】2026-09-01、支援ボタンを押すと404になる件。
+// 設定に「s.kiku3728@yahoo.ne.jp」というメールアドレスが残っており、
+// それをそのまま飛び先に使っていた。設定に変な値が1つ入るだけで
+// 支援の導線が死に、しかも押すまで誰も気づかない。作りが悪かった。
+// URLの形をしていない値は無視して、既定の飛び先を使う。
+// 空欄より、間違った値のほうが起きやすい。そこを守る。
+function _isValidSupportUrl(u) {
+  var _s = String(u || '').trim();
+  if (!_s) return false;
+  if (!/^https?:\/\//i.test(_s)) return false;   // http(s) で始まらないものは弾く
+  if (_s.indexOf('@') !== -1) return false;        // メールアドレスの紛れ込みを弾く
+  try { new URL(_s); return true; } catch(e) { return false; }
+}
+window._isValidSupportUrl = _isValidSupportUrl;
+
 function openSupportPage() {
-  var _dest = (allSettings.ui && allSettings.ui.supportUrl) || 'https://ofuse.me/b9ca4c85';
+  var _saved = (allSettings.ui && allSettings.ui.supportUrl) || '';
+  var _dest = _isValidSupportUrl(_saved) ? _saved : 'https://ofuse.me/b9ca4c85';
   (async function() {
     try { if (typeof _recordEvent === 'function') await _recordEvent('ofuse_click'); } catch(e) {}
     window.open(_dest, '_blank', 'noopener');
@@ -43828,7 +43844,18 @@ window.openSupportPage = openSupportPage;
 
 function saveSupportUrl(url) {
   if (!allSettings.ui) allSettings.ui = {};
-  allSettings.ui.supportUrl = String(url || '').trim();
+  var _in = String(url || '').trim();
+  // v0.45.1844: 入れた瞬間に間違いを伝える。押すまで気づかないのが一番困る。
+  if (_in && !_isValidSupportUrl(_in)) {
+    showToast('⚠️ https:// で始まるURLを入れてください。いまの値は使いません', {type:'warn', duration: 5000});
+    allSettings.ui.supportUrl = '';
+    saveAllSettings();
+    var _el = document.getElementById('supportUrlInput');
+    if (_el) _el.value = '';
+    if (typeof renderPodcastSupport === 'function') renderPodcastSupport();
+    return;
+  }
+  allSettings.ui.supportUrl = _in;
   saveAllSettings();
   showToast(allSettings.ui.supportUrl ? '✅ 支援ページのURLを保存しました' : '支援ページのURLを空にしました', {type:'ok'});
   if (typeof renderPodcastSupport === 'function') renderPodcastSupport();
