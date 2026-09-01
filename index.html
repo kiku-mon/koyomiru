@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1860 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1862 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1860';
+    const APP_VERSION = 'v0.45.1862';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -2901,7 +2901,6 @@ function _showInviteWelcome() {
     body.view-only-mode .nav-tabs,
     body.view-only-mode #monthlySidebarAddBtn,
     body.view-only-mode .monthly-sidebar-edit-form,
-    body.view-only-mode #msbAttendArea,
     body.view-only-mode #msbCommentArea {
       display: none !important;
     }
@@ -7372,7 +7371,6 @@ function _showInviteWelcome() {
       <div class="monthly-sidebar-tasks" id="monthlySidebarTasks"></div>
       <!-- v0.45.1566: 予定ごとのコメント。予定を選ぶと、その予定の会話がここに出る。 -->
       <!-- v0.45.1583: 参加表明。コメントの上に置く。「誰が来るか」が先で、話はその後。 -->
-      <div id="msbAttendArea" style="flex-shrink:0;"></div>
       <div id="msbCommentArea" style="display:none;flex-shrink:0;max-height:45%;overflow-y:auto;"></div>
       <!-- インライン編集フォーム（タスクタップで表示） -->
       <div id="monthlySidebarEditForm" class="monthly-sidebar-edit-form" style="display:none;">
@@ -39569,7 +39567,12 @@ function openTaskComments(taskId) {
     renderTaskComments(taskId);
     // v0.45.1583: 参加表明も一緒に開く。「誰が来るか」と「何を話したか」は
     // 同じ場面で知りたいものなので、別々に開かせない。
-    if (typeof renderTaskAttendees === 'function') renderTaskAttendees(taskId);
+    // v0.45.1861: 【権威】2026-09-01、「参加する人を募る」を撤去。
+    // 自前で日程調整を作ろうとして途中で放り出したもので、事実上の残骸だった。
+    // 調整さんが広く知られている以上、同じものを自前で持っても使われない。
+    // 「あのURLが来たら日程調整だ」という共通認識こそが価値で、機能の出来ではない。
+    // 第31条に従い、残さず削除した。必要になったら最良の形で作り直す。
+    // 表（koyomiru_task_attendees）は残してある（消えたデータを戻せなくしないため）。
   } catch(e) { console.warn('[Comment] 表示に失敗:', e && e.message); }
 }
 window.openTaskComments = openTaskComments;
@@ -39577,8 +39580,6 @@ window.openTaskComments = openTaskComments;
 function closeTaskComments() {
   window._openCommentTaskId = null;
   try { document.body.classList.remove('cmt-open'); } catch(e) {}
-  var _att = document.getElementById('msbAttendArea');
-  if (_att) _att.innerHTML = '';
   var host = document.getElementById('msbCommentArea');
   if (host) { host.style.display = 'none'; host.innerHTML = ''; }
 }
@@ -39789,100 +39790,7 @@ window.applyCommentCountBadges = applyCommentCountBadges;
 
 // ===== v0.45.1583: 参加表明 =====
 // 【権威】2026-08-06、第五人格のコピーキャットは12人集まると身分ヒントが出る仕様で、
-// 部屋はすぐ埋まる。だから知りたいのは「何人来るか」ではなく「誰が来るか」。
-// VCで嫌がらせをする人がいるため、参加者にとっては
-// 「今日は知っている人がいる」と分かることが安心につながる。
-// あわせて残り枠も出す。「あと3枠あるから友達を誘える」という判断材料になり、
-// 誘う側に余裕を与える。急かすためではなく、動きやすくするための数字。
-// 参加表明の欄を描く。名前が主役、残り枠は補助。
-// 定員は予定ごとに決められる（コピキャなら12人）。決めなければ枠は出さない。
-window._attendeeCache = {};
-async function renderTaskAttendees(taskId) {
-  var host = document.getElementById('msbAttendArea');
-  if (!host || window._openCommentTaskId !== taskId) return;
-  var task = (allTasks || []).find(function(t) { return t && t.id === taskId; });
-  if (!task) return;
-  if (!window._cloudIsLoggedIn) { host.innerHTML = ''; return; }
-  // v0.45.1584: 共有していない予定には出さない（1人しかいないので意味がない）。
-  // 「請求書を作る」「病院」に参加する人リストが出るのは雑音でしかない。
-  if (!task.cloudCalendarId) { host.innerHTML = ''; return; }
-  var r = await listTaskAttendees(taskId);
-  if (window._openCommentTaskId !== taskId) return;
-  var rows = (r && !r.error && r.data) ? r.data : [];
-  window._attendeeCache[taskId] = rows.length;
-  var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
-  var _mine = rows.some(function(a) { return a.user_id === window._cloudUserId; });
-  var _cap = parseInt(task.capacity, 10) || 0;
-  var _left = _cap > 0 ? (_cap - rows.length) : null;
-  // v0.45.1584: 残り枠は「あと3枠」の形で出す。誘えるかどうかの判断に使うため。
-  // 定員を超えている場合（後から定員を減らした等）は、実態が分かるように
-  // 「12人／定員8」と両方出す。「満員」とだけ出すと、何人いるのか見えなくなる。
-  var _capHtml = '';
-  if (_cap > 0) {
-    if (_left > 0) {
-      _capHtml = '<span style="color:#0b6bcb;font-weight:700;">あと' + _left + '枠</span>';
-    } else if (_left === 0) {
-      // v0.45.1585: 【権威】2026-08-06、満員は歓迎すべきことなので、赤で警告するのは筋違い。
-      // 部屋が埋まるのは嬉しいことなので、祝う言葉にする。
-      // v0.45.1586: 定員も明示する。「満員御礼」だけだと何人枠なのか分からない。
-      _capHtml = '<span style="color:#c2185b;font-weight:700;">🎊 満員御礼（' + _cap + '人）</span>';
-    } else {
-      // 定員を超えた分は「立ち見席」と呼ぶ。歌舞伎座の趣きで、しかも何人あふれているかが
-      // 一目で分かる。「定員12人」とだけ出すと、12人なのか超えているのか読み取れない。
-      _capHtml = '<span style="color:#c2185b;font-weight:700;">🎊 満員御礼（' + _cap +
-                 '人）＋ 立ち見 ' + (-_left) + '人</span>';
-    }
-  }
-  var _namesHtml = rows.length === 0
-    ? '<div style="font-size:13px;color:#b9b9b9;padding:3px 0;">まだ誰も表明していません</div>'
-    : '<div style="display:flex;flex-wrap:wrap;gap:5px;padding:2px 0;">' +
-      rows.map(function(a) {
-        var _me = a.user_id === window._cloudUserId;
-        return '<span style="padding:5px 12px;border-radius:14px;font-size:14px;' +
-          (_me ? 'background:#eaf3fc;color:#0b5bb0;border:1px solid #cfe0f5;font-weight:700;'
-               : 'background:#f4f5f7;color:#555;border:1px solid #e8eaed;') + '">' +
-          _esc(a.display_name || 'メンバー') + '</span>';
-      }).join('') + '</div>';
-  // v0.45.1584: どんな予定でも「人を募る」ことはありうる（展示会にみんなで行く等）。
-  // 定員を決めていなくても最初の1人が表明できないと始まらないので、
-  // 共有カレンダーの予定なら常に出す。ただし誰もいないうちは控えめに。
-  // 個人カレンダーの予定（請求書・病院など）には出さない。1人しかいないので意味がない。
-  var _quiet = (rows.length === 0 && _cap === 0);
-  host.innerHTML =
-    '<div style="border-top:1px solid #eee;background:#fcfdfe;padding:10px 16px 12px;">' +
-      (_quiet
-        ? ''
-        : '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">' +
-            '<span style="font-size:13px;font-weight:700;color:#666;">🙋 参加する人（' + rows.length + '）</span>' +
-            _capHtml +
-          '</div>' + _namesHtml) +
-      '<button onclick="toggleTaskAttendance(\'' + taskId + '\')" ' +
-        'style="' + (_quiet ? '' : 'margin-top:10px;') + 'width:100%;padding:13px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;' +
-        (_mine ? 'border:1px solid #dcdcdc;background:#fff;color:#888;'
-               : (_quiet ? 'border:1px dashed #cfd6e0;background:#fff;color:#7a8698;font-weight:600;'
-                         : 'border:none;background:#0b6bcb;color:#fff;')) + '">' +
-        (_mine ? '参加をとりやめる' : (_quiet ? '🙋 参加する人を募る' : '参加する')) + '</button>' +
-    '</div>';
-}
-window.renderTaskAttendees = renderTaskAttendees;
 
-async function toggleTaskAttendance(taskId) {
-  var task = (allTasks || []).find(function(t) { return t && t.id === taskId; });
-  var r = await listTaskAttendees(taskId);
-  var rows = (r && !r.error && r.data) ? r.data : [];
-  var _mine = rows.some(function(a) { return a.user_id === window._cloudUserId; });
-  var res = _mine
-    ? await leaveTaskAttendance(taskId)
-    : await joinTaskAttendance(taskId, task ? task.cloudCalendarId : null);
-  if (!res || res.error) {
-    if (typeof showToast === 'function') {
-      showToast((res && res.error && res.error.message) || '変更できませんでした', {type:'error'});
-    }
-    return;
-  }
-  renderTaskAttendees(taskId);
-}
-window.toggleTaskAttendance = toggleTaskAttendance;
 
 // ===== v0.45.1619: 見るだけリンク =====
 // 【権威】2026-08-16、共有相手から「Googleでログインするのは個人情報の面で抵抗がある」
@@ -40169,53 +40077,7 @@ async function fetchByViewToken(token) {
 }
 window.fetchByViewToken = fetchByViewToken;
 
-async function listTaskAttendees(taskId) {
-  if (window._isTesting || window._smokeTestRunning) return null;
-  if (!window.supabaseClient || !taskId) return null;
-  var r = await window.supabaseClient.from('koyomiru_task_attendees')
-    .select('id, task_id, user_id, display_name, created_at')
-    .eq('task_id', taskId)
-    .order('created_at', { ascending: true });
-  if (r.error) console.error('[参加] 取得失敗:', r.error.message);
-  return r;
-}
-window.listTaskAttendees = listTaskAttendees;
 
-async function joinTaskAttendance(taskId, calendarId) {
-  if (window._isTesting || window._smokeTestRunning) return null;
-  if (!window.supabaseClient || !window._cloudUserId) {
-    return { error: { message: '参加するにはログインが必要です' } };
-  }
-  var _name = '';
-  try {
-    if (calendarId && window._sharedMemberNames && window._sharedMemberNames[calendarId]) {
-      _name = window._sharedMemberNames[calendarId];
-    }
-  } catch(e) {}
-  if (!_name) _name = (allSettings.profile && allSettings.profile.name) || '';
-  var r = await window.supabaseClient.from('koyomiru_task_attendees')
-    .insert({ task_id: taskId, calendar_id: calendarId || null,
-              user_id: window._cloudUserId, display_name: _name || null })
-    .select('id')
-    .single();
-  if (r.error) console.error('[参加] 表明失敗:', r.error.message);
-  return r;
-}
-window.joinTaskAttendance = joinTaskAttendance;
-
-// 取り消せるのは自分の表明だけ（他人を勝手に外せてはならない）
-async function leaveTaskAttendance(taskId) {
-  if (window._isTesting || window._smokeTestRunning) return null;
-  if (!window.supabaseClient || !window._cloudUserId) return null;
-  var r = await window.supabaseClient.from('koyomiru_task_attendees')
-    .delete()
-    .eq('task_id', taskId)
-    .eq('user_id', window._cloudUserId)
-    .select('id');
-  if (r.error) console.error('[参加] 取り消し失敗:', r.error.message);
-  return r;
-}
-window.leaveTaskAttendance = leaveTaskAttendance;
 
 async function listTaskComments(taskId) {
   if (window._isTesting || window._smokeTestRunning) return null;
