@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1858 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1859 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1858';
+    const APP_VERSION = 'v0.45.1859';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40317,18 +40317,20 @@ async function runCommentSearch() {
   // v0.45.1858: 予定のコメントと、開発者の声のコメントを両方取って混ぜる。
   var _taskRows = _kw ? await searchTaskComments(_kw) : await listAllTaskComments(300);
   var _podRows  = _kw ? await searchPodcastCommentsByWord(_kw) : await listAllPodcastComments(300);
+  // v0.45.1859: 【権威】2026-09-01、時系列で混ぜたのは誤り。
+  // 予定のコメントと開発者の声のコメントは、書いた場所も相手も目的も違う。
+  // 混ぜると、どちらを探しているのか分からなくなる。
+  // 見出しで区切って、それぞれの中で新しい順に並べる。
   _taskRows.forEach(function(c){ c._src = 'task'; });
   _podRows.forEach(function(c){ c._src = 'podcast'; });
-  var rows = _taskRows.concat(_podRows).sort(function(a, b) {
-    return String(b.created_at || '').localeCompare(String(a.created_at || ''));
-  });
+  var rows = _taskRows.concat(_podRows);
   // 書いた人の名前は、放送コメント側は公開プロフィールから取る
   try {
     var _pids = _podRows.map(function(c){ return c.user_id; })
       .filter(function(v, i, a){ return v && a.indexOf(v) === i; });
     if (_pids.length && typeof fetchPublicProfiles === 'function') await fetchPublicProfiles(_pids);
   } catch(eP) {}
-  if (cnt) cnt.textContent = rows.length + '件' + (_kw ? '' : '（新しい順）');
+  if (cnt) cnt.textContent = '予定 ' + _taskRows.length + '件　/　開発者の声 ' + _podRows.length + '件';
   if (rows.length === 0) {
     box.innerHTML = '<div style="padding:24px 8px;text-align:center;color:#bbb;font-size:0.85em;">' +
       (_kw ? '見つかりませんでした' : 'コメントはまだありません') + '</div>';
@@ -40343,7 +40345,7 @@ async function runCommentSearch() {
       return _t.replace(_re, function(m){ return '<mark style="background:#fff3b0;padding:0 2px;">' + m + '</mark>'; });
     } catch(e) { return _t; }
   };
-  box.innerHTML = rows.map(function(c) {
+  var _one = function(c) {
     var _d = new Date(c.created_at);
     var _when = isNaN(_d) ? '' : ((_d.getMonth()+1) + '/' + _d.getDate());
     // v0.45.1858: どちらに書いたコメントか、印で分かるようにする。
@@ -40371,7 +40373,16 @@ async function runCommentSearch() {
         (_date ? '（' + _date + '）' : '') +
       '</div>' +
     '</div>';
-  }).join('');
+  };
+  var _head = function(label, n) {
+    return '<div style="font-size:0.78em;font-weight:700;color:#555;padding:14px 4px 6px;' +
+      'border-bottom:2px solid #eee;margin-bottom:2px;">' + label +
+      '　<span style="font-weight:400;color:#aaa;">' + n + '件</span></div>';
+  };
+  var _html = '';
+  if (_taskRows.length) _html += _head('💬 予定のコメント', _taskRows.length) + _taskRows.map(_one).join('');
+  if (_podRows.length)  _html += _head('📻 開発者の声のコメント', _podRows.length) + _podRows.map(_one).join('');
+  box.innerHTML = _html;
 }
 window.runCommentSearch = runCommentSearch;
 
