@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1849 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1852 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1849';
+    const APP_VERSION = 'v0.45.1852';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -21021,7 +21021,48 @@ function openMonthlySidebar(dateStr) {
         var _todayKey = _td.getFullYear() + '-' +
           String(_td.getMonth() + 1).padStart(2, '0') + '-' +
           String(_td.getDate()).padStart(2, '0');
-        sb.classList.toggle('past-day', dateStr < _todayKey);
+        // v0.45.1850: 【権威】2026-09-01、暦が縦の半分を取り、肝心の予定が
+        // 圧迫されている、との指摘。過ぎた日だけでなく、今日や先の日でも
+        // 予定が詰まっていれば同じことが起きる。しかも今日こそ一番予定を見たい日である。
+        //
+        // 月間の升目では既に「暦は予定が空いている時だけ出す」という考え方を採っている。
+        // ここも同じ思想に揃える。予定が3件以上あるなら、予定が主役。
+        //
+        // 判定するのは開いた瞬間だけ。あとから予定を足して2件が3件になった瞬間に
+        // 暦が畳まれると、画面が勝手に動いて驚かせる。開いたあとは動かさない。
+        var _dayTaskCount = 0;
+        try {
+          _dayTaskCount = (allTasks || []).filter(function(t) {
+            return t && !t.deletedAt && (t.kind || 'task') === 'task' && t.date === dateStr;
+          }).length;
+        } catch(eCnt) {}
+        sb.classList.toggle('past-day', dateStr < _todayKey || _dayTaskCount >= 3);
+        // v0.45.1850: 畳んでも「暦がある」ことは伝える。完全に消すと、
+        // 季節を届けるというこよみるの芯が、その画面から失われる。
+        // 節気・月齢・六曜を1行だけ、押せるボタンの中に入れておく。
+        try {
+          var _obtn = document.getElementById('monthlySidebarKoyomiOpen');
+          if (_obtn) {
+            var _bits = [];
+            var _cd = new Date(dateStr.replace(/-/g, '/'));
+            if (typeof getCurrentShichijuniKou === 'function') {
+              var _k = getCurrentShichijuniKou(_cd);
+              if (_k && _k.sekkiName) _bits.push('◆' + _k.sekkiName);
+            }
+            var _calcMA = (typeof calcMoonAgeNAOJ === 'function') ? calcMoonAgeNAOJ : window.calcMoonAgeNAOJ;
+            if (typeof _calcMA === 'function') {
+              var _ma = _calcMA(_cd);
+              if (typeof _ma === 'number' && isFinite(_ma)) _bits.push('🌙' + (Math.round(_ma * 10) / 10));
+            }
+            if (!(allSettings.ui && allSettings.ui.showRokuyou === false) && typeof getRokuyo === 'function') {
+              var _rk2 = getRokuyo(_cd);
+              if (_rk2) _bits.push(_rk2);
+            }
+            _obtn.textContent = _bits.length
+              ? (_bits.join('　') + '　▾')
+              : '🌙 この日の暦を見る';
+          }
+        } catch(eSum) {}
       } catch(ePd) {}
       // v0.45.1643: シートを開いている間は浮いているボタンを引っ込める
       try { document.body.classList.add('monthly-sheet-open'); } catch(e) {}
