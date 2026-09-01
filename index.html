@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1830 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1834 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1830';
+    const APP_VERSION = 'v0.45.1834';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9094,7 +9094,7 @@ function _showInviteWelcome() {
             <input type="file" id="avatarInput" accept="image/*" style="display: none;" onchange="handleAvatarChange(event)">
             <div class="profile-name-edit">
               <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #262626; font-size: 0.9em;">表示名</label>
-              <input type="text" id="profileNameInput" placeholder="あなたの名前..." maxlength="20" style="width: 100%; padding: 12px; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 1em; box-sizing: border-box;" oninput="allSettings.profile.name = this.value.trim(); saveAllSettings(); var ind = document.getElementById('profileNameUnsaved'); if(ind) ind.style.display='none';">
+              <input type="text" id="profileNameInput" placeholder="あなたの名前..." maxlength="20" style="width: 100%; padding: 12px; border: 2px solid #e8e8e8; border-radius: 10px; font-size: 1em; box-sizing: border-box;" oninput="allSettings.profile.name = this.value.trim(); saveAllSettings(); if(typeof pushPublicProfile==='function') pushPublicProfile(); var ind = document.getElementById('profileNameUnsaved'); if(ind) ind.style.display='none';">
               <div style="margin-top:12px;">
                 <label style="display:block;margin-bottom:8px;font-weight:600;color:#262626;font-size:0.9em;">あなたは？</label>
                 <div style="display:flex;gap:8px;">
@@ -10516,6 +10516,10 @@ function _showInviteWelcome() {
           weekly: true, monthly: true, journal: true, photo: true,
           yearly: true, notebook: true, craft: true,
           dashboard: true,
+          // v0.45.1831: 開発者の声。既定はON。
+          // 作っている人の顔が見えることが、このアプリの強みだと考えているため、
+          // 最初から見える場所に置く。不要なら設定で消せる。
+          podcast: true,
         },
         // v0.45.1594: 月間カレンダーを画面の高さに収めるか。既定はON。
         // 【権威】2026-08-13、月間は6週しかないのだから、必要以上に縦へ伸ばさず
@@ -15964,33 +15968,12 @@ function myDeckApply(idx) {
       if (typeof showToast === 'function') showToast('今月に戻りました');
     }
     window.goToThisMonth = goToThisMonth;
-    // v0.45.1644: 月間を左右にスワイプして月を送る。
-    // ボタンは画面上部にあり、片手だと親指が届かない。
-    // 日次ビューでは既に同じ操作を入れており、揃えることで迷いも減る。
-    (function() {
-      var _sx = 0, _sy = 0;
-      function _bind() {
-        var area = document.querySelector('.monthly-scroll-area');
-        if (!area || area._swipeBound) return;
-        area._swipeBound = true;
-        area.addEventListener('touchstart', function(e) {
-          if (!e.touches || !e.touches[0]) return;
-          _sx = e.touches[0].clientX; _sy = e.touches[0].clientY;
-        }, { passive: true });
-        area.addEventListener('touchend', function(e) {
-          if (!e.changedTouches || !e.changedTouches[0]) return;
-          var dx = e.changedTouches[0].clientX - _sx;
-          var dy = e.changedTouches[0].clientY - _sy;
-          // 横に80px以上、かつ縦の2倍以上動いたときだけ月送り（誤爆防止）
-          if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 2) {
-            if (typeof changeMonth === 'function') changeMonth(dx < 0 ? 1 : -1);
-          }
-        }, { passive: true });
-      }
-      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _bind);
-      else _bind();
-      setTimeout(_bind, 1200);   // 画面が後から組み上がる場合の保険
-    })();
+    // v0.45.1832: 【権威】2026-09-01、月間の横スワイプによる月送りを廃止。
+    // v0.45.1644で「ボタンが遠いから」という理由で入れたが、誤って月が飛ぶ
+    // ほうが害が大きかった。80px・縦の2倍という条件を付けても、
+    // 横に長い帯を触ったり、幅を変えるつもりで指を滑らせたときに誤発火する。
+    // 月を変えるのは「意図してやる操作」であって、指の滑りで起きてよいものではない。
+    // 先月・来月のボタンだけで制御する。第31条に従い、残骸は残さず削除した。
     // 週を変更
     function changeWeek(delta) {
       currentWeekDate.setDate(currentWeekDate.getDate() + (delta * 7));
@@ -16913,7 +16896,10 @@ var NAV_TAB_DEFS = [
   { id: 'navSearch',     key: 'search',    label: '🔍 検索' },
   // v0.45.1818: 設定を独立したタブに戻した（v0.45.1816）ので、並び替えの対象に加える。
   // ただし非表示にはできない。設定を隠すと、隠したことを取り消す場所へ行けなくなる。
-  { id: 'navSettingsTab', key: 'settings',  label: '⚙️ 設定', alwaysVisible: true }
+  { id: 'navSettingsTab', key: 'settings',  label: '⚙️ 設定', alwaysVisible: true },
+  // v0.45.1831: 開発者の声も並び替え・表示切替の対象にする。
+  // 設定と違い、こちらは隠しても戻れなくなることはないので普通に消せる。
+  { id: 'navPodcast',    key: 'podcast',   label: '🎙 開発者の声' }
 ];
 window.NAV_TAB_DEFS = NAV_TAB_DEFS;
 
@@ -30601,6 +30587,8 @@ function loadSettingsUI() {
             document.getElementById('profileAvatarPlaceholder').style.display = 'none';
             document.getElementById('avatarRemoveBtn').style.display = 'block';
             allSettings.profile.avatar = resizedBase64; saveAllSettings();
+            // v0.45.1834: 公開プロフィールにも上げる。コメント欄で他人に見えるのはこちら。
+            if (typeof pushPublicProfile === 'function') pushPublicProfile();
             updateNavAvatar();
           } catch (err) {
             showToast('画像の処理に失敗しました', {type:'error'});
@@ -43470,6 +43458,67 @@ function _podcastFmt(sec) {
   var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
   return m + ':' + String(s).padStart(2, '0');
 }
+
+// ===== v0.45.1833: 公開プロフィール =====
+// 【権威】2026-09-01、コメント欄に相手の名前とアイコンを出したい、との要望。
+// こよみるの設定（koyomiru_user_settings）は本人しか読めない。当然である。
+// 他人の設定が読めたら、その人の予定まで見えてしまう。
+// そこで「公開してよい自分の情報」だけを別に置く。名前とアイコンの2つだけ。
+// 読むのは誰でも、書けるのは本人だけ。コメントも投げ銭の表示も、この置き場に乗る。
+async function pushPublicProfile() {
+  try {
+    if (!window.supabaseClient || !window._cloudIsLoggedIn) return;
+    var _u = await window.supabaseClient.auth.getUser();
+    if (!_u || !_u.data || !_u.data.user) return;
+    var r = await window.supabaseClient.from('koyomiru_public_profiles').upsert({
+      user_id:      _u.data.user.id,
+      display_name: (allSettings.profile && allSettings.profile.name) || null,
+      avatar:       (allSettings.profile && allSettings.profile.avatar) || null,
+      updated_at:   new Date().toISOString()
+    });
+    if (r.error) console.warn('[Profile] 公開プロフィールの保存に失敗:', r.error.message);
+  } catch (e) { console.warn('[Profile] 公開プロフィールの保存に失敗:', e && e.message); }
+}
+window.pushPublicProfile = pushPublicProfile;
+
+// 他人の名前とアイコンをまとめて取る。1件ずつ取ると回数が増えるので、
+// 必要なぶんを1回で取って手元に持っておく。
+window._publicProfileCache = window._publicProfileCache || {};
+async function fetchPublicProfiles(userIds) {
+  try {
+    if (!window.supabaseClient || !userIds || userIds.length === 0) return {};
+    var _need = userIds.filter(function(id){ return id && !window._publicProfileCache[id]; });
+    if (_need.length === 0) return window._publicProfileCache;
+    var r = await window.supabaseClient
+      .from('koyomiru_public_profiles')
+      .select('user_id, display_name, avatar')
+      .in('user_id', _need);
+    if (r.error) { console.warn('[Profile] 公開プロフィールの取得に失敗:', r.error.message); return window._publicProfileCache; }
+    (r.data || []).forEach(function(p) { window._publicProfileCache[p.user_id] = p; });
+    return window._publicProfileCache;
+  } catch (e) {
+    console.warn('[Profile] 公開プロフィールの取得に失敗:', e && e.message);
+    return window._publicProfileCache;
+  }
+}
+window.fetchPublicProfiles = fetchPublicProfiles;
+
+// 画像を設定していない人のアイコン。名前から色を決めるので、
+// 同じ人なら常に同じ色になり、見分けがつく。画像を持たないので容量も食わない。
+function publicProfileAvatarHtml(prof, size) {
+  size = size || 36;
+  var _name = (prof && prof.display_name) || '？';
+  if (prof && prof.avatar) {
+    return '<img src="' + prof.avatar + '" alt="" style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;object-fit:cover;flex-shrink:0;">';
+  }
+  var _h = 0;
+  for (var i = 0; i < _name.length; i++) _h = (_h * 31 + _name.charCodeAt(i)) % 360;
+  return '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;flex-shrink:0;' +
+    'background:hsl(' + _h + ',52%,62%);color:#fff;display:flex;align-items:center;justify-content:center;' +
+    'font-size:' + Math.round(size * 0.42) + 'px;font-weight:700;">' +
+    String(_name).charAt(0).replace(/</g, '&lt;') + '</div>';
+}
+window.publicProfileAvatarHtml = publicProfileAvatarHtml;
 
 function savePodcastFeedUrl(url) {
   if (!allSettings.ui) allSettings.ui = {};
