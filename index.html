@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1852 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1856 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1852';
+    const APP_VERSION = 'v0.45.1856';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11849,11 +11849,19 @@ function switchSearchTab(tab) {
   btnSearch.style.cssText = tab === 'search' ? _styleOn : _styleOff;
   btnTodo.style.cssText   = tab === 'todo'   ? _styleOn : _styleOff;
   if (btnGou) btnGou.style.cssText = tab === 'gou' ? _styleGouOn : _styleOff;
+  // v0.45.1853: コメント検索タブ
+  var btnComment  = document.getElementById('searchTabComment');
+  var paneComment = document.getElementById('searchPaneComment');
+  if (btnComment) btnComment.style.cssText = tab === 'comment' ? _styleOn : _styleOff;
+  if (paneComment) paneComment.style.display = tab === 'comment' ? 'flex' : 'none';
   paneSearch.style.display = tab === 'search' ? 'flex' : 'none';
   paneTodo.style.display   = tab === 'todo'   ? 'flex' : 'none';
   if (paneGou) paneGou.style.display = tab === 'gou' ? 'flex' : 'none';
   if (tab === 'todo') renderTodoList();
   if (tab === 'gou')  renderGouTaskList();
+  if (tab === 'comment') {
+    setTimeout(function(){ var el = document.getElementById('commentSearchInput'); if (el) el.focus(); }, 100);
+  }
 }
 
 // ===== 業タスク一覧 =====
@@ -36197,6 +36205,20 @@ window.addEventListener('afterprint', function() {
           style="flex:1;padding:6px 0;border-radius:20px;border:1.5px solid #e0e0e0;background:#fff;color:#888;font-size:0.8em;font-weight:700;cursor:pointer;">📋 未完了</button>
         <button id="searchTabGou" onclick="switchSearchTab('gou')"
           style="flex:1;padding:6px 0;border-radius:20px;border:1.5px solid #e0e0e0;background:#fff;color:#888;font-size:0.8em;font-weight:700;cursor:pointer;">👹 業</button>
+        <!-- v0.45.1853: コメントだけを探す。予定の本文とは別の場所にあるため、
+             既存の検索では引っかからない。書いた言葉を拾い直せる場所を作る。 -->
+        <button id="searchTabComment" onclick="switchSearchTab('comment')"
+          style="flex:1;padding:6px 0;border-radius:20px;border:1.5px solid #e0e0e0;background:#fff;color:#888;font-size:0.8em;font-weight:700;cursor:pointer;">💬 コメント</button>
+      </div>
+      <div id="searchPaneComment" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <input type="text" id="commentSearchInput" placeholder="コメントの言葉で探す"
+            onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();runCommentSearch();}"
+            style="flex:1;padding:10px;border:1px solid #ddd;border-radius:10px;font-size:0.9em;">
+          <button onclick="runCommentSearch()" style="padding:0 16px;border:none;border-radius:10px;background:#333;color:#fff;font-size:0.82em;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;">探す</button>
+        </div>
+        <div id="commentSearchCount" style="font-size:0.75em;color:#aaa;margin-bottom:8px;"></div>
+        <div id="commentSearchResults" style="flex:1;overflow-y:auto;"></div>
       </div>
       <div id="searchPaneSearch" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
         <div style="font-size:0.78em;color:#aaa;margin-bottom:8px;">
@@ -40196,6 +40218,97 @@ async function listTaskComments(taskId) {
   return r;
 }
 window.listTaskComments = listTaskComments;
+
+// v0.45.1853: 【権威】2026-09-01、共有カレンダーで誰かに送ったコメントを
+// あとから探せない、との指摘。コメントは予定の中に埋もれており、
+// どの予定に書いたか覚えていないと二度と辿り着けない。
+// 実際に、離れていったテスターへ書いた言葉を拾えなくなった。
+//
+// コメントは手元ではなくクラウドにあるので、検索のたびに取りに行く。
+// 予定の本文とは別の場所にあるため、既存の検索とは別に問い合わせる必要がある。
+async function searchTaskComments(keyword) {
+  try {
+    if (!window.supabaseClient || !window._cloudIsLoggedIn) return [];
+    var _kw = String(keyword || '').trim();
+    if (!_kw) return [];
+    var r = await window.supabaseClient.from('koyomiru_task_comments')
+      .select('id, task_id, calendar_id, user_id, display_name, body, created_at')
+      .ilike('body', '%' + _kw + '%')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (r.error) { console.warn('[Comment] 検索に失敗:', r.error.message); return []; }
+    return r.data || [];
+  } catch (e) { console.warn('[Comment] 検索に失敗:', e && e.message); return []; }
+}
+window.searchTaskComments = searchTaskComments;
+
+// v0.45.1853: コメント検索を実行して結果を出す。
+// 押すのは「どの予定に書いたか」を思い出すためなので、
+// コメント本文だけでなく、その予定の題名と日付も併せて出す。
+async function runCommentSearch() {
+  var inp  = document.getElementById('commentSearchInput');
+  var box  = document.getElementById('commentSearchResults');
+  var cnt  = document.getElementById('commentSearchCount');
+  if (!inp || !box) return;
+  var _kw = String(inp.value || '').trim();
+  if (!_kw) { showToast('探したい言葉を入れてください', {type:'warn'}); return; }
+  if (!window._cloudIsLoggedIn) {
+    box.innerHTML = '<div style="padding:24px 8px;text-align:center;color:#9aa3af;font-size:0.85em;line-height:1.9;">' +
+      'コメントはクラウドに保存されています。<br>探すにはログインが必要です。</div>';
+    if (cnt) cnt.textContent = '';
+    return;
+  }
+  box.innerHTML = '<div style="padding:20px 8px;text-align:center;color:#aaa;font-size:0.85em;">探しています…</div>';
+  var rows = await searchTaskComments(_kw);
+  if (cnt) cnt.textContent = rows.length + '件';
+  if (rows.length === 0) {
+    box.innerHTML = '<div style="padding:24px 8px;text-align:center;color:#bbb;font-size:0.85em;">見つかりませんでした</div>';
+    return;
+  }
+  var _esc = function(s){ return String(s == null ? '' : s).replace(/</g, '&lt;'); };
+  // 検索した言葉を目立たせる。どこが引っかかったのか分からないと探した意味がない。
+  var _hl = function(text) {
+    var _t = _esc(text);
+    try {
+      var _re = new RegExp(_kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      return _t.replace(_re, function(m){ return '<mark style="background:#fff3b0;padding:0 2px;">' + m + '</mark>'; });
+    } catch(e) { return _t; }
+  };
+  box.innerHTML = rows.map(function(c) {
+    var _t = (allTasks || []).filter(function(t){ return t && t.id === c.task_id; })[0];
+    var _title = _t ? (_t.text || '(無題)') : '(この端末にない予定)';
+    var _date  = _t ? (_t.date || '') : '';
+    var _d = new Date(c.created_at);
+    var _when = isNaN(_d) ? '' : ((_d.getMonth()+1) + '/' + _d.getDate());
+    return '<div ' + ((_t && _date) ? 'onclick="jumpToCommentTask(\'' + _date + '\')" style="cursor:pointer;"' : '') +
+      ' style="padding:12px 4px;border-bottom:1px solid #f0f0f0;">' +
+      '<div style="font-size:0.85em;color:#262626;line-height:1.7;margin-bottom:5px;">' + _hl(c.body) + '</div>' +
+      '<div style="font-size:0.7em;color:#9aa3af;">' +
+        _esc(c.display_name || '名無し') + '　' + _when +
+        '　→　<span style="color:#0b6bcb;">' + _esc(_title) + '</span>' +
+        (_date ? '（' + _date + '）' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+window.runCommentSearch = runCommentSearch;
+
+// v0.45.1853: 検索結果からその予定の日へ移る。
+// 探した目的は「その言葉を書いた場所へ戻ること」なので、
+// 見つけて終わりにせず、そこまで連れて行く。
+function jumpToCommentTask(dateStr) {
+  try {
+    if (typeof closeSearchModal === 'function') closeSearchModal();
+    if (typeof switchView === 'function') switchView('monthly');
+    // 月間が組み上がってから開く（描き終わる前に呼ぶと空振りする）
+    setTimeout(function() {
+      try {
+        if (typeof openMonthlySidebar === 'function') openMonthlySidebar(dateStr);
+      } catch(e) { console.warn('[Comment] 移動に失敗:', e && e.message); }
+    }, 400);
+  } catch(e) { console.warn('[Comment] 移動に失敗:', e && e.message); }
+}
+window.jumpToCommentTask = jumpToCommentTask;
 
 async function addTaskComment(taskId, body, calendarId) {
   if (window._isTesting || window._smokeTestRunning) return null;
