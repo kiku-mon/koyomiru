@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1863 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1865 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1863';
+    const APP_VERSION = 'v0.45.1865';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -39559,6 +39559,10 @@ function openTaskComments(taskId) {
     var host = document.getElementById('msbCommentArea');
     if (!host) return;
     window._openCommentTaskId = taskId;
+    // v0.45.1864: 開いた時刻を覚える。これより新しい書き込みが来たら未読になる。
+    // 件数は消えず、色だけが戻る。どこに議論があるかは残り続ける。
+    try { if (typeof _setCommentReadAt === 'function') _setCommentReadAt(taskId); } catch(eRd) {}
+    try { setTimeout(function(){ if (typeof applyCommentCountBadges === 'function') applyCommentCountBadges(); }, 300); } catch(eBd) {}
     host.style.display = 'block';
     // v0.45.1573: コメント欄が入力欄まで含めてせり上がるので、
     // ＋と？を下へ沈める。この場面ではどちらも使わない。
@@ -39758,16 +39762,23 @@ async function loadCommentCounts(taskIds) {
     if (window._isTesting || window._smokeTestRunning) return {};
     if (!window.supabaseClient || !window._cloudIsLoggedIn) return {};
     if (!taskIds || taskIds.length === 0) return {};
+    // v0.45.1864: 件数だけでなく、最後に書かれた時刻も取る。
+    // 「何件あるか」と「新しいものがあるか」は別の情報で、
+    // 件数だけでは、読んだあとの会話が増えたかどうかが分からない。
     var r = await window.supabaseClient.from('koyomiru_task_comments')
-      .select('task_id')
+      .select('task_id, created_at')
       .in('task_id', taskIds);
     if (r.error) { console.warn('[Comment] 件数取得失敗:', r.error.message); return {}; }
     var counts = {};
+    var latest = {};
     (r.data || []).forEach(function(row) {
       if (!row || !row.task_id) return;
       counts[row.task_id] = (counts[row.task_id] || 0) + 1;
+      var _c = row.created_at || '';
+      if (!latest[row.task_id] || _c > latest[row.task_id]) latest[row.task_id] = _c;
     });
     window._commentCounts = counts;
+    window._commentLatest = latest;
     return counts;
   } catch(e) { console.warn('[Comment] 件数取得エラー:', e && e.message); return {}; }
 }
@@ -39778,15 +39789,50 @@ function applyCommentCountBadges() {
   try {
     document.querySelectorAll('[data-cmt-task]').forEach(function(btn) {
       var n = window._commentCounts[btn.getAttribute('data-cmt-task')] || 0;
-      btn.innerHTML = n > 0
-        ? '&#128172;<span style="font-size:10px;font-weight:700;margin-left:1px;">' + n + '</span>'
-        : '&#128172;';
-      btn.style.opacity = n > 0 ? '1' : '.45';
-      btn.style.color = n > 0 ? '#0b6bcb' : '';
+      // v0.45.1864: 【権威】2026-09-01、既読になると印が消えるため、
+      // どの予定で会話が起きているのか特定できない、との指摘。
+      // 「新着」と「蓄積」を同じ印で表していたのが誤りだった。
+      // 未読は催促、件数は事実。性質が違うので分けて出す。
+      //   0件      … 吹き出しを薄く（会話がある予定を目立たせるため）
+      //   既読あり … 灰色の件数（読んだが、ここに議論はある）
+      //   未読あり … 青い件数＋赤い点（新しいものが来ている）
+      var _tid = btn.getAttribute('data-cmt-task');
+      var _latest = (window._commentLatest && window._commentLatest[_tid]) || '';
+      var _read = _getCommentReadAt(_tid);
+      var _unread = (n > 0 && _latest && (!_read || _latest > _read));
+      if (n === 0) {
+        btn.innerHTML = '&#128172;';
+        btn.style.opacity = '.35';
+        btn.style.color = '';
+      } else {
+        btn.innerHTML = '&#128172;<span style="font-size:10px;font-weight:700;margin-left:1px;">' + n + '</span>' +
+          (_unread ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#e53935;margin-left:2px;vertical-align:top;"></span>' : '');
+        btn.style.opacity = '1';
+        btn.style.color = _unread ? '#0b6bcb' : '#98a2b3';
+      }
     });
   } catch(e) {}
 }
 window.applyCommentCountBadges = applyCommentCountBadges;
+
+// v0.45.1864: 予定ごとに「最後に会話を開いた時刻」を覚える。
+// それより新しい書き込みがあれば未読。手元に持つだけで、クラウドには送らない。
+// 端末ごとに読んだかどうかは違うので、それでよい。
+function _getCommentReadAt(taskId) {
+  try {
+    var _m = JSON.parse(localStorage.getItem('koyomiru_comment_read') || '{}');
+    return _m[taskId] || '';
+  } catch(e) { return ''; }
+}
+function _setCommentReadAt(taskId) {
+  try {
+    var _m = JSON.parse(localStorage.getItem('koyomiru_comment_read') || '{}');
+    _m[taskId] = new Date().toISOString();
+    localStorage.setItem('koyomiru_comment_read', JSON.stringify(_m));
+  } catch(e) {}
+}
+window._getCommentReadAt = _getCommentReadAt;
+window._setCommentReadAt = _setCommentReadAt;
 
 // ===== v0.45.1583: 参加表明 =====
 // 【権威】2026-08-06、第五人格のコピーキャットは12人集まると身分ヒントが出る仕様で、
