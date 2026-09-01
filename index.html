@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1888 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1892 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1888';
+    const APP_VERSION = 'v0.45.1892';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -47337,6 +47337,22 @@ function showDebugLog(_initOnly) {
      // 無効化されTPAG汚染の原因になっていた。_isTestingの一時解除に影響されない
      // 永続フラグを別途用意し、真にスモークテスト実行中かどうかを示す。
      window._smokeTestRunning = true;
+     // v0.45.1889: 【権威】2026-09-02、個別のテストを4件直してもなお、
+     // 回すたびに予定が26〜29件減り続けた。個別に潰す方式では追いつかない。
+     // 2585件のテストのどれか一つでも後片づけを誤れば、本物のデータが減る。
+     // どれが犯人かを毎回探すのは、時間の使い方として間違っている。
+     //
+     // テスト全体の入口で丸ごと控え、出口で丸ごと戻す関門を設ける。
+     // 個別のテストが何をしようと、終われば必ず元に戻る。
+     // 第66条をテスト全体の水準に引き上げるものであり、
+     // 個別の後片づけを不要にするわけではないが、最後の砦になる。
+     try {
+       window._stGlobalSnapshot = JSON.parse(JSON.stringify(allTasks));
+       console.log('[ST] テスト前の予定を控えました:', window._stGlobalSnapshot.length + '件');
+     } catch(eSnap) {
+       window._stGlobalSnapshot = null;
+       console.warn('[ST] 控えに失敗:', eSnap && eSnap.message);
+     }
      // v0.45.1380: 診断ログ用の基準値をテスト開始時点でリセットする。
      // これがないと「テスト開始前の通常状態」と「テスト内の最初の変更」を
      // 比較してしまい、無関係な差分を誤って診断ログに記録してしまう。
@@ -63283,6 +63299,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          });
        } catch(eRecent) { ng('直近タスク表示', eRecent.message); }
      } catch(e) { ng('APAG FINAL', e.message); }
+
+     // v0.45.1889: 控えたものを丸ごと戻す。個別のテストの後片づけが
+     // どれだけ漏れていても、ここで必ず元の姿になる。
+     // 戻す前後の件数を記録しておき、どれだけ漏れていたかを見えるようにする。
+     try {
+       var _snapArr = window._stGlobalSnapshot;
+       if (_snapArr && Array.isArray(_snapArr)) {
+         // v0.45.1892: 変数名を _leaked から変更。ST-121が同名で文字列を入れており、
+         // 同じ名前が別の型で使われていた（型チェックがTS2367として検出）。
+         var _stDiffCount = Number(_snapArr.length) - Number(allTasks.length);
+         allTasks = JSON.parse(JSON.stringify(_snapArr));
+         if (_stDiffCount !== 0) {
+           console.warn('[ST] テストで' + Math.abs(_stDiffCount) + '件の' +
+             (_stDiffCount > 0 ? '消え漏れ' : '消し漏れ') + 'がありました。復元しました。');
+         }
+         if (typeof saveAllTasks === 'function') saveAllTasks();
+         window._stGlobalSnapshot = null;
+       }
+     } catch(eRestore) { console.warn('[ST] 復元に失敗:', eRestore && eRestore.message); }
 
      window._isTesting = false; // ST終了
      window._smokeTestRunning = false; // v0.45.1348
