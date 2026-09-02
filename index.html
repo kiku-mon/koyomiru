@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1901 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1906 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1901';
+    const APP_VERSION = 'v0.45.1906';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9739,7 +9739,15 @@ function _showInviteWelcome() {
         <div style="margin-bottom:18px;padding:14px;border:1px solid #e8e8e8;border-radius:10px;background:#fff;">
           <div style="font-size:0.88em;font-weight:700;color:#333;margin-bottom:4px;">📻 開発者の声</div>
           <p style="margin:0 0 8px;font-size:0.75em;color:#8e8e8e;line-height:1.7;">配信のURL（RSS）を入れると、ナビの「開発者の声」に放送が並びます。空のままなら何も出ません。</p>
+          <!-- v0.45.1906: 【権威】2026-09-02、この欄にメールアドレスが
+               勝手に入る、との報告。ブラウザの自動入力がURLの欄を
+               メールの欄と誤認していた。
+               v0.45.1873で一律の指定を撤回したが、それは正しかった。
+               入力候補が役立つ欄まで殺していたからである。
+               ここはURLしか入らない欄で、候補が役立つ場面がない。
+               こういう欄だけを個別に塞ぐのが、正しいやり方だった。 -->
           <input type="url" id="podcastFeedUrlInput" placeholder="https://..."
+            autocomplete="off" data-lpignore="true" inputmode="url"
             onchange="savePodcastFeedUrl(this.value)"
             style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.85em;">
           <p style="margin:12px 0 4px;font-size:0.8em;font-weight:700;color:#333;">📝 番組の説明</p>
@@ -9750,6 +9758,7 @@ function _showInviteWelcome() {
           <p style="margin:12px 0 4px;font-size:0.8em;font-weight:700;color:#333;">☕ 支援ページ</p>
           <p style="margin:0 0 8px;font-size:0.75em;color:#8e8e8e;line-height:1.7;">空のままなら https://koyomiru.com/#ofuse を使います。別の場所に変えたいときだけ入れてください。</p>
           <input type="url" id="supportUrlInput" placeholder="https://koyomiru.com/#ofuse"
+            autocomplete="off" data-lpignore="true" inputmode="url"
             onchange="saveSupportUrl(this.value)"
             style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.85em;">
         </div>
@@ -21874,6 +21883,11 @@ function saveMsbEdit() {
         typeof renderAllSections  === 'function' && renderAllSections(null);
         try {
           var _cal = (calendars || []).filter(function(c) { return c && c.id === (_newCalId || ''); })[0];
+          // v0.45.1903: Discordが設定されているカレンダーなら流す。
+          // 二重に書く手間を無くすのが目的なので、書いた瞬間に届く。
+          if (_cal && _newTask && typeof sendDiscordNotify === 'function') {
+            sendDiscordNotify(_cal, _newTask, 'create');
+          }
           showToast(_cal
             ? ('「' + _cal.name + '」に追加しました' + (_cal.cloudCalendarId ? '（共有中）' : ''))
             : '追加しました', {type:'ok'});
@@ -21907,6 +21921,15 @@ function saveMsbEdit() {
         // 筋が通らない。カレンダーを変えて保存し直したときこそ確かめたい。
         try {
           var _calS = (calendars || []).filter(function(c) { return c && c.id === (_newCalId || ''); })[0];
+          // v0.45.1903: 題名を変えたら、Discordの発言も書き換える。
+          // 新しく投げると「22時から」「23時から」が並び、
+          // どちらが最新か読む側に分からなくなる。
+          try {
+            var _editedTask = (allTasks || []).filter(function(t){ return t && t.id === id; })[0];
+            if (_calS && _editedTask && typeof sendDiscordNotify === 'function') {
+              sendDiscordNotify(_calS, _editedTask, 'update');
+            }
+          } catch(eDU) {}
           if (_calS && typeof isWritableCalendar === 'function' && !isWritableCalendar(_calS)) {
             showToast('\u26a0\ufe0f\u300c' + _calS.name + '\u300d\u306b\u4fdd\u5b58\u3057\u307e\u3057\u305f\u3002\u3053\u3053\u306f\u5171\u6709\u76f8\u624b\u306b\u5c4a\u304d\u307e\u305b\u3093', {type:'warn', duration: 5000});
           } else {
@@ -31192,7 +31215,60 @@ function loadCalendarSettingsUI() {
         if (unshareBtn) _bottom.appendChild(unshareBtn);
         row.appendChild(_top);
         row.appendChild(_bottom);
-        // 削除ボタン（複数ある場合のみ）
+        // v0.45.1904: Discordへの通知設定。カレンダーごとに持つ。
+      // どのサーバーのどのチャンネルへ出すかは、URLそのものが決めている。
+      // 呼びかけ（@everyone等）も一度決めれば、あとは自動で付く。
+      // 毎回打つのは面倒だという声から、ここで一度だけ選ぶ形にした。
+      var _dcRow = document.createElement('div');
+      _dcRow.style.cssText = 'display:flex;flex-direction:column;gap:5px;margin-top:8px;padding-top:8px;border-top:1px dashed #e8e8e8;';
+      var _dcLabel = document.createElement('div');
+      _dcLabel.style.cssText = 'font-size:0.72em;color:#8e8e8e;';
+      _dcLabel.textContent = 'Discordへ通知（ウェブフックURL）';
+      var _dcInput = document.createElement('input');
+      _dcInput.type = 'url';
+      // v0.45.1906: URLしか入らない欄なので、自動入力を止める。
+      _dcInput.autocomplete = 'off';
+      _dcInput.setAttribute('data-lpignore', 'true');
+      _dcInput.setAttribute('inputmode', 'url');
+      _dcInput.placeholder = 'https://discord.com/api/webhooks/...';
+      _dcInput.value = cal.discordWebhook || '';
+      _dcInput.style.cssText = 'padding:7px 9px;border:1px solid #e0e0e0;border-radius:7px;font-size:0.75em;';
+      _dcInput.onchange = (function(_i) {
+        return function() {
+          var _v = String(this.value || '').trim();
+          if (_v && !/^https:\/\/discord(app)?\.com\/api\/webhooks\//i.test(_v)) {
+            showToast('⚠️ Discordのウェブフックのアドレスを入れてください', {type:'warn', duration: 5000});
+            this.value = '';
+            updateCalendarField(_i, 'discordWebhook', '');
+            return;
+          }
+          updateCalendarField(_i, 'discordWebhook', _v);
+        };
+      })(idx);
+      var _dcMentionRow = document.createElement('div');
+      _dcMentionRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+      var _dcMentionLabel = document.createElement('span');
+      _dcMentionLabel.style.cssText = 'font-size:0.72em;color:#8e8e8e;';
+      _dcMentionLabel.textContent = '呼びかけ';
+      _dcMentionRow.appendChild(_dcMentionLabel);
+      ['none', 'here', 'everyone'].forEach(function(_m) {
+        var _b = document.createElement('button');
+        _b.textContent = _m === 'none' ? 'なし' : ('@' + _m);
+        var _on = (cal.discordMention || 'none') === _m;
+        _b.style.cssText = 'padding:4px 10px;border:1px solid ' + (_on ? '#0b6bcb' : '#ddd') +
+          ';border-radius:12px;background:' + (_on ? '#0b6bcb' : '#fff') +
+          ';color:' + (_on ? '#fff' : '#666') + ';font-size:0.72em;cursor:pointer;font-family:inherit;';
+        _b.onclick = (function(_i, _mm) {
+          return function() { updateCalendarField(_i, 'discordMention', _mm); loadCalendarSettingsUI(); };
+        })(idx, _m);
+        _dcMentionRow.appendChild(_b);
+      });
+      _dcRow.appendChild(_dcLabel);
+      _dcRow.appendChild(_dcInput);
+      _dcRow.appendChild(_dcMentionRow);
+      row.appendChild(_dcRow);
+
+      // 削除ボタン（複数ある場合のみ）
         if (calendars.length > 1) {
           const delBtn = document.createElement('button');
           delBtn.textContent = '✕';
@@ -40780,6 +40856,70 @@ window.forceDeleteSharedCalendar = forceDeleteSharedCalendar;
 // 画面でボタンを隠すのは守りではない。直接叩かれれば通ってしまう。
 // メンバー表の削除権限は「自分の分だけ」のまま緩めず、
 // オーナーだけが通れる関数を経由させる形にしてある。
+// ===== v0.45.1902: Discordへの通知 =====
+// 【権威】2026-09-02、コミュニティ運営の実態を聞いて分かったこと。
+// こよみるに「今日のコピキャは23時から」と書き、そのあと同じ内容を
+// Discordの#一般にも書く、という二段構えで運用されていた。
+// 作った本人が二重に書いている。それは「こよみるだけでは完結しない」
+// という最も明確な証拠である。
+//
+// 通知が要るのではない。二重に書く手間を無くしたい。
+// だから凝ったことはしない。予定の題名を、そのままDiscordへ流す。
+// 日時も終了時刻も付けない。本人が書いた文字が、そのまま出る。
+// 書き換えたら、Discordの発言も書き換わる。それだけ。
+//
+// Webhookは「ここに投げると発言になるURL」で、Botを作る必要がない。
+// どのサーバーのどのチャンネルへ出すかは、URLそのものが決めている。
+async function sendDiscordNotify(cal, task, mode) {
+  try {
+    if (!cal || !task) return;
+    var _url = cal.discordWebhook;
+    if (!_url || !/^https:\/\/discord(app)?\.com\/api\/webhooks\//i.test(_url)) return;
+
+    // 呼びかけ（なし／@here／@everyone）。毎回打つのは面倒なので、
+    // カレンダーごとに一度決めておけば、あとは自動で付く。
+    var _mention = cal.discordMention || 'none';
+    var _prefix = _mention === 'everyone' ? '@everyone\n'
+                : _mention === 'here'     ? '@here\n' : '';
+
+    var _body = String(task.text || '').trim();
+    if (!_body) return;
+    if (mode === 'delete') _body = '~~' + _body + '~~（中止）';
+
+    // 既に流したものがあれば、その発言を書き換える。
+    // 新しく投げると「22時から」「23時から」が並び、どちらが最新か分からなくなる。
+    var _msgId = task.discordMessageId;
+    if (_msgId) {
+      var _res = await fetch(_url + '/messages/' + _msgId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: _prefix + _body })
+      });
+      if (_res.ok) return;
+      // 元の発言が消えていた場合は、新しく投げ直す
+      console.warn('[Discord] 書き換えに失敗。新しく送ります');
+      task.discordMessageId = null;
+    }
+
+    var _r = await fetch(_url + '?wait=true', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: _prefix + _body })
+    });
+    if (!_r.ok) { console.warn('[Discord] 送信に失敗:', _r.status); return; }
+    var _json = await _r.json();
+    if (_json && _json.id) {
+      // 次に書き換えるために、どの発言かを覚えておく
+      task.discordMessageId = _json.id;
+      task.updatedAt = new Date().toISOString();   // 第61条
+      if (typeof saveAllTasks === 'function') saveAllTasks();
+    }
+  } catch (e) {
+    console.warn('[Discord] 通知に失敗:', e && e.message);
+  }
+}
+window.sendDiscordNotify = sendDiscordNotify;
+
 async function kickCalendarMember(calendarId, userId, name, btnEl) {
   try {
     if (!window.supabaseClient || !window._cloudIsLoggedIn) {
