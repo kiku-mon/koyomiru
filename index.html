@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1949 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1951 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1949';
+    const APP_VERSION = 'v0.45.1951';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12597,6 +12597,41 @@ function renderTodoList() {
     }
     window.setSearchRange = setSearchRange;
 
+    // v0.45.1950: 検索結果からその予定の日へ移る。
+    // 日付が無い予定（いつやるか決めていないもの）は、行き先が無いので
+    // これまでどおり編集画面を開く。
+    function jumpToTaskDate(task) {
+      try {
+        if (!task) return;
+        if (!task.date) {
+          if (typeof openTaskEditModal === 'function') openTaskEditModal(task.id);
+          return;
+        }
+        if (typeof switchView === 'function') switchView('monthly');
+        // 月間が組み上がってからその日を開く（描き終わる前に呼ぶと空振りする）
+        setTimeout(function() {
+          try {
+            // 別の月の予定なら、その月へ移ってから開く
+            // v0.45.1951: 表示中の月は currentMonthDate が持っている。
+            // 型チェックが、存在しない名前（_monthlyYear）を使っていたのを捕まえた。
+            var _d = new Date(task.date.replace(/-/g, '/'));
+            if (!isNaN(_d) && typeof currentMonthDate !== 'undefined' && currentMonthDate) {
+              if (currentMonthDate.getFullYear() !== _d.getFullYear() ||
+                  currentMonthDate.getMonth() !== _d.getMonth()) {
+                currentMonthDate = new Date(_d.getFullYear(), _d.getMonth(), 1);
+                if (typeof renderMonthlyView === 'function') renderMonthlyView();
+                if (typeof updateSeasonalArt === 'function') updateSeasonalArt();
+              }
+            }
+            setTimeout(function() {
+              if (typeof openMonthlySidebar === 'function') openMonthlySidebar(task.date);
+            }, 150);
+          } catch(e) { console.warn('[検索] 移動に失敗:', e && e.message); }
+        }, 350);
+      } catch(e) { console.warn('[検索] 移動に失敗:', e && e.message); }
+    }
+    window.jumpToTaskDate = jumpToTaskDate;
+
     function setSearchCalFilter(calId) {
       window._searchCalFilter = calId;
       renderSearchCalFilter();
@@ -12697,7 +12732,12 @@ function renderTodoList() {
           row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:10px 8px;border-bottom:1px solid #f5f5f5;cursor:pointer;border-radius:8px;transition:background 0.1s;';
           row.onmouseover = () => row.style.background = '#f9f9f9';
           row.onmouseout = () => row.style.background = '';
-          row.onclick = () => { closeSearchModal(); openTaskEditModal(t.id); };
+          // v0.45.1950: 【権威】2026-09-02、検索結果を押したら編集画面ではなく、
+      // 月間カレンダーのその日へ飛びたい、との要望。
+      // 探しているのは「その予定を直したい」ではなく「その日に何があるか見たい」
+      // ことが多い。前後の予定や暦と一緒に見たいという意図。
+      // 編集するかどうかは、着いてから本人が決める。
+      row.onclick = () => { closeSearchModal(); jumpToTaskDate(t); };
           const dot = document.createElement('div');
           dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${cal?.color||'#ccc'};flex-shrink:0;margin-top:5px;`;
           const info = document.createElement('div');
