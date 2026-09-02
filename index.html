@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1974 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1982 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1974';
+    const APP_VERSION = 'v0.45.1982';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -3521,6 +3521,10 @@ function _showInviteWelcome() {
       background-color: #fff8f2;
       color: #c47a3a;
     }
+    /* v0.45.1979: CSSで素通りさせる方式はやめた。
+       判定側（renderMonthlyView のセルクリック）を
+       「押せるものでなければ升目」に改めたため、こちらは不要になる。
+       両方で制御すると、どちらが効いているのか分からなくなる。 */
     .monthly-day-cell {
       /* v0.45.1806: 升目ごとに高さを書くのをやめた（v0.45.1805）ため、
          中身が少ない升目が行の高さまで伸びず、下に灰色の隙間が見えていた。
@@ -11584,6 +11588,40 @@ function _renderMonthlyBands(calendar, bandInfo, rowH, weeks) {
     'grid-template-rows:' + _hdrH + 'px repeat(' + _wk + ',' + rowH + 'px);' +
     'pointer-events:none;';   // 帯以外はクリックを透かす（下の升目を押せるように）
 
+  // v0.45.1981: 【権威】2026-09-02、帯を3本並べると升目の上半分が
+  // ほぼ全部帯に覆われ、隙間が1pxしか残らない。
+  // 帯の上を押せば日は開くが、帯と帯のあいだ・帯の端・帯の左右の余白は死んでいた。
+  // TimeTreeの共有カレンダーでも帯を何本も使う例がある。
+  // 帯が多い日ほど日付が開けなくなるのは、道具として筋が通らない。
+  //
+  // 隙間を広げる小手先はやめる。帯が4本5本と増えれば同じことが起きるからである。
+  // 帯の層そのものが、帯以外の場所で押されたときに日を開く。
+  // これなら帯が何本あっても、升目のどこを押しても必ず開く。
+  layer.addEventListener('click', function(e) {
+    // 帯そのものを押したときは、帯側の処理に任せる
+    if (e.target !== layer) return;
+    try {
+      var _r = layer.getBoundingClientRect();
+      var _colW = _r.width / 7;
+      var _col = Math.floor((e.clientX - _r.left) / _colW);
+      if (_col < 0) _col = 0;
+      if (_col > 6) _col = 6;
+      // 曜日ヘッダーのぶんを引いてから、週を割り出す
+      var _y = e.clientY - _r.top - _hdrH;
+      if (_y < 0) return;   // ヘッダーの上。日ではない
+      var _week = Math.floor(_y / rowH);
+      if (_week < 0 || _week >= _wk) return;
+      // その位置の升目を、実際の要素から引き当てる（日付の計算をここでしない）
+      var _cells = calendar.querySelectorAll('.monthly-day-cell');
+      var _idx = _week * 7 + _col;
+      var _cell = _cells[_idx];
+      if (!_cell) return;
+      var _ds = _cell.dataset && _cell.dataset.date;
+      if (!_ds) return;
+      if (typeof openMonthlySidebar === 'function') openMonthlySidebar(_ds);
+    } catch (err) { console.warn('[月間] 帯の層からの日付特定に失敗:', err && err.message); }
+  });
+
   var TOP_OFFSET = MONTHLY_CELL_PAD + MONTHLY_HEAD_H;
 
   segs.forEach(function(seg) {
@@ -15310,17 +15348,36 @@ function myDeckApply(idx) {
           // 日付そのものを押したときだけ切り替えれば、その心配は起きない。
           var _sb = document.getElementById('monthlySidebar');
           if (_sb && _sb.classList.contains('open')) {
+            // v0.45.1979: 上と同じ考え方に揃える。
             var _t2 = e.target;
-            var _onCell2 = _t2 === cell || _t2 === dayNum ||
-              (_t2.classList && _t2.classList.contains('monthly-holiday-name')) ||
-              (_t2.closest && _t2.closest('.monthly-day-cell') === cell);
+            var _isInteractive2 = !!(_t2.closest && _t2.closest(
+              '.monthly-task-item, .monthly-more, .stamp-label, button, a, input'
+            ));
+            var _onCell2 = !_isInteractive2 &&
+              !!(_t2 === cell || (_t2.closest && _t2.closest('.monthly-day-cell') === cell));
             if (_onCell2 && typeof openMonthlySidebar === 'function') openMonthlySidebar(dateStr);
             return;
           }
           const isSimple = allSettings.ui.stampMode === 'on';
-          // 追加情報要素（節気・候・月齢）はpointer-events:noneだが念のためcurrentTargetで判定
+          // v0.45.1979: 【権威】2026-09-02、日付の上のほうを押しても開かない、
+          // 下のほうでないと開かない、との報告。調べたところ、そのとおりだった。
+          //
+          // これまでの判定は「升目そのもの・日付の数字・祝日名・
+          // style.pointerEventsがnoneの要素」だけを通していた。
+          // ところが style に pointerEvents を直接書いている要素は一つも無く、
+          // 最後の条件は常に成立しない。CSSで指定しても style.pointerEvents は空になる。
+          // 結果、押せたのは升目の余白と日付の数字と祝日名だけだった。
+          // 日付の数字を囲む器（head・dayRow）、月齢、暦、六曜、帯の空き——
+          // 升目の上半分はほぼ全部、押しても何も起きなかった。
+          //
+          // 数え上げる方式をやめる。表示が増えるたびに漏れるからである。
+          // 「押せるものを押したのでなければ、升目を押したとみなす」に改める。
           const _tgt = e.target;
-          const _onCell = _tgt === cell || _tgt === dayNum || _tgt.classList.contains('monthly-holiday-name') || (_tgt.closest && _tgt.closest('.monthly-day-cell') === cell && _tgt.style && _tgt.style.pointerEvents === 'none');
+          const _isInteractive = !!(_tgt.closest && _tgt.closest(
+            '.monthly-task-item, .monthly-more, .stamp-label, button, a, input'
+          ));
+          const _onCell = !_isInteractive &&
+            !!(_tgt === cell || (_tgt.closest && _tgt.closest('.monthly-day-cell') === cell));
           if (movingTaskId && _onCell) {
             // 移動モード中：このセルに移動
             completeMoveMode(dateStr);
@@ -21067,7 +21124,10 @@ function renderMonthlySidebarTasks() {
         var chk = document.createElement('div');
         chk.className = 'monthly-sidebar-task-check' + (done ? ' done' : '');
         chk.innerHTML = done ? '\u2713' : '';
-        chk.style.cssText = 'color:#fff;font-size:15px;font-weight:700;flex-shrink:0;';
+        // v0.45.1976: 会議で「輪郭を足すべき」と提案したが、
+      // 調べたら .monthly-sidebar-task-check に既に2pxの輪郭があった。
+      // 実装済みのものを提案していた。CSSに任せ、ここでは色と字だけ持つ。
+      chk.style.cssText = 'color:#fff;font-size:15px;font-weight:700;flex-shrink:0;';
         chk.onclick = function(e) {
           e.stopPropagation();
           if (typeof toggleTaskById === 'function') {
@@ -21221,7 +21281,12 @@ function renderMonthlySidebarTasks() {
         del.textContent = '\u2715';
         // v0.45.1974: 【権威】2026-09-02、予定の×が小さい、との指摘。
       // 20pxでは指で押しにくい。押す的そのものも広げる。
-      del.style.cssText = 'background:none;border:none;color:#9aa3af;font-size:26px;cursor:pointer;padding:8px 12px;flex-shrink:0;line-height:1;';
+      // v0.45.1975: 【権威】2026-09-02、最高峰会議。
+      // 💬・✏️・✕が10px間隔で等間隔に並んでいた。
+      // 削除だけは取り返しがつかない操作なのに、よく使うものと同じ扱いだった。
+      // 隣接する的の中心間距離が約45pxで、指の接地幅とほぼ同じ。誤タップの余地がある。
+      // 削除の手前だけ間を空ける。操作を覚え直させずに、事故だけ減らす。
+      del.style.cssText = 'background:none;border:none;color:#9aa3af;font-size:26px;cursor:pointer;padding:8px 12px;flex-shrink:0;line-height:1;margin-left:14px;';
         del.onclick = function(e) {
           e.stopPropagation();
           if (del.dataset.confirm === '1') {
