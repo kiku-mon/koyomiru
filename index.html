@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1931 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1932 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1931';
+    const APP_VERSION = 'v0.45.1932';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10437,6 +10437,33 @@ function escAttr(str) {
     .replace(/'/g, '&#39;');
 }
 window.escAttr = escAttr;
+
+// v0.45.1884: 【権威】2026-09-01、開発者の声の公開を前に守りを総点検した。
+// 検索結果が、予定の題名をエスケープせずにHTMLへ差し込んでいた。
+// 共有カレンダーの予定は他人が書けるので、そこに <img src=x onerror=...> を
+// 入れられると、検索した人の画面でその中身が動く。
+//
+// 探した言葉を目立たせるには、どうしてもHTMLを組む必要がある。
+// だから「先に全部エスケープしてから、目印だけを足す」順番を守る。
+// 逆順にすると、エスケープが目印ごと壊してしまう。
+//
+// v0.45.1932: 置き場所を10番目のスクリプトブロックから、escAttrの隣（5番目）へ移した。
+// 呼び出し元はブロック5（検索結果）とブロック8（コメント検索）にあり、
+// 定義より前のブロックから呼ばれていた。window公開に頼っていたが、
+// 公開されるのはブロック10が実行された時点であり、それ以前は存在しない。
+// XSSを防ぐ道具が、読み込みの順番次第で消える状態だった（第69条）。
+function highlightSafe(text, keyword) {
+  var _t = escAttr(text == null ? '' : text);
+  var _k = String(keyword || '').trim();
+  if (!_k) return _t;
+  try {
+    var _re = new RegExp(escAttr(_k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    return _t.replace(_re, function(m) {
+      return '<mark style="background:#fff9c4;border-radius:2px;">' + m + '</mark>';
+    });
+  } catch (e) { return _t; }
+}
+window.highlightSafe = highlightSafe;
 
 // v0.45.1927: 【権威】2026-09-02、管理者モードかどうかの判定。
 // 判定はこの関数ひとつを正とする。
@@ -64196,27 +64223,6 @@ function initMemoPreview(textareaId, previewId) {
   var ta = document.getElementById(textareaId);
   if (ta) updateMemoPreview(textareaId, previewId);
 }
-// v0.45.1884: 【権威】2026-09-01、開発者の声の公開を前に守りを総点検した。
-// 検索結果が、予定の題名をエスケープせずにHTMLへ差し込んでいた。
-// 共有カレンダーの予定は他人が書けるので、そこに <img src=x onerror=...> を
-// 入れられると、検索した人の画面でその中身が動く。
-//
-// 探した言葉を目立たせるには、どうしてもHTMLを組む必要がある。
-// だから「先に全部エスケープしてから、目印だけを足す」順番を守る。
-// 逆順にすると、エスケープが目印ごと壊してしまう。
-function highlightSafe(text, keyword) {
-  var _t = escAttr(text == null ? '' : text);
-  var _k = String(keyword || '').trim();
-  if (!_k) return _t;
-  try {
-    var _re = new RegExp(escAttr(_k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    return _t.replace(_re, function(m) {
-      return '<mark style="background:#fff9c4;border-radius:2px;">' + m + '</mark>';
-    });
-  } catch (e) { return _t; }
-}
-window.highlightSafe = highlightSafe;
-
 function renderMemoWithLinks(el, memoText) {
   if (!memoText) { el.textContent = ''; return; }
   var urlRegex = /(https?:\/\/[^\s　、。！），]+)/g;
