@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1953 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1959 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1953';
+    const APP_VERSION = 'v0.45.1959';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12084,6 +12084,11 @@ function switchSearchTab(tab) {
   if (tab === 'todo') renderTodoList();
   if (tab === 'gou')  renderGouTaskList();
   if (tab === 'comment') {
+    // v0.45.1958: 絞り込みを描いてから一覧を出す。
+    // 前回の絞り込みは持ち越さない（予定の検索と同じ考え方）。
+    window._commentCalFilter = null;
+    window._commentRange = 'all';
+    if (typeof renderCommentFilters === 'function') renderCommentFilters();
     // v0.45.1857: 開いた瞬間に一覧を出す。探す前に眺められるようにする。
     if (typeof runCommentSearch === 'function') runCommentSearch();
     setTimeout(function(){ var el = document.getElementById('commentSearchInput'); if (el) el.focus(); }, 100);
@@ -36732,6 +36737,10 @@ window.addEventListener('afterprint', function() {
             style="flex:1;padding:10px;border:1px solid #ddd;border-radius:10px;font-size:0.9em;">
           <button onclick="runCommentSearch()" style="padding:0 16px;border:none;border-radius:10px;background:#333;color:#fff;font-size:0.82em;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;">探す</button>
         </div>
+        <!-- v0.45.1955: 予定の検索と同じく、カレンダーと期間で絞れるようにする。
+             操作を覚え直さなくて済むよう、見た目も並びも揃える。 -->
+        <div id="commentCalFilter" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;"></div>
+        <div id="commentRangeFilter" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;"></div>
         <div id="commentSearchCount" style="font-size:0.75em;color:#aaa;margin-bottom:8px;"></div>
         <div id="commentSearchResults" style="flex:1;overflow-y:auto;"></div>
       </div>
@@ -40801,6 +40810,54 @@ window.searchPodcastCommentsByWord = searchPodcastCommentsByWord;
 // v0.45.1853: コメント検索を実行して結果を出す。
 // 押すのは「どの予定に書いたか」を思い出すためなので、
 // コメント本文だけでなく、その予定の題名と日付も併せて出す。
+// v0.45.1956: コメントの絞り込み。予定の検索と同じ形にする。
+function renderCommentFilters() {
+  var calBox = document.getElementById('commentCalFilter');
+  var rngBox = document.getElementById('commentRangeFilter');
+  var _curCal = window._commentCalFilter || null;
+  var _curRng = window._commentRange || 'all';
+  if (calBox) {
+    var _cals = (calendars || []).filter(function(c){ return c && c.visible !== false; });
+    var _cb = function(id, label, color) {
+      var _on = (_curCal === id);
+      return '<button onclick="setCommentCalFilter(' + (id ? "'" + id + "'" : 'null') + ')" ' +
+        'style="padding:5px 12px;border:1.5px solid ' + (_on ? (color || '#0b6bcb') : '#e0e0e0') + ';' +
+        'border-radius:16px;background:' + (_on ? (color || '#0b6bcb') : '#fff') + ';' +
+        'color:' + (_on ? '#fff' : '#666') + ';font-size:0.75em;font-weight:600;cursor:pointer;' +
+        'white-space:nowrap;flex-shrink:0;font-family:inherit;">' + escAttr(label) + '</button>';
+    };
+    calBox.innerHTML = _cb(null, 'すべて') +
+      _cals.map(function(c){ return _cb(c.id, c.name || '(無題)', c.color); }).join('');
+  }
+  if (rngBox) {
+    var _rb = function(key, label) {
+      var _on = (_curRng === key);
+      return '<button onclick="setCommentRange(\'' + key + '\')" ' +
+        'style="padding:5px 12px;border:1px solid ' + (_on ? '#333' : '#e0e0e0') + ';' +
+        'border-radius:14px;background:' + (_on ? '#333' : '#fff') + ';' +
+        'color:' + (_on ? '#fff' : '#666') + ';font-size:0.72em;font-weight:600;' +
+        'cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;">' + label + '</button>';
+    };
+    // コメントは「いつ書いたか」で絞る。予定の日付ではない。
+    rngBox.innerHTML = _rb('week','今週') + _rb('month','今月') + _rb('all','全部');
+  }
+}
+window.renderCommentFilters = renderCommentFilters;
+
+function setCommentCalFilter(calId) {
+  window._commentCalFilter = calId;
+  renderCommentFilters();
+  runCommentSearch();
+}
+window.setCommentCalFilter = setCommentCalFilter;
+
+function setCommentRange(range) {
+  window._commentRange = range;
+  renderCommentFilters();
+  runCommentSearch();
+}
+window.setCommentRange = setCommentRange;
+
 async function runCommentSearch() {
   var inp  = document.getElementById('commentSearchInput');
   var box  = document.getElementById('commentSearchResults');
@@ -40825,6 +40882,36 @@ async function runCommentSearch() {
   // 見出しで区切って、それぞれの中で新しい順に並べる。
   _taskRows.forEach(function(c){ c._src = 'task'; });
   _podRows.forEach(function(c){ c._src = 'podcast'; });
+
+  // v0.45.1957: カレンダーと期間で絞る。
+  // 期間は「いつ書いたか」で見る。予定の日付ではなく、コメントを残した日。
+  var _fmt = function(dt) {
+    return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+  };
+  var _rng = window._commentRange || 'all';
+  var _inRange = function(c) {
+    if (_rng === 'all') return true;
+    var _at = String(c.created_at || '').slice(0, 10);
+    if (!_at) return false;
+    var _td = new Date(); _td.setHours(0,0,0,0);
+    if (_rng === 'week') {
+      var _s = new Date(_td); _s.setDate(_s.getDate() - _s.getDay());
+      var _e = new Date(_s); _e.setDate(_e.getDate() + 6);
+      return _at >= _fmt(_s) && _at <= _fmt(_e);
+    }
+    return _at >= _fmt(new Date(_td.getFullYear(), _td.getMonth(), 1)) &&
+           _at <= _fmt(new Date(_td.getFullYear(), _td.getMonth() + 1, 0));
+  };
+  var _calF = window._commentCalFilter || null;
+  _taskRows = _taskRows.filter(function(c) {
+    if (!_inRange(c)) return false;
+    if (!_calF) return true;
+    var _t = (allTasks || []).filter(function(t){ return t && t.id === c.task_id; })[0];
+    return _t && _t.calendarId === _calF;
+  });
+  // 放送のコメントはカレンダーに属さない。カレンダーで絞ったときは出さない。
+  _podRows = _calF ? [] : _podRows.filter(_inRange);
+
   var rows = _taskRows.concat(_podRows);
   // v0.45.1868: 一覧を作った時点で「どの予定に何件あるか」は分かっている。
   // わざわざ飛んでから取り直す必要はない。ここで手元に溜めておく。
@@ -40898,7 +40985,7 @@ async function runCommentSearch() {
     if (c._src === 'podcast') {
       var _p = (window._publicProfileCache && window._publicProfileCache[c.user_id]) || null;
       var _pname = (_p && _p.display_name) || '名無し';
-      return '<div onclick="jumpToPodcastComment()" style="cursor:pointer;padding:12px 4px;border-bottom:1px solid #f0f0f0;">' +
+      return '<div onclick="jumpToPodcastComment(\'' + escAttr(c.episode_guid || '') + '\')" style="cursor:pointer;padding:12px 4px;border-bottom:1px solid #f0f0f0;">' +
         '<div style="font-size:0.85em;color:#262626;line-height:1.7;margin-bottom:5px;">' + _hl(c.body) + '</div>' +
         '<div style="font-size:0.7em;color:#9aa3af;">' +
           _esc(_pname) + '　' + _when +
@@ -40916,7 +41003,7 @@ async function runCommentSearch() {
                : (_r ? ((_r.text || '(無題)') + (_r.deleted ? '（削除された予定）' : ''))
                      : '（予定が見つかりません）');
     var _date  = _t ? (_t.date || '') : (_r ? (_r.date || '') : '');
-    return '<div ' + ((_t && _date) ? 'onclick="jumpToCommentTask(\'' + _date + '\')" style="cursor:pointer;"' : '') +
+    return '<div ' + ((_t && _date) ? 'onclick="jumpToCommentTask(\'' + _date + '\', \'' + c.task_id + '\')" style="cursor:pointer;"' : '') +
       ' style="padding:12px 4px;border-bottom:1px solid #f0f0f0;">' +
       '<div style="font-size:0.85em;color:#262626;line-height:1.7;margin-bottom:5px;">' + _hl(c.body) + '</div>' +
       '<div style="font-size:0.7em;color:#9aa3af;">' +
@@ -40957,7 +41044,7 @@ window.runCommentSearch = runCommentSearch;
 // 「あとから届くので」と説明したが、それは言い訳だった。
 // 飛ぶ前にその日の件数を取ってから移れば、待たせずに済む。
 // 移ったあとで慌てて取りに行くのは、順番が逆だった。
-async function jumpToCommentTask(dateStr) {
+async function jumpToCommentTask(dateStr, taskId) {
   try {
     if (typeof closeSearchModal === 'function') closeSearchModal();
     // その日の予定の件数を、移る前に取っておく
@@ -40968,21 +41055,71 @@ async function jumpToCommentTask(dateStr) {
       if (_ids.length && typeof loadCommentCounts === 'function') await loadCommentCounts(_ids);
     } catch(ePre) {}
     if (typeof switchView === 'function') switchView('monthly');
-    // 月間が組み上がってから開く（描き終わる前に呼ぶと空振りする）
+    // v0.45.1954: 【権威】2026-09-02、コメントを押しても
+    // そのコメントまで辿り着かない、との指摘。実際にそのとおりだった。
+    // 別の月の予定なら移動せず、コメント欄も開かなかった。
+    // 探した目的は「その言葉を書いた場所へ戻ること」なので、そこまで連れて行く。
     setTimeout(function() {
       try {
-        if (typeof openMonthlySidebar === 'function') openMonthlySidebar(dateStr);
+        // 別の月なら、その月へ移ってから開く
+        var _d = new Date(String(dateStr).replace(/-/g, '/'));
+        if (!isNaN(_d) && typeof currentMonthDate !== 'undefined' && currentMonthDate) {
+          if (currentMonthDate.getFullYear() !== _d.getFullYear() ||
+              currentMonthDate.getMonth() !== _d.getMonth()) {
+            currentMonthDate = new Date(_d.getFullYear(), _d.getMonth(), 1);
+            if (typeof renderMonthlyView === 'function') renderMonthlyView();
+            if (typeof updateSeasonalArt === 'function') updateSeasonalArt();
+          }
+        }
+        setTimeout(function() {
+          if (typeof openMonthlySidebar === 'function') openMonthlySidebar(dateStr);
+          // その予定のコメント欄まで開く。押したのはコメントなのだから、
+          // 予定の一覧で止まっては目的を果たしていない。
+          if (taskId) {
+            setTimeout(function() {
+              try {
+                if (typeof openTaskComments === 'function') openTaskComments(taskId);
+                var _el = document.querySelector('[data-cmt-task="' + taskId + '"]');
+                if (_el && _el.scrollIntoView) _el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              } catch(eC) {}
+            }, 350);
+          }
+        }, 200);
       } catch(e) { console.warn('[Comment] 移動に失敗:', e && e.message); }
-    }, 400);
+    }, 350);
   } catch(e) { console.warn('[Comment] 移動に失敗:', e && e.message); }
 }
 window.jumpToCommentTask = jumpToCommentTask;
 
 // v0.45.1858: 放送のコメントからは、開発者の声の画面へ移る。
-function jumpToPodcastComment() {
+// v0.45.1954: 放送のコメントからは、その回のコメント欄まで連れて行く。
+// 画面を開くだけでは、どの放送に書いたのかを自分で探すことになる。
+function jumpToPodcastComment(episodeGuid) {
   try {
     if (typeof closeSearchModal === 'function') closeSearchModal();
     if (typeof switchView === 'function') switchView('podcast');
+    if (!episodeGuid) return;
+    // 放送の一覧が組み上がってから、その回を開く
+    setTimeout(function() {
+      try {
+        var _eps = window._podcastEpisodes || [];
+        var _idx = -1;
+        for (var i = 0; i < _eps.length; i++) {
+          if ((_eps[i].guid || _eps[i].audio) === episodeGuid) { _idx = i; break; }
+        }
+        if (_idx >= 0 && typeof podcastPlay === 'function') {
+          podcastPlay(_idx);
+          // 鳴らすところまではしない。押したのはコメントであって、再生ではない。
+          if (_podcastAudio) { _podcastAudio.pause(); }
+          var _b = document.getElementById('podcastPlayBtn');
+          if (_b) _b.textContent = '▶';
+          setTimeout(function() {
+            var _c = document.getElementById('podcastComments');
+            if (_c && _c.scrollIntoView) _c.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          }, 400);
+        }
+      } catch(eP) { console.warn('[Comment] 放送の特定に失敗:', eP && eP.message); }
+    }, 700);
   } catch(e) { console.warn('[Comment] 移動に失敗:', e && e.message); }
 }
 window.jumpToPodcastComment = jumpToPodcastComment;
