@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1960 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1961 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1960';
+    const APP_VERSION = 'v0.45.1961';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -75439,9 +75439,23 @@ function renderTravelListView() {
             return;
           }
           // 2回目：実際に削除
+          // v0.45.1961: 【権威】2026-09-02、アプリで消したのにクラウドに残っている、
+          // との報告。実際にそのとおりだった。手元から消すだけで、
+          // クラウドへ削除を伝えていなかった（第62条違反）。
+          // 別の端末で開けば復活し、消したはずのものが戻ってくる。
+          // 旅行も重要アポイントも、このカードを通るので両方が同じ状態だった。
+          //
+          // 消すものを先に控えてから、1件ずつクラウドへ伝える。
+          // 旅行の持ち物や準備アイテムも一緒に消えるので、それらも忘れず伝える。
+          var _delTargets = allTasks.filter(function(t){ return t && (t.id === id || t.travelId === id); });
           allTasks = allTasks.filter(function(t){ return t.id !== id && t.travelId !== id; });
           if (_travelUIState.selectedId === id) _travelUIState.selectedId = null;
           saveAllTasks();
+          try {
+            _delTargets.forEach(function(t) {
+              if (typeof _propagateDeletion === 'function') _propagateDeletion(t.id);
+            });
+          } catch(eDel) { console.warn('[旅行] 削除の伝達に失敗:', eDel && eDel.message); }
           if (window.showToast) showToast('🗺️ ' + titleText + ' を削除しました', {type:'ok'});
           renderTravelListView();
         };
