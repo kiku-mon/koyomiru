@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1925 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1928 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1925';
+    const APP_VERSION = 'v0.45.1928';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10411,6 +10411,29 @@ function _showInviteWelcome() {
     // v0.45.1922: 管理者モードのその場の印。保存されたものからの復元は
 // 設定の読み込み後に行う（この時点ではallSettingsがまだ無い）。
 var _adminModeActive = false;
+
+// v0.45.1927: 【権威】2026-09-02、管理者モードかどうかの判定。
+// 判定はこの関数ひとつを正とする。
+//
+// 全体を点検したところ、adminMode を '1' という文字列と比べている箇所が
+// 3つあった。保存されるのは true なので、これらは永久に成立しない。
+// デッキのQRボタンは、管理者モードにしても一度も出ていなかった。
+// 同じ判定が20箇所以上に散らばり、書き方も揃っていなかった（第71条④）。
+//
+// 置き場所について。v0.45.1920でこの関数を8番目のスクリプトブロックに
+// 置いたが、5番目のブロックから呼ばれており、定義される前に呼ばれて
+// アプリ全体が落ちた。呼ばれる場所より前に置かなければならない（第69条）。
+//
+// 復元（保存された値をその場の印にも立てる）は、この中で行う。
+// 設定の読み込み直後に置いたときは、まだ他の変数が作られておらず、
+// 連鎖して別の初期化を壊した。呼ばれた時点なら全部が揃っている。
+function isKoyomiruAdminMode() {
+  var _saved = !!(typeof allSettings !== 'undefined' && allSettings &&
+                  allSettings.flags && allSettings.flags.adminMode);
+  if (_saved && window._adminModeActive !== true) window._adminModeActive = true;
+  return _saved || window._adminModeActive === true;
+}
+window.isKoyomiruAdminMode = isKoyomiruAdminMode;
     // 月間ビュー用
     let currentMonthDate = new Date(); // 表示中の月
     let movingTaskId = null; // スマホ用：移動中のタスクID
@@ -10830,16 +10853,6 @@ var _adminModeActive = false;
         allSettings = JSON.parse(JSON.stringify(SETTINGS_DEFAULT));
       }
       window.allSettings = allSettings;
-      // v0.45.1922: 保存されている管理者モードを、その場の印にも復元する。
-      // これが無いと、起動のたびに _adminModeActive が false のままになり、
-      // 保存されたほうを見ていない箇所（多層マトリクス等）が動かなくなる。
-      // 判定を1つに寄せたので実害は消えたが、2つの値が食い違う状態自体を残さない。
-      try {
-        if (allSettings && allSettings.flags && allSettings.flags.adminMode) {
-          _adminModeActive = true;
-          window._adminModeActive = true;
-        }
-      } catch(eAdm) {}
       if (typeof _installVisibleTabsWatcher === 'function') _installVisibleTabsWatcher(); // v0.45.1382: 診断
     }
     // v0.45.1382: 【診断】saveAllSettingsベースの診断（v0.45.1381）は「保存された瞬間」しか
@@ -37404,7 +37417,7 @@ function _renderCardList(listEl, emptyEl, cardEl, items, color, icon, editFn, de
   // フォーカス先」は、禁止でなく上書きで行動を変える認知行動療法的なアプローチで、
   // やることクラフトの内省・自己観察哲学の色が強い。TimeTree等のシンプルな共有
   // カレンダーを手本にする方針のもと、一般ユーザーからは隠し、管理者モードのみに限定する。
-  var _unlocked = (_comp >= 20 || _jour >= 3 || items.length > 0) && isKoyomiruAdminMode();
+  var _unlocked = (_comp >= 20 || _jour >= 3 || items.length > 0) && window.isKoyomiruAdminMode();
   if (!_unlocked) { cardEl.style.display = 'none'; return; }
   cardEl.style.display = 'block';
   if (items.length === 0) {
@@ -37588,8 +37601,8 @@ function renderMyBehaviorsDashboard() {
   // v0.45.1492: 内省・自己観察系機能は管理者モード限定に変更（詳細は_renderCardList参照）
   var _completedCount = allTasks.filter(function(t){ return t.kind==='task' && t.completed; }).length;
   var _journalCount = allTasks.filter(function(t){ return t.kind==='journal'; }).length;
-  var _unlocked = (_completedCount >= 20 || _journalCount >= 3) && isKoyomiruAdminMode();
-  if ((allSettings.myBehaviors || []).length > 0 && isKoyomiruAdminMode()) _unlocked = true;
+  var _unlocked = (_completedCount >= 20 || _journalCount >= 3) && window.isKoyomiruAdminMode();
+  if ((allSettings.myBehaviors || []).length > 0 && window.isKoyomiruAdminMode()) _unlocked = true;
   if (!_unlocked) { card.style.display = 'none'; return; }
 
   // 初回解放トースト
@@ -37863,7 +37876,7 @@ function renderMyRulesDashboard() {
   // v0.45.1492: 内省・自己観察系機能は管理者モード限定に変更（詳細は_renderCardList参照）
   var _completedCount = allTasks.filter(function(t){ return t.kind==='task' && t.completed; }).length;
   var _journalCount = allTasks.filter(function(t){ return t.kind==='journal'; }).length;
-  var _isAdmin = isKoyomiruAdminMode();
+  var _isAdmin = window.isKoyomiruAdminMode();
   var _unlocked = (_completedCount >= 20 || _journalCount >= 3) && _isAdmin;
 
   // 既にマイルールを持っているユーザーは常に解放（ただし管理者モード時のみ）
@@ -38287,7 +38300,7 @@ function copyApplyCodeFromModal() {
 }
 function closeDeckQR() { var o=document.getElementById("deckQROverlay"); if(o) o.style.display="none"; }
 function showDeckQR(code, deckTitle) {
-  var isAdmin = isKoyomiruAdminMode();
+  var isAdmin = window.isKoyomiruAdminMode();
   var url = window.location.origin + window.location.pathname + '?deck=' + encodeURIComponent(code);
   // カラーテーマ
   var accent   = isAdmin ? '#ffd700' : '#64dcb4';
@@ -38340,7 +38353,7 @@ function showDeckQR(code, deckTitle) {
   }, 80);
 }
 function switchDeckTab(tab) {
-  var isAdmin = isKoyomiruAdminMode();
+  var isAdmin = window.isKoyomiruAdminMode();
   var accent = isAdmin ? '#ffd700' : '#64dcb4';
   var activeColor = isAdmin ? '#0d0d00' : '#0d1b2e';
   var panelCopy = document.getElementById('panelCopy');
@@ -39254,18 +39267,6 @@ function isKoyomiruDeveloper() {
 }
 window.isKoyomiruDeveloper = isKoyomiruDeveloper;
 
-// v0.45.1920: 管理者モードかどうか。判定はこの関数ひとつを正とする。
-// 【権威】2026-09-02、全体を点検したところ、adminMode を '1' という文字列と
-// 比べている箇所が3つ見つかった。保存されるのは true なので、
-// これらは永久に成立しない。デッキのQRボタンは、管理者モードにしても
-// 一度も出ていなかったことになる。
-// 同じ判定が20箇所以上に散らばっており、書き方も揃っていなかった。
-// 第71条④に従い、判定を1つにまとめる。
-function isKoyomiruAdminMode() {
-  return !!(allSettings && allSettings.flags && allSettings.flags.adminMode) ||
-         window._adminModeActive === true;
-}
-window.isKoyomiruAdminMode = isKoyomiruAdminMode;
 function _isDeveloperVisitor() {
   try {
     if (localStorage.getItem(_KOYOMIRU_DEV_KEY) === '1') return true;
