@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1910 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1916 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1910';
+    const APP_VERSION = 'v0.45.1916';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9735,8 +9735,16 @@ function _showInviteWelcome() {
         </div>
         <!-- v0.45.1830: 開発者の声（Podcast）の配信URL。
              配信サービスが用意する1本のURLを入れると、ナビの「開発者の声」に並ぶ。
-             配信先を変えてもここを差し替えるだけで済む。 -->
-        <div style="margin-bottom:18px;padding:14px;border:1px solid #e8e8e8;border-radius:10px;background:#fff;">
+             配信先を変えてもここを差し替えるだけで済む。
+             v0.45.1913: 開発者本人だけに見せる。番組も支援先も、こよみるとして
+             発信する内容であり、利用者ごとに変えられるものではない。
+             特に支援ページを他人が自分の口座へ差し替えられるのは筋が通らない。 -->
+        <div id="devVoiceSettingsBox" style="display:none;margin-bottom:18px;padding:14px;border:1px solid #d4b483;border-radius:10px;background:#fffdf7;">
+          <!-- v0.45.1916: 【権威】2026-09-02、自分にしか見えていない設定なのか、
+               全員に見えているのか、開いていて分からない、との指摘。
+               書き換えた内容がどこまで届くのかが分からないまま触るのは落ち着かない。
+               自分だけに見えているものだと、はっきり書く。 -->
+          <div style="display:inline-block;font-size:0.68em;font-weight:700;color:#8a6d1f;background:#f5e6c8;padding:3px 10px;border-radius:10px;margin-bottom:8px;">🔒 開発者のあなただけに見えています</div>
           <div style="font-size:0.88em;font-weight:700;color:#333;margin-bottom:4px;">📻 開発者の声</div>
           <p style="margin:0 0 8px;font-size:0.75em;color:#8e8e8e;line-height:1.7;">配信のURL（RSS）を入れると、ナビの「開発者の声」に放送が並びます。空のままなら何も出ません。</p>
           <!-- v0.45.1906: 【権威】2026-09-02、この欄にメールアドレスが
@@ -29192,6 +29200,14 @@ function saveMsbEdit() {
         var _navGear = document.getElementById('navSettingsTab');
         if (_navGear) _navGear.classList.add('active');
         // v0.45.1830: 保存済みの配信URLを出す（空なら空のまま）
+        // v0.45.1913: 開発者本人のときだけ、開発者の声の設定を見せる。
+        try {
+          var _dvBox = document.getElementById('devVoiceSettingsBox');
+          if (_dvBox) {
+            var _amAdmin = (window._cloudUserId === KOYOMIRU_ADMIN_UID);
+            _dvBox.style.display = _amAdmin ? 'block' : 'none';
+          }
+        } catch(eDv) {}
         var _pfEl = document.getElementById('podcastFeedUrlInput');
         if (_pfEl) _pfEl.value = (allSettings.ui && allSettings.ui.podcastFeedUrl) || '';
         var _suEl = document.getElementById('supportUrlInput');
@@ -31231,6 +31247,15 @@ function loadCalendarSettingsUI() {
       // どのサーバーのどのチャンネルへ出すかは、URLそのものが決めている。
       // 呼びかけ（@everyone等）も一度決めれば、あとは自動で付く。
       // 毎回打つのは面倒だという声から、ここで一度だけ選ぶ形にした。
+      // v0.45.1911: 【権威】2026-09-02、共有カレンダーのメンバーもDiscordの
+      // 設定を入れられる状態だった。参加しただけの人がWebhookを設定すると、
+      // そのカレンダーの予定が、その人の指定したDiscordへ全部流れる。
+      // 全員で共有しているカレンダーなので、他人の予定まで知らないサーバーへ届く。
+      // これは情報漏れである。
+      //
+      // 送り先を決められるのは、カレンダーを作った人だけにする。
+      // 参加者には欄そのものを見せない（設定できないものを見せても混乱するだけ）。
+      var _dcIsOwner = !cal.cloudCalendarId || cal.sharedOwner !== false;
       var _dcRow = document.createElement('div');
       _dcRow.style.cssText = 'display:flex;flex-direction:column;gap:5px;margin-top:8px;padding-top:8px;border-top:1px dashed #e8e8e8;';
       var _dcLabel = document.createElement('div');
@@ -31278,7 +31303,8 @@ function loadCalendarSettingsUI() {
       _dcRow.appendChild(_dcLabel);
       _dcRow.appendChild(_dcInput);
       _dcRow.appendChild(_dcMentionRow);
-      row.appendChild(_dcRow);
+      // v0.45.1911: 作った人だけに見せる。
+      if (_dcIsOwner) row.appendChild(_dcRow);
 
       // 削除ボタン（複数ある場合のみ）
         if (calendars.length > 1) {
@@ -40885,6 +40911,13 @@ window.forceDeleteSharedCalendar = forceDeleteSharedCalendar;
 async function sendDiscordNotify(cal, task, mode) {
   try {
     if (!cal || !task) return;
+    // v0.45.1911: 画面で欄を隠すのは守りにならない。
+    // 過去に設定された値が残っていれば、そのまま送られてしまう。
+    // 送る直前にも、作った人のカレンダーかどうかを確かめる。
+    if (cal.cloudCalendarId && cal.sharedOwner === false) {
+      console.warn('[Discord] 参加しているだけのカレンダーなので送りません');
+      return;
+    }
     var _url = cal.discordWebhook;
     if (!_url || !/^https:\/\/discord(app)?\.com\/api\/webhooks\//i.test(_url)) return;
 
@@ -44446,6 +44479,12 @@ function renderPodcastAbout() {
 window.renderPodcastAbout = renderPodcastAbout;
 
 function savePodcastAbout(text) {
+  // v0.45.1913: 開発者本人以外は設定できない。画面で欄を隠すだけでは
+  // 守りにならず、直接呼ばれれば通ってしまう。保存する側でも確かめる。
+  if (window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+    console.warn('[設定] 開発者の声の設定は開発者のみが変更できます');
+    return;
+  }
   if (!allSettings.ui) allSettings.ui = {};
   allSettings.ui.podcastAbout = String(text || '').trim();
   saveAllSettings();
@@ -44495,7 +44534,11 @@ function _isValidSupportUrl(u) {
 window._isValidSupportUrl = _isValidSupportUrl;
 
 function openSupportPage() {
-  var _saved = (allSettings.ui && allSettings.ui.supportUrl) || '';
+  // v0.45.1914: 支援の飛び先は、開発者本人の設定だけを使う。
+  // 他の人の端末に残っている設定は使わない。過去に書き換えられていた場合、
+  // その人の押した支援が別の場所へ流れてしまう。
+  var _amAdmin = (window._cloudUserId === KOYOMIRU_ADMIN_UID);
+  var _saved = _amAdmin ? ((allSettings.ui && allSettings.ui.supportUrl) || '') : '';
   var _dest = _isValidSupportUrl(_saved) ? _saved : 'https://ofuse.me/b9ca4c85';
   (async function() {
     try { if (typeof _recordEvent === 'function') await _recordEvent('ofuse_click'); } catch(e) {}
@@ -44505,6 +44548,12 @@ function openSupportPage() {
 window.openSupportPage = openSupportPage;
 
 function saveSupportUrl(url) {
+  // v0.45.1913: 開発者本人以外は設定できない。画面で欄を隠すだけでは
+  // 守りにならず、直接呼ばれれば通ってしまう。保存する側でも確かめる。
+  if (window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+    console.warn('[設定] 開発者の声の設定は開発者のみが変更できます');
+    return;
+  }
   if (!allSettings.ui) allSettings.ui = {};
   var _in = String(url || '').trim();
   // v0.45.1910: 【権威】2026-09-02、アドレス欄からこよみるを開いただけで
@@ -44540,6 +44589,12 @@ function saveSupportUrl(url) {
 window.saveSupportUrl = saveSupportUrl;
 
 function savePodcastFeedUrl(url) {
+  // v0.45.1913: 開発者本人以外は設定できない。画面で欄を隠すだけでは
+  // 守りにならず、直接呼ばれれば通ってしまう。保存する側でも確かめる。
+  if (window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+    console.warn('[設定] 開発者の声の設定は開発者のみが変更できます');
+    return;
+  }
   if (!allSettings.ui) allSettings.ui = {};
   // v0.45.1910: 自動入力による書き換えを人の操作と区別する（saveSupportUrlと同じ理由）
   var _sv2 = document.getElementById('settingsView');
