@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1921 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1925 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1921';
+    const APP_VERSION = 'v0.45.1925';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10408,7 +10408,9 @@ function _showInviteWelcome() {
       }
       return { rise: 5.5, set: 18.0, dawn: 5.0, dusk: 18.5, source: 'default', geo: false };
     }
-    var _adminModeActive = false;
+    // v0.45.1922: 管理者モードのその場の印。保存されたものからの復元は
+// 設定の読み込み後に行う（この時点ではallSettingsがまだ無い）。
+var _adminModeActive = false;
     // 月間ビュー用
     let currentMonthDate = new Date(); // 表示中の月
     let movingTaskId = null; // スマホ用：移動中のタスクID
@@ -10828,6 +10830,16 @@ function _showInviteWelcome() {
         allSettings = JSON.parse(JSON.stringify(SETTINGS_DEFAULT));
       }
       window.allSettings = allSettings;
+      // v0.45.1922: 保存されている管理者モードを、その場の印にも復元する。
+      // これが無いと、起動のたびに _adminModeActive が false のままになり、
+      // 保存されたほうを見ていない箇所（多層マトリクス等）が動かなくなる。
+      // 判定を1つに寄せたので実害は消えたが、2つの値が食い違う状態自体を残さない。
+      try {
+        if (allSettings && allSettings.flags && allSettings.flags.adminMode) {
+          _adminModeActive = true;
+          window._adminModeActive = true;
+        }
+      } catch(eAdm) {}
       if (typeof _installVisibleTabsWatcher === 'function') _installVisibleTabsWatcher(); // v0.45.1382: 診断
     }
     // v0.45.1382: 【診断】saveAllSettingsベースの診断（v0.45.1381）は「保存された瞬間」しか
@@ -17014,7 +17026,7 @@ function isGantTabVisible() {
   try {
     if (!allSettings || !allSettings.ui) return false;
     // 管理者モードでなければ、設定でONにしていても出さない
-    var _isAdmin = !!(allSettings.flags && allSettings.flags.adminMode) || window._adminModeActive === true;
+    var _isAdmin = isKoyomiruAdminMode();
     if (!_isAdmin) return false;
     var _km = (typeof KINGDOM_MODES !== 'undefined' && allSettings.ui.kingdomMode)
       ? KINGDOM_MODES[allSettings.ui.kingdomMode] : null;
@@ -18039,7 +18051,12 @@ function getUnlockedMatrixLayers() {
   var secretUnlocked = (allSettings.ui && allSettings.ui.unlockedSecretLayers) || [];
   var pinnedLayers = (allSettings.ui && allSettings.ui.pinnedMatrixLayers) || null;
   return (typeof MATRIX_LAYERS !== 'undefined' ? MATRIX_LAYERS : []).filter(function(layer) {
-    if (layer.tier === 'locked') return !!window._adminModeActive || secretUnlocked.indexOf(layer.id) !== -1;
+    // v0.45.1922: 【権威】2026-09-02、判定が2種類あり食い違っていた。
+    // window._adminModeActive はその場だけの印で、起動時にfalseに戻る。
+    // 保存されているのは allSettings.flags.adminMode のほう。
+    // ここは前者だけを見ていたため、アプリを開き直すと管理者モードなのに
+    // 多層マトリクスが出なかった。判定を isKoyomiruAdminMode() に統一する。
+    if (layer.tier === 'locked') return isKoyomiruAdminMode() || secretUnlocked.indexOf(layer.id) !== -1;
     if ((tierOrder[layer.tier] || 0) > userTier) return false;
     // ピン留めが設定されていれば絞り込み（nullは全層表示）
     if (pinnedLayers && pinnedLayers.length > 0) return pinnedLayers.indexOf(layer.id) !== -1;
@@ -18327,7 +18344,7 @@ function applySettingsSectionVisibility() {
   // v0.45.1481: こよみるでの位置づけが未整理のため、一般ユーザーには見せない
   var gantSection = document.getElementById('settingsGantSection');
   var _effectiveKmForGant = (typeof KINGDOM_MODES !== 'undefined') ? KINGDOM_MODES[_effectiveModeKey] : null;
-  var _gantAdminOk = !!(allSettings.flags && allSettings.flags.adminMode);
+  var _gantAdminOk = isKoyomiruAdminMode();
   if (gantSection) gantSection.style.display = (_gantAdminOk && _effectiveKmForGant && _effectiveKmForGant.gantEnabled) ? '' : 'none';
   // ナビタブ表示セクションの造営ラベル：庭園モードかつ管理者モードのみ
   var labelGant = document.getElementById('settingsLabelGant');
@@ -30783,7 +30800,8 @@ function loadSettingsUI() {
         var _pinned = allSettings.ui.pinnedMatrixLayers;
         _mlCheckList.innerHTML = '';
         MATRIX_LAYERS.forEach(function(layer, idx) {
-          if (layer.tier === 'locked' && !window._adminModeActive) return; // locked層は管理者モード以外は非表示
+          // v0.45.1922: 同上。保存された管理者モードも見る。
+      if (layer.tier === 'locked' && !isKoyomiruAdminMode()) return; // locked層は管理者モード以外は非表示
           var _isChecked = !_pinned || _pinned.indexOf(layer.id) !== -1;
           var _label = document.createElement('label');
           _label.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;';
@@ -33482,7 +33500,7 @@ function renderDashboardView() {
     // その本体（growthAxisSection）は既に管理者モード限定にしている（v0.45.1480）。
     // tenmei.activatedを立てる処理が現状存在せず事実上到達不能だが、将来の修正で
     // 誤って復活しても一般ユーザーに見えないよう、ここでも管理者モードを条件に加える。
-    var _isAdminForTenmei = !!(allSettings.flags && allSettings.flags.adminMode);
+    var _isAdminForTenmei = isKoyomiruAdminMode();
     var _tenmeiShow = _tenmei.activated && _isAdminForTenmei;
     if (_tenmeiShow) {
       _btnArea.style.display = 'block';
@@ -33561,7 +33579,7 @@ function renderDashboardView() {
   (function _renderSoulJourney() {
     var _card = document.getElementById('dbSoulJourneyCard');
     if (!_card) return;
-    if (!(allSettings.flags && allSettings.flags.adminMode)) { _card.style.display = 'none'; return; }
+    if (!isKoyomiruAdminMode()) { _card.style.display = 'none'; return; }
     // craftModeOFF分岐を廃止：デフォルトONのため常にカードを表示する
     var _axis = (allSettings.ui && allSettings.ui.growthAxis) || 'shin';
     var _cfg = CYCLE_CONFIG[_axis] || CYCLE_CONFIG['shin'];
@@ -37386,7 +37404,7 @@ function _renderCardList(listEl, emptyEl, cardEl, items, color, icon, editFn, de
   // フォーカス先」は、禁止でなく上書きで行動を変える認知行動療法的なアプローチで、
   // やることクラフトの内省・自己観察哲学の色が強い。TimeTree等のシンプルな共有
   // カレンダーを手本にする方針のもと、一般ユーザーからは隠し、管理者モードのみに限定する。
-  var _unlocked = (_comp >= 20 || _jour >= 3 || items.length > 0) && !!(allSettings.flags && allSettings.flags.adminMode);
+  var _unlocked = (_comp >= 20 || _jour >= 3 || items.length > 0) && isKoyomiruAdminMode();
   if (!_unlocked) { cardEl.style.display = 'none'; return; }
   cardEl.style.display = 'block';
   if (items.length === 0) {
@@ -37570,8 +37588,8 @@ function renderMyBehaviorsDashboard() {
   // v0.45.1492: 内省・自己観察系機能は管理者モード限定に変更（詳細は_renderCardList参照）
   var _completedCount = allTasks.filter(function(t){ return t.kind==='task' && t.completed; }).length;
   var _journalCount = allTasks.filter(function(t){ return t.kind==='journal'; }).length;
-  var _unlocked = (_completedCount >= 20 || _journalCount >= 3) && !!(allSettings.flags && allSettings.flags.adminMode);
-  if ((allSettings.myBehaviors || []).length > 0 && allSettings.flags && allSettings.flags.adminMode) _unlocked = true;
+  var _unlocked = (_completedCount >= 20 || _journalCount >= 3) && isKoyomiruAdminMode();
+  if ((allSettings.myBehaviors || []).length > 0 && isKoyomiruAdminMode()) _unlocked = true;
   if (!_unlocked) { card.style.display = 'none'; return; }
 
   // 初回解放トースト
@@ -37845,7 +37863,7 @@ function renderMyRulesDashboard() {
   // v0.45.1492: 内省・自己観察系機能は管理者モード限定に変更（詳細は_renderCardList参照）
   var _completedCount = allTasks.filter(function(t){ return t.kind==='task' && t.completed; }).length;
   var _journalCount = allTasks.filter(function(t){ return t.kind==='journal'; }).length;
-  var _isAdmin = !!(allSettings.flags && allSettings.flags.adminMode);
+  var _isAdmin = isKoyomiruAdminMode();
   var _unlocked = (_completedCount >= 20 || _journalCount >= 3) && _isAdmin;
 
   // 既にマイルールを持っているユーザーは常に解放（ただし管理者モード時のみ）
@@ -47194,7 +47212,9 @@ function checkAdminPw() {
   if (!input) return;
   if (input.value === ADMIN_PW) {
     allSettings.flags.adminMode = true; saveAllSettings();
+    // v0.45.1924: window側にも印を付ける。片方だけ立てると食い違う。
     _adminModeActive = true;
+    window._adminModeActive = true;
     var extra = document.getElementById('adminBadgeExtra');
     if (extra) extra.classList.add('admin-visible');
     var sec = document.getElementById('adminPwSection');
@@ -64253,7 +64273,9 @@ function toggleAdminMode() {
     showAdminToast('\u{1F512} \u89E3\u9664\u3057\u307E\u3057\u305F');
   } else {
     allSettings.flags.adminMode = true; saveAllSettings();
+    // v0.45.1924: window側にも印を付ける。片方だけ立てると食い違う。
     _adminModeActive = true;
+    window._adminModeActive = true;
     if (extra) extra.classList.add('admin-visible');
     if (el) el.style.display = 'block';
     if (growthSec) growthSec.style.display = 'block';
