@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1935 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1940 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1935';
+    const APP_VERSION = 'v0.45.1940';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9404,6 +9404,13 @@ function _showInviteWelcome() {
           <button onclick="resetNavTabOrder()" style="margin-top:8px;padding:7px 14px;border:1px solid #dcdcdc;border-radius:8px;background:#fff;color:#666;font-size:0.8em;cursor:pointer;">既定の順に戻す</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;">
+          <!-- v0.45.1938: 【権威】2026-09-02、庭タブを消せるようにしたい、との要望。
+               他のタブには表示切り替えがあるのに、庭だけ無かった。
+               ナビの並び順と揃えて先頭に置く。 -->
+          <label id="settingsLabelGarden" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="visTabGarden" onchange="toggleVisibleTab('garden',this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
+            <span style="font-size:0.9em;color:#333;font-weight:600;">🌳 庭</span>
+          </label>
           <label id="settingsLabelDaily" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <input type="checkbox" id="visTabDaily" onchange="toggleVisibleTab('daily',this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
             <span style="font-size:0.9em;color:#333;font-weight:600;">📅 日次</span>
@@ -10732,6 +10739,20 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
           weekly: true, monthly: true, journal: true, photo: true,
           yearly: true, notebook: true, craft: true,
           dashboard: true,
+          // v0.45.1936: 【権威】2026-09-02、旅行タブは設定のチェックが外れているのに
+          // ナビには出ている、との指摘。既定の一覧に travel が入っていなかった。
+          // 判定は「明示的に false でなければ表示」なので、
+          // 未定義だと、設定画面で外れて見えるのにナビには出続ける。
+          // 設定の見た目と実際の動きが食い違うのが最も困る。既定を明示する。
+          //
+          // 同じ穴が daily と gant にもあった。設定にチェック欄があるのに
+          // 既定が無いものは、すべて同じ症状になる。あわせて明示する。
+          // garden・search・設定は消す手段が無いので、既定を持たなくてよい。
+          travel: true,
+          daily: true,
+          gant: false,
+          // v0.45.1938: 庭。既定はON。消したい人は設定で消せる。
+          garden: true,
           // v0.45.1831: 開発者の声。既定はON。
           // 作っている人の顔が見えることが、このアプリの強みだと考えているため、
           // 最初から見える場所に置く。不要なら設定で消せる。
@@ -17366,6 +17387,12 @@ function applyVisibleTabsSettings() {
     // v0.45.1699: 旅行タブも表示制御の対象にする。
     // ここに無いと、設定で消しても消えない・並び替えの土台にも乗らない。
     { id: 'navTravel',     key: 'travel' },
+    // v0.45.1939: 庭と開発者の声もここに入れる。
+    // v0.45.1699の注記どおり、この一覧に無いものは設定で消しても消えない。
+    // 庭は今回チェック欄を新設した。開発者の声は並び替えの対象にはしていたが、
+    // この一覧から漏れており、消せない状態だった。
+    { id: 'navGarden',     key: 'garden' },
+    { id: 'navPodcast',    key: 'podcast' },
   ];
   tabs.forEach(function(t) {
     var el = document.getElementById(t.id);
@@ -18320,7 +18347,13 @@ function updateKingdomModeButtons() {
   }
   // ナビタブ表示チェックボックスも現在のvisibleTabsに同期
   var vt = (allSettings.ui && allSettings.ui.visibleTabs) || {};
-  var vtMap = { daily: 'visTabDaily', weekly: 'visTabWeekly', monthly: 'visTabMonthly', yearly: 'visTabYearly', notebook: 'visTabNotebook', journal: 'visTabJournal', photo: 'visTabPhoto', dashboard: 'visTabDashboard' };
+  // v0.45.1939: 【権威】2026-09-02、旅行タブが設定で外れて見えるのにナビに出る、
+  // との指摘から、表示切り替えの仕組み全体を点検した。
+  // 3つの一覧（既定値・表示制御・チェック状態の読み込み）が別々に管理されており、
+  // 旅行はこの対応表から漏れていた。設定を開くたびにチェックが外れて見え、
+  // 実際の設定と食い違っていた。庭も今回チェック欄を新設したので加える。
+  // 一覧が3つに分かれている限り、また同じ漏れが起きる。
+  var vtMap = { garden: 'visTabGarden', daily: 'visTabDaily', weekly: 'visTabWeekly', monthly: 'visTabMonthly', yearly: 'visTabYearly', notebook: 'visTabNotebook', travel: 'visTabTravel', journal: 'visTabJournal', photo: 'visTabPhoto', dashboard: 'visTabDashboard' };
   Object.keys(vtMap).forEach(function(key) {
     var el = document.getElementById(vtMap[key]);
     if (el) el.checked = vt[key] !== false;
