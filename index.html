@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1940 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1948 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1940';
+    const APP_VERSION = 'v0.45.1948';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -1646,6 +1646,22 @@ function _showInviteWelcome() {
       padding: 20px;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+    }
+    /* v0.45.1941: 【権威】2026-09-02、検索の結果が少ないと、
+       枠が画面の真ん中に浮いて下に止まる、との指摘。
+       原因は align-items:center で縦中央に置いていたこと。
+       検索は上から下へ読むものなので、上に寄せて高さを使い切る。
+       他のモーダル（確認窓など）は中央のままでよい。ここだけ変える。 */
+    #searchModal.show {
+      align-items: flex-start;
+      padding-top: 3vh;
+    }
+    #searchModal .modal-content {
+      height: 90vh;
+      height: 90dvh;
+      max-height: 90vh;
+      max-height: 90dvh;
+      width: 100%;
     }
     /* 逃げ出したメッセージ */
     .escape-message {
@@ -12491,6 +12507,15 @@ function renderTodoList() {
       document.getElementById('searchResults').innerHTML = '';
       document.getElementById('searchCount').textContent = '0件';
       if (typeof switchSearchTab === 'function') switchSearchTab('search');
+      // v0.45.1943: 開いたときに絞り込みを描く。
+      // 前回の絞り込みは持ち越さない。探すたびに範囲が違うのが普通なので、
+      // 覚えていると「なぜ出ないのか」で悩ませる。
+      window._searchCalFilter = null;
+      window._searchRange = 'month';
+      if (typeof renderSearchCalFilter === 'function') renderSearchCalFilter();
+      if (typeof renderSearchRangeFilter === 'function') renderSearchRangeFilter();
+      // v0.45.1947: 開いた瞬間に一覧を出す。探し始められるようにする。
+      if (typeof renderSearchResults === 'function') renderSearchResults();
       setTimeout(() => { var el = document.getElementById('searchInput'); if(el) el.focus(); }, 100);
       // 初回オンボーディング
       if (!allSettings.flags.searchOnboardSeen) {
@@ -12521,10 +12546,67 @@ function renderTodoList() {
     function closeSearchModal() {
       document.getElementById('searchModal').classList.remove('show');
     }
+    // v0.45.1942: カレンダーの絞り込みボタンを描く。
+    // 月間の絞り込みと同じ見た目にして、操作を覚え直さなくて済むようにする。
+    function renderSearchCalFilter() {
+      var box = document.getElementById('searchCalFilter');
+      if (!box) return;
+      var _cals = (calendars || []).filter(function(c){ return c && c.visible !== false; });
+      // v0.45.1945: カレンダーが1つのときも出す。
+      // 「1つなら絞る意味がない」と隠していたが、画面の作りが状況で変わるほうが
+      // 分かりにくい。月間の絞り込みは常に出ているので、そちらと揃える。
+      box.style.display = 'flex';
+      var _cur = window._searchCalFilter || null;
+      var _btn = function(id, label, color) {
+        var _on = (_cur === id);
+        return '<button onclick="setSearchCalFilter(' + (id ? "'" + id + "'" : 'null') + ')" ' +
+          'style="padding:5px 12px;border:1.5px solid ' + (_on ? (color || '#0b6bcb') : '#e0e0e0') + ';' +
+          'border-radius:16px;background:' + (_on ? (color || '#0b6bcb') : '#fff') + ';' +
+          'color:' + (_on ? '#fff' : '#666') + ';font-size:0.75em;font-weight:600;cursor:pointer;' +
+          'white-space:nowrap;flex-shrink:0;font-family:inherit;">' + escAttr(label) + '</button>';
+      };
+      box.innerHTML = _btn(null, 'すべて') +
+        _cals.map(function(c){ return _btn(c.id, c.name || '(無題)', c.color); }).join('');
+    }
+    window.renderSearchCalFilter = renderSearchCalFilter;
+
+    // v0.45.1946: 期間の切り替え。開発者の声の一覧と同じ形にする。
+    function renderSearchRangeFilter() {
+      var box = document.getElementById('searchRangeFilter');
+      if (!box) return;
+      var _cur = window._searchRange || 'month';
+      var _b = function(key, label) {
+        var _on = (_cur === key);
+        return '<button onclick="setSearchRange(\'' + key + '\')" ' +
+          'style="padding:5px 12px;border:1px solid ' + (_on ? '#333' : '#e0e0e0') + ';' +
+          'border-radius:14px;background:' + (_on ? '#333' : '#fff') + ';' +
+          'color:' + (_on ? '#fff' : '#666') + ';font-size:0.72em;font-weight:600;' +
+          'cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;">' + label + '</button>';
+      };
+      box.innerHTML = _b('week','今週') + _b('month','今月') + _b('future','今日から先') + _b('all','過去もふくめて全部');
+    }
+    window.renderSearchRangeFilter = renderSearchRangeFilter;
+
+    function setSearchRange(range) {
+      window._searchRange = range;
+      renderSearchRangeFilter();
+      renderSearchResults();
+    }
+    window.setSearchRange = setSearchRange;
+
+    function setSearchCalFilter(calId) {
+      window._searchCalFilter = calId;
+      renderSearchCalFilter();
+      renderSearchResults();
+    }
+    window.setSearchCalFilter = setSearchCalFilter;
+
     function renderSearchResults() {
       const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
       const container = document.getElementById('searchResults');
-      if (!q) { container.innerHTML = ''; document.getElementById('searchCount').textContent = '0件'; return; }
+      // v0.45.1946: 言葉が空でも一覧を出す。期間とカレンダーで絞る。
+      // 「言葉を入れないと何も出ない」のは、探すものを覚えている人にしか効かない。
+      // コメントのタブと同じく、開いた瞬間に眺められるようにする。
       // タスク検索（kindが'note'以外 または 未設定の古いタスクも対象）
       // v0.45.1700: 旅行は名前が title に入るため、text と memo だけを見ていると
       // 「草津ゴルフ」で検索しても出てこなかった。title も見るようにする。
@@ -12532,9 +12614,33 @@ function renderTodoList() {
         ((t.text || '').toLowerCase().includes(q) ||
          (t.title || '').toLowerCase().includes(q) ||
          (t.memo || '').toLowerCase().includes(q))
-      ).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      ).filter(t => {
+        // v0.45.1942: カレンダーで絞り込む。未選択なら全部。
+        if (window._searchCalFilter && t.calendarId !== window._searchCalFilter) return false;
+        // v0.45.1946: 期間で絞り込む。既定は今月。
+        var _r = window._searchRange || 'month';
+        if (_r === 'all') return true;
+        var _d = t.date || '';
+        if (!_d) return _r === 'all';
+        var _td = new Date(); _td.setHours(0,0,0,0);
+        var _fmt = function(dt) {
+          return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+        };
+        if (_r === 'future') return _d >= _fmt(_td);
+        if (_r === 'week') {
+          var _s = new Date(_td); _s.setDate(_s.getDate() - _s.getDay());
+          var _e = new Date(_s); _e.setDate(_e.getDate() + 6);
+          return _d >= _fmt(_s) && _d <= _fmt(_e);
+        }
+        // month
+        return _d >= _fmt(new Date(_td.getFullYear(), _td.getMonth(), 1)) &&
+               _d <= _fmt(new Date(_td.getFullYear(), _td.getMonth() + 1, 0));
+      }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       // 自由帳検索
-      const noteHits = nbPages().filter(p =>
+      // v0.45.1947: 言葉が空のときは自由帳を出さない。
+      // 一覧として眺めたいのは予定であって、自由帳の全ページではない。
+      // 言葉を入れれば、これまでどおり自由帳も探す。
+      const noteHits = !q ? [] : nbPages().filter(p =>
         (p.title || '').toLowerCase().includes(q) ||
         (p.textL || '').toLowerCase().includes(q) ||
         (p.textR || '').toLowerCase().includes(q)
@@ -36575,6 +36681,16 @@ window.addEventListener('afterprint', function() {
         <div id="commentSearchResults" style="flex:1;overflow-y:auto;"></div>
       </div>
       <div id="searchPaneSearch" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+        <!-- v0.45.1942: 【権威】2026-09-02、検索でもカレンダーごとに
+             予定を出したい、との要望。共有カレンダーが増えると、
+             どのカレンダーの予定かを絞れないと目的のものに辿り着けない。
+             月間の絞り込みと同じ形にして、操作を覚え直さなくて済むようにする。 -->
+        <div id="searchCalFilter" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;"></div>
+        <!-- v0.45.1946: 【権威】2026-09-02、検索は言葉を入れないと何も出ず、
+             コメントのタブは開いた瞬間に一覧が出る、という不揃いがあった。
+             共有カレンダーの予定一覧で使った期間の切り替えが良かったとの評価を受け、
+             同じ形にする。押した瞬間に何か出るほうが、探し始められる。 -->
+        <div id="searchRangeFilter" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;"></div>
         <div style="font-size:0.78em;color:#aaa;margin-bottom:8px;">
           <span id="searchCount">0件</span>ヒット　<span style="color:#ccc;">完了済みも含む</span>
         </div>
