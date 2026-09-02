@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1961 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1964 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1961';
+    const APP_VERSION = 'v0.45.1964';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -18258,7 +18258,13 @@ var KINGDOM_MODES = {
   camp: {
     label: '🌱 種',
     // 日次・日誌・クラフト・ショップ
-    visibleTabs: { weekly: false, monthly: false, yearly: false, notebook: false, dashboard: false, photo: false, travel: false },
+    // v0.45.1963: 【権威】2026-09-02、テストのたびに visibleTabs が変化する、
+    // とTPAGが検出。原因は、既定値には daily・gant・garden・podcast があるのに、
+    // モードの定義には無かったこと。selectKingdomMode は visibleTabs を
+    // モードの定義で丸ごと置き換えるので、書いていないものは消える。
+    // 一覧が2つに分かれていて、片方にしか無いものが落ちていた。
+    // すべてのモードに全部のkeyを明示する。
+    visibleTabs: { garden: true, daily: true, weekly: false, monthly: false, yearly: false, notebook: false, journal: true, dashboard: false, photo: false, travel: false, gant: false, podcast: true },
     gantEnabled: false,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -18268,7 +18274,7 @@ var KINGDOM_MODES = {
   village: {
     label: '🌿 芽',
     // +週間のみ
-    visibleTabs: { weekly: true, monthly: false, yearly: false, notebook: false, dashboard: false, photo: false, travel: false },
+    visibleTabs: { garden: true, daily: true, weekly: true, monthly: false, yearly: false, notebook: false, journal: true, dashboard: false, photo: false, travel: false, gant: false, podcast: true },
     gantEnabled: false,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -18278,7 +18284,7 @@ var KINGDOM_MODES = {
   town: {
     label: '🌳 若木',
     // +写真館・映画館・礎石・年間（造営は王国のみ）
-    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, dashboard: true, photo: true, travel: true },
+    visibleTabs: { garden: true, daily: true, weekly: true, monthly: true, yearly: true, notebook: true, journal: true, dashboard: true, photo: true, travel: true, gant: false, podcast: true },
     gantEnabled: false,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -18288,7 +18294,7 @@ var KINGDOM_MODES = {
   kingdom: {
     label: '🌸 庭園',
     // 全機能解放（深考追加）
-    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, dashboard: true, photo: true, travel: true },
+    visibleTabs: { garden: true, daily: true, weekly: true, monthly: true, yearly: true, notebook: true, journal: true, dashboard: true, photo: true, travel: true, gant: true, podcast: true },
     gantEnabled: true,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -18298,7 +18304,7 @@ var KINGDOM_MODES = {
   polestar: {
     label: '⭐ 北極星',
     // 王国と同じ・未来実装の枠
-    visibleTabs: { weekly: true, monthly: true, yearly: true, notebook: true, dashboard: true, photo: true, travel: true },
+    visibleTabs: { garden: true, daily: true, weekly: true, monthly: true, yearly: true, notebook: true, journal: true, dashboard: true, photo: true, travel: true, gant: true, podcast: true },
     gantEnabled: true,
     craftModeEnabled: false,
     showJournalBtn: true,
@@ -54141,7 +54147,12 @@ window._stFnSrc = _stFnSrc;
 
        // ⑪ tier=lockedレイヤーが解放済みリストに含まれないこと
        var _unlocked = typeof getUnlockedMatrixLayers === 'function' ? getUnlockedMatrixLayers() : [];
-       var _lockedInUnlocked = _unlocked.filter(function(l){ return l.tier === 'locked'; });
+       // v0.45.1962: 管理者モードなら locked層は出るのが正しい（そのための隠し層）。
+       // v0.45.1922で判定を isKoyomiruAdminMode() に寄せた結果、
+       // 保存された管理者モードも見るようになり、テスト中も locked層が出るようになった。
+       // 実装が正しくなったので、テスト側を実態に合わせる。
+       var _lockedInUnlocked = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())
+         ? [] : _unlocked.filter(function(l){ return l.tier === 'locked'; });
        _lockedInUnlocked.length === 0
          ? ok('ST-113·⑪: locked層は解放リストに含まれない確認（解放数=' + _unlocked.length + '）')
          : ng('ST-113·⑪: locked層が解放リストに混入', _lockedInUnlocked.map(function(l){return l.id;}).join(','));
@@ -54257,7 +54268,13 @@ window._stFnSrc = _stFnSrc;
        allSettings.ui.pinnedMatrixLayers = ['eisenhower'];
        var _filtered = getUnlockedMatrixLayers();
        var _filteredIds = _filtered.map(function(l){ return l.id; });
-       (_filteredIds.length === 1 && _filteredIds[0] === 'eisenhower')
+       // v0.45.1962: locked層は「ピン留めより優先して返す」仕様なので、
+       // 管理者モードのときは eisenhower に加えて locked層も返る。
+       // v0.45.1922で判定を寄せた結果、テスト中も管理者モードが効くようになった。
+       // 見たいのは「ピン留めが効いているか」なので、locked層を除いて数える。
+       var _filteredNoLocked = _filtered.filter(function(l){ return l.tier !== 'locked'; })
+                                        .map(function(l){ return l.id; });
+       (_filteredNoLocked.length === 1 && _filteredNoLocked[0] === 'eisenhower')
          ? ok('ST-114·③: pinnedMatrixLayers=[eisenhower] → 1層のみ返す確認')
          : ng('ST-114·③: ピン留めフィルタ不正', JSON.stringify(_filteredIds));
 
@@ -54267,8 +54284,11 @@ window._stFnSrc = _stFnSrc;
        // v0.45.1794: 「26層以上」という決め打ちをやめる。層は増減するので、
        // 数を書くと足すたび減らすたびに落ちる。見たいのは「絞り込みを外したら
        // 解放されている層がすべて返るか」なので、実際の解放層数と突き合わせる。
+       // v0.45.1962: 管理者モードなら locked層も解放されるので、期待値に含める。
+       // 「locked層は出ない」という前提は、管理者モードでない場合のもの。
+       var _adminNow114 = (typeof isKoyomiruAdminMode === 'function') && isKoyomiruAdminMode();
        var _expect114 = (typeof MATRIX_LAYERS !== 'undefined')
-         ? MATRIX_LAYERS.filter(function(l){ return l && l.tier !== 'locked'; }).length : 0;
+         ? MATRIX_LAYERS.filter(function(l){ return l && (_adminNow114 || l.tier !== 'locked'); }).length : 0;
        (_expect114 > 0 && _all.length === _expect114)
          ? ok('ST-114·④: pinnedMatrixLayers=null → 解放層すべてを返す確認（' + _all.length + '層）')
          : ng('ST-114·④: 全層返却失敗', _all.length + '層（期待' + _expect114 + '層）');
