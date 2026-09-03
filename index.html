@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2018 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2019 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2018';
+    const APP_VERSION = 'v0.45.2019';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40216,7 +40216,7 @@ async function listMySharedCalendars() {
   var _ids = (_mine.data || []).map(function(row){ return row.calendar_id; });
   if (!_ids.length) return { data: [] };
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
-    .select('id, name, invite_code, invite_code_expires_at, invite_max_uses, invite_used_count, owner_id, is_personal')
+    .select('id, name, invite_code, invite_code_expires_at, invite_max_uses, invite_used_count, invite_issued_at, owner_id, is_personal')
     .in('id', _ids)
     .order('created_at', { ascending: true });
   if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); return r; }
@@ -44462,6 +44462,8 @@ async function refreshSharedCalendarList() {
     var _safeName = escAttr(c.name || '共有カレンダー');
     // v0.45.2014: 招待の残り時間と残り席。ここで一度だけ計算して使い回す。
     var _remain = _inviteRemainText(c.invite_code_expires_at);
+    // v0.45.2019: 自動で発行された合言葉と、本人が作ったリンクを区別する。
+    var _issued = !!c.invite_issued_at;
     var _seatText = '';
     if (typeof c.invite_max_uses === 'number' && c.invite_max_uses !== null) {
       var _left = Math.max(0, c.invite_max_uses - (c.invite_used_count || 0));
@@ -44549,19 +44551,27 @@ async function refreshSharedCalendarList() {
               '</div>' +
             '</div>' : '') +
           '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">招待リンク</div>' +
-          // v0.45.2018: 【権威】2026-09-03、「あと10分」とだけ出ても何の10分か分からない、との指摘。
-          // 数字だけを置くのは、書いた側が文脈を知っているからできることである。
-          // 読む人は、いま配ってあるリンクの話だと知らない。何が終わるのかを書く。
-          '<div style="font-size:0.8em;line-height:1.7;margin-bottom:' + (_remain.expired ? '10px' : '8px') + ';color:' +
-            (_remain.expired ? '#b3261e' : (_remain.minutes < 10 ? '#c07a2a' : '#3a7a3a')) + ';font-weight:600;">' +
-            (_remain.expired
-              ? 'いま配ってあるリンクは期限が切れています'
-              : 'いま配ってあるリンクは、あと' + escAttr(_remain.text.replace(/^あと/, '')) + 'で切れます') +
-            (_seatText ? '<br><span style="color:#8e8e8e;font-weight:400;">この招待で入れるのは' + escAttr(_seatText) + '</span>' : '') +
-          '</div>' +
-          (_remain.expired
-            ? '<div style="font-size:0.74em;color:#b3261e;line-height:1.7;margin-bottom:10px;">' +
-                'このリンクはもう使えません。下から作り直してください。</div>'
+          // v0.45.2019: 【権威】2026-09-03、リンクを作っていないのにタイマーが出るのは変、との指摘。
+          // カレンダーを作った時点で合言葉が自動で発行されるため、
+          // 誰にも配っていないカレンダーにも生きた合言葉と期限が付いていた。
+          // 画面は、存在しないリンクの残り時間を数えていた。
+          // 配っていないのに「いま配ってあるリンクは…」と書くのは嘘である。
+          // 作った覚えがあるものだけを、リンクとして扱う。
+          (!_issued
+            ? '<div style="font-size:0.8em;color:#8e8e8e;line-height:1.7;margin-bottom:10px;">' +
+                'まだ招待リンクを作っていません。<br>下から作ると、1時間だけ使えるリンクができます。</div>'
+            : '<div style="font-size:0.8em;line-height:1.7;margin-bottom:' + (_remain.expired ? '10px' : '8px') + ';color:' +
+                (_remain.expired ? '#b3261e' : (_remain.minutes < 10 ? '#c07a2a' : '#3a7a3a')) + ';font-weight:600;">' +
+                (_remain.expired
+                  ? 'いま配ってあるリンクは期限が切れています'
+                  : 'いま配ってあるリンクは、あと' + escAttr(_remain.text.replace(/^あと/, '')) + 'で切れます') +
+                (_seatText ? '<br><span style="color:#8e8e8e;font-weight:400;">この招待で入れるのは' + escAttr(_seatText) + '</span>' : '') +
+              '</div>') +
+          (!_issued || _remain.expired
+            ? (_remain.expired && _issued
+                ? '<div style="font-size:0.74em;color:#b3261e;line-height:1.7;margin-bottom:10px;">' +
+                    'このリンクはもう使えません。下から作り直してください。</div>'
+                : '')
             : '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
                 '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクをコピー</a>' +
                 '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
@@ -44575,7 +44585,7 @@ async function refreshSharedCalendarList() {
           // v0.45.2014: 作り直しは持ち主だけ。押した瞬間、前のリンクは死ぬ。
           (_isOwner ?
             '<div style="background:#f7f8fa;border-radius:10px;padding:12px;margin-bottom:14px;">' +
-              '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:7px;">新しい招待リンクを作る</div>' +
+              '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:7px;">' + (_issued ? '新しい招待リンクを作る' : '招待リンクを作る') + '</div>' +
               '<div style="display:flex;gap:6px;margin-bottom:7px;">' +
                 '<select id="' + safeId + '_maxmode" onchange="var n=document.getElementById(\'' + safeId + '_maxnum\'); n.style.display = this.value===\'num\' ? \'block\' : \'none\';" ' +
                   'style="flex:1;min-width:0;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;background:#fff;">' +
@@ -44588,9 +44598,10 @@ async function refreshSharedCalendarList() {
               '</div>' +
               '<button onclick="regenerateSharedCalendarInvite(\'' + c.id + '\', \'' + safeId + '\')" ' +
                 'style="width:100%;padding:9px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;font-family:inherit;">' +
-                'リンクを作り直す</button>' +
+                (_issued ? 'リンクを作り直す' : 'リンクを作る') + '</button>' +
               '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">' +
-                '1時間だけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。</div>' +
+                (_issued ? '1時間だけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。'
+                         : '1時間だけ使えるリンクができます。') + '</div>' +
             '</div>' : '') +
           (_isOwner ?
             '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
@@ -44904,6 +44915,7 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
     .update({
       invite_code: _code,
       invite_code_expires_at: _expires,
+      invite_issued_at: new Date().toISOString(),
       invite_max_uses: _max,
       invite_used_count: 0
     })
