@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2012 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2013 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2012';
+    const APP_VERSION = 'v0.45.2013';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -47304,6 +47304,75 @@ try {
 window.cloudUpdateNavLoginIndicator = cloudUpdateNavLoginIndicator;
 // ===== END v0.45.1236 ログイン状態インジケーター =====
 
+// ===== v0.45.2013: メールのリンクを、どのブラウザからでも開けるようにする =====
+// 【権威】2026-09-03、ヤフーメールに再設定メールは届くのに、
+// リンクを開いたところで弾かれる、との報告。届く実績があるため、
+// 送信そのものではなく、リンクを踏んだ後で落ちている。
+//
+// いまの標準のリンクは、Supabaseの検証窓口を先に通ってからこよみるへ戻る。
+// この作りには二つの弱点があり、Supabase自身も原因として挙げている。
+//  ① メールの安全確認がリンクを先に踏むと、その時点で合言葉が使い切られる。
+//     人が押したときには「使用済み」になっている。
+//  ② 申し込んだブラウザと開いたブラウザが違うと通らないことがある。
+//     メールアプリから押すと、アプリの中のブラウザが立ち上がる。
+//
+// 合言葉（token_hash）をこよみるの住所に直接付ける形に変えると、両方が消える。
+// こよみるの頁は静かな頁で、開かれただけでは何も起きない。合言葉を使うのは、
+// この場所で verifyOtp を呼んだときだけである。安全確認の機械は文字を読むだけで、
+// こちらの処理は動かさない。合言葉そのものが身分証になるため、
+// どのブラウザで開いても通る。
+//
+// 有効にするには、Supabaseのダッシュボードで
+// Authentication → Email Templates → Reset Password の宛先を次の形に変える。
+//   https://koyomiru.com/?token_hash={{ .TokenHash }}&type=recovery
+// 変えるまで、この処理は何もしない。従来のリンクもそのまま動く。
+
+// 住所から合言葉を取り出すところだけを、独立した関数にする。
+// 通信を伴わないため、これだけはテストで実際に通せる（第76条）。
+function _koyomiruParseTokenHashLink(searchStr, hashStr) {
+  var out = { tokenHash: '', type: '' };
+  try {
+    var q = new URLSearchParams(String(searchStr || '').replace(/^\?/, ''));
+    var h = new URLSearchParams(String(hashStr || '').replace(/^#/, ''));
+    out.tokenHash = q.get('token_hash') || h.get('token_hash') || '';
+    out.type = q.get('type') || h.get('type') || '';
+  } catch (e) {}
+  return out;
+}
+window._koyomiruParseTokenHashLink = _koyomiruParseTokenHashLink;
+
+(function _koyomiruHandleTokenHashLink() {
+  try {
+    var got = _koyomiruParseTokenHashLink(window.location.search, window.location.hash);
+    if (!got.tokenHash || !got.type) return;
+    if (!window.supabaseClient) return;
+    // ここから先は、案内をこちらが出す。3秒後の見張りと二重に出さない。
+    window._koyomiruRecoveryHandled = true;
+    // 住所欄から合言葉を消す。履歴にも、肩越しの目にも残さない。
+    try { window.history.replaceState({}, '', window.location.pathname); } catch (eH) {}
+    window.supabaseClient.auth.verifyOtp({ token_hash: got.tokenHash, type: got.type })
+      .then(function (r) {
+        if (r && r.error) {
+          var raw = (typeof window._cloudTranslateAuthError === 'function')
+            ? window._cloudTranslateAuthError(r.error.message).msg : String(r.error.message || '');
+          // 第68条：外から来た文字をそのままHTMLに差し込まない
+          var safe = (typeof escAttr === 'function') ? escAttr(raw) : raw;
+          if (typeof window._showAuthArrivalHelp === 'function') {
+            window._showAuthArrivalHelp('リンクを確かめられませんでした。<br><br>' +
+              safe.replace(/\n/g, '<br>') +
+              '<br><br>下のボタンから申し込み直して、届いたメールをすぐに開いてください。');
+          }
+          return;
+        }
+        if (got.type === 'recovery' && typeof window.openPasswordResetForm === 'function') {
+          window.openPasswordResetForm();
+        }
+      })
+      .catch(function (e) { console.warn('[Auth] 合言葉の確認に失敗:', e && e.message); });
+  } catch (e) { console.warn('[Auth] 合言葉リンクの処理に失敗:', e && e.message); }
+})();
+// ===== END v0.45.2013 合言葉リンク =====
+
 // ===== v0.45.1238: 初回ログイン自動移行（まおさん対応・ゲスト→アカウントのデータ昇格） =====
 // 設計原則: 「空に書くのは自動でよい。あるものを消すのは人間の確認が要る」
 //  - クラウド空 ＆ ローカルにデータあり → 自動アップロード（新規登録者の王国を即座に保護）
@@ -60795,6 +60864,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window._cloudLoginEscBound === true
          ? ok('ST-247·⑮: Escキーでのモーダル閉鎖ハンドラ設置を確認')
          : ng('ST-247·⑮: Escキー処理が未設置', '');
+       // v0.45.2013: 合言葉リンクの読み取りを、実際に通して確かめる（第76条）。
+       // 通信は伴わないため、ここだけは本物の入口から出口まで走らせられる。
+       (function(){
+         if (typeof window._koyomiruParseTokenHashLink !== 'function') {
+           ng('ST-247·⑯: 合言葉リンクの読み取りが見つからない', '');
+           return;
+         }
+         var _c1 = window._koyomiruParseTokenHashLink('?token_hash=abc123&type=recovery', '');
+         var _c2 = window._koyomiruParseTokenHashLink('', '#token_hash=xyz789&type=recovery');
+         var _c3 = window._koyomiruParseTokenHashLink('?deck=DCK1:zzz', '');
+         (_c1.tokenHash === 'abc123' && _c1.type === 'recovery' &&
+          _c2.tokenHash === 'xyz789' && _c2.type === 'recovery' &&
+          _c3.tokenHash === '' && _c3.type === '')
+           ? ok('ST-247·⑯: 合言葉リンクを問い合わせ・かけら・無関係の3通りで読み分けられることを確認')
+           : ng('ST-247·⑯: 合言葉リンクの読み取りが噛み合わない',
+                JSON.stringify(_c1) + ' / ' + JSON.stringify(_c2) + ' / ' + JSON.stringify(_c3));
+       })();
        ok('ST-247: メール＋パスワード認証 確認 完了');
      } catch(e) {
        ng('ST-247: 例外', e.message);
