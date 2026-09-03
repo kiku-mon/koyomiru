@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2013 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2014 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2013';
+    const APP_VERSION = 'v0.45.2014';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40114,7 +40114,7 @@ async function listMySharedCalendars() {
   var _ids = (_mine.data || []).map(function(row){ return row.calendar_id; });
   if (!_ids.length) return { data: [] };
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
-    .select('id, name, invite_code, invite_code_expires_at, owner_id, is_personal')
+    .select('id, name, invite_code, invite_code_expires_at, invite_max_uses, invite_used_count, owner_id, is_personal')
     .in('id', _ids)
     .order('created_at', { ascending: true });
   if (r.error) { console.error('[SharedCal] 一覧取得失敗:', r.error.message); return r; }
@@ -44358,6 +44358,13 @@ async function refreshSharedCalendarList() {
     // v0.45.1880: 引用符を抜くだけでは守れない。属性用のエスケープを通す。
     // 名前は相手が自由に決められるので、ここは必ず塞ぐ。
     var _safeName = escAttr(c.name || '共有カレンダー');
+    // v0.45.2014: 招待の残り時間と残り席。ここで一度だけ計算して使い回す。
+    var _remain = _inviteRemainText(c.invite_code_expires_at);
+    var _seatText = '';
+    if (typeof c.invite_max_uses === 'number' && c.invite_max_uses !== null) {
+      var _left = Math.max(0, c.invite_max_uses - (c.invite_used_count || 0));
+      _seatText = (_left === 0) ? '満席' : ('あと' + _left + '席');
+    }
 
     // --- メンバー表示（共有カレンダーで最も知りたい情報なので常時表示する） ---
     var _mem = _memberMap[c.id];
@@ -44439,15 +44446,42 @@ async function refreshSharedCalendarList() {
                 '<button onclick="renameSharedCalendarFromModal(\'' + c.id + '\', \'' + safeId + '\')" style="padding:8px 14px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;white-space:nowrap;">変更</button>' +
               '</div>' +
             '</div>' : '') +
-          '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">招待リンク</div>' +
-          '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
-            '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクをコピー</a>' +
-            '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
+          '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">招待リンク　' +
+            '<span style="color:' + (_remain.expired ? '#b3261e' : (_remain.minutes < 10 ? '#c07a2a' : '#5a8a5a')) + ';font-weight:600;">' +
+            escAttr(_remain.text) + '</span>' +
+            (_seatText ? '<span style="color:#8e8e8e;">　' + escAttr(_seatText) + '</span>' : '') +
           '</div>' +
+          (_remain.expired
+            ? '<div style="font-size:0.74em;color:#b3261e;line-height:1.7;margin-bottom:10px;">' +
+                'このリンクはもう使えません。下から作り直してください。</div>'
+            : '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
+                '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクをコピー</a>' +
+                '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
+              '</div>') +
           '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
             '<img src="' + qrUrl + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
-            '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' + (c.invite_code_expires_at ? new Date(c.invite_code_expires_at).toLocaleDateString('ja-JP') + 'まで有効' : '') + '</div>' +
+            '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' + escAttr(_remain.text) + '</div>' +
           '</div>' +
+          // v0.45.2014: 作り直しは持ち主だけ。押した瞬間、前のリンクは死ぬ。
+          (_isOwner ?
+            '<div style="background:#f7f8fa;border-radius:10px;padding:12px;margin-bottom:14px;">' +
+              '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:7px;">新しい招待リンクを作る</div>' +
+              '<div style="display:flex;gap:6px;margin-bottom:7px;">' +
+                '<select id="' + safeId + '_maxmode" onchange="var n=document.getElementById(\'' + safeId + '_maxnum\'); n.style.display = this.value===\'num\' ? \'block\' : \'none\';" ' +
+                  'style="flex:1;min-width:0;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;background:#fff;">' +
+                  '<option value="none">人数の上限なし</option>' +
+                  '<option value="one">1人だけ</option>' +
+                  '<option value="num">人数を決める</option>' +
+                '</select>' +
+                '<input id="' + safeId + '_maxnum" type="number" min="1" max="100" placeholder="人数" ' +
+                  'style="display:none;width:80px;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;">' +
+              '</div>' +
+              '<button onclick="regenerateSharedCalendarInvite(\'' + c.id + '\', \'' + safeId + '\')" ' +
+                'style="width:100%;padding:9px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;font-family:inherit;">' +
+                'リンクを作り直す</button>' +
+              '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">' +
+                '1時間だけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。</div>' +
+            '</div>' : '') +
           (_isOwner ?
             '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
             '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">参加している全員の画面から消えます。取り消せません。</div>' +
@@ -44703,6 +44737,79 @@ window.renameMyDisplayNameFromModal = renameMyDisplayNameFromModal;
 window.renameSharedCalendarFromModal = renameSharedCalendarFromModal;
 window.leaveSharedCalendarFromModal = leaveSharedCalendarFromModal;
 window.deleteSharedCalendarFromModal = deleteSharedCalendarFromModal;
+
+// v0.45.2014: 残り時間を人の言葉にする。
+// 「2026-09-03T11:41:26Z まで」では、あと何分なのか誰にも分からない。
+function _inviteRemainText(expiresAt) {
+  if (!expiresAt) return { text: '期限が切れています', expired: true, minutes: 0 };
+  // v0.45.2014: 日時の書き方が一定でない。空白区切り・時差が +00 だけ、という形も来る。
+  // そのまま Date に渡すと読めず、有効なリンクを期限切れと誤判定する。
+  // 期限切れの嘘は、招待そのものを殺す。ここは必ず揃えてから読む。
+  var _s = String(expiresAt).trim().replace(' ', 'T');
+  if (/[+-]\d{2}$/.test(_s)) _s += ':00';
+  var ms = new Date(_s).getTime() - Date.now();
+  if (!isFinite(ms)) { console.warn('[SharedCal] 期限を読めませんでした:', expiresAt); return { text: '期限を確かめられません', expired: false, minutes: 999 }; }
+  if (ms <= 0) return { text: '期限が切れています', expired: true, minutes: 0 };
+  var min = Math.floor(ms / 60000);
+  if (min < 60) return { text: 'あと' + Math.max(1, min) + '分', expired: false, minutes: min };
+  var h = Math.floor(min / 60);
+  if (h < 24) return { text: 'あと' + h + '時間' + (min % 60) + '分', expired: false, minutes: min };
+  return { text: 'あと' + Math.floor(h / 24) + '日', expired: false, minutes: min };
+}
+window._inviteRemainText = _inviteRemainText;
+
+// v0.45.2014: 【権威】2026-09-03、招待リンクが切れていて誰も入れない、との報告。
+// 期限の既定が7日だったため、作った一週間後に静かに死んでいた。
+// 期限を1時間に縮めた以上、作り直す手立てが画面に無ければ、誰も誘えない。
+//
+// 作り直しは「期限を延ばす」ではなく「合言葉そのものを作り直す」。
+// 延ばすだけでは、漏れたリンクも一緒に生き返る。
+// 作り直せば、前に配ったリンクはその場で死ぬ。手元で確実に切れる手段を持つことが、
+// 時間まかせで死ぬのを待つより強い。
+//
+// 合言葉はこの端末の暗号用乱数で作る。時刻や連番からは作らない。
+// 決めるのは自分のカレンダーの値なので、他人が決められる値の検査（第72条）には当たらない。
+async function regenerateSharedCalendarInvite(calendarId, safeId) {
+  if (!window.supabaseClient) { _sharedCalSetStatus('⚠️ 通信できませんでした'); return; }
+  // 人数の枠を読む。空・0・数でないものは「上限なし」ではなく間違いとして弾く。
+  var _sel = document.getElementById(safeId + '_maxmode');
+  var _num = document.getElementById(safeId + '_maxnum');
+  var _mode = _sel ? _sel.value : 'none';
+  var _max = null;
+  if (_mode === 'one') {
+    _max = 1;
+  } else if (_mode === 'num') {
+    var _v = parseInt((_num && _num.value) || '', 10);
+    if (!isFinite(_v) || _v < 1) { _sharedCalSetStatus('⚠️ 人数は1以上で入れてください'); return; }
+    _max = Math.min(100, _v);
+  }
+  // 暗号用の乱数から12桁。Math.randomは使わない。
+  var _bytes = new Uint8Array(6);
+  (window.crypto || window.msCrypto).getRandomValues(_bytes);
+  var _code = Array.prototype.map.call(_bytes, function(b) {
+    return ('0' + b.toString(16)).slice(-2);
+  }).join('');
+  var _expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  var r = await window.supabaseClient.from('koyomiru_shared_calendars')
+    .update({
+      invite_code: _code,
+      invite_code_expires_at: _expires,
+      invite_max_uses: _max,
+      invite_used_count: 0
+    })
+    .eq('id', calendarId)
+    .select('id')
+    .single();
+  if (r.error) {
+    console.error('[SharedCal] 招待の作り直しに失敗:', r.error.message);
+    _sharedCalSetStatus('⚠️ 作り直せませんでした。少し待ってからお試しください');
+    return;
+  }
+  _sharedCalSetStatus('✅ 新しい招待リンクを作りました（1時間有効' +
+    (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）。前のリンクは使えなくなりました');
+  refreshSharedCalendarList();
+}
+window.regenerateSharedCalendarInvite = regenerateSharedCalendarInvite;
 
 // 招待リンクをクリップボードにコピー
 function copySharedCalendarInvite(url) {
@@ -60864,6 +60971,29 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window._cloudLoginEscBound === true
          ? ok('ST-247·⑮: Escキーでのモーダル閉鎖ハンドラ設置を確認')
          : ng('ST-247·⑮: Escキー処理が未設置', '');
+       // v0.45.2014: 招待の残り時間を、実際に来る3通りの書き方で通す（第76条）。
+       // ここを読み違えると、有効なリンクを「期限切れ」と偽り、招待そのものが死ぬ。
+       (function(){
+         if (typeof window._inviteRemainText !== 'function') {
+           ng('ST-247·⑰: 招待の残り時間の計算が見つからない', '');
+           return;
+         }
+         var _f = window._inviteRemainText;
+         var _now = Date.now();
+         var _iso = new Date(_now + 47 * 60000).toISOString();
+         var _a = _f(_iso);                                        // ISO
+         var _b = _f(_iso.replace('T', ' ').replace('Z', '+00'));  // 空白区切り・時差2桁
+         var _c = _f(_iso.replace('Z', '+00:00'));                 // 時差4桁
+         var _d = _f(new Date(_now - 1000).toISOString());         // 切れている
+         var _e = _f(null);                                        // 期限なし
+         (!_a.expired && !_b.expired && !_c.expired &&
+          _a.text === _b.text && _b.text === _c.text &&
+          _d.expired === true && _e.expired === true)
+           ? ok('ST-247·⑰: 招待の残り時間を3通りの書き方で同じに読めることを確認')
+           : ng('ST-247·⑰: 招待の残り時間の読み取りが噛み合わない',
+                _a.text + ' / ' + _b.text + ' / ' + _c.text +
+                ' 切:' + _d.expired + ' 無:' + _e.expired);
+       })();
        // v0.45.2013: 合言葉リンクの読み取りを、実際に通して確かめる（第76条）。
        // 通信は伴わないため、ここだけは本物の入口から出口まで走らせられる。
        (function(){
