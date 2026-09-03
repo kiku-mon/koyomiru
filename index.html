@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2015 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2016 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2015';
+    const APP_VERSION = 'v0.45.2016';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -449,6 +449,12 @@ async function _showInviteCard(code) {
     }
 
     var name = data.name || '共有カレンダー';
+    // v0.45.2016: 参加できたあと、手元に取り込むときに使う。
+    // ここで控えておけば、覗き見をやり直さずに済む。
+    try {
+      if (!window._koyomiruInviteName) window._koyomiruInviteName = {};
+      window._koyomiruInviteName[code] = name;
+    } catch (eNm) {}
     var members = (typeof data.member_count === 'number') ? data.member_count : null;
     var items = Array.isArray(data.upcoming) ? data.upcoming : [];
     // 初期値は、いま使っている名前。多くの人はそのまま押すだけで済む。
@@ -626,6 +632,26 @@ async function _acceptInvite(code) {
   }
   var ov = document.getElementById('inviteCardOverlay');
   if (ov) ov.remove();
+  // v0.45.2016: 【権威】2026-09-03、参加したのに書いた予定が相手に届かない、との報告。
+  // 調べたところ、参加した人の予定186件が、共有ではなく自分のカレンダーに入っていた。
+  //
+  // 原因はここだった。参加の直後に、手元のカレンダー一覧へ取り込んでいなかった。
+  // 取り込みは設定→共有カレンダーを開いたときにしか走らない作りで、
+  // 参加しただけの人のチップには、そのカレンダーが出ない。
+  // 「月間カレンダーに表示されます」と言っておいて、そこには無かった。
+  // 言われたとおりにした人が、自分のカレンダーに書き続けることになる。
+  // 参加した本人には、どちらに入ったか見えない。半月気づけなかった。
+  //
+  // 参加とは、書ける場所が増えることである。書ける場所が見えないなら参加していない。
+  try {
+    if (typeof window.linkSharedCalendarToLocal === 'function' && r.data) {
+      var _cid = (typeof r.data === 'string') ? r.data : (r.data.id || r.data);
+      // 名前はカードを組み立てたときに控えてある。ここで覗き見をやり直さない。
+      // やり直すと、回数制限の枠を一つ余計に使う（枠は全員で分け合っている）。
+      var _cname = (window._koyomiruInviteName && window._koyomiruInviteName[code]) || '共有カレンダー';
+      window.linkSharedCalendarToLocal(_cid, _cname, null);
+    }
+  } catch (eL) { console.warn('[招待] 手元への取り込みに失敗:', eL && eL.message); }
   // 参加したら、そのカレンダーが見える場所へ連れて行く。
   // 「参加しました」で終わると、どこを見ればいいか分からない。
   try {
