@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2014 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2015 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2014';
+    const APP_VERSION = 'v0.45.2015';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -396,7 +396,52 @@ async function _showInviteCard(code) {
       ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
         '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:8px;">この招待は使えません</div>' +
         '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
-          '期限が切れているか、取り消された可能性があります。<br>送った方にご確認ください。</div>' +
+          '取り消されたか、リンクが作り直された可能性があります。<br>送った方にご確認ください。</div>' +
+        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
+          'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
+      '</div>';
+      return;
+    }
+    // v0.45.2015: 【権威】2026-09-03、混んでいるだけなのに「期限切れ」と伝えていた。
+    // 覗き見の回数制限は全員分を合算する。22時に何人かが一斉に開けば止まる。
+    // 止まった理由を「期限切れ」と伝えると、送った側は作り直しに走り、
+    // 直らないまま招待そのものを諦める。混雑と期限切れは別のことである。
+    if (data.error === 'busy') {
+      ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
+        '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:8px;">いま混み合っています</div>' +
+        '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
+          '招待が無効になったわけではありません。<br>1分ほど待ってから、もう一度開いてください。</div>' +
+        '<button onclick="location.reload()" ' +
+          'style="width:100%;padding:12px;border:none;border-radius:12px;background:#7a6540;color:#fff;font-size:0.9em;cursor:pointer;font-family:inherit;margin-bottom:8px;">もう一度試す</button>' +
+        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
+          'style="width:100%;padding:11px;border:none;border-radius:12px;background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">閉じる</button>' +
+      '</div>';
+      return;
+    }
+    // 期限切れ。何が起きたかを言い、送った方に頼めることを伝える。
+    var _rem = (typeof window._inviteRemainText === 'function')
+      ? window._inviteRemainText(data.expires_at) : { text: '', expired: false, minutes: 999 };
+    if (data.expired === true || _rem.expired) {
+      ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
+        '<div style="font-size:2.2em;margin-bottom:6px;">⌛</div>' +
+        '<div style="font-size:1.05em;font-weight:700;color:#b3261e;margin-bottom:8px;">招待の期限が切れています</div>' +
+        '<div style="font-size:0.9em;color:#444;font-weight:600;margin-bottom:10px;">' + _esc(data.name || '共有カレンダー') + '</div>' +
+        '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
+          '招待リンクは1時間だけ使えます。<br>送った方に、もう一度お願いしてください。</div>' +
+        '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
+          'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
+      '</div>';
+      return;
+    }
+    // 満席。期限切れとは別。送った方は枠を増やせばよい。
+    var _seats = (typeof data.seats_left === 'number') ? data.seats_left : null;
+    if (_seats === 0) {
+      ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
+        '<div style="font-size:2.2em;margin-bottom:6px;">🈵</div>' +
+        '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:8px;">満席です</div>' +
+        '<div style="font-size:0.9em;color:#444;font-weight:600;margin-bottom:10px;">' + _esc(data.name || '共有カレンダー') + '</div>' +
+        '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
+          'この招待で入れる人数が埋まりました。<br>送った方に、もう一度お願いしてください。</div>' +
         '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
           'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
       '</div>';
@@ -425,8 +470,13 @@ async function _showInviteCard(code) {
         '<div style="text-align:center;font-size:0.8em;color:#8e8e8e;margin-bottom:4px;">カレンダーに招待されています</div>' +
         '<div style="text-align:center;font-size:1.25em;font-weight:700;color:#262626;margin-bottom:6px;">' + _esc(name) + '</div>' +
         (members !== null
-          ? '<div style="text-align:center;font-size:0.78em;color:#9aa3af;margin-bottom:16px;">' + members + '人が参加しています</div>'
-          : '<div style="margin-bottom:16px;"></div>') +
+          ? '<div style="text-align:center;font-size:0.78em;color:#9aa3af;margin-bottom:10px;">' + members + '人が参加しています</div>'
+          : '<div style="margin-bottom:10px;"></div>') +
+        // v0.45.2015: 残り時間と残り席を大きく出す。
+        // 招待リンクは1時間で切れる。切れることを知らないまま放置されると、
+        // 押した頃には死んでいる。「いま押す理由」を先に見せる。
+        '<div id="inviteCardTimer" style="text-align:center;background:#f4f7fb;border-radius:12px;' +
+          'padding:10px;margin-bottom:16px;font-size:1.15em;font-weight:700;color:#0b5bb0;">…</div>' +
         peek +
         '<div style="text-align:left;margin-bottom:16px;">' +
           '<div style="font-size:0.76em;color:#8e8e8e;margin-bottom:5px;">このカレンダーでの表示名</div>' +
@@ -439,6 +489,25 @@ async function _showInviteCard(code) {
         '<button onclick="document.getElementById(\'inviteCardOverlay\').remove();_releasePendingSetup(200)" ' +
           'style="width:100%;padding:11px;border:none;border-radius:12px;background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">あとにする</button>' +
       '</div>';
+    // v0.45.2015: 毎秒書き換える。残りが減るのが見えないと、急ぐ理由にならない。
+    // カードが閉じたら止める。止め忘れると、閉じたあとも回り続ける。
+    (function _tickInviteTimer() {
+      var el = document.getElementById('inviteCardTimer');
+      if (!el || !document.getElementById('inviteCardOverlay')) return;
+      var r = (typeof window._inviteRemainText === 'function')
+        ? window._inviteRemainText(data.expires_at) : { text: '', expired: false, minutes: 999 };
+      var seatPart = (_seats !== null) ? '　あと' + _seats + '席' : '';
+      if (r.expired) {
+        el.textContent = '期限が切れました';
+        el.style.color = '#b3261e';
+        var _btn = ov.querySelector('button');
+        if (_btn) { _btn.disabled = true; _btn.style.background = '#c9ced6'; _btn.textContent = '期限切れです'; }
+        return;
+      }
+      el.textContent = r.text + seatPart;
+      el.style.color = (r.minutes < 10) ? '#c0392b' : '#0b5bb0';
+      setTimeout(_tickInviteTimer, 1000);
+    })();
   } catch(e) { console.warn('[招待] 表示に失敗:', e && e.message); }
 }
 window._showInviteCard = _showInviteCard;
@@ -39977,6 +40046,9 @@ async function renderInvitePreview(code) {
   box.innerHTML = '';
   var data = await peekSharedCalendarByCode(code);
   if (!data) return;
+  // v0.45.2015: 混雑・期限切れのときは中身が無い。名前が空のまま出すと
+  // 「共有カレンダー」という架空の名前が見えてしまう。
+  if (data._failed || data.error === 'busy' || data.expired === true) return;
   var name = data.name || '共有カレンダー';
   var members = (typeof data.member_count === 'number') ? data.member_count : null;
   var items = Array.isArray(data.upcoming) ? data.upcoming : [];
