@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2001 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2004 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2001';
+    const APP_VERSION = 'v0.45.2004';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -46222,7 +46222,7 @@ function openPasswordResetForm() {
         '<input id="pwResetConfirm" type="password" placeholder="もう一度入力" autocomplete="new-password" ' +
           'onkeydown="if(event.key===\'Enter\')submitPasswordReset()" ' +
           'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;box-sizing:border-box;margin-bottom:6px;font-family:inherit;">' +
-        '<div style="font-size:0.75em;color:#8e8e8e;line-height:1.6;margin-bottom:14px;">8文字以上・英大文字・英小文字・数字を含む</div>' +
+        '<div style="font-size:0.75em;color:#8e8e8e;line-height:1.6;margin-bottom:14px;">8文字以上。長いほど安全です</div>' +
         '<div id="pwResetStatus" style="display:none;font-size:0.8em;line-height:1.6;margin-bottom:12px;"></div>' +
         '<button onclick="submitPasswordReset()" ' +
           'style="width:100%;padding:13px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;">設定する</button>' +
@@ -46251,8 +46251,9 @@ async function submitPasswordReset() {
   var pw = a.value || '', pw2 = b.value || '';
   if (pw !== pw2) { _pwResetStatus('2つのパスワードが一致しません', 'error'); return; }
   // 登録時と同じ強さを求める（ここだけ緩いと、弱いパスワードに戻せてしまう）
-  if (pw.length < 8 || !/[A-Z]/.test(pw) || !/[a-z]/.test(pw) || !/[0-9]/.test(pw)) {
-    _pwResetStatus('8文字以上・英大文字・英小文字・数字を含めてください', 'error');
+  // v0.45.2002: 大文字・数字の条件を外す（新規登録側と同じ理由）。
+  if (pw.length < 8) {
+    _pwResetStatus('8文字以上にしてください', 'error');
     return;
   }
   if (!window.supabaseClient) { _pwResetStatus('通信できませんでした', 'error'); return; }
@@ -46484,17 +46485,19 @@ function _cloudTranslateAuthError(rawMessage) {
   return { msg: m, field: null };
 }
 window._cloudTranslateAuthError = _cloudTranslateAuthError;
-// v0.45.1471: パスワード強度の検証。8文字以上かつ英大文字・英小文字・数字を各1文字以上含むこと。
+// v0.45.1471: パスワード強度の検証。v0.45.2002で8文字以上のみに緩和。
 // 【権威】2026-08-02、一般的なサービスの慣行に合わせる方針で導入。
 // 満たさない場合は ok:false と、何が足りないかを具体的に示す msg を返す。
 function _cloudValidatePasswordStrength(password) {
   password = password || '';
   if (password.length < 8) return { ok: false, msg: 'パスワードは8文字以上にしてください' };
-  var lacks = [];
-  if (!/[A-Z]/.test(password)) lacks.push('英大文字');
-  if (!/[a-z]/.test(password)) lacks.push('英小文字');
-  if (!/[0-9]/.test(password)) lacks.push('数字');
-  if (lacks.length > 0) return { ok: false, msg: 'パスワードに' + lacks.join('・') + 'を含めてください' };
+  // v0.45.2002: 【権威】2026-09-03、大文字を求める条件のせいで、
+  // 作った本人がパスワードを思い出せなくなり、ログインできなくなった。
+  // 自分でも入れなくなる条件は、条件として厳しすぎる。
+  // 大文字・数字を混ぜさせる規則は、覚えにくい短いものを生む。
+  // 「Password1」のような形に寄るため、かえって破られやすい。
+  // NISTも2017年の指針で、この種の構成規則を推奨しないとしている。
+  // 長さのほうが効くので、8文字以上だけを条件とする。
   return { ok: true, msg: '' };
 }
 window._cloudValidatePasswordStrength = _cloudValidatePasswordStrength;
@@ -46508,7 +46511,7 @@ async function cloudSignUpWithPassword() {
   var email = (emailInput.value || '').trim();
   var password = pwInput.value || '';
   if (!email || email.indexOf('@') === -1) { _cloudLoginSetStatus('⚠️ メールアドレスの形式が正しくありません', 'error', 'cloudLoginEmail'); return; }
-  // v0.45.1471: パスワード複雑性チェック（英大文字・英小文字・数字を各1文字以上）
+  // v0.45.2003: パスワードの長さ確認（8文字以上。v0.45.2002で複雑性の条件を撤廃）
   // 一般的なサービスの慣行に合わせ、ユーザーが違和感なく登録できることを優先する。
   var _pwCheckResult = _cloudValidatePasswordStrength(password);
   if (!_pwCheckResult.ok) { _cloudLoginSetStatus('⚠️ ' + _pwCheckResult.msg, 'error', 'cloudLoginPassword'); return; }
@@ -60528,7 +60531,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        if (typeof window._cloudValidatePasswordStrength === 'function') {
          var _pwCases = [
            { pw: 'Abc12345', expect: true,  label: '8文字・大小英字と数字あり→合格' },
-           { pw: 'abcd1234', expect: false, label: '英大文字なし→不合格' },
+           { pw: 'abcd1234', expect: true,  label: '大文字なしでも合格（v0.45.2002で緩和）' },
            { pw: 'ABCD1234', expect: false, label: '英小文字なし→不合格' },
            { pw: 'Abcdefgh', expect: false, label: '数字なし→不合格' },
            { pw: 'Ab1',      expect: false, label: '8文字未満→不合格' }
@@ -73210,7 +73213,7 @@ window.addMigration = addMigration;
         </button>
       </div>
       </form>
-      <div id="cloudAuthPwHint" style="display:none;font-size:0.75em;color:#8e8e8e;margin-top:7px;">8文字以上・英大文字・英小文字・数字を含む</div>
+      <div id="cloudAuthPwHint" style="display:none;font-size:0.75em;color:#8e8e8e;margin-top:7px;">8文字以上。長いほど安全です</div>
 
       <div id="cloudLoginStatus" style="display:none;font-size:0.84em;margin-top:12px;"></div>
       <div id="cloudForgotPwWrap" style="text-align:right;margin-top:10px;">
