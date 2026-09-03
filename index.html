@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.1992 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.1995 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.1992';
+    const APP_VERSION = 'v0.45.1995';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12462,16 +12462,11 @@ function switchSearchTab(tab) {
       meta.textContent = secLabel[(t.section||1)-1] + (t.time ? ' · ' + t.time : '');
       info.appendChild(textEl);
       info.appendChild(meta);
+      // v0.45.1993: 検索・未完了・コメントと同じく月間へ揃える。
       info.onclick = (function(task, ds){ return function(e) {
         e.stopPropagation();
         closeSearchModal();
-        currentDailyDate = ds;
-        // v0.45.862〜：テスト中はlocalStorageを汚染しない（第7条遵守）
-        if (!window._isTesting) {
-          localStorage.setItem('selectedDailyDate', ds);
-        }
-        switchView('daily');
-        setTimeout(function(){ switchDailyTab('matrix'); }, 50);
+        if (typeof jumpToTaskDate === 'function') jumpToTaskDate(task);
       }; })(t, dateStr);
 
       // バニッシュボタン
@@ -21537,6 +21532,16 @@ function openMonthlySidebar(dateStr) {
       // v0.45.1558: 開いた直後は必ず「見る」状態から始める。
       // 前回開いたまま残っていると、また新規作成に見えてしまう。
       if (typeof toggleMonthlySidebarAdd === 'function') toggleMonthlySidebarAdd(true);
+      // v0.45.1994: 【権威】2026-09-02、9月2日のコメントを開いたまま
+      // 9月5日を押しても、コメント欄が消えない、との報告。実装のとおりだった。
+      // 日付を開く処理はコメント欄に一切触れておらず、前の日の会話が残り続ける。
+      // 別の日を開いたのに前の日のコメントが出ているのは、明確な誤りである。
+      // 同じ日を開き直したときは残す（読んでいる途中で閉じられると困る）。
+      try {
+        if (_sidebarDateStr !== dateStr && typeof closeTaskComments === 'function') {
+          closeTaskComments();
+        }
+      } catch(eCmt) {}
       _sidebarDateStr = dateStr;
       var sb = document.getElementById('monthlySidebar');
       if (!sb) return;
@@ -40388,10 +40393,18 @@ async function renderTaskComments(taskId) {
     // 予定の題名を見出しに入れる。長い場合は端で切る。
     '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;">💬 ' +
       escAttr(_cmtTaskTitle) + '（' + rows.length + '）</span>' +
-        '<span style="font-size:11px;color:#999;">' + (_open ? 'おりたたむ ▾' : 'ひらく ▸') + '</span>' +
+        // v0.45.1994: 折りたたむだけでなく、閉じる手段も置く。
+        // 「もう読んだので消したい」というときに、畳んだ帯が残るのは目障りである。
+        // ×は見出しの右端、折りたたむの右に置く。押し間違えないよう間を空ける。
+        '<span style="font-size:11px;color:#999;display:flex;align-items:center;gap:14px;">' +
+          '<span data-cmt-foldlabel>' + (_open ? 'おりたたむ ▾' : 'ひらく ▸') + '</span>' +
+          '<span onclick="event.stopPropagation();closeTaskComments();" ' +
+            'title="コメントを閉じる" ' +
+            'style="font-size:17px;color:#b8bfc7;cursor:pointer;line-height:1;padding:0 2px;">✕</span>' +
+        '</span>' +
       '</div>' +
       (_open
-        ? '<div style="max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-left:3px solid #e3e8ee;margin-left:14px;padding-left:6px;font-size:0.92em;">' + listHtml + '</div>'
+        ? '<div data-cmt-list style="max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-left:3px solid #e3e8ee;margin-left:14px;padding-left:6px;font-size:0.92em;">' + listHtml + '</div>'
         : '<div onclick="window.toggleCommentFold(\'' + taskId + '\')" style="padding:8px 16px;font-size:12px;color:#8aa0b8;cursor:pointer;">' + rows.length + '件のやり取り（' + escAttr(_cmtTaskTitle) + '）　押してひらく ▸</div>') +
       '<div style="display:flex;gap:6px;padding:10px 16px 12px;">' +
         '<input id="msbCommentInput" type="text" placeholder="コメントを書く…" maxlength="500" ' +
@@ -40414,6 +40427,23 @@ function toggleCommentFold(taskId) {
     var _st = window._commentOpenState[taskId];
     var cur = (_st === undefined) ? (_n < 3) : (_st === true);
     window._commentOpenState[taskId] = !cur;
+    // v0.45.1994: 【権威】2026-09-02、折りたたみを押しても畳めない、との報告。
+    // 通信の遅い環境で顕著だった。原因は renderTaskComments を呼び直していたこと。
+    // この関数はクラウドへコメントを取りに行くため、通信を待たないと画面が変わらない。
+    // 畳む・ひらくは手元の見た目の話で、取り直す必要はまったくない。
+    // すでに描いてある中身の表示を切り替えるだけにする。
+    try {
+      var _host = document.getElementById('msbCommentArea');
+      var _list = _host && _host.querySelector('[data-cmt-list]');
+      var _lbl  = _host && _host.querySelector('[data-cmt-foldlabel]');
+      if (_list) {
+        var _willOpen = !cur;
+        _list.style.display = _willOpen ? '' : 'none';
+        if (_lbl) _lbl.textContent = _willOpen ? 'おりたたむ ▾' : 'ひらく ▸';
+        return;   // 取り直さない
+      }
+    } catch(eFold) {}
+    // 中身がまだ無いときだけ描き直す
     if (typeof renderTaskComments === 'function') renderTaskComments(taskId);
   } catch (e) {}
 }
