@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2006 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2011 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2006';
+    const APP_VERSION = 'v0.45.2011';
   const APP_LAST_UPDATED = '2026-08-31'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -46287,6 +46287,102 @@ async function submitPasswordReset() {
 }
 window.submitPasswordReset = submitPasswordReset;
 
+// v0.45.2010: 【権威】2026-09-03、パスワードを忘れて再設定しようとしたのに
+// パスワードの入力を求められ、入れたら弾かれて、はまった、との報告。
+// ログイン画面の下に「パスワードをお忘れですか？」があるため、
+// その上にあるメールとパスワードの欄が両方見えている。
+// パスワードを忘れている人に、パスワードの欄を見せてはいけない。
+// しかも欄に何か入っていると、そちらでログインを試みて弾かれる。
+//
+// メールアドレスだけを聞く専用の画面を出す。
+// 「パスワードの変更」（現在のパスワードが要る）と
+// 「パスワードを忘れた」（メールだけでよい）は、別のものである。
+function openForgotPasswordForm() {
+  var ov = document.getElementById('forgotPwOverlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'forgotPwOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;';
+  // ログイン欄に入っているメールアドレスがあれば引き継ぐ（打ち直させない）
+  var _pre = '';
+  try {
+    var _le = document.getElementById('cloudLoginEmail');
+    _pre = (_le && _le.value) ? _le.value.trim() : '';
+  } catch(e) {}
+  ov.innerHTML =
+    '<div style="background:#fff;border-radius:16px;padding:24px 20px;max-width:380px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.25);">' +
+      '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:6px;">パスワードの再設定</div>' +
+      '<div style="font-size:0.82em;color:#8e8e8e;line-height:1.7;margin-bottom:16px;">' +
+        '登録したメールアドレスを入れてください。<br>' +
+        '再設定用のリンクをお送りします。<br>' +
+        '<span style="color:#b8860b;">いまのパスワードは要りません。</span></div>' +
+      '<input id="forgotPwEmail" type="email" placeholder="メールアドレス" autocomplete="email" ' +
+        'value="' + escAttr(_pre) + '" ' +
+        'onkeydown="if(event.key===\'Enter\')submitForgotPassword()" ' +
+        'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;box-sizing:border-box;margin-bottom:12px;font-family:inherit;">' +
+      '<div id="forgotPwStatus" style="display:none;font-size:0.8em;line-height:1.7;margin-bottom:12px;white-space:pre-line;"></div>' +
+      '<button id="forgotPwSendBtn" onclick="submitForgotPassword()" ' +
+        'style="width:100%;padding:13px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;">' +
+        '再設定用のメールを送る</button>' +
+      '<button onclick="document.getElementById(\'forgotPwOverlay\').remove()" ' +
+        'style="width:100%;margin-top:8px;padding:11px;border:none;border-radius:10px;background:transparent;color:#8e8e8e;font-size:0.85em;cursor:pointer;font-family:inherit;">' +
+        'ログイン画面に戻る</button>' +
+    '</div>';
+  document.body.appendChild(ov);
+  setTimeout(function() {
+    var el = document.getElementById('forgotPwEmail');
+    if (el) el.focus();
+  }, 60);
+}
+window.openForgotPasswordForm = openForgotPasswordForm;
+
+function _forgotPwStatus(msg, type) {
+  var el = document.getElementById('forgotPwStatus');
+  if (!el) return;
+  if (!msg) { el.style.display = 'none'; return; }
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.color = (type === 'error') ? '#c0392b' : '#1a7f37';
+}
+
+async function submitForgotPassword() {
+  var input = document.getElementById('forgotPwEmail');
+  var btn = document.getElementById('forgotPwSendBtn');
+  if (!input) return;
+  var email = (input.value || '').trim();
+  if (!email || email.indexOf('@') === -1) {
+    _forgotPwStatus('メールアドレスを入れてください', 'error');
+    input.focus();
+    return;
+  }
+  if (!window.supabaseClient) {
+    _forgotPwStatus('通信できませんでした。少し待ってからもう一度お試しください', 'error');
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = '送信中…'; }
+  try {
+    var r = await window.supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (r && r.error) {
+      var _e = _cloudTranslateAuthError(r.error.message);
+      _forgotPwStatus(_e.msg, 'error');
+    } else {
+      // v0.45.1780: このブラウザで申し込んだ、という印を残す。
+      try { localStorage.setItem('koyomiru_pw_reset_from_here', String(Date.now())); } catch(eM) {}
+      // 存在しないアドレスでも同じ文言を返す（アカウントの有無を外部に漏らさない）
+      _forgotPwStatus('📬 ' + email + ' にメールを送りました。\n' +
+                      '同じブラウザでメール内のリンクを開いて、新しいパスワードを設定してください。\n' +
+                      '届かないときは、迷惑メールもご確認ください。', 'ok');
+    }
+  } catch (e) {
+    _forgotPwStatus('送信できませんでした。少し待ってからもう一度お試しください', 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '再設定用のメールを送る'; }
+}
+window.submitForgotPassword = submitForgotPassword;
+
 async function cloudSendPasswordReset() {
   var emailInput = document.getElementById('cloudLoginEmail');
   var btn = document.getElementById('cloudForgotPwBtn');
@@ -46482,7 +46578,16 @@ window.toggleCloudPasswordVisibility = toggleCloudPasswordVisibility;
 function _cloudTranslateAuthError(rawMessage) {
   var m = String(rawMessage || '');
   var lower = m.toLowerCase();
-  if (lower.indexOf('invalid login credentials') !== -1) return { msg: 'メールアドレスまたはパスワードが違います', field: 'cloudLoginPassword' };
+  // v0.45.2008: 【権威】2026-09-03、Google・Discordで作ったアカウントには
+  // パスワードが存在しない。その人が「違います」と言われ続けても、
+  // 何を直せばいいのか分からない。正しいパスワードなど最初から無いからである。
+  // 何度打ち直しても入れず、離脱する。思い当たる道を一言で添える。
+  // 表示は textContent なのでHTMLは使えない。改行だけで整える。
+  if (lower.indexOf('invalid login credentials') !== -1) return {
+    msg: 'メールアドレスまたはパスワードが違います\n' +
+         'Googleやディスコードで登録した方は、パスワードがありません。上のボタンから入るか、「パスワードをお忘れですか？」で新しく設定してください',
+    field: 'cloudLoginPassword'
+  };
   if (lower.indexOf('already registered') !== -1 || lower.indexOf('already exists') !== -1) return { msg: 'このメールアドレスは既に登録されています。ログインをお試しください', field: 'cloudLoginEmail' };
   if (lower.indexOf('invalid email') !== -1 || lower.indexOf('email address') !== -1 && lower.indexOf('invalid') !== -1) return { msg: 'メールアドレスの形式が正しくありません', field: 'cloudLoginEmail' };
   if (lower.indexOf('email not confirmed') !== -1) return { msg: 'メールアドレスの確認が完了していません。届いているメールのリンクを開いてください', field: 'cloudLoginEmail' };
@@ -46629,34 +46734,16 @@ function switchCloudAuthTab(mode) {
   }
 }
 window.switchCloudAuthTab = switchCloudAuthTab;
-// v0.45.1355: 今ログイン中のアカウント（Discord等）にパスワードを後付け登録する。
-// これにより「新しい別アカウント」を作らずに、同じアカウント・同じデータへ
-// 会社PC等からもパスワードでログインできるようになる。
-async function cloudSetPasswordForCurrentAccount() {
-  var pwInput = document.getElementById('cloudSetPasswordInput');
-  var btn = document.getElementById('cloudSetPasswordBtn');
-  if (!pwInput || !window.supabaseClient) return;
-  var password = pwInput.value || '';
-  // v0.45.1471: 新規登録と同一の強度基準を適用（基準の不統一を防ぐ）
-  var _setPwCheck = _cloudValidatePasswordStrength(password);
-  if (!_setPwCheck.ok) { _cloudLoginSetStatus('⚠️ ' + _setPwCheck.msg, 'error', 'cloudSetPasswordInput'); return; }
-  if (btn) { btn.disabled = true; btn.textContent = '設定中…'; }
-  try {
-    var r = await window.supabaseClient.auth.updateUser({ password: password });
-    if (r.error) {
-      var _e3 = _cloudTranslateAuthError(r.error.message);
-      _cloudLoginSetStatus('⚠️ ' + _e3.msg, 'error', _e3.field);
-    } else {
-      _cloudLoginSetStatus('🎉 パスワードを設定しました。会社PC等では、アカウントモーダルの「メール＋パスワード」欄から同じメールアドレスでログインできます。');
-      if (pwInput) pwInput.value = '';
-    }
-  } catch(e) {
-    var _e3c = _cloudTranslateAuthError(e.message);
-    _cloudLoginSetStatus('⚠️ ' + _e3c.msg, 'error', _e3c.field);
-  }
-  if (btn) { btn.disabled = false; btn.textContent = 'このアカウントにパスワードを設定'; }
-}
-window.cloudSetPasswordForCurrentAccount = cloudSetPasswordForCurrentAccount;
+// v0.45.2007: 【権威】2026-09-03、パスワードのフローを点検した。
+// cloudSetPasswordForCurrentAccount（ログイン中のアカウントにパスワードを
+// 後付けする関数）は、どこからも呼ばれていなかった。
+// 画面にボタンも入力欄（cloudSetPasswordInput）も存在しない。
+// 第31条に従い削除する。必要になったら最良の形で作り直す。
+//
+// なおGoogle・Discordで作ったアカウントにパスワードを足す手段は、
+// 現状「パスワードをお忘れですか？」から再設定する経路で足りている。
+// Supabaseは同じメールアドレスなら同じアカウントに紐づけるため、
+// 再設定すればメール＋パスワードでも入れるようになる。
 async function cloudLogoutFromModal() {
   await supabaseSignOut();
   // v0.45.1523: ログアウトした瞬間に右上の表示を人型へ戻す。
@@ -73245,9 +73332,9 @@ window.addMigration = addMigration;
       </form>
       <div id="cloudAuthPwHint" style="display:none;font-size:0.75em;color:#8e8e8e;margin-top:7px;">8文字以上。長いほど安全です</div>
 
-      <div id="cloudLoginStatus" style="display:none;font-size:0.84em;margin-top:12px;"></div>
+      <div id="cloudLoginStatus" style="display:none;font-size:0.84em;margin-top:12px;white-space:pre-line;line-height:1.7;"></div>
       <div id="cloudForgotPwWrap" style="text-align:right;margin-top:10px;">
-        <button type="button" id="cloudForgotPwBtn" onclick="cloudSendPasswordReset()" style="border:none;background:transparent;color:#0b5bb0;font-size:0.82em;cursor:pointer;padding:4px 2px;text-decoration:underline;">パスワードをお忘れですか？</button>
+        <button type="button" id="cloudForgotPwBtn" onclick="openForgotPasswordForm()" style="border:none;background:transparent;color:#0b5bb0;font-size:0.82em;cursor:pointer;padding:4px 2px;text-decoration:underline;">パスワードをお忘れですか？</button>
       </div>
       <button id="cloudLoginPwSignInBtn" onclick="cloudLoginWithPassword()" style="width:100%;margin-top:16px;padding:14px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(11,107,203,0.28);">ログイン</button>
       <button id="cloudLoginPwSignUpBtn" onclick="cloudSignUpWithPassword()" style="display:none;width:100%;margin-top:16px;padding:14px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(11,107,203,0.28);">アカウントを作成</button>
