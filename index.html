@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2022 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2023 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2022';
+    const APP_VERSION = 'v0.45.2023';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -44930,9 +44930,8 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
     return;
   }
   var _msg = '✅ 新しい招待リンクを作りました（1時間有効' +
-    (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）。前のリンクは使えなくなりました';
-  if (typeof showToast === 'function') showToast(_msg, {type:'ok'});
-  _sharedCalSetStatus(_msg);
+    (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）';
+  _sharedCalSetStatus(_msg + '。前のリンクは使えなくなりました');
   // v0.45.2020: 【権威】2026-09-03、作り直すと画面が上に戻される、との報告。二度目。
   // v0.45.2017では「開き直す」で直そうとしたが、それは的を外していた。
   // 一覧を作り直すと画面が丸ごと組み直され、見ていた位置そのものが失われる。
@@ -44940,15 +44939,31 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
   //
   // 作り直したあと、他の場所は何も変わっていない。作り直す必要が無い。
   // 変わったのは招待の欄だけなので、そこだけを書き換える。
+  var _copiedFlag = false;
   try {
     var _wrap = document.getElementById(safeId + '_invwrap');
     if (_wrap) {
       var _url = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(_code);
       var _qr = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(_url);
       var _seat = (_max === null) ? '' : 'この招待で入れるのはあと' + _max + '席';
+      // v0.45.2023: 【権威】2026-09-03、作ったらもうコピーされている状態にできないか、との要望。
+      // リンクは貼るために作る。作ってからコピーを押させるのは、一手多い。
+      // ただしiOSのSafariは、通信を挟んだあとのコピーを「人の操作ではない」と見て拒む。
+      // 試して、できたらそう伝え、できなければ手で押せるボタンを残す。黙って失敗させない。
+      var _copied = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(_url);
+          _copied = true;
+        }
+      } catch (eC) { _copied = false; }
+      _copiedFlag = _copied;
       _wrap.innerHTML =
         '<div style="background:#edf7ee;border:1px solid #c3e0c5;border-radius:10px;padding:9px 11px;margin-bottom:10px;font-size:0.78em;color:#1b5e20;line-height:1.6;">' +
-          '✅ 新しい招待リンクを作りました。<br>前に送ったリンクは、もう使えません。</div>' +
+          (_copied
+            ? '✅ 新しい招待リンクを作って、コピーしました。<br>このまま貼り付けてください。前のリンクは、もう使えません。'
+            : '✅ 新しい招待リンクを作りました。<br>下の「リンクをコピー」を押してください。前のリンクは、もう使えません。') +
+        '</div>' +
         '<div style="font-size:0.8em;line-height:1.7;margin-bottom:8px;color:#3a7a3a;font-weight:600;">' +
           'いま配ってあるリンクは、あと60分で切れます' +
           (_seat ? '<br><span style="color:#8e8e8e;font-weight:400;">' + escAttr(_seat) + '</span>' : '') +
@@ -44963,6 +44978,11 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
         '</div>';
     }
   } catch (eW) { console.warn('[SharedCal] 招待欄の書き換えに失敗:', eW && eW.message); }
+  try {
+    if (typeof showToast === 'function') {
+      showToast(_copiedFlag ? '✅ 新しいリンクを作ってコピーしました' : _msg, {type:'ok'});
+    }
+  } catch (eT) {}
 }
 window.regenerateSharedCalendarInvite = regenerateSharedCalendarInvite;
 
