@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2020 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2022 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2020';
+    const APP_VERSION = 'v0.45.2022';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -29253,7 +29253,7 @@ function saveMsbEdit() {
     // KNOWN_KEYSと_allowedKeysを統合。ここだけ更新すれば監視・KPAGテスト両方に反映される。
     const KEY_WHITELIST = new Set([
       // コアデータ
-      'allTasks', 'allSettings', 'deletedTaskIds',
+      'allTasks', 'allSettings', 'deletedTaskIds', 'pendingDeletions',
       // v0.45.1968: コメントの既読。KPAGの許可一覧に入れ忘れていた。
       'koyomiru_comment_read',
       // 徳・業・ログ
@@ -44929,8 +44929,10 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
     _sharedCalSetStatus('⚠️ 作り直せませんでした。少し待ってからお試しください');
     return;
   }
-  _sharedCalSetStatus('✅ 新しい招待リンクを作りました（1時間有効' +
-    (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）。前のリンクは使えなくなりました');
+  var _msg = '✅ 新しい招待リンクを作りました（1時間有効' +
+    (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）。前のリンクは使えなくなりました';
+  if (typeof showToast === 'function') showToast(_msg, {type:'ok'});
+  _sharedCalSetStatus(_msg);
   // v0.45.2020: 【権威】2026-09-03、作り直すと画面が上に戻される、との報告。二度目。
   // v0.45.2017では「開き直す」で直そうとしたが、それは的を外していた。
   // 一覧を作り直すと画面が丸ごと組み直され、見ていた位置そのものが失われる。
@@ -44945,6 +44947,8 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
       var _qr = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(_url);
       var _seat = (_max === null) ? '' : 'この招待で入れるのはあと' + _max + '席';
       _wrap.innerHTML =
+        '<div style="background:#edf7ee;border:1px solid #c3e0c5;border-radius:10px;padding:9px 11px;margin-bottom:10px;font-size:0.78em;color:#1b5e20;line-height:1.6;">' +
+          '✅ 新しい招待リンクを作りました。<br>前に送ったリンクは、もう使えません。</div>' +
         '<div style="font-size:0.8em;line-height:1.7;margin-bottom:8px;color:#3a7a3a;font-weight:600;">' +
           'いま配ってあるリンクは、あと60分で切れます' +
           (_seat ? '<br><span style="color:#8e8e8e;font-weight:400;">' + escAttr(_seat) + '</span>' : '') +
@@ -44963,13 +44967,23 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
 window.regenerateSharedCalendarInvite = regenerateSharedCalendarInvite;
 
 // 招待リンクをクリップボードにコピー
+// v0.45.2022: 【権威】2026-09-03、コピーを押しても何も出ない、との報告。
+// 知らせは出ていたが、出す先がモーダルの一番下だった。
+// カードを開いて操作している位置からは画面外で、誰にも見えない。
+// 操作した場所の近くに出す。トーストなら、どこにいても目に入る。
 function copySharedCalendarInvite(url) {
+  var _tell = function(msg, isErr) {
+    if (typeof showToast === 'function') showToast(msg, isErr ? {type:'error'} : {type:'ok'});
+    else _sharedCalSetStatus(msg);
+  };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(function() {
-      _sharedCalSetStatus('✅ 招待リンクをコピーしました');
-    }).catch(function() { _sharedCalSetStatus('⚠️ コピーに失敗しました'); });
+      _tell('✅ 招待リンクをコピーしました');
+    }).catch(function() {
+      _tell('⚠️ コピーできませんでした。長押しで選んでコピーしてください', true);
+    });
   } else {
-    _sharedCalSetStatus('⚠️ このブラウザはコピー機能に対応していません');
+    _tell('⚠️ このブラウザはコピー機能に対応していません', true);
   }
 }
 // OS標準の共有シート（LINE・メッセージ等）で招待リンクを送る
@@ -47422,6 +47436,14 @@ try {
       // v0.45.1609: 連携から戻ってきたら、手元のデータを今のアカウントへ引き継ぐ。
       // これが無いと「連携したのに予定が別々のまま」になり、連携した意味がない。
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+        // v0.45.2021: 前に送れなかった削除を、ここでまとめて送る。
+        // 送れなかった削除は手元に控えてある。放っておくと、
+        // 次に別の端末が取り込んだときに、消したはずのものが戻ってくる。
+        try {
+          if (session && typeof window._flushPendingDeletions === 'function') {
+            setTimeout(function(){ window._flushPendingDeletions(); }, 1500);
+          }
+        } catch (ePd) {}
         try {
           var _lp = sessionStorage.getItem('koyomiruLinkPending');
           if (_lp) {
@@ -66715,6 +66737,51 @@ document.addEventListener('DOMContentLoaded', function() {
 // 削除が、クラウドへ一切伝播していなかったことが判明した（削除したはずのものが
 // 他端末では復活・残り続ける）。deleteTaskById専用だった墓石記録・クラウド伝播
 // ロジックを共通ヘルパーとして切り出し、各kindの削除関数から呼べるようにする。
+// v0.45.2021: 【権威】2026-09-03、仕事PCで消した雑記が、家のスマホで復活した。
+// 調べたところ、消したはずの3件にクラウド側の墓石が立っていなかった。
+// 同じ削除ボタンを手元で押すと墓石は立つ。仕組みは動いている。
+//
+// 違いは、消した直後にChromeを閉じていたことだった。
+// 削除は手元に印を残してから、待たずにクラウドへ送る作りである。
+// 送信が飛ぶ前に頁ごと終われば、手元だけが消えて、クラウドは何も知らない。
+// 次に別の端末が取り込むと、生きている方が返ってくる。
+//
+// そして、送れなかったことがどこにも残らない。
+// 「対象なし」と記録して終わるため、誰も気づけない。今日の調査はそこで半日溶けた。
+// 送れなかった削除を控え、次に送れるときにまとめて送る。
+function _pendingDeletionsAdd(id) {
+  try {
+    var _p = new Set(JSON.parse(localStorage.getItem('pendingDeletions') || '[]'));
+    _p.add(id);
+    localStorage.setItem('pendingDeletions', JSON.stringify([..._p]));
+  } catch (e) { console.warn('[削除の控え] 記録に失敗:', e && e.message); }
+}
+window._pendingDeletionsAdd = _pendingDeletionsAdd;
+
+// 控えてある削除を、まとめてクラウドへ送る。送れた分だけ控えから外す。
+async function _flushPendingDeletions() {
+  if (window._isTesting || window._smokeTestRunning) return;
+  if (!window._cloudIsLoggedIn || !window.supabaseClient) return;
+  var _ids;
+  try { _ids = JSON.parse(localStorage.getItem('pendingDeletions') || '[]'); } catch (e) { return; }
+  if (!Array.isArray(_ids) || !_ids.length) return;
+  var _now = new Date().toISOString();
+  try {
+    var r = await window.supabaseClient.from('koyomiru_shared_tasks')
+      .update({ deleted_at: _now, updated_at: _now })
+      .in('id', _ids)
+      .is('deleted_at', null)
+      .select('id');
+    if (r && r.error) { console.warn('[削除の控え] 送信エラー:', r.error.message); return; }
+    // 送れた行も、もともとクラウドに無かった行も、もう控える必要はない。
+    // 残し続けると、起動のたびに同じものを送り直すことになる。
+    localStorage.removeItem('pendingDeletions');
+    var _n = (r && r.data) ? r.data.length : 0;
+    if (_n > 0) console.log('[削除の控え] ' + _n + '件の削除を送りました');
+  } catch (e) { console.warn('[削除の控え] 送信に失敗:', e && e.message); }
+}
+window._flushPendingDeletions = _flushPendingDeletions;
+
 function _propagateDeletion(id) {
   try {
     if (!window._isTesting) {
@@ -66723,8 +66790,10 @@ function _propagateDeletion(id) {
       localStorage.setItem('deletedTaskIds', JSON.stringify([..._delIds]));
     }
   } catch(e) { console.warn('[_propagateDeletion] 墓石記録エラー:', e); }
+  // v0.45.2021: 送る前に必ず控える。届いたら外す。
+  // 先に控えるのは、送信が飛ぶ前に頁が閉じられても残るようにするため。
+  if (!window._isTesting && !window._smokeTestRunning) _pendingDeletionsAdd(id);
   if (window._cloudIsLoggedIn && !window._isTesting && window.supabaseClient) {
-    // v0.45.1580: 【権威】2026-08-06、削除しても相手の画面から消えないとの報告が続く。
     // 原因が2つあった。
     //   ① deleted_at だけ立てて updated_at を触っていなかったため、受け取る側の
     //      「クラウドの方が新しいか」の判定に載らず、無視されることがあった。
@@ -66744,6 +66813,12 @@ function _propagateDeletion(id) {
           return;
         }
         console.log('[Unified] 削除を伝播しました id=' + String(id).slice(0, 8));
+        try {
+          var _p2 = JSON.parse(localStorage.getItem('pendingDeletions') || '[]');
+          var _left = _p2.filter(function(x){ return x !== id; });
+          if (_left.length) localStorage.setItem('pendingDeletions', JSON.stringify(_left));
+          else localStorage.removeItem('pendingDeletions');
+        } catch (e3) {}
       })
       .catch(function(e){ console.warn('[Unified] 削除の伝播エラー:', e); });
   }
