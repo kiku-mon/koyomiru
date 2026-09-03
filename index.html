@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2019 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2020 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2019';
+    const APP_VERSION = 'v0.45.2020';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -44551,6 +44551,7 @@ async function refreshSharedCalendarList() {
               '</div>' +
             '</div>' : '') +
           '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">招待リンク</div>' +
+          '<div id="' + safeId + '_invwrap">' +
           // v0.45.2019: 【権威】2026-09-03、リンクを作っていないのにタイマーが出るのは変、との指摘。
           // カレンダーを作った時点で合言葉が自動で発行されるため、
           // 誰にも配っていないカレンダーにも生きた合言葉と期限が付いていた。
@@ -44581,6 +44582,7 @@ async function refreshSharedCalendarList() {
             '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' +
               (_remain.expired ? 'このQRは期限が切れています'
                                : 'このQRは、あと' + escAttr(_remain.text.replace(/^あと/, '')) + 'で使えなくなります') + '</div>' +
+          '</div>' +
           '</div>' +
           // v0.45.2014: 作り直しは持ち主だけ。押した瞬間、前のリンクは死ぬ。
           (_isOwner ?
@@ -44929,18 +44931,34 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
   }
   _sharedCalSetStatus('✅ 新しい招待リンクを作りました（1時間有効' +
     (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）。前のリンクは使えなくなりました');
-  // v0.45.2017: 【権威】2026-09-03、作り直しを押すと一瞬で畳まれて何も読めない、との報告。
-  // 一覧を作り直すと <details> が全部閉じ、いま開いていた場所ごと畳まれる。
-  // 押した本人は、成功したのか失敗したのかも分からない。
-  // 開いていた場所を覚えておき、作り直したあとに開き直す。
-  await refreshSharedCalendarList();
+  // v0.45.2020: 【権威】2026-09-03、作り直すと画面が上に戻される、との報告。二度目。
+  // v0.45.2017では「開き直す」で直そうとしたが、それは的を外していた。
+  // 一覧を作り直すと画面が丸ごと組み直され、見ていた位置そのものが失われる。
+  // 開き直しても、目は上に飛ばされたままである。
+  //
+  // 作り直したあと、他の場所は何も変わっていない。作り直す必要が無い。
+  // 変わったのは招待の欄だけなので、そこだけを書き換える。
   try {
-    var _det = document.getElementById(safeId + '_det');
-    if (_det) {
-      _det.open = true;
-      _det.scrollIntoView({ block: 'nearest' });
+    var _wrap = document.getElementById(safeId + '_invwrap');
+    if (_wrap) {
+      var _url = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(_code);
+      var _qr = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(_url);
+      var _seat = (_max === null) ? '' : 'この招待で入れるのはあと' + _max + '席';
+      _wrap.innerHTML =
+        '<div style="font-size:0.8em;line-height:1.7;margin-bottom:8px;color:#3a7a3a;font-weight:600;">' +
+          'いま配ってあるリンクは、あと60分で切れます' +
+          (_seat ? '<br><span style="color:#8e8e8e;font-weight:400;">' + escAttr(_seat) + '</span>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
+          '<a onclick="copySharedCalendarInvite(\'' + _url + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクをコピー</a>' +
+          '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
+        '</div>' +
+        '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
+          '<img src="' + _qr + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
+          '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">このQRは、あと60分で使えなくなります</div>' +
+        '</div>';
     }
-  } catch (eD) {}
+  } catch (eW) { console.warn('[SharedCal] 招待欄の書き換えに失敗:', eW && eW.message); }
 }
 window.regenerateSharedCalendarInvite = regenerateSharedCalendarInvite;
 
