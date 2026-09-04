@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2025 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2028 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,8 +157,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2025';
-  const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.45.2028';
+  const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -19461,7 +19461,15 @@ function toggleGantEnabled(checked) {
         btn.onclick = function() {
           const btnOpts = opts.buttons[+btn.dataset.ci] || {};
           const cb = btnOpts.onClick;
-          if (btnOpts.style === 'danger') {
+          if (btnOpts.style === 'danger' && btnOpts.dangerConfirm !== false) {
+            // v0.45.2028: 【権威】2026-09-03、閉じるを押しただけで
+            // 「本当に削除しますか？」が出た、との報告。
+            // style:'danger' は「赤くする」と「削除の二重確認を挟む」の二つを兼ねていた。
+            // 赤くしたいだけの場所でも確認が出て、しかも文言は必ず「削除」だった。
+            // 「保存する」を押して「本当に削除しますか？」と聞かれれば、
+            // 人は文面を読まずに押すようになる。守りが逆に働く。
+            // dangerConfirm: false を渡した場所だけ、二重確認を挟まない。
+            // 何も渡していない場所（本物の削除）は今までどおり守る。
             // 二重確認（v0.45.647〜: dangerConfirm オプションでカスタマイズ可能）
             // 後方互換：未指定時は従来通り「削除」文言。
             var _dc = btnOpts.dangerConfirm || {};
@@ -22010,6 +22018,8 @@ function saveMonthlySidebarTask() {
 // 同じ「予定を書く」なのに別物が2つあること自体が誤りなので、1つに統合する（第31条）。
 // 新規も編集も同じフォームを開く。開いた瞬間に何でも書ける状態にする。
 function openSidebarNewForm(dateStr) {
+      // v0.45.2026: 新規作成では控えを持たない。空でなければ書きかけとみなす。
+      window._msbOpenSnapshot = null;
   try {
     var _d = dateStr || _sidebarDateStr;
     // 新規は空のタスクを渡す。既定のカレンダーは、いま絞り込んでいるものに従う
@@ -22051,6 +22061,14 @@ window.openSidebarNewForm = openSidebarNewForm;
 
 function openSidebarEditForm(item, task) {
       _msbEditingId = task.id;
+      // v0.45.2026: 【権威】2026-09-03、間違えて開いた予定を閉じようとしたら
+      // 「書きかけの内容があります」と聞かれた、との報告。何も書いていないのに。
+      //
+      // 書きかけの判定が「空でないこと」を見ていた。既存の予定は必ずタイトルがあるので、
+      // 開いて閉じるだけで毎回聞かれる。新規作成のために書いた判定が、編集にも効いていた。
+      // 毎回聞かれる確認は、読まずに押す癖をつくる。守りたかったものを守れなくなる。
+      // 開いたときの内容を控え、変わったかどうかで判定する。
+      window._msbOpenSnapshot = { text: String(task.text || ''), memo: String(task.memo || '') };
       document.getElementById('msbEditId').value      = task.id;
       document.getElementById('msbEditText').value    = task.text;
       document.getElementById('msbEditDate').value    = task.date || _sidebarDateStr;
@@ -22253,14 +22271,28 @@ function msbAllDayChange() {
       try {
         var _tx = document.getElementById('msbEditText');
         var _mm = document.getElementById('msbEditMemo');
-        var _dirty = (_tx && _tx.value.trim() !== '') || (_mm && _mm.value.trim() !== '');
+        // v0.45.2026: 控えがあるなら、それとの差で判定する（既存の予定を編集中）。
+        // 控えが無いのは新規作成なので、空でなければ書きかけとみなす。
+        var _snap = window._msbOpenSnapshot;
+        var _nowTx = _tx ? String(_tx.value) : '';
+        var _nowMm = _mm ? String(_mm.value) : '';
+        var _dirty = _snap
+          ? (_nowTx !== _snap.text || _nowMm !== _snap.memo)
+          : (_nowTx.trim() !== '' || _nowMm.trim() !== '');
         // v0.45.1736: ブラウザ標準の確認窓をやめる（第55条）。私が v0.45.1663 で入れたもの。
     if (_dirty) {
+      // v0.45.2027: 【権威】2026-09-03、閉じるを押しただけで
+      // 「本当に削除しますか？」が出た、との報告。
+      // showChoiceModal は style:'danger' のボタンに、削除の二重確認を必ず挟む。
+      // 赤くしたいだけで danger を使ったため、閉じる操作が削除の確認を呼んでいた。
+      // 実際には消えないが、押した人は自分が予定を消したと思う。
+      // そして赤い「削除する」を押す癖がつく。守りが逆に働いていた。
+      // 閉じるのは取り消しのきく操作なので、二重確認は要らない。
       showChoiceModal({
         title: '書きかけの内容があります',
         desc: '閉じると、書いた内容は保存されません。',
         buttons: [
-          { label: '閉じる（保存しない）', style: 'danger', onClick: function() { closeMsbEdit(); } },
+          { label: '閉じる（保存しない）', style: 'primary', onClick: function() { closeMsbEdit(); } },
           { label: '書き続ける', style: 'cancel', onClick: function() {} }
         ]
       });
@@ -22273,6 +22305,9 @@ function msbAllDayChange() {
 
     function closeMsbEdit() {
       _msbEditingId = '';
+      // v0.45.2026: 控えは閉じたら捨てる。
+      // 残すと、次に新規作成で開いたとき前の予定と比べてしまう。
+      window._msbOpenSnapshot = null;
       var f = document.getElementById('monthlySidebarEditForm');
       if (f) f.style.display = 'none';
       // v0.45.1996: 書き終わったら印を外し、一覧を元の大きさに戻す。
@@ -28691,7 +28726,7 @@ function saveMsbEdit() {
             + '<span style="color:#80cbc4;">復元前に現在の状態が自動退避されます。</span>'
             + '</div>',
         buttons: [
-          { label: '進む（第2段階へ）', style: 'danger', onClick: function() {
+          { label: '進む（第2段階へ）', style: 'danger', dangerConfirm: false, onClick: function() {
             // 3. 第2段階承認モーダル
             showChoiceModal({
               title: '🛡️ 最終確認（第2段階）',
@@ -28983,7 +29018,7 @@ function saveMsbEdit() {
         title: '🔀 マージ実行（第1段階）',
         desc: desc,
         buttons: [
-          { label: '進む（第2段階へ）', style: 'danger', onClick: function() {
+          { label: '進む（第2段階へ）', style: 'danger', dangerConfirm: false, onClick: function() {
             // 3. 第2段階承認モーダル(最終確認)
             showChoiceModal({
               title: '🔀 最終確認（第2段階）',
@@ -33013,7 +33048,11 @@ function renderCalendarFilter(containerId, onChangeCallback) {
         title: '🛡️ バックアップから復元',
         desc: backupKey.replace('backup_', '') + ' のデータに戻します。<br><strong style="color:#ef4444;">現在のデータは上書きされます。</strong>',
         buttons: [
-          { label: '復元する', style: 'danger', onClick: function() {
+          { label: '復元する', style: 'danger',
+            dangerConfirm: { title: '⚠️ 本当に復元しますか？',
+                             desc: 'いまのデータは、このバックアップで上書きされます。取り消せません。',
+                             yes: '復元する', no: 'やめる' },
+            onClick: function() {
             try {
               var _restoredTasks = JSON.parse(_backupData);
               allTasks = _restoredTasks;
@@ -47115,7 +47154,11 @@ function signOutOtherDevicesFromModal() {
     title: '他端末を全てログアウトさせますか？',
     desc: 'この端末はログインしたまま、それ以外の全ての端末（他のブラウザ・スマホ等）だけがログアウトされます。',
     buttons: [
-      { label: 'ログアウトさせる', style: 'danger', onClick: function() {
+      { label: 'ログアウトさせる', style: 'danger',
+        dangerConfirm: { title: '⚠️ 他の端末をログアウトさせますか？',
+                         desc: 'この端末はそのままです。他の端末は、次に開いたときログインし直しになります。',
+                         yes: 'ログアウトさせる', no: 'やめる' },
+        onClick: function() {
         supabaseSignOutOtherDevices().then(function(r) {
           if (r && r.error) {
             if (typeof window.showToast === 'function') window.showToast('⚠️ 失敗しました: ' + r.error.message);
@@ -65418,7 +65461,11 @@ function applyRepeatSave(taskId, task, repeat, repeatEnd, date) {
         title: '繰り返しを解除する',
         desc: '将来の <b>' + count + '件</b> のタスクが削除されます。',
         buttons: [
-          { label: '解除する', style: 'danger', onClick: function() {
+          { label: '解除する', style: 'danger',
+            dangerConfirm: { title: '⚠️ 将来のやることを消しますか？',
+                             desc: 'この先の繰り返し分が消えます。取り消せません。',
+                             yes: '解除して消す', no: 'やめる' },
+            onClick: function() {
             deleteRepeatFutureTasks(groupId, date);
             updateTask(taskId, { repeat: null, repeatEnd: null, repeatGroupId: null });
             saveAllTasks();
@@ -70206,7 +70253,7 @@ function _confirmAddVideoFile() {
           title: '⚠️ 大きなファイルです',
           desc: 'ファイルサイズが ' + sizeMB + 'MB と大きいです。ストレージ容量を圧迫し、ブラウザのキャッシュクリアで失われるリスクがあります。続行しますか？',
           buttons: [
-            { label: '保存する', style: 'danger', onClick: _doSaveVideo },
+            { label: '保存する', style: 'danger', dangerConfirm: false, onClick: _doSaveVideo },
             { label: 'やめる', style: 'cancel' }
           ]
         });
@@ -70222,7 +70269,7 @@ function _confirmAddVideoFile() {
         title: '⚠️ ストレージ容量に注意',
         desc: '動画の合計容量が ' + _afterMB + 'MB になります。500MBを超えるとブラウザがストレージを削除する可能性が高まります。不要な動画を削除してから保存することをお勧めします。続行しますか？',
         buttons: [
-          { label: '続行する', style: 'danger', onClick: _checkLargeFile },
+          { label: '続行する', style: 'danger', dangerConfirm: false, onClick: _checkLargeFile },
           { label: 'やめる', style: 'cancel' }
         ]
       });
@@ -74766,7 +74813,7 @@ function _renderTravelChecklistTab(area, travel) {
                       }
                     });
                   } },
-                { label: 'テンプレから外す', style: 'danger', onClick: function() {
+                { label: 'テンプレから外す', style: 'danger', dangerConfirm: false, onClick: function() {
                     _travelUIState.templates[tmplKey].items.splice(i, 1);
                     renderTravelListView();
                   } },
