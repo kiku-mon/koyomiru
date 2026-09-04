@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2051 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2053 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2051';
+    const APP_VERSION = 'v0.45.2053';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -3216,19 +3216,29 @@ function _showInviteWelcome() {
     .monthly-sidebar-koyomi .msk-moon {
       color: #7a6ab0;
     }
+    /* v0.45.2052: 【権威】2026-09-04、この画面を閉じる×が小さくて押しにくい、との指摘。
+       実測すると、各予定を消す×は26px・約50×42pxの的。
+       画面を閉じる×は14px・約28×26pxで、4倍近い差があった。
+       v0.45.1974で「予定の×が小さい」と言われて削除だけを大きくし、
+       閉じるを置き去りにしていた。
+       消すほうが押しやすく、閉じるほうが押しにくい状態になっていた。
+       取り返しのつく操作こそ押しやすくあるべきで、これは逆である。 */
     .monthly-sidebar-close {
       background: #f5f5f5;
       border: none;
-      font-size: 14px;
+      font-size: 22px;
       color: #666;
       cursor: pointer;
-      padding: 6px 8px;
-      border-radius: 8px;
+      padding: 8px 14px;
+      border-radius: 10px;
       line-height: 1;
       flex-shrink: 0;
       margin-left: 8px;
+      min-width: 44px;
+      min-height: 40px;
     }
     .monthly-sidebar-close:hover { background: #eee; }
+    .monthly-sidebar-close:active { background: #e0e0e0; }
     .monthly-sidebar-input-wrap {
       padding: 12px 14px;
       border-bottom: 1px solid #f0f0f0;
@@ -21809,7 +21819,15 @@ function openMonthlySidebar(dateStr) {
             return t && !t.deletedAt && (t.kind || 'task') === 'task' && t.date === dateStr;
           }).length;
         } catch(eCnt) {}
-        sb.classList.toggle('past-day', dateStr < _todayKey || _dayTaskCount >= 3);
+        // v0.45.2052: 【権威】2026-09-04、スマホで予定を立てるとき、暦で狭い、との指摘。
+      // これまでは「過ぎた日」か「予定が3件以上」のときだけ畳んでいた。
+      // だが狭いのは画面そのものであって、予定の件数ではない。
+      // スマホでは、予定が0件でも暦が上半分を占める。
+      // 予定を立てに来た人にとって、そこは開いていてほしい場所ではない。
+      // 狭い画面では既定で畳む。🌙を押せばいつでも開ける。
+      var _narrow = false;
+      try { _narrow = window.matchMedia && window.matchMedia('(max-width: 768px)').matches; } catch(eNw) {}
+      sb.classList.toggle('past-day', _narrow || dateStr < _todayKey || _dayTaskCount >= 3);
         // v0.45.1850: 畳んでも「暦がある」ことは伝える。完全に消すと、
         // 季節を届けるというこよみるの芯が、その画面から失われる。
         // 節気・月齢・六曜を1行だけ、押せるボタンの中に入れておく。
@@ -44338,8 +44356,30 @@ async function unifiedPushTasks() {
     _dbg('[送信] 送り先の確認でつまずきました: ' + (eAllow && eAllow.message));
   }
   var _skipped = 0;
+  var _skippedAuto = 0;
+  var _skippedLocal = 0;
   var toPush = allTasks.filter(function(t){
     if (!t || !t.id) return false;
+    // v0.45.2052: 【権威】2026-09-04、日誌を勝手にクラウドに上げるのをやめる、との判断。
+    // 実測すると、クラウドの日誌1,229件のうち人が書いたのは12件だけだった。
+    // 残る1,217件は、予定の無い日を埋めるためにアプリが書いた文である。
+    // 「風が通り過ぎただけの一日。」を、誰も書いていないのに保存し続けていた。
+    //
+    // 招待から参加した人は、初回ログインでこれをまとめて上げる。
+    // 貝森さんの186件も、その大半がこれと空の記録だった。人が増えるほど増え続ける。
+    //
+    // 手元にあれば足りる。書いた覚えのないものを、クラウドに置く理由がない。
+    // 人が後から書き足せば autoFilled は外れるので、そのときは上がる。
+    if (t.autoFilled === true) { _skippedAuto++; return false; }
+    // v0.45.2053: 【権威】2026-09-04、空の記録もクラウドに上げないようにする、との判断。
+    // 実測すると、deckHistory 154件・stamp 70件・guildLicense 44件・myDeck 11件が
+    // すべて text 空でクラウドに置かれていた。約280件。
+    // これらは第五人格のデッキ記録とスタンプの設定であり、
+    // 予定でも、人が書いた文でもない。共有カレンダーに置く理由がない。
+    //
+    // dailyStatus は止めない。workMemo と privateMemo に人が書いた文が入る。
+    // 見た目が空でも、中身は本人の記録である。ここを一緒に止めると、書いたものが消える。
+    if (LOCAL_ONLY_KINDS.indexOf(t.kind) !== -1) { _skippedLocal++; return false; }
     var _sig = t.updatedAt || t.createdAt || '';
     if (_prevSnapshot[t.id] === _sig) return false;
     if (_allowed) {
@@ -44359,6 +44399,12 @@ async function unifiedPushTasks() {
       updated_at: t.updatedAt || t.createdAt || new Date().toISOString()
     };
   });
+  if (_skippedLocal > 0) {
+    console.log('[Unified] この端末だけで持つ記録 ' + _skippedLocal + '件は送りませんでした');
+  }
+  if (_skippedAuto > 0) {
+    console.log('[Unified] アプリが自動で書いた記録 ' + _skippedAuto + '件は送りませんでした（手元には残っています）');
+  }
   if (_skipped > 0) {
     console.log('[Unified] 自分が入っていないカレンダーの予定 ' + _skipped + '件は送りませんでした（手元には残っています）');
     // v0.45.1738: 黙って留めるのが最も困る。書いた本人は届いたと思い、相手には無い。
@@ -67284,6 +67330,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (meta.condition) journals[conflictIdx].condition = meta.condition;
         if (meta.weather)   journals[conflictIdx].weather   = meta.weather;
         journals[conflictIdx].savedAt = new Date().toISOString();
+        journals[conflictIdx].updatedAt = journals[conflictIdx].savedAt;   // 第61条
+        // v0.45.2052: 人が書き足したら、もう「アプリが自動で書いたもの」ではない。
+        // 印を外さないと、書いた日誌がクラウドへ永久に上がらなくなる。
+        delete journals[conflictIdx].autoFilled;
         var _jSpliceIdx = allTasks.findIndex(function(t){ return t.id === journals[idx].id; });
         if (_jSpliceIdx !== -1) allTasks.splice(_jSpliceIdx, 1);
         _showJournalToast('📖 ' + (function(d){ var p=d.split('-'); return parseInt(p[1])+'月'+parseInt(p[2])+'日'; })(newDate) + 'の日誌に統合しました');
@@ -67294,6 +67344,9 @@ document.addEventListener('DOMContentLoaded', function() {
         journals[idx].condition = meta.condition || journals[idx].condition || 0;
         journals[idx].weather   = meta.weather   || journals[idx].weather   || '';
         journals[idx].savedAt   = new Date().toISOString();
+        journals[idx].updatedAt = journals[idx].savedAt;   // 第61条
+        // v0.45.2052: 人が書き足したら、もう自動生成ではない。印を外して上がるようにする。
+        delete journals[idx].autoFilled;
         _showJournalToast('📖 ' + (function(d){ var p=d.split('-'); return parseInt(p[1])+'月'+parseInt(p[2])+'日'; })(newDate) + 'の日誌を更新しました');
       }
       journals.sort(function(a,b){ return b.date.localeCompare(a.date); });
@@ -67374,6 +67427,12 @@ document.addEventListener('DOMContentLoaded', function() {
 // そして、送れなかったことがどこにも残らない。
 // 「対象なし」と記録して終わるため、誰も気づけない。今日の調査はそこで半日溶けた。
 // 送れなかった削除を控え、次に送れるときにまとめて送る。
+// v0.45.2053: クラウドに置かない種類。ここ一箇所だけが決める（第71条④）。
+// 予定でも、人が書いた文でもないもの。手元にあれば足りる。
+// dailyStatus は含めない。workMemo・privateMemo に人の文が入るため。
+var LOCAL_ONLY_KINDS = ['deckHistory', 'myDeck', 'guildLicense', 'stamp'];
+window.LOCAL_ONLY_KINDS = LOCAL_ONLY_KINDS;
+
 function _pendingDeletionsAdd(id) {
   try {
     var _p = new Set(JSON.parse(localStorage.getItem('pendingDeletions') || '[]'));
