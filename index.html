@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2040 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2041 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2040';
+    const APP_VERSION = 'v0.45.2041';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10052,6 +10052,20 @@ function _showInviteWelcome() {
         <div style="font-size:0.75em;color:#aaa;line-height:1.6;">
           外すと、月間カレンダーは予定だけになります。予定が増えてきたときに使ってください。<br>
           月間カレンダーの「🌙 暦を隠す」からも切り替えられます。この設定はこの端末だけに残ります。
+        </div>
+      </div>
+      <!-- v0.45.2041: 月間カレンダーのお金の合計 -->
+      <div style="background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+        <div style="font-size:0.8em;color:#888;font-weight:700;letter-spacing:.08em;margin-bottom:4px;">💰 月間カレンダーのお金</div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;padding:8px 10px;background:#f7f9fb;border-radius:8px;">
+          <input type="checkbox" id="showMoneyLineCheck"
+            onchange="if(typeof toggleMoneyLineVisible==='function')toggleMoneyLineVisible(this.checked);"
+            style="width:16px;height:16px;accent-color:#c0392b;cursor:pointer;">
+          <span style="font-size:0.85em;color:#333;font-weight:600;">▲▽で書いた金額の合計を表示する</span>
+        </label>
+        <div style="font-size:0.75em;color:#aaa;line-height:1.6;">
+          予定に <b>▲109,100 アプラス</b> のように書くと、今月と来月の合計が出ます。書き方は自由帳の「💰 お金の書き方」にあります。<br>
+          人に画面を見せるときは外してください。月間カレンダーの「💰 金額を隠す」からも切り替えられます。
         </div>
       </div>
       <!-- マトリクス層表示設定 -->
@@ -29388,7 +29402,7 @@ function saveMsbEdit() {
     // KNOWN_KEYSと_allowedKeysを統合。ここだけ更新すれば監視・KPAGテスト両方に反映される。
     const KEY_WHITELIST = new Set([
       // コアデータ
-      'allTasks', 'allSettings', 'deletedTaskIds', 'pendingDeletions', 'koyomiHidden',
+      'allTasks', 'allSettings', 'deletedTaskIds', 'pendingDeletions', 'koyomiHidden', 'moneyLineHidden',
       // v0.45.1968: コメントの既読。KPAGの許可一覧に入れ忘れていた。
       'koyomiru_comment_read',
       // 徳・業・ログ
@@ -31482,6 +31496,8 @@ function loadSettingsUI() {
       try {
         var _koyomiCheck = document.getElementById('showKoyomiCheck');
         if (_koyomiCheck) _koyomiCheck.checked = (typeof isKoyomiVisible === 'function') ? isKoyomiVisible() : true;
+        var _moneyCheck = document.getElementById('showMoneyLineCheck');
+        if (_moneyCheck) _moneyCheck.checked = (typeof isMoneyLineVisible === 'function') ? isMoneyLineVisible() : true;
       } catch (eKy) {}
       var _showMccCheck = document.getElementById('showMatrixCenterCircleCheck');
       if (_showMccCheck) _showMccCheck.checked = allSettings.ui.showMatrixCenterCircle === true;
@@ -32357,6 +32373,21 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           renderCalendarFilter(containerId, onChangeCallback);
         };
         bar.appendChild(_koyomiBtn);
+        // v0.45.2041: お金の合計の切り替え。暦の隣に置く。
+        // 隠している間は見た目を変える。忘れて「合計が出ない」と思わないように。
+        var _moneyBtn = document.createElement('button');
+        var _mOn = (typeof isMoneyLineVisible === 'function') ? isMoneyLineVisible() : true;
+        _moneyBtn.style.cssText = 'padding:5px 12px;border-radius:14px;font-size:0.75em;font-weight:600;cursor:pointer;flex:0 0 auto;white-space:nowrap;' +
+          (_mOn ? 'border:2px solid #e5e5e5;background:#fff;color:#b0b0b0;'
+                : 'border:2px solid #c0392b;background:#fdecea;color:#a33025;');
+        _moneyBtn.textContent = _mOn ? '💰 金額を隠す' : '💰 金額を出す';
+        _moneyBtn.title = _mOn ? '▲▽で書いた金額の合計を隠します'
+                               : '▲▽で書いた金額の合計を出します';
+        _moneyBtn.onclick = function() {
+          if (typeof toggleMoneyLineVisible === 'function') toggleMoneyLineVisible();
+          renderCalendarFilter(containerId, onChangeCallback);
+        };
+        bar.appendChild(_moneyBtn);
       }
       // v0.45.2035: 【権威】2026-09-04、「入金日と支払日」のチップは何を絞るのか、との問い。
       // 調べると、絞り込みの中身は空だった。押しても画面は何も変わらない。
@@ -32488,9 +32519,30 @@ function renderCalendarFilter(containerId, onChangeCallback) {
     }
     window._parseMoneyLine = _parseMoneyLine;
 
+    // v0.45.2041: 【権威】2026-09-04、お金の数字も出したり消したりしたい、との要望。
+    // 人に画面を見せるとき、金額が出ているのは困る。暦と同じ形にする。
+    // 判定はここ一箇所だけに置く（第71条④）。
+    // 端末ごとに決める。クラウドには送らない。
+    function isMoneyLineVisible() {
+      try { return localStorage.getItem('moneyLineHidden') !== '1'; }
+      catch (e) { return true; }
+    }
+    window.isMoneyLineVisible = isMoneyLineVisible;
+
+    function toggleMoneyLineVisible(force) {
+      try {
+        var _next = (typeof force === 'boolean') ? !force : isMoneyLineVisible();
+        localStorage.setItem('moneyLineHidden', _next ? '1' : '0');
+      } catch (e) {}
+      if (typeof renderMonthlyView === 'function') renderMonthlyView();
+    }
+    window.toggleMoneyLineVisible = toggleMoneyLineVisible;
+
     function renderMonthlyMoneyLine() {
       var el = document.getElementById('monthlyMoneyLine');
       if (!el) return;
+      // 隠しているときは、数えることもしない。
+      if (!isMoneyLineVisible()) { el.style.display = 'none'; return; }
       try {
         // v0.45.2040: 【権威】2026-09-04、実際に使ってみて、
         // 「今日から先」を数える形の方が使えた、との判断。
