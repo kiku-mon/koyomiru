@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2059 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2061 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2059';
+    const APP_VERSION = 'v0.45.2061';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6714,10 +6714,12 @@ function _showInviteWelcome() {
            ここで紐づけておけば、どちらで入っても同じデータが見える。 -->
       <button class="account-menu-item" id="accountMenuLink" onclick="closeAccountMenu(); openLinkMethodModal();"><span>🔗</span>アカウント連携</button>
       <button class="account-menu-item" onclick="closeAccountMenu(); openOshiraseModal();"><span>📣</span>お知らせ</button>
-      <button class="account-menu-item" id="accountMenuHelp" onclick="closeAccountMenu(); showTutorial();"
-        ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
-        ontouchend="clearTimeout(this._t)"
-        ontouchcancel="clearTimeout(this._t)"><span>❓</span>使い方</button>
+      <!-- v0.45.2060: 【権威】2026-09-04、長押しで開発者ログに入る経路を作った覚えがない、
+           勝手に作るな、との指摘。版の記録も残っておらず、いつ入ったか追えなかった。
+           開発者ログには招待コード・見るだけリンクのトークン・予定の本文が出る。
+           それが誰の端末でも、2秒長押しで開いていた。
+           入口は設定の管理者メニューだけにする。隠し操作は残さない。 -->
+      <button class="account-menu-item" id="accountMenuHelp" onclick="closeAccountMenu(); showTutorial();"><span>❓</span>使い方</button>
     </div>
     <div id="accountMenuAuthArea" style="border-top:1px solid #f0f0f0;padding:8px 0 10px;"></div>
   </div>
@@ -10752,7 +10754,40 @@ window.highlightSafe = highlightSafe;
 // 復元（保存された値をその場の印にも立てる）は、この中で行う。
 // 設定の読み込み直後に置いたときは、まだ他の変数が作られておらず、
 // 連鎖して別の初期化を壊した。呼ばれた時点なら全部が揃っている。
+// v0.45.2061: 【権威】2026-09-04、王姫コマンドを過去に2〜3人へ伝えたことがある、
+// 本人かどうかで判定して自分以外は入れなくしたい、との判断。
+//
+// これまでの条件は「10手の並びを知っているか」だけだった。
+// 知っている人が増えれば、その人数だけ管理者が増える。取り消す手段もない。
+// 管理者メニューの中には開発者ログがあり、そこには招待コードも予定の本文も出る。
+//
+// クラウドのユーザーIDで確かめる。並びが漏れても、IDが違えば入れない。
+//
+// 一覧の形にしてあるのは、開発者が増えたときに行を足すだけで済ませるため。
+// そのときは「誰を足したか」も一緒に書くこと。名前の無いIDは、後から誰も判断できない。
+// なお空のままなら、この確認は行わない。IDを書く前のこの版で、
+// きくモンさん自身が締め出されることを避けるための逃げ道である。
+// IDは 設定 → クラウド か、管理者メニューの開発者ログで見られる。
+var KOYOMIRU_OWNER_IDS = [
+  // 例: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',   // きくモン
+];
+window.KOYOMIRU_OWNER_IDS = KOYOMIRU_OWNER_IDS;
+
+function isKoyomiruOwner() {
+  // 一覧が空なら確かめない（IDを書く前でも、これまでどおり使えるようにする）
+  if (!KOYOMIRU_OWNER_IDS.length) return true;
+  try {
+    var uid = window._cloudUserId || null;
+    if (!uid) return false;   // ログインしていないなら、本人と確かめようがない
+    return KOYOMIRU_OWNER_IDS.indexOf(uid) !== -1;
+  } catch (e) { return false; }
+}
+window.isKoyomiruOwner = isKoyomiruOwner;
+
 function isKoyomiruAdminMode() {
+  // 本人でなければ、保存されていても管理者としては扱わない。
+  // 過去に王姫コマンドで入った人の端末も、これで戻る。
+  if (!isKoyomiruOwner()) return false;
   var _saved = !!(typeof allSettings !== 'undefined' && allSettings &&
                   allSettings.flags && allSettings.flags.adminMode);
   if (_saved && window._adminModeActive !== true) window._adminModeActive = true;
@@ -49308,6 +49343,10 @@ function showDebugLog(_initOnly) {
     lsInfo.push('tokuPoints: ' + (localStorage.getItem('tokuPoints')||'0'));
     lsInfo.push('gouPoints: ' + (localStorage.getItem('gouPoints')||'0'));
     lsInfo.push('currentView: ' + (localStorage.getItem('currentView')||'null'));
+    // v0.45.2061: 管理者を絞るのに使うID。ここに書き写して KOYOMIRU_OWNER_IDS に入れる。
+    lsInfo.push('★ あなたのユーザーID: ' + (window._cloudUserId || '(未ログイン)'));
+    lsInfo.push('★ 本人と認めた一覧: ' + (window.KOYOMIRU_OWNER_IDS && window.KOYOMIRU_OWNER_IDS.length
+      ? window.KOYOMIRU_OWNER_IDS.join(', ') : '(まだ空・誰でも入れる状態)'));
     var allKeys = [];
     for (var i = 0; i < localStorage.length; i++) allKeys.push(localStorage.key(i));
     allKeys.sort();
@@ -66396,6 +66435,10 @@ function refreshAdminPrayerCheckbox() {
 }
 window.refreshAdminPrayerCheckbox = refreshAdminPrayerCheckbox;
 function toggleAdminMode() {
+  // v0.45.2061: 本人でなければ、切り替えそのものを行わない。
+  // 王姫コマンドを知っていても、IDが違えば入れない。
+  // 「入れません」とは言わない。そこに何かあると教えることになる。
+  if (typeof isKoyomiruOwner === 'function' && !isKoyomiruOwner()) return;
   var el = document.getElementById('adminMenuSection');
   var extra = document.getElementById('adminBadgeExtra');
   // v0.45.1480: 成長の軸セクションは管理者モードと連動して表示する
@@ -66990,7 +67033,9 @@ function copyStarterDeckCode() {
   }
 }
 document.addEventListener('DOMContentLoaded', function() {
-  if (allSettings.flags.adminMode) {
+  // v0.45.2061: flags を直に見ず、判定の関数を通す（第71条④）。
+  // ここだけ素通りさせると、本人でない端末でも起動時に管理者メニューが出る。
+  if (typeof isKoyomiruAdminMode === 'function' ? isKoyomiruAdminMode() : allSettings.flags.adminMode) {
     var el = document.getElementById('adminMenuSection');
     if (el) el.style.display = 'block';
     // v0.45.1480: 成長の軸セクションも管理者モードと連動して復元する
@@ -74555,10 +74600,7 @@ window.addMigration = addMigration;
      入口を ⊙ にして中で分けたい、との要望。
      押すと、禅モードと使い方を選ぶ小さなシートが出る。
      長押しは開発者ログのまま（開くかどうかは中で管理者かを見る）。 -->
-<button id="tutorialHelpBtn" class="koyomiru-help-fab" style="display:none;" onclick="window.openHelpSheet()" title="禅モード・使い方"
-  ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
-  ontouchend="clearTimeout(this._t)"
-  ontouchcancel="clearTimeout(this._t)">⊙</button>
+<button id="tutorialHelpBtn" class="koyomiru-help-fab" style="display:none;" onclick="window.openHelpSheet()" title="禅モード・使い方">⊙</button>
 
 
 <!-- 印刷処理（beforeprint / afterprint） -->
