@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2056 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2057 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2056';
+    const APP_VERSION = 'v0.45.2057';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7471,6 +7471,14 @@ function _showInviteWelcome() {
         style="flex:1;accent-color:#60a5fa;cursor:pointer;min-width:0;background:transparent;-webkit-appearance:none;height:4px;border-radius:2px;background:linear-gradient(to right,#60a5fa 0%,#60a5fa 0%,#e5e7eb 0%);"
         oninput="window.adjustMonthlyWidth(this.value)"
         ondblclick="window.resetMonthlyWidth()">
+      <!-- v0.45.2057: 【権威】2026-09-04、ゆっくり見たいので画面をロックしたい、との要望。
+           要望は「JavaScriptを全部止める」だったが、それはしない。
+           止めると、押しても何も起きない画面になり、壊れたのと区別が付かない。
+           止めたいのは処理ではなく「見ている場所が動くこと」なので、そこだけ止める。
+           ロック中は描き直しを止め、スライダーを触れなくする。
+           予定を押して開くことはできる。読むための状態であって、死んだ画面ではない。 -->
+      <button id="monthlyLockBtn" onclick="window.toggleMonthlyLock()" title="表示を固定して、ゆっくり見る"
+        style="font-size:0.6em;color:#666;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 6px;cursor:pointer;flex-shrink:0;margin-left:4px;white-space:nowrap;">🔓 固定</button>
       <button onclick="window.resetMonthlyWidth();window.resetMonthlyRowH();"
         style="font-size:0.6em;color:#aaa;background:none;border:1px solid #ddd;border-radius:3px;padding:1px 5px;cursor:pointer;flex-shrink:0;margin-left:4px;">↺</button>
       <!-- v0.45.1633: 【権威】2026-08-19、🏷 が何のアイコンか分からないとの指摘。
@@ -14983,6 +14991,9 @@ function myDeckApply(idx) {
     }
     // ===== 月間ビュー関数 =====
     function renderMonthlyView() {
+      // v0.45.2057: 固定中は描き直さない。見ている場所を動かさないため。
+      // 予定を押して開くことはできる。読むための状態であって、死んだ画面ではない。
+      if (window._monthlyLocked) return;
 
       try {
       const calendar = document.getElementById('monthlyCalendar');
@@ -17903,6 +17914,39 @@ function toggleMonthlyFilterBar() {
   } catch(e) {}
 }
 window.toggleMonthlyFilterBar = toggleMonthlyFilterBar;
+
+// v0.45.2057: 表示を固定する。描き直しを止め、見ている場所を動かさない。
+// 「JavaScriptを全部止める」ことはしない。止めると、押しても何も起きない画面になり、
+// 壊れたのと区別が付かなくなる。止めたいのは処理ではなく、場所が動くことである。
+window._monthlyLocked = false;
+function toggleMonthlyLock() {
+  window._monthlyLocked = !window._monthlyLocked;
+  var btn = document.getElementById('monthlyLockBtn');
+  if (btn) {
+    btn.textContent = window._monthlyLocked ? '🔒 固定中' : '🔓 固定';
+    btn.style.color  = window._monthlyLocked ? '#8a6a24' : '#666';
+    btn.style.border = window._monthlyLocked ? '1px solid #c8a45a' : '1px solid #ddd';
+    btn.style.background = window._monthlyLocked ? '#fdf6e8' : 'none';
+  }
+  // 固定中はスライダーを触れなくする。触れると位置が動いてしまうため。
+  ['monthlyRowHSlider', 'monthlyWidthSlider'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = window._monthlyLocked;
+    el.style.opacity = window._monthlyLocked ? '0.35' : '';
+  });
+  // 固定を解いたら描き直す。固定中に予定を足していても、ここで画面に出る。
+  // 解いたのに出てこないと、消えたと思わせてしまう。
+  if (!window._monthlyLocked && typeof renderMonthlyView === 'function') {
+    renderMonthlyView();
+  }
+  if (typeof showToast === 'function') {
+    showToast(window._monthlyLocked
+      ? '🔒 表示を固定しました。もう一度押すと戻ります'
+      : '🔓 固定を解きました');
+  }
+}
+window.toggleMonthlyLock = toggleMonthlyLock;
 
 function setMonthlyFitToScreen(v) {
   try {
