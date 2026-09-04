@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2033 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2036 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2033';
+    const APP_VERSION = 'v0.45.2036';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7478,6 +7478,10 @@ function _showInviteWelcome() {
          わずかにスクロールすると見出しの上へ被さっていた。
          浮かせるのをやめて普通の並びに戻す。重ならなければ削れようがない。 -->
     <div id="monthlyCalendarFilter" style="display:flex;gap:6px;padding:4px 12px 9px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-bottom:1px solid #f0f0f0;background:#fff;position:relative;z-index:1;"></div>
+    <!-- v0.45.2036: これから出ていく／入ってくるお金の合計。
+         予定の文字に ▲109,100 ▽200,000 と書いておけば、ここで足す。
+         新しい種類は作らない。ただの予定として書いたものを読むだけ。 -->
+    <div id="monthlyMoneyLine" style="display:none;padding:6px 12px;font-size:0.78em;border-bottom:1px solid #f0f0f0;background:#fff;"></div>
     <div class="monthly-body-wrap">
     <!-- サイドバー背景オーバーレイ（タップで閉じる） -->
     <div id="monthlySidebarOverlay" class="monthly-sidebar-overlay" onclick="closeMonthlySidebar()"></div>
@@ -11466,7 +11470,6 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
     // 表示ONのカレンダーIDセット（クイックフィルター用・セッション中のみ）
     let activeCalendarIds = null; // null = 全表示
     // 💰支払いのみフィルタ（月間カレンダー用）
-    let _monthlyFinanceFilterActive = false;
     function getActiveCalendarIds() {
       if (activeCalendarIds !== null) return activeCalendarIds;
       // 設定のvisible=trueのもの
@@ -11587,6 +11590,7 @@ var MONTHLY_CELL_PAD = 5;    // 升目の上の余白
 // 一行下にしてはどうか、との提案。横で取り合うのをやめれば、字を小さくせずに済む。
 // 頭を「日付の行18px＋月齢の行10px」の2行にする。
 var MONTHLY_HEAD_H   = 28;   // 日付の行（日付・祝日名）＋月齢の行
+var MONTHLY_MOON_H   = 10;   // v0.45.2034: そのうち月齢の行のぶん。暦を消したときに引く
 var MONTHLY_BAND_H   = 16;   // 帯1本
 var MONTHLY_LANE_H   = 17;   // 帯1段ぶん（帯16px＋隙間1px）
 var MONTHLY_ITEM_H   = 19;   // 予定カード1件
@@ -14861,6 +14865,8 @@ function myDeckApply(idx) {
     }
     // ===== 月間ビュー関数 =====
     function renderMonthlyView() {
+      // v0.45.2036: これからのお金の合計。月間を描くたびに数え直す。
+      try { if (typeof renderMonthlyMoneyLine === 'function') renderMonthlyMoneyLine(); } catch (eMn) {}
 
       try {
       const calendar = document.getElementById('monthlyCalendar');
@@ -15185,9 +15191,6 @@ function myDeckApply(idx) {
           if (t.endDate && t.endDate !== t.date) return false;
           return true;
         });
-        // 💰支払いのみフィルタ
-        if (_monthlyFinanceFilterActive) {
-        }
         // v0.45.1617: 【権威】2026-08-16、業界標準では升目に出す予定は2〜3件までで、
         // 溢れた分は「+N件」に畳む。こよみるは全件を描いていたため、
         // 予定が多い日は升目からはみ出していた。帯を入れたことで場所がさらに減り、
@@ -15195,7 +15198,15 @@ function myDeckApply(idx) {
         var _cellH = _mRowH;
         // v0.45.1621: 表示件数は「升目の高さ − 日付の行 − 帯の段数」から先に決める。
         // 描いた後で畳み直す方式はやめた（帯と升目が別々の数字を見て食い違うため）。
-        var _usedTop = MONTHLY_CELL_PAD + MONTHLY_HEAD_H + (_lanes * MONTHLY_LANE_H);
+        // v0.45.2034: 【権威】2026-09-04、暦を消したのに予定が増えず、
+        // 升目が空いたままになる、との報告。12日は「+19件」が「+20件」に増えていた。
+        //
+        // MONTHLY_HEAD_H は「日付の行18px＋月齢の行10px」の固定値だった。
+        // 月齢を消しても28のまま数えるので、空いた10pxは誰にも渡らない。
+        // 消したのに狭いままでは、消す意味がない。
+        // 月齢を出していないときは、その10pxを予定に回す。
+        var _headH = MONTHLY_HEAD_H - ((typeof isKoyomiVisible === 'function' && !isKoyomiVisible()) ? MONTHLY_MOON_H : 0);
+        var _usedTop = MONTHLY_CELL_PAD + _headH + (_lanes * MONTHLY_LANE_H);
         var _itemH = MONTHLY_ITEM_H;
         var _maxItems = Math.floor((_cellH - _usedTop) / _itemH);
         if (_maxItems < dayTasks.length) _maxItems = Math.floor((_cellH - _usedTop - MONTHLY_MORE_H) / _itemH);
@@ -32313,22 +32324,17 @@ function renderCalendarFilter(containerId, onChangeCallback) {
         };
         bar.appendChild(_koyomiBtn);
       }
-      // 💰支払いのみフィルタボタン（月間カレンダー専用）
-      if (containerId === 'monthlyCalendarFilter') {
-        var finBtn = document.createElement('button');
-        var isFinOn = _monthlyFinanceFilterActive;
-        finBtn.style.cssText = 'padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;cursor:pointer;flex:0 0 auto;white-space:nowrap;'
-          + 'border:1.5px solid ' + (isFinOn ? '#c0392b' : '#ddd') + ';'
-          + 'background:' + (isFinOn ? '#fef0f0' : '#fff') + ';'
-          + 'color:' + (isFinOn ? '#c0392b' : '#aaa') + ';';
-        finBtn.textContent = '💰 入金日と支払日';
-        finBtn.onclick = function() {
-          _monthlyFinanceFilterActive = !_monthlyFinanceFilterActive;
-          renderCalendarFilter(containerId, onChangeCallback);
-          if (onChangeCallback) onChangeCallback();
-        };
-        bar.appendChild(finBtn);
-      }
+      // v0.45.2035: 【権威】2026-09-04、「入金日と支払日」のチップは何を絞るのか、との問い。
+      // 調べると、絞り込みの中身は空だった。押しても画面は何も変わらない。
+      // 押した人は「絞り込んだ結果、支払いが無い」と受け取る。
+      // 支払いのある日に押して何も出なければ、入れ忘れたと思う。事故になる。
+      //
+      // finance という種類も「残骸」として名前だけ残っていて、データは0件だった。
+      // 支払いを登録する仕組みそのものが無い。
+      // あるべき姿の形をしたボタンだけが立っていた。作った本人が誤解するなら、
+      // 他の人はもっと誤解する。動かないものは置かない（第7条）。
+      //
+      // 支払いの扱いは、登録できるようにしてから設計し直す。それまで出さない。
     }
     // v0.45.2029: 【権威】2026-09-04、予定が埋まってくると暦が邪魔になる、との要望。
     // 升目は予定が入る前に、日付・月齢・節気・よみ・候・よみ・六曜で6行を使っている。
@@ -32416,6 +32422,69 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       } catch (e) { console.warn('[設定] 並べ替えに失敗:', e && e.message); }
     }
     window.applySettingsOrder = applySettingsOrder;
+
+    // v0.45.2036: 【権威】2026-09-04、支払いは紙で管理しているが、
+    // やり取りが多いと忘れる、との話。合計が出れば助かる、と。
+    //
+    // 新しい種類も、新しい画面も作らない。
+    // 予定の文字に ▲109,100 ▽200,000 と書いておけば、それを読んで足すだけ。
+    // 作らないことが大事である。やめたくなったら、読む処理を消せば元に戻る。
+    // データはただの予定なので、何も壊れない。
+    //
+    // 足すのは「これから」だけ。過ぎた支払いを足しても、忘れ防止にならない。
+    //
+    // これは家計簿ではない。費目も残高も予実も持たない。
+    // 「今月いくら出ていくか」を思い出すための数字である。
+    function _parseMoneyLine(text) {
+      var out = { out: 0, in: 0, unreadable: 0 };
+      if (!text) return out;
+      var s = String(text);
+      // ▲▽ の直後にある数字を拾う。カンマ・空白・円は挟まっていてもよい。
+      var re = /([▲▽])\s*([0-9０-９,，\s]*)/g, m;
+      while ((m = re.exec(s)) !== null) {
+        var raw = String(m[2] || '')
+          .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+          .replace(/[,，\s]/g, '');
+        var n = parseInt(raw, 10);
+        // 読めなかったものは黙って0にしない。足りない合計を、足りていると見せてはいけない。
+        if (!isFinite(n) || n <= 0) { out.unreadable++; continue; }
+        if (m[1] === '▲') out.out += n; else out.in += n;
+      }
+      return out;
+    }
+    window._parseMoneyLine = _parseMoneyLine;
+
+    function renderMonthlyMoneyLine() {
+      var el = document.getElementById('monthlyMoneyLine');
+      if (!el) return;
+      try {
+        var today = (typeof getTodayStr === 'function') ? getTodayStr() : new Date().toISOString().slice(0, 10);
+        var sumOut = 0, sumIn = 0, bad = 0;
+        (allTasks || []).forEach(function(t) {
+          if (!t || t.deleted) return;
+          if ((t.kind || 'task') !== 'task') return;
+          if (!t.date || t.date < today) return;
+          var r = _parseMoneyLine(t.text);
+          sumOut += r.out; sumIn += r.in; bad += r.unreadable;
+        });
+        if (sumOut === 0 && sumIn === 0 && bad === 0) { el.style.display = 'none'; return; }
+        var y = function(n) { return n.toLocaleString('ja-JP'); };
+        var html = '<span style="color:#8e8e8e;">これから</span>　' +
+          '<span style="color:#c0392b;font-weight:700;">▲ 出る ' + y(sumOut) + '</span>' +
+          '　<span style="color:#1b5e20;font-weight:700;">▽ 入る ' + y(sumIn) + '</span>' +
+          '　<span style="color:' + (sumIn - sumOut < 0 ? '#c0392b' : '#1b5e20') + ';">差 ' +
+          (sumIn - sumOut >= 0 ? '+' : '') + y(sumIn - sumOut) + '</span>';
+        if (bad > 0) {
+          html += '<span style="color:#c07a2a;margin-left:10px;">⚠️ ▲▽が' + bad + '件、金額を読めませんでした</span>';
+        }
+        el.innerHTML = html;
+        el.style.display = '';
+      } catch (e) {
+        console.warn('[お金] 合計に失敗:', e && e.message);
+        el.style.display = 'none';
+      }
+    }
+    window.renderMonthlyMoneyLine = renderMonthlyMoneyLine;
 
     // プロフィール即時保存
     function saveProfileQuick() {
@@ -61367,6 +61436,28 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window._cloudLoginEscBound === true
          ? ok('ST-247·⑮: Escキーでのモーダル閉鎖ハンドラ設置を確認')
          : ng('ST-247·⑮: Escキー処理が未設置', '');
+       // v0.45.2036: お金の読み取りを、実際に通して確かめる（第76条）。
+       // 読み違えると、支払いの合計が嘘になる。ここは黙って0にしてはいけない。
+       (function(){
+         if (typeof window._parseMoneyLine !== 'function') {
+           ng('ST-247·⑱: お金の読み取りが見つからない', '');
+           return;
+         }
+         var f = window._parseMoneyLine;
+         var a = f('▲109,100 アプラス');
+         var b = f('▽200000 〇〇様預り金');
+         var c = f('▲１０９，１００ アプラス');        // 全角
+         var d = f('▲ 4,000 印紙 ▽ 200,000 預り');   // 1行に両方
+         var e = f('▲アプラス 109100');               // 順序が違う＝読めない
+         var g = f('歯医者');                          // 関係ない予定
+         (a.out === 109100 && b['in'] === 200000 && c.out === 109100 &&
+          d.out === 4000 && d['in'] === 200000 &&
+          e.unreadable === 1 && e.out === 0 &&
+          g.out === 0 && g['in'] === 0 && g.unreadable === 0)
+           ? ok('ST-247·⑱: ▲▽の金額を6通りで読み分けられることを確認')
+           : ng('ST-247·⑱: お金の読み取りが噛み合わない',
+                JSON.stringify([a, b, c, d, e, g]));
+       })();
        // v0.45.2014: 招待の残り時間を、実際に来る3通りの書き方で通す（第76条）。
        // ここを読み違えると、有効なリンクを「期限切れ」と偽り、招待そのものが死ぬ。
        (function(){
