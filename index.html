@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2024 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2025 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2024';
+    const APP_VERSION = 'v0.45.2025';
   const APP_LAST_UPDATED = '2026-09-03'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22079,9 +22079,13 @@ function openSidebarEditForm(item, task) {
         toggleMsbMore(!_hasMore);
       } catch(eMore) {}
       // v0.45.1590: 終了日を反映
+      // v0.45.2025: 空のままにせず、開始日を入れておく。
+      // 空欄は「何日まで続くか分からない」ではなく「その日だけ」を意味するが、
+      // 見ている人には区別がつかない。同じ日を入れておけば、意味が目に見える。
+      // 終了日が開始日と同じものは1日の予定として扱われるため（15151行）、動きは変わらない。
       try {
         var _edEl = document.getElementById('msbEditEndDate');
-        if (_edEl) _edEl.value = task.endDate || '';
+        if (_edEl) _edEl.value = task.endDate || task.date || _sidebarDateStr || '';
       } catch(eEd) {}
       // v0.45.1583: 定員を反映
       try {
@@ -22340,6 +22344,11 @@ function _msbFillTime(id) {
 window._msbFillTime = _msbFillTime;
 
 // 開始からの長さで終了を入れる。開始が空なら、まず「いま」を入れてから足す。
+// v0.45.2025: 【権威】2026-09-03、+1h／+2hを押すたびに増えてほしいのに、
+// 何度押しても同じ時刻にしかならない、との報告。
+// 常に開始時刻から数え直していたため、押し直しても結果が変わらなかった。
+// 終了時刻がすでに入っているなら、そこから足す。
+// 「+1hを3回押したら3時間後」が、押した人の期待する動きである。
 function _msbAddFromStart(minutes) {
   try {
     var st = document.getElementById('msbEditTime');
@@ -22347,12 +22356,30 @@ function _msbAddFromStart(minutes) {
     if (!st || !et) return;
     if (!st.value) _msbFillTime('msbEditTime');
     if (!st.value) return;
-    var parts = st.value.split(':');
+    var p = function(v) { return String(v).padStart(2, '0'); };
     var base = new Date();
+    // すでに終了時刻があるなら、そこに足す。無ければ開始時刻から。
+    var from = et.value || st.value;
+    var parts = String(from).split(':');
     base.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
     base.setMinutes(base.getMinutes() + minutes);
-    var p = function(v) { return String(v).padStart(2, '0'); };
     et.value = p(base.getHours()) + ':' + p(base.getMinutes());
+    // 終了日が空なら、開始日を入れる。
+    // 空のままだと「開始した日のその時刻だけの予定」になり、
+    // 終了時刻を入れた意味が消える。
+    var ed = document.getElementById('msbEditEndDate');
+    var sd = document.getElementById('msbEditDate');
+    if (ed && sd && !ed.value && sd.value) {
+      ed.value = sd.value;
+      ed.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    // 日をまたいだら、終了日を1日進める。
+    if (ed && ed.value && et.value < st.value) {
+      var d = new Date(ed.value + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      ed.value = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+      ed.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     et.dispatchEvent(new Event('change', { bubbles: true }));
   } catch (e) {}
 }
