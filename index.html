@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2045 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2046 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2045';
+    const APP_VERSION = 'v0.45.2046';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7633,6 +7633,28 @@ function _showInviteWelcome() {
           <label class="msb-label">メモ</label>
           <textarea id="msbEditMemo" class="msb-textarea" rows="2" placeholder="メモ・URL（任意）　例：調整さんのURL、場所、持ち物"></textarea>
         </div>
+        <!-- v0.45.2046: 【権威】2026-09-04、三角を自分で打つのは手間なので、
+             出る・入るを選んで金額を入れる欄がほしい、との要望。
+             三角は変換で探す必要があり、端末ごとに出る候補も違う。
+             打たずに済むなら、そのほうが早い。
+             入れた内容はタイトルの先頭に書き足すだけ。新しい入れ物は作らない。 -->
+        <div class="msb-edit-row" id="msbMoneyRow">
+          <label class="msb-label">お金</label>
+          <div style="display:flex;gap:5px;align-items:center;flex:1;min-width:0;">
+            <select id="msbMoneyDir" class="msb-input-sm" style="flex:0 0 auto;">
+              <option value="out">▲ 出る</option>
+              <option value="in">▼ 入る</option>
+            </select>
+            <input id="msbMoneyAmount" type="number" min="1" step="1" inputmode="numeric"
+                   class="msb-input-sm" placeholder="金額" style="flex:1;min-width:0;"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();window._msbInsertMoney();}">
+            <button type="button" class="msb-now-btn" onclick="window._msbInsertMoney()" title="タイトルの先頭に書き足す">入れる</button>
+          </div>
+        </div>
+        <div class="msb-edit-row" style="margin-top:-6px;">
+          <label class="msb-label"></label>
+          <span style="font-size:11px;color:#9aa3af;">押すとタイトルの先頭に <b>▲50,000</b> のように入ります。月間カレンダーの上で合計されます</span>
+        </div>
         <!-- ここから先は、必要になった人だけが開く -->
         <button type="button" class="msb-more-toggle" onclick="toggleMsbMore()" id="msbMoreToggle">
           ▶ 詳しく（繰り返し・定員）
@@ -12893,10 +12915,24 @@ function renderTodoList() {
       // タスク検索（kindが'note'以外 または 未設定の古いタスクも対象）
       // v0.45.1700: 旅行は名前が title に入るため、text と memo だけを見ていると
       // 「草津ゴルフ」で検索しても出てこなかった。title も見るようにする。
+      // v0.45.2046: 【権威】2026-09-04、三角で検索したらお金の予定がずらっと出ると便利、との要望。
+      // 三角は6種類ずつあり、打った一文字と同じものしか出ないのでは探せない。
+      // 三角だけを打ったときは、向きも塗りも問わず、お金を書いた予定を全部出す。
+      var _isMoneyQuery = false;
+      try {
+        var _allMarks = (window.MONEY_OUT_MARKS || '▲') + (window.MONEY_IN_MARKS || '▽');
+        _isMoneyQuery = q.length > 0 && q.split('').every(function(c){ return _allMarks.indexOf(c) !== -1; });
+      } catch (eMq) {}
       const taskHits = allTasks.filter(t => t.kind !== 'note' && t.kind !== 'deckHistory' && t.kind !== 'myDeck' && t.kind !== 'guildLicense' &&
-        ((t.text || '').toLowerCase().includes(q) ||
-         (t.title || '').toLowerCase().includes(q) ||
-         (t.memo || '').toLowerCase().includes(q))
+        (_isMoneyQuery
+          ? (function(){
+              if (typeof window._parseMoneyLine !== 'function') return false;
+              var _r = window._parseMoneyLine((t.text || '') + ' ' + (t.title || ''));
+              return _r.out > 0 || _r['in'] > 0 || _r.unreadable > 0;
+            })()
+          : ((t.text || '').toLowerCase().includes(q) ||
+             (t.title || '').toLowerCase().includes(q) ||
+             (t.memo || '').toLowerCase().includes(q)))
       ).filter(t => {
         // v0.45.1942: カレンダーで絞り込む。未選択なら全部。
         if (window._searchCalFilter && t.calendarId !== window._searchCalFilter) return false;
@@ -22443,6 +22479,36 @@ window._msbFillTime = _msbFillTime;
 // 常に開始時刻から数え直していたため、押し直しても結果が変わらなかった。
 // 終了時刻がすでに入っているなら、そこから足す。
 // 「+1hを3回押したら3時間後」が、押した人の期待する動きである。
+// v0.45.2046: 選んだ向きと金額を、タイトルの先頭に書き足す。
+// 三角を自分で打たなくて済むようにするだけで、保存されるものは今までと同じ。
+// 新しい入れ物を作らないので、やめたくなったらこの欄を消せば元に戻る。
+function _msbInsertMoney() {
+  try {
+    var dir = document.getElementById('msbMoneyDir');
+    var amt = document.getElementById('msbMoneyAmount');
+    var tx  = document.getElementById('msbEditText');
+    if (!dir || !amt || !tx) return;
+    var n = parseInt(String(amt.value || '').replace(/[,，\s]/g, ''), 10);
+    if (!isFinite(n) || n <= 0) {
+      if (typeof showToast === 'function') showToast('⚠️ 金額を入れてください', {type:'error'});
+      amt.focus();
+      return;
+    }
+    var mark = (dir.value === 'in') ? '▼' : '▲';
+    var piece = mark + n.toLocaleString('ja-JP');
+    // すでに同じ向きの金額が先頭にあるなら、増やすのではなく置き換える。
+    // 押し直すたびに増えていくと、合計が黙って倍になる。
+    var cur = String(tx.value || '');
+    var head = new RegExp('^\\s*[' + MONEY_OUT_MARKS + MONEY_IN_MARKS + ']\\s*[0-9０-９,，]+\\s*');
+    if (head.test(cur)) cur = cur.replace(head, '');
+    tx.value = piece + (cur ? ' ' + cur : '');
+    tx.dispatchEvent(new Event('input', { bubbles: true }));
+    amt.value = '';
+    tx.focus();
+  } catch (e) { console.warn('[お金] 書き足しに失敗:', e && e.message); }
+}
+window._msbInsertMoney = _msbInsertMoney;
+
 function _msbAddFromStart(minutes) {
   try {
     var st = document.getElementById('msbEditTime');
@@ -26941,7 +27007,7 @@ function saveMsbEdit() {
         window._dbgLog && window._dbgLog('mig_link_note_rewrite_v2: アカウント連携の説明を新しくしました');
       }
     });
-    addMigration('mig_money_note_v3', function() {
+    addMigration('mig_money_note_v4', function() {
       // v0.45.2036: ▲▽で支払いを書く形を配る。書き方を知らなければ、
       // 合計は永久に0のままである。機能だけ置いても伝わらない。
       var _id = '019e3a10-1000-7000-9000-000000000011';
@@ -26950,8 +27016,8 @@ function saveMsbEdit() {
       try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
       if (!Array.isArray(_list)) return;
       var _title = '\ud83d\udcb0 お金の書き方';
-      var _tl = "予定に金額を書いておくと、\n月の合計が出ます。\n\n《書き方》\n\n予定の頭に、記号と金額。\n\n　▲50,000 家賃\n　▽300,000 給料\n\n　▲ … 出ていくお金\n　▽ … 入ってくるお金\n\n《数字の書き方は自由です》\n\n　▲50000\n　▲50,000\n　▲50,000円\n　▲５００００\n\nどれでも読み取ります。\n\n《1行に両方書けます》\n\n　▲8,000 会費 ▽12,000 精算\n\n《毎月の支払いは繰り返しで》\n\n家賃や引き落としのように\n毎月あるものは、繰り返しで\n登録しておけば、来月も自動で\n合計に入ります。";
-      var _tr = "《どこに出るか》\n\n月間カレンダーの上に出ます。\n\n　9月　▲ 出る 58,000\n　　　　▽ 入る 300,000\n　　　　差 +242,000\n　10月　▲ 出る 50,000\n　　　　差 -50,000\n\n《数える範囲》\n\n　今月 … 今日から月末まで\n　来月 … まるごと\n\n払い終わったぶんは消えていきます。\n残りがいくらかが分かります。\n\n《隠せます》\n\n月間カレンダーの\n「💰 金額を隠す」を押すと消えます。\n\n人に画面を見せるときにどうぞ。\nもう一度押せば戻ります。\n\n設定 → 📅 カレンダー からも\n切り替えられます。\n\n《読み取れなかったとき》\n\n記号のうしろに数字が無いと\n読み取れません。\n\n　× ▲家賃 50000\n　○ ▲50000 家賃\n\nそのときは\n「▲▽が1件、金額を読めませんでした」\nと出るので、書き直してください。\n\n《やめたいとき》\n\n▲▽を書くのをやめるだけです。\n予定はそのまま残ります。";
+      var _tl = "予定に金額を書いておくと、\n月の合計が出ます。\n\n《いちばん簡単な入れ方》\n\n予定を開くと「お金」の欄があります。\n\n　① ▲出る か ▼入る を選ぶ\n　② 金額を打つ\n　③「入れる」を押す\n\n三角を自分で探さなくて済みます。\n\n《自分で書くとき》\n\n予定の頭に、三角と金額。\n\n　▲50,000 家賃\n　▼300,000 給料\n\n　上向き … 出ていくお金\n　下向き … 入ってくるお金\n\n白でも黒でもかまいません。\n▲ △ ▼ ▽ どれでも読み取ります。\n\nスマホの変換で出やすいほうを\n使ってください。\n\n《数字の書き方は自由です》\n\n　▲50000\n　▲50,000\n　▲50,000円\n　▲５００００\n\nどれでも読み取ります。\n\n《1行に両方書けます》\n\n　▲8,000 会費 ▽12,000 精算\n\n《毎月の支払いは繰り返しで》\n\n家賃や引き落としのように\n毎月あるものは、繰り返しで\n登録しておけば、来月も自動で\n合計に入ります。";
+      var _tr = "《どこに出るか》\n\n月間カレンダーの上に出ます。\n\n　9月　▲ 出る 58,000\n　　　　▽ 入る 300,000\n　　　　差 +242,000\n　10月　▲ 出る 50,000\n　　　　差 -50,000\n\n《数える範囲》\n\n　今月 … 今日から月末まで\n　来月 … まるごと\n\n払い終わったぶんは消えていきます。\n残りがいくらかが分かります。\n\n《隠せます》\n\n月間カレンダーの\n「💰 金額を隠す」を押すと消えます。\n\n人に画面を見せるときにどうぞ。\nもう一度押せば戻ります。\n\n設定 → 📅 カレンダー からも\n切り替えられます。\n\n《読み取れなかったとき》\n\n記号のうしろに数字が無いと\n読み取れません。\n\n　× ▲家賃 50000\n　○ ▲50000 家賃\n\nそのときは\n「▲▽が1件、金額を読めませんでした」\nと出るので、書き直してください。\n\n《お金の予定だけ見たいとき》\n\n検索で三角を1つ打ってください。\n\n　▲ でも ▽ でも同じです。\n　お金を書いた予定が\n　まとめて出てきます。\n\n《伏せ字は大丈夫です》\n\n「△△社と打合せ」のように\n三角を伏せ字で使っても、\n金額とは間違えません。\n\n《やめたいとき》\n\n▲▽を書くのをやめるだけです。\n予定はそのまま残ります。";
       var _found = false;
       _list.forEach(function(t) {
         if (!t || t.id !== _id) return;
@@ -26971,7 +27037,7 @@ function saveMsbEdit() {
           allTasks.length = 0; _list.forEach(function(t){ allTasks.push(t); });
         }
       } catch(e) {}
-      window._dbgLog && window._dbgLog('mig_money_note_v3: お金の書き方を' + (_found ? '新しくしました' : '追加しました'));
+      window._dbgLog && window._dbgLog('mig_money_note_v4: お金の書き方を' + (_found ? '新しくしました' : '追加しました'));
     });
     addMigration('mig_note_order_v1', function() {
       // v0.45.2045: 【権威】2026-09-04、自由帳の並び順がおかしい、
@@ -29496,7 +29562,7 @@ function saveMsbEdit() {
       // 自由帳の並びを使う順に直す（v0.45.2045〜）
       'mig_note_order_v1',
       // お金の書き方（▲▽）を配る（v0.45.2036〜）
-      'mig_money_note_v3',
+      'mig_money_note_v4',
       // video必須フィールド補完（v0.45.703〜）
       'mig_video_required_fields_v1',
       // video done/completed/order/lastDownloadedAt補完（v0.45.704〜）
@@ -32546,20 +32612,46 @@ function renderCalendarFilter(containerId, onChangeCallback) {
     //
     // これは家計簿ではない。費目も残高も予実も持たない。
     // 「今月いくら出ていくか」を思い出すための数字である。
+    // v0.45.2046: 【権威】2026-09-04、iPhoneで「さんかく」と打つと
+    // 黒三角なら黒がずらっと、白三角なら白がずらっと出る。どちらでも打てるようにしたい、との要望。
+    //
+    // これまでは ▲（黒の上）と ▽（白の下）の組み合わせだけを読んでいた。
+    // ▼ や △ を打つと、無言で無視されていた。読めなかったとも出ない。
+    // 変換候補の並びは端末と入力履歴で変わるので、
+    // 「その端末で出やすい方」を使えなければ、書くたびに探すことになる。
+    //
+    // 塗りつぶしの有無は問わない。上向きなら出る、下向きなら入る。向きだけで決める。
+    var MONEY_OUT_MARKS = '▲△▴▵⯅⏶';   // 上向き＝出ていく
+    var MONEY_IN_MARKS  = '▼▽▾▿⯆⏷';   // 下向き＝入ってくる
+    window.MONEY_OUT_MARKS = MONEY_OUT_MARKS;
+    window.MONEY_IN_MARKS = MONEY_IN_MARKS;
+
     function _parseMoneyLine(text) {
       var out = { out: 0, in: 0, unreadable: 0 };
       if (!text) return out;
       var s = String(text);
-      // ▲▽ の直後にある数字を拾う。カンマ・空白・円は挟まっていてもよい。
-      var re = /([▲▽])\s*([0-9０-９,，\s]*)/g, m;
+      var ALL = MONEY_OUT_MARKS + MONEY_IN_MARKS;
+      // v0.45.2046: 三角は伏せ字にも使われる（△△社、〇〇様と△社で打合せ など）。
+      // 全部を金額の印と見なすと、普通の予定で「読めませんでした」が出てしまう。
+      // 金額の印とみなすのは、次の両方を満たすときだけ。
+      //   ・行の先頭にあるか、直前が空白であること（語の途中の三角は無視）
+      //   ・直後が三角でないこと（△△ は伏せ字）
+      // それ以外の三角は、数えも警告もせず、静かに見送る。
+      var re = new RegExp('([' + ALL + '])\\s*([0-9０-９,，\\s]*)', 'g');
+      var m;
       while ((m = re.exec(s)) !== null) {
+        var at = m.index;
+        var prev = at > 0 ? s.charAt(at - 1) : '';
+        var next = s.charAt(at + 1);
+        if (at > 0 && !/\s/.test(prev)) continue;        // 語の途中
+        if (next && ALL.indexOf(next) !== -1) continue;  // △△ のような伏せ字
         var raw = String(m[2] || '')
           .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
           .replace(/[,，\s]/g, '');
         var n = parseInt(raw, 10);
         // 読めなかったものは黙って0にしない。足りない合計を、足りていると見せてはいけない。
         if (!isFinite(n) || n <= 0) { out.unreadable++; continue; }
-        if (m[1] === '▲') out.out += n; else out.in += n;
+        if (MONEY_OUT_MARKS.indexOf(m[1]) !== -1) out.out += n; else out.in += n;
       }
       return out;
     }
@@ -61609,6 +61701,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          }
          var f = window._parseMoneyLine;
          var a = f('▲50,000 家賃');
+         var h = f('△50,000 家賃');            // 白の上向きでも同じ
+         var i2 = f('▼300000 給料');            // 黒の下向きでも同じ
+         var j = f('会議 △△社と打合せ');       // 伏せ字は金額ではない
          var b = f('▽200000 給料');
          var c = f('▲５００００ 家賃');              // 全角
          var d = f('▲ 4,000 印紙 ▽ 200,000 預り');   // 1行に両方
@@ -61617,10 +61712,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (a.out === 50000 && b['in'] === 200000 && c.out === 50000 &&
           d.out === 4000 && d['in'] === 200000 &&
           e.unreadable === 1 && e.out === 0 &&
-          g.out === 0 && g['in'] === 0 && g.unreadable === 0)
-           ? ok('ST-247·⑱: ▲▽の金額を6通りで読み分けられることを確認')
+          g.out === 0 && g['in'] === 0 && g.unreadable === 0 &&
+          h.out === 50000 && i2['in'] === 300000 &&
+          j.out === 0 && j['in'] === 0 && j.unreadable === 0)
+           ? ok('ST-247·⑱: 三角の金額を向きで読み分け、伏せ字を誤検知しないことを確認')
            : ng('ST-247·⑱: お金の読み取りが噛み合わない',
-                JSON.stringify([a, b, c, d, e, g]));
+                JSON.stringify([a, b, c, d, e, g, h, i2, j]));
        })();
        // v0.45.2014: 招待の残り時間を、実際に来る3通りの書き方で通す（第76条）。
        // ここを読み違えると、有効なリンクを「期限切れ」と偽り、招待そのものが死ぬ。
