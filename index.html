@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2044 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2045 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2044';
+    const APP_VERSION = 'v0.45.2045';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -26973,6 +26973,50 @@ function saveMsbEdit() {
       } catch(e) {}
       window._dbgLog && window._dbgLog('mig_money_note_v3: お金の書き方を' + (_found ? '新しくしました' : '追加しました'));
     });
+    addMigration('mig_note_order_v1', function() {
+      // v0.45.2045: 【権威】2026-09-04、自由帳の並び順がおかしい、
+      // 使っていない「マイルール」が先頭にある、との指摘。
+      //
+      // 実測すると、いちばん大事な「アカウント連携」に順番が付いておらず、
+      // 使っていない内省系のページが上位を占めていた。
+      // 順番は、作った順でも思いついた順でもなく、開く回数の多い順に置く。
+      var _order = {
+        '019e3a10-1000-7000-9000-000000000002': 0,   // 🔗 アカウント連携
+        '019e3a10-1000-7000-9000-000000000011': 1,   // 💰 お金の書き方
+        '019e3a10-1000-7000-9000-000000000001': 2,   // 🏷 スタンプの使い方
+        '019e3a10-1000-7000-9000-000000000009': 3,   // 🗺️ 旅行の使い方
+        '019e3a10-1000-7000-9000-000000000010': 4,   // ⏳ 一生の暦とは
+        '019d38c0-43f5-711c-ae9d-7be962b35ce5': 5,   // ⊙ 禅モードとは
+        '019d89e9-e33e-73fc-8e44-dfc60c30fc96': 6,   // 🗂️ マトリクス層ガイド
+        '019d1d49-e5fd-7b72-bcbe-1e57b0df3bf4': 7,   // 👹 業と徳の定義
+        '019d1d49-e603-72f2-85ce-171489775200': 8,   // 👑 称号一覧
+        '019db7b0-6dc6-7039-9854-637bd5187215': 9,   // 🤲 貢献感と、ほどこすこと
+        '019d9a30-76a3-7e2f-ac16-322f42fdc004': 10   // 📋 マイルール & 入念な準備
+      };
+      var _raw = localStorage.getItem('allTasks');
+      var _list = [];
+      try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
+      if (!Array.isArray(_list)) return;
+      var _n = 0;
+      _list.forEach(function(t) {
+        if (!t || t.kind !== 'note') return;
+        if (!(t.id in _order)) return;
+        if (t.order === _order[t.id]) return;
+        t.order = _order[t.id];
+        // 第61条：値を変えたら updatedAt も進める。でないと他の端末に伝わらない。
+        t.updatedAt = new Date().toISOString();
+        _n++;
+      });
+      if (_n > 0) {
+        localStorage.setItem('allTasks', JSON.stringify(_list));
+        try {
+          if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) {
+            allTasks.length = 0; _list.forEach(function(t){ allTasks.push(t); });
+          }
+        } catch(e) {}
+      }
+      window._dbgLog && window._dbgLog('mig_note_order_v1: 自由帳の並びを ' + _n + '件 直しました');
+    });
     addMigration('mig_life_note_add_v1', function() {
       // v0.45.1732: 一生の暦の考え方を配る。機能だけ置いても、
       // なぜ残りを数えるのかが伝わらなければ、ただ不安にさせるだけになる。
@@ -29449,6 +29493,8 @@ function saveMsbEdit() {
       'mig_travel_note_add_v1',
       // 一生の暦の説明を配る（v0.45.1732〜）
       'mig_life_note_add_v1',
+      // 自由帳の並びを使う順に直す（v0.45.2045〜）
+      'mig_note_order_v1',
       // お金の書き方（▲▽）を配る（v0.45.2036〜）
       'mig_money_note_v3',
       // video必須フィールド補完（v0.45.703〜）
@@ -61563,7 +61609,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          }
          var f = window._parseMoneyLine;
          var a = f('▲50,000 家賃');
-         var b = f('▽200000 〇〇様預り金');
+         var b = f('▽200000 給料');
          var c = f('▲５００００ 家賃');              // 全角
          var d = f('▲ 4,000 印紙 ▽ 200,000 預り');   // 1行に両方
          var e = f('▲家賃 50000');                   // 順序が違う＝読めない
