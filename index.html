@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2055 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2056 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2055';
+    const APP_VERSION = 'v0.45.2056';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13090,6 +13090,47 @@ function renderTodoList() {
      * - 週間でタスク作成 → showInWeekly: true → その日だけ表示
      * - 📅ボタンで週間追加 → showInWeekly: true → その日だけ表示
      */
+    // v0.45.2056: 【権威】2026-09-04、月間で後から入れた予定が一番下になる、
+    // 日次でドラッグして直しても月間に効かない、との報告。
+    //
+    // 実測すると、3つのビューが別々の基準で並べていた。
+    //   日次 … order のみ（時刻を見ない）
+    //   週間 … 日付 → 時刻 → order
+    //   月間 … 並べていない（allTasks に入っている順＝作った順）
+    //
+    // さらに order は「同じ日の同じ象限の中」でしか意味を持たない番号だった。
+    // 日次のドラッグは象限ごとに 0,1,2… を振り直すので、別の象限の予定が同じ番号を持つ。
+    // 月間には象限が無いため番号が衝突し、並べようがなかった。
+    // 「どこで直しても反映される」以前に、共有できる番号が存在していなかった。
+    //
+    // その日の中の位置を、1本の数で表す。基準は「その日の分」。
+    //   終日            … -1000（一番上。カレンダーの慣習に合わせる）
+    //   時刻あり        … 0:00からの分（7:00なら420）
+    //   時刻なし        … 2000（一番下）
+    //   人が動かしたもの … orderKey に、動かした先の前後の中間の数を書く
+    //
+    // 何もしていない予定は時刻順に並ぶ。後から入れた 7:00 は自動で上に来る。
+    // 一度でも動かした予定はその位置を守り、時刻順に戻したりしない。
+    function _taskSortKey(t) {
+      if (!t) return 2000;
+      if (typeof t.orderKey === 'number' && isFinite(t.orderKey)) return t.orderKey;
+      if (t.allDay) return -1000;
+      var m = String(t.time || '').match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return 2000;
+      return Number(m[1]) * 60 + Number(m[2]);
+    }
+    window._taskSortKey = _taskSortKey;
+
+    // 動かした先に入る数を作る。前後の中間を取るので、番号を振り直さずに済む。
+    // 振り直すと、動かしていない予定の位置まで動いてしまう。
+    function _makeOrderKey(prevTask, nextTask) {
+      if (!prevTask && !nextTask) return 0;
+      if (!prevTask) return _taskSortKey(nextTask) - 1;
+      if (!nextTask) return _taskSortKey(prevTask) + 1;
+      return (_taskSortKey(prevTask) + _taskSortKey(nextTask)) / 2;
+    }
+    window._makeOrderKey = _makeOrderKey;
+
     function getDailyTasks(date) {
       const result = { 1: [], 2: [], 3: [], 4: [] };
       allTasks
@@ -13105,7 +13146,8 @@ function renderTodoList() {
           if (result[t.section]) result[t.section].push(t);
         });
       for (let sec = 1; sec <= 4; sec++) {
-        result[sec].sort((a, b) => (a.order || 0) - (b.order || 0));
+        // v0.45.2056: 週間・月間と同じ基準に揃える。
+        result[sec].sort((a, b) => _taskSortKey(a) - _taskSortKey(b));
       }
       return result;
     }
@@ -13138,8 +13180,8 @@ function renderTodoList() {
         )
         .sort((a, b) => {
           if (a.date !== b.date) return a.date.localeCompare(b.date);
-          if (a.time !== b.time) return a.time.localeCompare(b.time);
-          return (a.order || 0) - (b.order || 0);
+          // v0.45.2056: 日次・月間と同じ基準に揃える。
+          return _taskSortKey(a) - _taskSortKey(b);
         });
     }
     // マスターデータ保存
@@ -15267,6 +15309,10 @@ function myDeckApply(idx) {
           if (t.endDate && t.endDate !== t.date) return false;
           return true;
         });
+        // v0.45.2056: 月間は並べていなかった。allTasks に入っている順＝作った順だった。
+        // だから後から入れた 7:00 の予定が一番下になり、日次で直しても効かなかった。
+        // 日次・週間と同じ基準で並べる。
+        dayTasks.sort(function(a, b) { return _taskSortKey(a) - _taskSortKey(b); });
         // v0.45.1617: 【権威】2026-08-16、業界標準では升目に出す予定は2〜3件までで、
         // 溢れた分は「+N件」に畳む。こよみるは全件を描いていたため、
         // 予定が多い日は升目からはみ出していた。帯を入れたことで場所がさらに減り、
@@ -15547,8 +15593,41 @@ function myDeckApply(idx) {
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
             const taskId = data.taskId;
             const newDate = cell.dataset.date;
-            // タスクの日付を更新
-            updateTask(taskId, { date: newDate });
+            // v0.45.2056: 【権威】2026-09-04、月間でも並べ替えたい、との要望。
+            // これまで月間のドラッグは「日を移す」だけで、
+            // 同じ日の中に落としても何も起きなかった。
+            // 落とした高さから、どの予定の上に置きたいのかを読み取る。
+            // 書くのは日次・週間と同じ数なので、ここで直せばどのビューにも効く。
+            const _mvTask = allTasks.find(x => x.id === taskId);
+            const _sameDay = !!(_mvTask && _mvTask.date === newDate);
+            let _newKey = null;
+            try {
+              const _items = Array.prototype.slice.call(
+                cell.querySelectorAll('.monthly-task-item')
+              ).filter(el => el.dataset.taskId !== taskId);
+              let _anchorId = null, _before = true;
+              for (let _k = 0; _k < _items.length; _k++) {
+                const r = _items[_k].getBoundingClientRect();
+                _anchorId = _items[_k].dataset.taskId;
+                if (e.clientY < r.top + r.height / 2) { _before = true; break; }
+                _before = false;
+              }
+              const _dayAll = allTasks
+                .filter(x => x.date === newDate && (x.kind || 'task') === 'task' && !x.deleted && x.id !== taskId)
+                .sort((a, b) => _taskSortKey(a) - _taskSortKey(b));
+              if (_anchorId) {
+                const _ai = _dayAll.findIndex(x => x.id === _anchorId);
+                _newKey = _before
+                  ? _makeOrderKey(_dayAll[_ai - 1], _dayAll[_ai])
+                  : _makeOrderKey(_dayAll[_ai], _dayAll[_ai + 1]);
+              } else if (_dayAll.length === 0) {
+                _newKey = 0;
+              }
+            } catch (eOrd) { console.warn('[月間] 並べ替えの位置を読めませんでした:', eOrd && eOrd.message); }
+            // 日をまたぐときは日付も、同じ日なら位置だけを更新する。
+            const _patch = _sameDay ? {} : { date: newDate };
+            if (_newKey !== null) _patch.orderKey = _newKey;
+            if (Object.keys(_patch).length > 0) updateTask(taskId, _patch);
             // 再描画
             renderMonthlyView();
             // 日次も再描画
@@ -24801,23 +24880,23 @@ function saveMsbEdit() {
             // 対象セクションのタスクを取得（order順）
             const dailyTasks = getDailyTasks(targetDate);
             const targetTasks = dailyTasks[toSection];
-            // 新しいorderを計算
-            let newOrder;
-            if (targetTasks.length === 0) {
-              newOrder = 0;
-            } else if (insertBefore) {
-              // 上に挿入：ターゲットのorderより小さい値
-              const targetOrder = targetTasks[dropIndex]?.order || 0;
-              const prevOrder = dropIndex > 0 ? (targetTasks[dropIndex - 1]?.order || 0) : targetOrder - 1;
-              newOrder = (prevOrder + targetOrder) / 2;
-            } else {
-              // 下に挿入：ターゲットのorderより大きい値
-              const targetOrder = targetTasks[dropIndex]?.order || 0;
-              const nextOrder = dropIndex < targetTasks.length - 1 ? (targetTasks[dropIndex + 1]?.order || targetOrder + 1) : targetOrder + 1;
-              newOrder = (targetOrder + nextOrder) / 2;
-            }
-            // マスターデータを更新（section と order）
-            updateTask(taskId, { section: toSection, order: newOrder });
+          // v0.45.2056: order（象限内の番号）ではなく、その日の中での位置を書く。
+          // 象限をまたいで動かしても、月間・週間から同じ順番で見える。
+          const _dayAll = allTasks
+            .filter(x => x.date === targetDate && (x.kind || 'task') === 'task' && !x.deleted && x.id !== taskId)
+            .sort((a, b) => _taskSortKey(a) - _taskSortKey(b));
+          const _anchor = targetTasks[dropIndex];
+          let newOrder;
+          if (!_anchor) {
+            newOrder = _makeOrderKey(_dayAll[_dayAll.length - 1], null);
+          } else {
+            const _ai = _dayAll.findIndex(x => x.id === _anchor.id);
+            newOrder = insertBefore
+              ? _makeOrderKey(_dayAll[_ai - 1], _dayAll[_ai])
+              : _makeOrderKey(_dayAll[_ai], _dayAll[_ai + 1]);
+          }
+          // マスターデータを更新（section と その日の中での位置）
+          updateTask(taskId, { section: toSection, orderKey: newOrder });
             // 画面更新（同じセクションでも再描画）
             renderTasks(fromSection, targetDate);
             if (toSection !== fromSection) {
@@ -24928,11 +25007,13 @@ function saveMsbEdit() {
                   ? currentDailyDate : getLocalDateStr(new Date());
                 const dailyTasks = getDailyTasks(_dropDate);
                 const targetTasks = dailyTasks[toSection];
-                const maxOrder = targetTasks.length > 0 
-                  ? Math.max(...targetTasks.map(t => t.order || 0)) + 1 
-                  : 0;
-                // マスターデータのsectionとorderを更新
-                updateTask(taskId, { section: toSection, order: maxOrder });
+                  // v0.45.2056: 象限だけを変える操作。位置は動かさない。
+                  // ここで番号を振り直すと、月間で見ている位置まで動いてしまう。
+                  const _mv = allTasks.find(x => x.id === taskId);
+                  const _keep = (_mv && typeof _mv.orderKey === 'number')
+                    ? _mv.orderKey : (_mv ? _taskSortKey(_mv) : 0);
+                  // マスターデータのsectionを更新（位置はそのまま）
+                  updateTask(taskId, { section: toSection, orderKey: _keep });
                 // 両方の象限を再描画
                 renderTasks(fromSection, _dropDate);
                 renderTasks(toSection, _dropDate);
@@ -35419,9 +35500,20 @@ function renderDashboardView() {
           moved.timeSlot = t.timeSlot || 'slot1';
           var newToIdx = allTasks.findIndex(function(x) { return x.id === toId; });
           allTasks.splice(newToIdx, 0, moved);
-          // orderフィールドを同一section内で振り直す（getDailyTasksのorderソートに対応）
-          var secTasks = allTasks.filter(function(x) { return x.section === moved.section && x.date === moved.date; });
-          secTasks.forEach(function(x, i) { x.order = i; x.updatedAt = new Date().toISOString(); }); // v0.45.1374: 同期漏れ修正
+          // v0.45.2056: 象限ごとに 0,1,2… を振り直すのをやめる。
+          // その番号は他の象限と衝突し、月間からは使えなかった。
+          // 動かしたものだけに、その日の中での位置を書く。
+          // 動かしていない予定の位置は変えない。
+          var _dayList = allTasks
+            .filter(function(x) { return x.date === moved.date && (x.kind || 'task') === 'task' && !x.deleted; })
+            .sort(function(a, b) { return _taskSortKey(a) - _taskSortKey(b); });
+          var _tAt = _dayList.findIndex(function(x) { return x.id === toId; });
+          if (_tAt >= 0) {
+            var _above = _dayList[_tAt - 1];
+            var _below = _dayList[_tAt];
+            moved.orderKey = _makeOrderKey(_above, _below);
+          }
+          moved.updatedAt = new Date().toISOString();   // 第61条
           saveAllTasks();
           renderQuadView();
         });
