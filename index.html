@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2048 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2050 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2048';
+    const APP_VERSION = 'v0.45.2050';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7648,12 +7648,12 @@ function _showInviteWelcome() {
             <input id="msbMoneyAmount" type="number" min="1" step="1" inputmode="numeric"
                    class="msb-input-sm" placeholder="金額" style="flex:1;min-width:0;"
                    onkeydown="if(event.key==='Enter'){event.preventDefault();window._msbInsertMoney();}">
-            <button type="button" class="msb-now-btn" onclick="window._msbInsertMoney()" title="タイトルの先頭に書き足す">入れる</button>
+            <button type="button" class="msb-now-btn" onclick="window._msbInsertMoney()" title="上のタイトル欄の先頭に書き足す">タイトルへ入れる</button>
           </div>
         </div>
         <div class="msb-edit-row" style="margin-top:-6px;">
           <label class="msb-label"></label>
-          <span style="font-size:11px;color:#9aa3af;">押すとタイトルの先頭に <b>▲50,000</b> のように入ります。月間カレンダーの上で合計されます</span>
+          <span style="font-size:11px;color:#9aa3af;">押すと、上の<b>タイトル</b>の先頭に <b>▲50,000</b> と入ります。月間カレンダーの上で合計されます</span>
         </div>
         <!-- ここから先は、必要になった人だけが開く -->
         <button type="button" class="msb-more-toggle" onclick="toggleMsbMore()" id="msbMoreToggle">
@@ -30545,13 +30545,47 @@ function saveMsbEdit() {
           // v0.45.1687: 【権威】2026-08-20、自由帳を開くとメールアドレスが勝手に入る、との報告。
           // ブラウザは「1行の文字入力」を見つけると、氏名・メールなどを推測して入れてくる。
           // 止めるには、自動入力の対象外だと明示する必要がある。
+          // v0.45.2050: 【権威】2026-09-04、v0.45.1687で塞いだはずのタイトル欄に、
+          // またメールアドレスが入った。しかも複数のページのタイトルが上書きされた。
+          //
+          // 調べると、自動入力を断る指定を「DOMに入れる前」に付けていた。
+          // 欄がページに現れた時点でブラウザは改めて判定するため、
+          // 付けた指定が効く前に「空の1行入力欄」として見られていた。
+          // さらに新しいページでは40ms後にこの欄へフォーカスを当てるので、
+          // 空欄＋フォーカスという、候補を出すのに最も都合のよい形になっていた。
+          //
+          // 断るのは、DOMに入れた後にもう一度行う（下の hdr.appendChild の直後）。
+          // 加えて、readonly で現れて触られたときに外す。
+          // ブラウザは readonly の欄には入れてこない。
           if (typeof _noAutofill === 'function') _noAutofill(titleEl);
+          titleEl.setAttribute('readonly', 'readonly');
+          // 触られた「その瞬間」はまだ readonly のままにする。
+          // ブラウザは、欄が編集できるようになった瞬間に候補を出すかどうかを決める。
+          // その判定が終わってから外せば、候補は出ず、人はそのまま打てる。
+          var _nbUnlockTitle = function() {
+            setTimeout(function(){
+              try { titleEl.removeAttribute('readonly'); } catch(e) {}
+            }, 0);
+          };
+          titleEl.addEventListener('focus', _nbUnlockTitle);
+          titleEl.addEventListener('touchstart', _nbUnlockTitle);
+          titleEl.addEventListener('mousedown', _nbUnlockTitle);
           titleEl.value = page.title || '';
+          // v0.45.2049: 人がキーを打ったときだけ「触った」と見なす。
+          // input イベントはブラウザの自動入力でも飛ぶので、それだけでは区別できない。
+          nbTitleTouched = false;
+          titleEl.addEventListener('keydown', function(){ nbTitleTouched = true; });
+          titleEl.addEventListener('paste',   function(){ nbTitleTouched = true; });
           titleEl.addEventListener('input', nbOnChange);
           var statusEl = document.createElement('div');
           statusEl.className = 'nb-status';
           statusEl.id = 'nbStatus';
           hdr.appendChild(titleEl);
+          // DOMに入った後にもう一度断る。入る前の指定だけでは効かないことがある。
+          if (typeof _noAutofill === 'function') {
+            titleEl.dataset.noAutofill = '';
+            _noAutofill(titleEl);
+          }
           hdr.appendChild(statusEl);
         } else {
           var pgNum = document.createElement('span');
@@ -30660,6 +30694,7 @@ function saveMsbEdit() {
     function nbSyncHeight() {}
     function nbGrowRight(el) {}
     // ---- 新規ページ ----
+    var nbTitleTouched = false;
     function nbNewPage() {
       nbFlush();
       var pages = nbPages();
@@ -30735,7 +30770,16 @@ function saveMsbEdit() {
       var dateREl = document.getElementById('nbDateR');
       var textREl = document.getElementById('nbTextR');
       if (!titleEl && !textLEl) return;
+      // v0.45.2050: 画面で断っても、ブラウザは入れてくるときがある。
+      // 第71条のとおり、画面で断ることは守りではない。保存する側でも確かめる。
+      // 人が一度も打っていないのにメールアドレスの形が入っていたら、
+      // それはブラウザが入れたものである。書かれていたタイトルを上書きしない。
       var title = titleEl ? titleEl.value : pages[idx].title;
+      if (titleEl && !nbTitleTouched && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(title).trim())) {
+        console.warn('[自由帳] 自動入力とみられるタイトルを退けました:', title);
+        title = pages[idx].title || '';
+        titleEl.value = title;
+      }
       var dateL = dateLEl ? dateLEl.value : (pages[idx].dateL || '');
       var textL = textLEl ? textLEl.value : (pages[idx].textL || '');
       var dateR = dateREl ? dateREl.value : (pages[idx].dateR || '');
