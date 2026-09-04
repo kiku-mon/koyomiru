@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2053 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2055 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2053';
+    const APP_VERSION = 'v0.45.2055';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13144,6 +13144,22 @@ function renderTodoList() {
     }
     // マスターデータ保存
     function saveAllTasks(skipCloudSync) {
+  // v0.45.2054: 【権威】2026-09-04、見るだけリンクで1つのカレンダーを開いたのに、
+  // 画面を移ったら自分の別のカレンダーまで見えた、との報告。
+  //
+  // 見るだけモードは allTasks を「見せる用の数件」に入れ替えて成り立っている。
+  // 手元の本物は _viewOnlyBackup に退避してあり、閉じるときに戻す作りである。
+  //
+  // ところがこの保存口は、そのことを知らなかった。
+  // 見るだけの最中に何かが保存を呼べば、本物の予定が見せる用の数件で上書きされる。
+  // 表示が混ざることより、こちらのほうが重い。取り返しがつかない。
+  //
+  // 見るだけの間は、手元へ一切書かない。第4条の唯一の書き込み口なので、
+  // ここで止めれば全部の経路が止まる。
+  if (window._viewOnlyBackup) {
+    console.warn('[見るだけ] 閲覧中の保存を止めました（手元のデータは守られています）');
+    return;
+  }
       // v0.45.1517: 【権威】2026-08-05、月間サイドバーが独自形式のIDを作っていたため
       // 「invalid input syntax for type uuid」でクラウド同期が失敗し、その予定だけが
       // 他端末に永久に届かない状態が続いていた。静的な走査では見つけ切れない経路が
@@ -41476,6 +41492,25 @@ async function openViewOnlyMode(token) {
     }
     var calName = rows[0].calendar_name || 'カレンダー';
 
+    // v0.45.2054: 【権威】2026-09-04、こぴきゃカレンダーの見るだけリンクなのに、
+    // 画面を移ったら、きくまおカレンダーまで見えた、との報告。
+    //
+    // 取ってくる側（koyomiru_view_by_token）が1つのカレンダーだけを返しているか、
+    // ここからは確かめられない。DB側の関数はSQLでしか読めない。
+    //
+    // 確かめられないなら、通さない。届いたものが2つ以上のカレンダーに
+    // またがっていたら、先頭のものだけを残す。
+    // 見せると約束したのは1つであって、たまたま届いたもの全部ではない。
+    var _vcTarget = rows[0].calendar_id || null;
+    if (_vcTarget) {
+      var _vcBefore = rows.length;
+      rows = rows.filter(function(x){ return !x.calendar_id || x.calendar_id === _vcTarget; });
+      if (rows.length !== _vcBefore) {
+        console.error('[見るだけ] 別のカレンダーの予定 ' + (_vcBefore - rows.length) +
+                      '件が届いたので落としました。DB側の絞り込みを確かめてください。');
+      }
+    }
+
     // 元のデータを退避する。閉じるときに必ず戻す。
     window._viewOnlyBackup = {
       tasks: allTasks,
@@ -41501,8 +41536,30 @@ async function openViewOnlyMode(token) {
       return t;
     }).filter(function(t) { return t && t.date && !t.deleted; });
 
-    // 月間へ切り替えて描く
+    // v0.45.2055: 【権威】2026-09-04、見るだけリンクに入る前のカレンダーが
+    // 消えずに残り、そこへ上書きされる形になっている、との指摘。読みのとおりだった。
+    //
+    // これまでは月間だけを描き直していた。カレンダーのチップの列は触っていない。
+    // だから入る前のチップ（きくまおカレンダーなど）がそのまま残り、
+    // 押せばその中身が混ざる。activeCalendarIds を null（全部表示）にしているので、
+    // 残ったものは全部見える状態だった。
+    //
+    // 入れ替えたのに描き直さない場所があると、そこだけ前のものが残る。
+    // 見せる用に差し替えた以上、それを映すところは全部描き直す。
     if (typeof switchView === 'function') switchView('monthly');
+    // チップの列を、見せる用の1つだけで組み直す。ここが抜けていた。
+    try {
+      if (typeof renderCalendarFilter === 'function') {
+        renderCalendarFilter('monthlyCalendarFilter', function(){});
+      }
+    } catch (eVf) { console.warn('[見るだけ] カレンダー列の描き直しに失敗:', eVf && eVf.message); }
+    // 他のビューにも前の中身が残る。開かれる前に空にしておく。
+    try {
+      ['dailyView', 'weeklyView', 'yearlyView', 'gantView'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+    } catch (eVv) {}
     if (typeof renderMonthlyView === 'function') renderMonthlyView();
 
     // 書き込みの入口を塞ぐ
@@ -41551,6 +41608,14 @@ function closeViewOnlyMode() {
     document.body.style.paddingTop = '';
     var bar = document.getElementById('viewOnlyBar');
     if (bar) bar.remove();
+    // v0.45.2055: 入るときと同じ抜けが、出るときにもあった。
+    // 元に戻したのにチップの列を描き直していないので、
+    // 見せる用の1つだけが残り、自分のカレンダーが消えたように見える。
+    try {
+      if (typeof renderCalendarFilter === 'function') {
+        renderCalendarFilter('monthlyCalendarFilter', function(){});
+      }
+    } catch (eVf2) { console.warn('[見るだけ] カレンダー列の戻しに失敗:', eVf2 && eVf2.message); }
     if (typeof renderMonthlyView === 'function') renderMonthlyView();
     if (typeof renderAllSections === 'function') renderAllSections(null);
     if (typeof showToast === 'function') showToast('閲覧を終了しました');
