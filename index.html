@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2058 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2059 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2058';
+    const APP_VERSION = 'v0.45.2059';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -49223,10 +49223,54 @@ function checkAdminPw() {
     input.value = '';
   }
 }
+// v0.45.2059: ⊙ を押したときのシート。禅モードと使い方に分かれる。
+// 使い方を禅モードの中に入れると、困っている人が集中モードに放り込まれる。
+// 助けを探している人と、集中したい人は別なので、入口で分ける。
+function openHelpSheet() {
+  try {
+    if (typeof showChoiceModal !== 'function') {
+      if (typeof showTutorial === 'function') showTutorial();
+      return;
+    }
+    showChoiceModal({
+      title: '⊙',
+      desc: 'どちらにしますか',
+      buttons: [
+        { label: '⊙ 禅モードに入る', style: 'primary', onClick: function() {
+            if (typeof openZenMode === 'function') openZenMode();
+          } },
+        { label: '📖 使い方を見る', style: 'primary', onClick: function() {
+            if (typeof showTutorial === 'function') showTutorial();
+          } },
+        { label: '閉じる', style: 'cancel', onClick: function() {} }
+      ]
+    });
+  } catch (e) {
+    console.warn('[⊙] シートを開けませんでした:', e && e.message);
+    if (typeof showTutorial === 'function') showTutorial();
+  }
+}
+window.openHelpSheet = openHelpSheet;
+
 function showDebugLog(_initOnly) {
   // _initOnly=true の場合はwindow公開のみ行いUIを表示しない
   // （写真館関数は独立scriptブロックで公開済みなのでreturnのみでOK）
   if (_initOnly) { return; }
+  // v0.45.2059: 【権威】2026-09-04、長押しで開く開発者ログから何が漏れるか、との問い。
+  // 数えたところ、localStorage の全キーが先頭120文字まで出ていた。
+  // そこには招待コード、見るだけリンクのトークン、共有カレンダーのIDが入る。
+  // 招待コードが読めれば、画面を見た人がそのカレンダーに参加できる。
+  // さらに直近の予定3件が本文ごと出る。案件名も金額も、書いてあれば出る。
+  //
+  // これは開発者のための画面であって、居合わせた人のための画面ではない。
+  // 入口は3つあった（右下の長押し／アカウントメニューの長押し／設定の中）。
+  // 前の2つは誰の端末でも開く。人に画面を見せている最中に長押しされたら開く。
+  //
+  // 管理者モードのときだけ開く。それ以外は静かに何も起きない。
+  // 「開けません」と出すと、そこに何かあると教えることになる。
+  try {
+    if (typeof isKoyomiruAdminMode === 'function' && !isKoyomiruAdminMode()) return;
+  } catch (e) { return; }
   var logArr = [], errArr = [];
   try { logArr = JSON.parse(localStorage.getItem('_dbg_log') || '[]'); } catch(e) {}
   try { errArr = JSON.parse(localStorage.getItem('_dbg_errors') || '[]'); } catch(e) {}
@@ -74507,10 +74551,14 @@ window.addMigration = addMigration;
      残るのは＋だけになり、浮いているものは青一色に収まる。
      機能は失われていない（メニューから開ける・長押しのデバッグも引き継ぎ）。
      いずれ？を整備する段になったら、その時に見せ方を改めて考える。 -->
-<button id="tutorialHelpBtn" class="koyomiru-help-fab" style="display:none;" onclick="showTutorial()" title="使い方"
+<!-- v0.45.2059: 【権威】2026-09-04、? は幼い、自分でデザインした ⊙ のほうが気に入っている、
+     入口を ⊙ にして中で分けたい、との要望。
+     押すと、禅モードと使い方を選ぶ小さなシートが出る。
+     長押しは開発者ログのまま（開くかどうかは中で管理者かを見る）。 -->
+<button id="tutorialHelpBtn" class="koyomiru-help-fab" style="display:none;" onclick="window.openHelpSheet()" title="禅モード・使い方"
   ontouchstart="this._t=setTimeout(function(){showDebugLog();},2000)"
   ontouchend="clearTimeout(this._t)"
-  ontouchcancel="clearTimeout(this._t)">?</button>
+  ontouchcancel="clearTimeout(this._t)">⊙</button>
 
 
 <!-- 印刷処理（beforeprint / afterprint） -->
