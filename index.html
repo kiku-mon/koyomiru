@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2068 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2069 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2068';
+    const APP_VERSION = 'v0.45.2069';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -44898,6 +44898,36 @@ async function unifiedPushTasks() {
       updated_at: t.updatedAt || t.createdAt || new Date().toISOString()
     };
   });
+  // v0.45.2069: 送る直前に、クラウドより古いものを落とす。
+  //
+  // 順序を直しても、これは要る。取り込みが失敗した回、
+  // 通信が遅れて先に送信が走った回、別のきっかけで送信だけが動いた回がある。
+  // upsert は行が新しいかどうかを見ないので、そのとき古い内容が上書きしてしまう。
+  //
+  // 「完了にしたのに戻る」は、この上書きで起きる。
+  // 巻き戻しは、送れないことより害が大きい。ここで確かめる。
+  try {
+    if (toPush.length > 0 && window.supabaseClient) {
+      var _ids = toPush.map(function(x){ return x.id; });
+      var _cur = await window.supabaseClient.from('koyomiru_shared_tasks')
+        .select('id, updated_at').in('id', _ids);
+      if (!_cur.error && _cur.data) {
+        var _cloudAt = {};
+        _cur.data.forEach(function(row){ _cloudAt[row.id] = row.updated_at || ''; });
+        var _before = toPush.length;
+        toPush = toPush.filter(function(x) {
+          var c = _cloudAt[x.id];
+          if (!c) return true;                    // クラウドに無いものは送る
+          return !(c > (x.updated_at || ''));     // クラウドの方が新しいなら送らない
+        });
+        if (toPush.length !== _before) {
+          console.warn('[Unified] クラウドの方が新しい ' + (_before - toPush.length) +
+                       '件は送りませんでした（巻き戻しを防ぎました）');
+        }
+      }
+    }
+  } catch (eGuard) { console.warn('[Unified] 新しさの確認に失敗:', eGuard && eGuard.message); }
+  if (toPush.length === 0) return { data: [], error: null };
   if (_skippedLocal > 0) {
     console.log('[Unified] この端末だけで持つ記録 ' + _skippedLocal + '件は送りませんでした');
   }
@@ -47543,9 +47573,29 @@ try {
           }
         });
       }
-      if (typeof window.unifiedPullTasks === 'function') window.unifiedPullTasks();
-      if (typeof window.unifiedPullSettings === 'function') window.unifiedPullSettings(); // v0.45.1368
-      if (typeof window.unifiedPushTasks === 'function') window.unifiedPushTasks();
+      // v0.45.2069: 【権威】2026-09-04、完了にしたはずの予定が、後から未完了に戻る、との報告。
+      // 9月1日のFAX・根抹消・千葉銀行・業務確認、8月の「Maoさん…」など。
+      //
+      // ここが原因だった。取り込みと送信を同時に走らせていた。
+      // 送信は upsert で、クラウドの行が新しいかどうかを一切見ない。
+      // 別の端末で完了にした予定を、こちらの古い手元のデータで上書きしていた。
+      //
+      // 昼は仕事のパソコン、夜は別の端末という使い方だと、これは毎日起きる。
+      // 開いた端末が古いほど、新しい変更を巻き戻す。
+      //
+      // 取り込みを終えてから送る。取り込み後の手元はクラウド以上に新しいので、
+      // その状態で送れば、古い内容で上書きすることはない。
+      (async function() {
+        try {
+          if (typeof window.unifiedPullTasks === 'function') await window.unifiedPullTasks();
+        } catch (ePl) { console.warn('[Unified] 取り込みに失敗:', ePl && ePl.message); }
+        try {
+          if (typeof window.unifiedPullSettings === 'function') await window.unifiedPullSettings();
+        } catch (ePs) {}
+        try {
+          if (typeof window.unifiedPushTasks === 'function') await window.unifiedPushTasks();
+        } catch (ePu) { console.warn('[Unified] 送信に失敗:', ePu && ePu.message); }
+      })();
     }
   });
   setInterval(function() {
