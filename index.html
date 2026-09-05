@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2072 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2073 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2072';
+    const APP_VERSION = 'v0.45.2073';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -401,7 +401,7 @@ async function _showInviteCard(code) {
           // それを先に言う。理由は、そのあとでよい。
           '<b>送った方に、新しいリンクをお願いしてください。</b><br>' +
           'このリンクは、取り消されたか、作り直されたようです。<br>' +
-          '招待リンクは、作ってから24時間で使えなくなります。</div>' +
+          '招待リンクには期限があります。</div>' +
         '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
           'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
       '</div>';
@@ -432,7 +432,7 @@ async function _showInviteCard(code) {
         '<div style="font-size:1.05em;font-weight:700;color:#b3261e;margin-bottom:8px;">招待の期限が切れています</div>' +
         '<div style="font-size:0.9em;color:#444;font-weight:600;margin-bottom:10px;">' + _esc(data.name || '共有カレンダー') + '</div>' +
         '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
-          '招待リンクは、作ってから24時間だけ使えます。<br>送った方に、もう一度お願いしてください。</div>' +
+          '招待リンクには期限があります。<br>送った方に、もう一度お願いしてください。</div>' +
         '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
           'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
       '</div>';
@@ -40992,6 +40992,31 @@ window.supabaseSignOutOtherDevices = supabaseSignOutOtherDevices;
 // 落とし穴①（未メンバーが招待コードを確認できない矛盾）対策として、
 // SECURITY DEFINER関数（koyomiru_lookup_invite・koyomiru_join_by_invite）経由で操作する。
 
+// v0.45.2073: 【権威】2026-09-04、レッドチームで再点検したところ、
+// v0.45.2063で直したはずの「作った直後の招待が死んでいる」が元に戻っていた。
+// さらに、カレンダーを作る経路は1つではなく3つあった。
+//   ① createSharedCalendar（設定から新しく作る）
+//   ② makeLocalCalendarShareable（手元のカレンダーを共有にする）
+//   ③ 一括で器を作る処理
+// 3つとも invite_issued_at を入れていなかった。
+//
+// DB側は「発行済みでないものは見せない」ので、この列が空のままだと、
+// 画面にはリンクが出るのに、踏むと「この招待は使えません」になる。
+//
+// 同じ式を3か所に書けば、また片方だけ直る。作り方をここ一箇所に置く（第71条④）。
+var INVITE_VALID_MS = 24 * 60 * 60 * 1000;   // 招待が使える長さ
+window.INVITE_VALID_MS = INVITE_VALID_MS;
+
+function _newSharedCalendarFields(name, ownerId) {
+  return {
+    name: name,
+    owner_id: ownerId,
+    invite_issued_at: new Date().toISOString(),
+    invite_code_expires_at: new Date(Date.now() + INVITE_VALID_MS).toISOString()
+  };
+}
+window._newSharedCalendarFields = _newSharedCalendarFields;
+
 // 新しい共有カレンダーを作る
 async function createSharedCalendar(name) {
   // v0.45.1813: 【権威】2026-08-31、有効な招待リンクを踏んでも
@@ -41005,7 +41030,7 @@ async function createSharedCalendar(name) {
   var u = await window.supabaseClient.auth.getUser();
   if (!u.data || !u.data.user) { console.warn('[SharedCal] 未ログインのため作成不可'); return null; }
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
-    .insert({ name: name, owner_id: u.data.user.id })
+    .insert(_newSharedCalendarFields(name, u.data.user.id))
     .select('id, name, invite_code, invite_code_expires_at')
     .single();
   if (r.error) { console.error('[SharedCal] 作成失敗:', r.error.message); return r; }
@@ -44628,7 +44653,7 @@ async function makeLocalCalendarShareable(localCalId) {
     var u = await window.supabaseClient.auth.getUser();
     if (!u.data || !u.data.user) return { error: { message: 'ログインし直してください' } };
     var r = await window.supabaseClient.from('koyomiru_shared_calendars')
-      .insert({ name: cal.name || 'カレンダー', owner_id: u.data.user.id })
+      .insert(_newSharedCalendarFields(cal.name || 'カレンダー', u.data.user.id))
       .select('id, invite_code')
       .single();
     if (r.error) return r;
@@ -44686,7 +44711,7 @@ async function pushLocalCalendarsToCloud() {
     for (var i = 0; i < targets.length; i++) {
       var cal = targets[i];
       var r = await window.supabaseClient.from('koyomiru_shared_calendars')
-        .insert({ name: cal.name || 'カレンダー', owner_id: u.data.user.id })
+        .insert(_newSharedCalendarFields(cal.name || 'カレンダー', u.data.user.id))
         .select('id')
         .single();
       if (r.error) { console.warn('[SharedCal] 器の作成に失敗:', cal.name, r.error.message); continue; }
@@ -45763,7 +45788,7 @@ async function refreshSharedCalendarList() {
           // 作った覚えがあるものだけを、リンクとして扱う。
           (!_issued
             ? '<div style="font-size:0.8em;color:#8e8e8e;line-height:1.7;margin-bottom:10px;">' +
-                'まだ招待リンクを作っていません。<br>下から作ると、24時間だけ使えるリンクができます。</div>'
+                'まだ招待リンクを作っていません。<br>下から作ると、使える長さを選んでリンクができます。</div>'
             : '<div style="font-size:0.8em;line-height:1.7;margin-bottom:' + (_remain.expired ? '10px' : '8px') + ';color:' +
                 (_remain.expired ? '#b3261e' : (_remain.minutes < 10 ? '#c07a2a' : '#3a7a3a')) + ';font-weight:600;">' +
                 (_remain.expired
@@ -45805,13 +45830,26 @@ async function refreshSharedCalendarList() {
                 '</select>' +
                 '<input id="' + safeId + '_maxnum" type="number" min="1" max="100" placeholder="人数" ' +
                   'style="display:none;width:80px;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;">' +
-              '</div>' +
+                  '</div>' +
+                  // v0.45.2073: 【権威】2026-09-04、24時間で必ず切れるのか、
+                  // 伸ばせないのか、との問い。明日2人を誘う予定がある。
+                  // 相手が今日中に開くとは限らない。土日を挟めば24時間では足りない。
+                  // 「短い方が安全」は作る側の理屈で、誘えなければ意味がない。
+                  // 長さを選べるようにする。既定は24時間のまま。
+                  '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">使える長さ</div>' +
+                  '<select id="' + safeId + '_valid" ' +
+                    'style="width:100%;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;margin-bottom:7px;">' +
+                    '<option value="1">1時間（その場で来てもらう）</option>' +
+                    '<option value="24" selected>24時間</option>' +
+                    '<option value="72">3日</option>' +
+                    '<option value="168">7日</option>' +
+                  '</select>' +
               '<button onclick="regenerateSharedCalendarInvite(\'' + c.id + '\', \'' + safeId + '\')" ' +
                 'style="width:100%;padding:9px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;font-family:inherit;">' +
                 (_issued ? 'リンクを作り直す' : 'リンクを作る') + '</button>' +
               '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">' +
-                (_issued ? '24時間だけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。'
-                         : '24時間だけ使えるリンクができます。') + '</div>' +
+                (_issued ? '上で選んだ長さだけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。'
+                         : '上で選んだ長さだけ使えるリンクができます。') + '</div>' +
             '</div>' : '') +
           (_isOwner ?
             '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
@@ -46177,7 +46215,12 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
     return ('0' + b.toString(16)).slice(-2);
   }).join('');
     // v0.45.2063: 1時間から24時間へ。LINEで送って翌朝開かれることを想定する。
-    var _expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    // v0.45.2073: 選んだ長さを使う。選べないときは既定の24時間。
+    var _vSel = document.getElementById(safeId + '_valid');
+    var _hours = _vSel ? parseInt(_vSel.value, 10) : 24;
+    if (!isFinite(_hours) || _hours < 1) _hours = 24;
+    if (_hours > 168) _hours = 168;
+    var _expires = new Date(Date.now() + _hours * 60 * 60 * 1000).toISOString();
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
     .update({
       invite_code: _code,
@@ -46194,7 +46237,8 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
     _sharedCalSetStatus('⚠️ 作り直せませんでした。少し待ってからお試しください');
     return;
   }
-  var _msg = '✅ 新しい招待リンクを作りました（24時間有効' +
+  var _hourText = (_hours >= 24 && _hours % 24 === 0) ? (_hours / 24) + '日' : _hours + '時間';
+  var _msg = '✅ 新しい招待リンクを作りました（' + _hourText + '有効' +
     (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）';
   _sharedCalSetStatus(_msg + '。前のリンクは使えなくなりました');
   // v0.45.2020: 【権威】2026-09-03、作り直すと画面が上に戻される、との報告。二度目。
@@ -46229,7 +46273,7 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
             : '✅ 新しい招待リンクを作りました。<br>下の「リンクをコピー」を押してください。前のリンクは、もう使えません。') +
         '</div>' +
         '<div style="font-size:0.8em;line-height:1.7;margin-bottom:8px;color:#3a7a3a;font-weight:600;">' +
-          'いま配ってあるリンクは、あと24時間で切れます' +
+          'いま配ってあるリンクは、あと' + _hourText + 'で切れます' +
           (_seat ? '<br><span style="color:#8e8e8e;font-weight:400;">' + escAttr(_seat) + '</span>' : '') +
         '</div>' +
         '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
@@ -46239,7 +46283,7 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
         '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
           // v0.45.2067: 外部に招待リンクを渡さない。この場で描く。
         '<div class="koyomiru-qr-slot" data-qr="' + escAttr(_url) + '"></div>' +
-          '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">このQRは、あと24時間で使えなくなります</div>' +
+          '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">このQRは、リンクと同じときに使えなくなります</div>' +
         '</div>';
         // v0.45.2067: 差し込んだ後にQRを描く。組み立ては文字列なので、ここで初めてDOMにある。
         try { if (typeof qrFillSlots === 'function') qrFillSlots(_wrap); } catch (eQF2) {}
