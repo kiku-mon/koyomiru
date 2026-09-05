@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2065 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2066 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2065';
+    const APP_VERSION = 'v0.45.2066';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45297,6 +45297,33 @@ async function refreshSharedCalendarList() {
   //
   // v0.45.1729: 片づけは listMySharedCalendars の中で済んでいる（第4条・唯一の処理）。
 
+  // v0.45.2065: すでに取り込んでしまったものを直す。
+  // 取り込み側だけ直しても、手元にある「参加者扱いのまま」の記録は変わらない。
+  // ここは一覧を開いた時点なので、クラウド側の正解（owner_id）が手元にある。
+  try {
+    var _ownerFixed = 0;
+    _visible.forEach(function(c) {
+      if (!c || !c.owner_id || !window._cloudUserId) return;
+      var _lo = (allSettings.calendar.list || []).find(function(x) {
+        return x && x.cloudCalendarId === c.id;
+      });
+      if (!_lo) return;
+      var _shouldOwn = (c.owner_id === window._cloudUserId);
+      if (_shouldOwn && _lo.sharedOwner === false) {
+        _lo.sharedOwner = true; _ownerFixed++;
+      } else if (!_shouldOwn && _lo.sharedOwner !== false) {
+        // 逆も直す。持ち主でない人が持ち主として記録されていると、
+        // 「共有をやめる」を押して他人のカレンダーを畳もうとしてしまう。
+        _lo.sharedOwner = false; _ownerFixed++;
+      }
+    });
+    if (_ownerFixed > 0) {
+      calendars = allSettings.calendar.list;
+      saveAllSettings();
+      console.log('[SharedCal] 持ち主の記録を ' + _ownerFixed + '件 直しました');
+    }
+  } catch (eOwn) { console.warn('[SharedCal] 持ち主の記録を直せませんでした:', eOwn && eOwn.message); }
+
   var _repaired = 0, _renamed = 0;
   _visible.forEach(function(c) {
     if (linkSharedCalendarToLocal(c.id, c.name, null, c.owner_id)) { _repaired++; return; }
@@ -46845,7 +46872,18 @@ async function createSharedCalendarFromModal() {
   }
   // v0.45.1534: 作った本人の手元にもカレンダーを追加する。
   // これが無いと、作成者は自分の作ったカレンダーに予定を入れられない。
-  var _linked = linkSharedCalendarToLocal(r.data.id, r.data.name || name);
+  //
+  // v0.45.2065: 【権威】2026-09-04、自分で作ったカレンダーなのに
+  // 「抜ける」しか出ず、Discordの通知欄も出ない、との報告。
+  //
+  // ここが本当の原因だった。自分で作ったのに、招待から参加する人と
+  // 同じ取り込み処理を呼んでいた。その中は sharedOwner: false を固定で書いている。
+  // つまり、作った瞬間に「参加しただけの人」として記録されていた。
+  // この経路で作ったカレンダーは、端末に関係なく全部そうなる。
+  //
+  // 作った人のIDを渡す。渡せば、持ち主として記録される。
+  var _linked = linkSharedCalendarToLocal(
+    r.data.id, r.data.name || name, null, window._cloudUserId || null);
   _sharedCalSetStatus(
     '✅ 「' + name + '」を作成しました。' +
     (_linked ? 'カレンダー一覧に追加したので、すぐ予定を入れられます。' : '') +
