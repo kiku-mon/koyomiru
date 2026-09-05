@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2064 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2065 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2064';
+    const APP_VERSION = 'v0.45.2065';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45240,7 +45240,8 @@ async function refreshSharedCalendarList() {
         // v0.45.1725: 個人用は手元に取り込まない。仕組みの土台であって、
         // 利用者が作ったカレンダーではないため、チップにも一覧にも出さない。
         if (row.is_personal) return;
-        if (linkSharedCalendarToLocal(row.id, row.name, null)) _added++;
+        // v0.45.2065: 作った人のIDも渡す。渡さないと、自分のものでも参加者扱いになる。
+        if (linkSharedCalendarToLocal(row.id, row.name, null, row.owner_id)) _added++;
       });
       if (_added > 0) {
         if (typeof renderCalendarFilter === 'function' && typeof renderMonthlyView === 'function') {
@@ -45298,7 +45299,7 @@ async function refreshSharedCalendarList() {
 
   var _repaired = 0, _renamed = 0;
   _visible.forEach(function(c) {
-    if (linkSharedCalendarToLocal(c.id, c.name)) { _repaired++; return; }
+    if (linkSharedCalendarToLocal(c.id, c.name, null, c.owner_id)) { _repaired++; return; }
     var _local = (allSettings.calendar.list || []).find(function(x) {
       return x && x.cloudCalendarId === c.id;
     });
@@ -46771,7 +46772,7 @@ function offerAdoptOrphanTasks(cloudCalendarId, calName) {
 }
 window.offerAdoptOrphanTasks = offerAdoptOrphanTasks;
 
-function linkSharedCalendarToLocal(cloudCalendarId, name, color) {
+function linkSharedCalendarToLocal(cloudCalendarId, name, color, ownerId) {
   try {
     if (!cloudCalendarId) return false;
     if (!allSettings.calendar) allSettings.calendar = {};
@@ -46783,7 +46784,23 @@ function linkSharedCalendarToLocal(cloudCalendarId, name, color) {
     allSettings.calendar.list.push({
       id: (typeof generateTaskId === 'function') ? generateTaskId() : crypto.randomUUID(),
       cloudCalendarId: cloudCalendarId,
-      sharedOwner: false,   // v0.45.1548: 招待されて参加した側。抜けることはできるが削除はできない
+      // v0.45.2065: 【権威】2026-09-04、自分で作ったカレンダーなのに
+      // Discordの通知欄が出ない、「抜ける」しか出ない、との報告。
+      //
+      // ここが sharedOwner: false を固定で書いていた。
+      // 招待から参加した場合しか想定しておらず、作った人かどうかを確かめていない。
+      // パソコンで作ったカレンダーがスマホに届くと、
+      // 自分のものなのに「参加しただけの人」として取り込まれていた。
+      // 端末を変えただけで、自分のカレンダーの持ち主でなくなる。
+      //
+      // 作った人のIDと突き合わせる。分からないときは、これまでどおり参加者として扱う。
+      // 持ち主でない人を持ち主にするより、その逆のほうが害が小さい。
+      sharedOwner: (function() {
+        try {
+          if (!ownerId) return false;
+          return !!(window._cloudUserId && ownerId === window._cloudUserId);
+        } catch (e) { return false; }
+      })(),
       name: name || '共有カレンダー',
       color: color || '#e8a33d',
       visible: true,
