@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2070 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2071 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2070';
+    const APP_VERSION = 'v0.45.2071';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -32374,7 +32374,7 @@ function loadCalendarSettingsUI() {
           _invBtn.textContent = '✉️ 招待リンク・QR';
           _invBtn.style.cssText = 'padding:6px 12px;border:1px solid #cfd6e0;border-radius:8px;background:#fff;color:#4a6fa5;font-size:0.78em;cursor:pointer;white-space:nowrap;';
           _invBtn.onclick = function() {
-            if (typeof openSharedCalendarModal === 'function') openSharedCalendarModal();
+            if (typeof openSharedCalendarModal === 'function') openSharedCalendarModal(cal.cloudCalendarId);
             else if (typeof showToast === 'function') showToast('⚠️ 共有カレンダーの画面を開けませんでした');
           };
           _bottom.appendChild(_invBtn);
@@ -45424,7 +45424,10 @@ window.unifiedPullSettings = unifiedPullSettings;
 // ===== END v0.45.1368 オールセッティングス同期エンジン =====
 
 // ===== v0.45.1342: 共有カレンダーモーダル制御 =====
-function openSharedCalendarModal() {
+// v0.45.2071: 【権威】2026-09-04、設定から招待を開くと一覧に飛ばされ、
+// 目的のカレンダーをもう一度探すことになる、との指摘。そのとおり。
+// 押した先で目的のものが開くのは当たり前で、一覧に放り出すのは作る側の都合である。
+function openSharedCalendarModal(focusCloudId) {
   // v0.45.1546: 表示名に既定値を入れておく。気にしない人はそのまま押すだけで済む。
   try {
     var _nEl = document.getElementById('sharedCalendarJoinName');
@@ -45444,8 +45447,39 @@ function openSharedCalendarModal() {
     var _pk = document.getElementById('sharedCalendarPeek');
     if (_pk) { _pk.style.display = 'none'; _pk.innerHTML = ''; }
   } catch (e) {}
-  refreshSharedCalendarList();
+  // v0.45.2071: 目的のカレンダーが指定されていれば、そこまで送る。
+  // 一覧は取り直しの後に組み上がるので、待ってから動かす。
+  var _p = refreshSharedCalendarList();
+  if (focusCloudId) {
+    Promise.resolve(_p).then(function() {
+      try { _focusSharedCalendarRow(focusCloudId); } catch (e) {}
+    });
+  }
 }
+
+// 指定のカレンダーの行まで送り、目に入るようにする。
+// 見つからなければ少し待って一度だけやり直す（まだ組み上がっていないことがある）。
+function _focusSharedCalendarRow(cloudId, _retry) {
+  var safeId = 'sc_' + String(cloudId).replace(/-/g, '');
+  var el = document.getElementById(safeId + '_invwrap');
+  if (!el) {
+    if (!_retry) setTimeout(function(){ _focusSharedCalendarRow(cloudId, true); }, 350);
+    return;
+  }
+  var card = el.parentElement || el;
+  try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  catch (e) { try { card.scrollIntoView(); } catch (e2) {} }
+  // どれを開いたのかが分かるように、少しだけ光らせる。
+  // 送っただけでは、並んでいるうちのどれか分からない。
+  try {
+    var _prev = card.style.boxShadow;
+    card.style.transition = 'box-shadow .25s';
+    card.style.boxShadow = '0 0 0 3px rgba(74,111,165,0.55)';
+    setTimeout(function(){ card.style.boxShadow = _prev || ''; }, 1600);
+  } catch (e) {}
+}
+window._focusSharedCalendarRow = _focusSharedCalendarRow;
+
 function closeSharedCalendarModal() {
   var ov = document.getElementById('sharedCalendarOverlay');
   if (ov) ov.style.display = 'none';
