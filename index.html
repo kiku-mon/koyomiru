@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2066 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2067 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2066';
+    const APP_VERSION = 'v0.45.2067';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -39730,8 +39730,223 @@ function switchDeckTab(tab) {
 // QRコード生成（Canvas手書き・外部依存ゼロ・iPhone完全対応）
 // Google Chart API を使用（最もシンプルで確実）
 // ============================================================
+// v0.45.2067: 【権威】2026-09-04、QRコードを自作してほしい、との依頼。
+// これまでは api.qrserver.com と chart.googleapis.com に画像を作ってもらっていた。
+// つまり、招待リンク（?join=コード）を外部の会社へ渡していた。
+// 24時間有効なリンクなので、それを見た人はカレンダーに入れる。
+// また chart.googleapis.com は廃止済みで、デッキのQRは動いていなかった可能性が高い。
+//
+// 外に出さない。この場で描く。誤り訂正はL、バイトモード、型番は1〜10で自動。
+// 生成多項式と形式情報は、公表されている値と突き合わせて確かめてある。
+var _QR_EXP = new Array(512), _QR_LOG = new Array(256);
+(function(){
+  var x = 1;
+  for (var i = 0; i < 255; i++) { _QR_EXP[i] = x; _QR_LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
+  for (var i = 255; i < 512; i++) _QR_EXP[i] = _QR_EXP[i - 255];
+})();
+function _qrMul(a, b) { if (!a || !b) return 0; return _QR_EXP[_QR_LOG[a] + _QR_LOG[b]]; }
+function _qrRsPoly(n) {
+  var p = [1];
+  for (var i = 0; i < n; i++) {
+    var np = new Array(p.length + 1); for (var z = 0; z < np.length; z++) np[z] = 0;
+    for (var j = 0; j < p.length; j++) { np[j] ^= p[j]; np[j + 1] ^= _qrMul(p[j], _QR_EXP[i]); }
+    p = np;
+  }
+  return p;
+}
+function _qrRsEncode(data, ecLen) {
+  var gen = _qrRsPoly(ecLen), res = new Array(ecLen);
+  for (var z = 0; z < ecLen; z++) res[z] = 0;
+  for (var i = 0; i < data.length; i++) {
+    var factor = data[i] ^ res[0];
+    res.shift(); res.push(0);
+    for (var j = 0; j < ecLen; j++) res[j] ^= _qrMul(gen[j + 1], factor);
+  }
+  return res;
+}
+var _QR_CAP = {
+  1:{ec:7,g:[[1,19]]}, 2:{ec:10,g:[[1,34]]}, 3:{ec:15,g:[[1,55]]}, 4:{ec:20,g:[[1,80]]},
+  5:{ec:26,g:[[1,108]]}, 6:{ec:18,g:[[2,68]]}, 7:{ec:20,g:[[2,78]]}, 8:{ec:24,g:[[2,97]]},
+  9:{ec:30,g:[[2,116]]}, 10:{ec:18,g:[[2,68],[2,69]]}
+};
+var _QR_ALIGN = {1:[],2:[6,18],3:[6,22],4:[6,26],5:[6,30],6:[6,34],7:[6,22,38],8:[6,24,42],9:[6,26,46],10:[6,28,50]};
+function _qrBytes(text) {
+  var out = [], s = String(text);
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) { out.push(0xc0 | (c >> 6), 0x80 | (c & 63)); }
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      var c2 = s.charCodeAt(++i), cp = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00);
+      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    } else { out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63)); }
+  }
+  return out;
+}
+function _qrPickVersion(len) {
+  for (var v = 1; v <= 10; v++) {
+    var c = _QR_CAP[v], words = 0;
+    for (var i = 0; i < c.g.length; i++) words += c.g[i][0] * c.g[i][1];
+    if (4 + (v < 10 ? 8 : 16) + len * 8 <= words * 8) return v;
+  }
+  return null;
+}
+function _qrBuildData(bytes, ver) {
+  var c = _QR_CAP[ver], words = 0, i, j;
+  for (i = 0; i < c.g.length; i++) words += c.g[i][0] * c.g[i][1];
+  var bits = [];
+  var push = function(val, n) { for (var k = n - 1; k >= 0; k--) bits.push((val >> k) & 1); };
+  push(4, 4); push(bytes.length, ver < 10 ? 8 : 16);
+  for (i = 0; i < bytes.length; i++) push(bytes[i], 8);
+  var cap = words * 8;
+  for (i = 0; i < 4 && bits.length < cap; i++) bits.push(0);
+  while (bits.length % 8) bits.push(0);
+  var pad = [0xEC, 0x11], pi = 0;
+  while (bits.length < cap) push(pad[pi++ % 2], 8);
+  var cws = [];
+  for (i = 0; i < bits.length; i += 8) { var v = 0; for (j = 0; j < 8; j++) v = (v << 1) | bits[i + j]; cws.push(v); }
+  var blocks = [], ecs = [], p = 0;
+  for (i = 0; i < c.g.length; i++) for (var n = 0; n < c.g[i][0]; n++) {
+    var k = c.g[i][1], b = cws.slice(p, p + k); p += k;
+    blocks.push(b); ecs.push(_qrRsEncode(b, c.ec));
+  }
+  var out = [], maxK = 0;
+  for (i = 0; i < blocks.length; i++) if (blocks[i].length > maxK) maxK = blocks[i].length;
+  for (i = 0; i < maxK; i++) for (j = 0; j < blocks.length; j++) if (i < blocks[j].length) out.push(blocks[j][i]);
+  for (i = 0; i < c.ec; i++) for (j = 0; j < ecs.length; j++) out.push(ecs[j][i]);
+  return out;
+}
+function _qrMakeMatrix(ver, cws, mask) {
+  var size = 17 + ver * 4, i, j, r, c;
+  var m = []; for (i = 0; i < size; i++) { m.push([]); for (j = 0; j < size; j++) m[i].push(null); }
+  var put = function(rr, cc, v) { if (rr >= 0 && rr < size && cc >= 0 && cc < size) m[rr][cc] = v; };
+  var finder = function(fr, fc) {
+    for (var a = -1; a <= 7; a++) for (var b = -1; b <= 7; b++) {
+      var on = (a >= 0 && a <= 6 && (b === 0 || b === 6)) || (b >= 0 && b <= 6 && (a === 0 || a === 6)) ||
+               (a >= 2 && a <= 4 && b >= 2 && b <= 4);
+      put(fr + a, fc + b, on ? 1 : 0);
+    }
+  };
+  finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+  for (i = 8; i < size - 8; i++) { if (m[6][i] === null) m[6][i] = (i % 2 === 0) ? 1 : 0; if (m[i][6] === null) m[i][6] = (i % 2 === 0) ? 1 : 0; }
+  var al = _QR_ALIGN[ver];
+  for (var ai = 0; ai < al.length; ai++) for (var aj = 0; aj < al.length; aj++) {
+    r = al[ai]; c = al[aj];
+    if ((r <= 8 && c <= 8) || (r <= 8 && c >= size - 9) || (r >= size - 9 && c <= 8)) continue;
+    for (i = -2; i <= 2; i++) for (j = -2; j <= 2; j++)
+      put(r + i, c + j, (Math.abs(i) === 2 || Math.abs(j) === 2 || (i === 0 && j === 0)) ? 1 : 0);
+  }
+  put(size - 8, 8, 1);
+  for (i = 0; i < 9; i++) { if (m[8][i] === null) m[8][i] = 'F'; if (m[i][8] === null) m[i][8] = 'F'; }
+  for (i = 0; i < 8; i++) { if (m[8][size - 1 - i] === null) m[8][size - 1 - i] = 'F'; if (m[size - 1 - i][8] === null) m[size - 1 - i][8] = 'F'; }
+  var bits = []; for (i = 0; i < cws.length; i++) for (j = 7; j >= 0; j--) bits.push((cws[i] >> j) & 1);
+  var bi = 0, up = true;
+  for (var col = size - 1; col > 0; col -= 2) {
+    if (col === 6) col--;
+    for (var k = 0; k < size; k++) {
+      var row = up ? size - 1 - k : k;
+      var cols = [col, col - 1];
+      for (var ci = 0; ci < 2; ci++) {
+        var cc = cols[ci];
+        if (m[row][cc] !== null) continue;
+        var b = bi < bits.length ? bits[bi++] : 0, inv;
+        switch (mask) {
+          case 0: inv = ((row + cc) % 2 === 0); break;
+          case 1: inv = (row % 2 === 0); break;
+          case 2: inv = (cc % 3 === 0); break;
+          case 3: inv = ((row + cc) % 3 === 0); break;
+          case 4: inv = ((Math.floor(row / 2) + Math.floor(cc / 3)) % 2 === 0); break;
+          case 5: inv = (((row * cc) % 2) + ((row * cc) % 3) === 0); break;
+          case 6: inv = (((((row * cc) % 2) + ((row * cc) % 3)) % 2) === 0); break;
+          default: inv = (((((row + cc) % 2) + ((row * cc) % 3)) % 2) === 0); break;
+        }
+        m[row][cc] = inv ? (b ^ 1) : b;
+      }
+    }
+    up = !up;
+  }
+  var d = (1 << 3) | mask, v = d << 10;
+  for (i = 14; i >= 10; i--) if ((v >> i) & 1) v ^= 0x537 << (i - 10);
+  var fmt = (((d << 10) | v) ^ 0x5412);
+  var fb = function(x) { return (fmt >> x) & 1; };
+  for (i = 0; i <= 5; i++) m[8][i] = fb(i);
+  m[8][7] = fb(6); m[8][8] = fb(7); m[7][8] = fb(8);
+  for (i = 9; i <= 14; i++) m[14 - i][8] = fb(i);
+  for (i = 0; i <= 6; i++) m[size - 1 - i][8] = fb(i);
+  for (i = 7; i <= 14; i++) m[8][size - 15 + i] = fb(i);
+  m[size - 8][8] = 1;
+  return m;
+}
+function _qrPenalty(m) {
+  var n = m.length, p = 0, r, c, run, dark = 0;
+  for (r = 0; r < n; r++) { run = 1; for (c = 1; c < n; c++) { if (m[r][c] === m[r][c-1]) run++; else { if (run >= 5) p += 3 + (run - 5); run = 1; } } if (run >= 5) p += 3 + (run - 5); }
+  for (c = 0; c < n; c++) { run = 1; for (r = 1; r < n; r++) { if (m[r][c] === m[r-1][c]) run++; else { if (run >= 5) p += 3 + (run - 5); run = 1; } } if (run >= 5) p += 3 + (run - 5); }
+  for (r = 0; r < n - 1; r++) for (c = 0; c < n - 1; c++) { var v = m[r][c]; if (v === m[r][c+1] && v === m[r+1][c] && v === m[r+1][c+1]) p += 3; }
+  for (r = 0; r < n; r++) for (c = 0; c < n; c++) if (m[r][c]) dark++;
+  p += Math.floor(Math.abs(dark * 100 / (n * n) - 50) / 5) * 10;
+  return p;
+}
+function qrGenerateMatrix(text) {
+  var bytes = _qrBytes(text), ver = _qrPickVersion(bytes.length);
+  if (!ver) return null;
+  var cws = _qrBuildData(bytes, ver), best = null, bestP = Infinity;
+  for (var mask = 0; mask < 8; mask++) {
+    var m = _qrMakeMatrix(ver, cws, mask), p = _qrPenalty(m);
+    if (p < bestP) { bestP = p; best = m; }
+  }
+  return best;
+}
+window.qrGenerateMatrix = qrGenerateMatrix;
+
+// 描く。canvasに直接。外へは何も出さない。
+// v0.45.2067: 画面に置いた入れ物を探して、まとめて描く。
+// HTMLを組み立てる側は文字列なので、描くのは差し込んだ後になる。
+function qrFillSlots(root) {
+  try {
+    var slots = (root || document).querySelectorAll('.koyomiru-qr-slot');
+    for (var i = 0; i < slots.length; i++) {
+      var el = slots[i];
+      if (el.dataset.qrDone === '1') continue;
+      var txt = el.getAttribute('data-qr');
+      if (!txt) continue;
+      if (qrRenderTo(el, txt, 140)) el.dataset.qrDone = '1';
+    }
+  } catch (e) { console.warn('[QR] 差し込みに失敗:', e && e.message); }
+}
+window.qrFillSlots = qrFillSlots;
+
+function qrRenderTo(el, text, px) {
+  if (!el) return false;
+  try {
+    var m = qrGenerateMatrix(text);
+    if (!m) { el.innerHTML = '<div style="color:#aaa;font-size:0.75em;padding:16px;">この長さはQRにできません</div>'; return false; }
+    var n = m.length, quiet = 4, total = n + quiet * 2;
+    var size = px || 220, scale = Math.max(1, Math.floor(size / total));
+    var cv = document.createElement('canvas');
+    cv.width = cv.height = total * scale;
+    cv.style.cssText = 'display:block;border-radius:10px;width:' + (total * scale) + 'px;height:' + (total * scale) + 'px;';
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#000';
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++)
+      if (m[r][c]) ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale, scale);
+    el.innerHTML = '';
+    el.appendChild(cv);
+    return true;
+  } catch (e) {
+    console.warn('[QR] 描けませんでした:', e && e.message);
+    el.innerHTML = '<div style="color:#aaa;font-size:0.75em;padding:16px;">QRを作れませんでした</div>';
+    return false;
+  }
+}
+window.qrRenderTo = qrRenderTo;
+
 function renderQRToImg(el, text) {
   el.innerHTML = '';
+  // v0.45.2067: まず自前で描く。外へ何も出さない。
+  // これまでは chart.googleapis.com に頼っていたが、
+  // そのサービスは廃止済みで、ここは動いていなかった可能性が高い。
+  try { if (qrRenderTo(el, text, 220)) return; } catch (eQ) {}
   try {
     var encoded = encodeURIComponent(text);
     var url = 'https://chart.googleapis.com/chart?cht=qr&chs=220x220&chl=' + encoded + '&choe=UTF-8';
@@ -45349,7 +45564,6 @@ async function refreshSharedCalendarList() {
 
   listEl.innerHTML = _visible.map(function(c) {
     var inviteUrl = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(c.invite_code);
-    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(inviteUrl);
     var safeId = 'sc_' + c.id.replace(/-/g, '');
     var _isOwner = c.owner_id === window._cloudUserId;
     // v0.45.1880: 引用符を抜くだけでは守れない。属性用のエスケープを通す。
@@ -45477,7 +45691,8 @@ async function refreshSharedCalendarList() {
                   '</div>' +
                   '<div id="' + safeId + '_linkcheck" style="font-size:0.74em;line-height:1.7;margin-bottom:10px;min-height:1.2em;"></div>') +
           '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
-            '<img src="' + qrUrl + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
+            // v0.45.2067: 外部に招待リンクを渡さない。この場で描く。
+              '<div class="koyomiru-qr-slot" data-qr="' + escAttr(inviteUrl) + '"></div>' +
             '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' +
               (_remain.expired ? 'このQRは期限が切れています'
                                : 'このQRは、あと' + escAttr(_remain.text.replace(/^あと/, '')) + 'で使えなくなります') + '</div>' +
@@ -45567,7 +45782,10 @@ async function refreshSharedCalendarList() {
         : '') +
       _manageHtml +
     '</div>';
-  }).join('');
+    }).join('');
+    // v0.45.2067: QRの入れ物を、差し込んだ後に描く。
+    // 組み立ては文字列なので、この時点で初めてDOMに存在する。
+    try { if (typeof qrFillSlots === 'function') qrFillSlots(listEl); } catch (eQF) {}
 }
 
 // v0.45.1500: 名前変更・退出・削除のUI側ハンドラ
@@ -45897,8 +46115,7 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
     var _wrap = document.getElementById(safeId + '_invwrap');
     if (_wrap) {
       var _url = window.location.origin + window.location.pathname + '?join=' + encodeURIComponent(_code);
-      var _qr = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(_url);
-      var _seat = (_max === null) ? '' : 'この招待で入れるのはあと' + _max + '席';
+        var _seat = (_max === null) ? '' : 'この招待で入れるのはあと' + _max + '席';
       // v0.45.2023: 【権威】2026-09-03、作ったらもうコピーされている状態にできないか、との要望。
       // リンクは貼るために作る。作ってからコピーを押させるのは、一手多い。
       // ただしiOSのSafariは、通信を挟んだあとのコピーを「人の操作ではない」と見て拒む。
@@ -45918,7 +46135,7 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
             : '✅ 新しい招待リンクを作りました。<br>下の「リンクをコピー」を押してください。前のリンクは、もう使えません。') +
         '</div>' +
         '<div style="font-size:0.8em;line-height:1.7;margin-bottom:8px;color:#3a7a3a;font-weight:600;">' +
-          'いま配ってあるリンクは、あと60分で切れます' +
+          'いま配ってあるリンクは、あと24時間で切れます' +
           (_seat ? '<br><span style="color:#8e8e8e;font-weight:400;">' + escAttr(_seat) + '</span>' : '') +
         '</div>' +
         '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
@@ -45926,10 +46143,13 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
           '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
         '</div>' +
         '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
-          '<img src="' + _qr + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
-          '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">このQRは、あと60分で使えなくなります</div>' +
+          // v0.45.2067: 外部に招待リンクを渡さない。この場で描く。
+        '<div class="koyomiru-qr-slot" data-qr="' + escAttr(_url) + '"></div>' +
+          '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">このQRは、あと24時間で使えなくなります</div>' +
         '</div>';
-    }
+        // v0.45.2067: 差し込んだ後にQRを描く。組み立ては文字列なので、ここで初めてDOMにある。
+        try { if (typeof qrFillSlots === 'function') qrFillSlots(_wrap); } catch (eQF2) {}
+      }
   } catch (eW) { console.warn('[SharedCal] 招待欄の書き換えに失敗:', eW && eW.message); }
   try {
     if (typeof showToast === 'function') {
