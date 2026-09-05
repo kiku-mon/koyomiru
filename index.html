@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2063 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2064 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2063';
+    const APP_VERSION = 'v0.45.2064';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45443,7 +45443,11 @@ async function refreshSharedCalendarList() {
             : '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
                 '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクをコピー</a>' +
                 '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
-              '</div>') +
+                    // v0.45.2064: 渡す前に、生きているか自分で確かめられるようにする。
+                    // 押しても参加はしないし、人数の枠も減らない。
+                    '<a onclick="window.checkSharedCalendarInvite(\'' + escAttr(c.invite_code || '') + '\', \'' + safeId + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクを確かめる</a>' +
+                  '</div>' +
+                  '<div id="' + safeId + '_linkcheck" style="font-size:0.74em;line-height:1.7;margin-bottom:10px;min-height:1.2em;"></div>') +
           '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
             '<img src="' + qrUrl + '" width="120" height="120" style="border-radius:8px;background:#fff;" alt="招待QRコード">' +
             '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' +
@@ -45759,6 +45763,59 @@ window._inviteRemainText = _inviteRemainText;
 //
 // 合言葉はこの端末の暗号用乱数で作る。時刻や連番からは作らない。
 // 決めるのは自分のカレンダーの値なので、他人が決められる値の検査（第72条）には当たらない。
+// v0.45.2064: 【権威】2026-09-04、渡す前にリンクが生きているか確かめたい、との要望。
+// 作った直後のカレンダーの招待が死んでいたのを、送ってから相手に指摘されて知った。
+// 死んだリンクを渡してしまうと、相手は「使えません」の画面しか見ない。
+//
+// 確かめる手立てが無ければ、渡すたびに賭けになる。
+// 送る相手に踏ませて確かめるのは、相手に不具合を見せることである。
+//
+// 注意：ここで自分が踏むのは「覗き見」だけで、参加はしない。
+// 人数の枠も減らない。何度押しても、渡すリンクは死なない。
+async function checkSharedCalendarInvite(code, safeId) {
+  var _st = document.getElementById(safeId + '_linkcheck');
+  var _say = function(html) { if (_st) _st.innerHTML = html; };
+  if (!code) { _say('<span style="color:#b3261e;">リンクがまだありません</span>'); return; }
+  _say('<span style="color:#8e8e8e;">確かめています…</span>');
+  try {
+    var d = await peekSharedCalendarByCode(code);
+    if (d && d._failed) {
+      _say('<span style="color:#c07a2a;">⚠️ 確かめられませんでした。通信の具合かもしれません。' +
+           'リンクが死んだとは限りません</span>');
+      return;
+    }
+    if (!d) {
+      _say('<span style="color:#b3261e;font-weight:700;">✕ このリンクは使えません。' +
+           '下から作り直してください</span>');
+      return;
+    }
+    if (d.error === 'busy') {
+      _say('<span style="color:#c07a2a;">いま混み合っています。1分ほど待ってからもう一度</span>');
+      return;
+    }
+    var _r = (typeof window._inviteRemainText === 'function')
+      ? window._inviteRemainText(d.expires_at) : { text: '', expired: false };
+    if (d.expired === true || _r.expired) {
+      _say('<span style="color:#b3261e;font-weight:700;">✕ 期限が切れています。' +
+           '下から作り直してください</span>');
+      return;
+    }
+    if (typeof d.seats_left === 'number' && d.seats_left === 0) {
+      _say('<span style="color:#b3261e;font-weight:700;">✕ 満席です。' +
+           '人数を増やして作り直してください</span>');
+      return;
+    }
+    var _seat = (typeof d.seats_left === 'number')
+      ? '・あと' + d.seats_left + '人' : '・人数の上限なし';
+    _say('<span style="color:#1b5e20;font-weight:700;">✓ 使えます（' +
+         (_r.text || '期限あり') + _seat + '）</span>');
+  } catch (e) {
+    console.warn('[SharedCal] リンクの確認に失敗:', e && e.message);
+    _say('<span style="color:#c07a2a;">⚠️ 確かめられませんでした</span>');
+  }
+}
+window.checkSharedCalendarInvite = checkSharedCalendarInvite;
+
 async function regenerateSharedCalendarInvite(calendarId, safeId) {
   if (!window.supabaseClient) { _sharedCalSetStatus('⚠️ 通信できませんでした'); return; }
   // 人数の枠を読む。空・0・数でないものは「上限なし」ではなく間違いとして弾く。
