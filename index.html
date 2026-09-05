@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2061 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2063 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2061';
+    const APP_VERSION = 'v0.45.2063';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -396,7 +396,12 @@ async function _showInviteCard(code) {
       ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;text-align:center;">' +
         '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:8px;">この招待は使えません</div>' +
         '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
-          '取り消されたか、リンクが作り直された可能性があります。<br>送った方にご確認ください。</div>' +
+          // v0.45.2063: 可能性を並べるだけで、何をすればいいか書いていなかった。
+          // 受け取った人にできるのは「送った人に新しいリンクを頼む」ことだけである。
+          // それを先に言う。理由は、そのあとでよい。
+          '<b>送った方に、新しいリンクをお願いしてください。</b><br>' +
+          'このリンクは、取り消されたか、作り直されたようです。<br>' +
+          '招待リンクは、作ってから24時間で使えなくなります。</div>' +
         '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
           'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
       '</div>';
@@ -427,7 +432,7 @@ async function _showInviteCard(code) {
         '<div style="font-size:1.05em;font-weight:700;color:#b3261e;margin-bottom:8px;">招待の期限が切れています</div>' +
         '<div style="font-size:0.9em;color:#444;font-weight:600;margin-bottom:10px;">' + _esc(data.name || '共有カレンダー') + '</div>' +
         '<div style="font-size:0.84em;color:#8e8e8e;line-height:1.9;margin-bottom:18px;">' +
-          '招待リンクは1時間だけ使えます。<br>送った方に、もう一度お願いしてください。</div>' +
+          '招待リンクは、作ってから24時間だけ使えます。<br>送った方に、もう一度お願いしてください。</div>' +
         '<button onclick="document.getElementById(\'inviteCardOverlay\').remove()" ' +
           'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
       '</div>';
@@ -475,7 +480,7 @@ async function _showInviteCard(code) {
           ? '<div style="text-align:center;font-size:0.78em;color:#9aa3af;margin-bottom:10px;">' + members + '人が参加しています</div>'
           : '<div style="margin-bottom:10px;"></div>') +
         // v0.45.2015: 残り時間と残り席を大きく出す。
-        // 招待リンクは1時間で切れる。切れることを知らないまま放置されると、
+        // 招待リンクは24時間で切れる。切れることを知らないまま放置されると、
         // 押した頃には死んでいる。「いま押す理由」を先に見せる。
         '<div id="inviteCardTimer" style="text-align:center;background:#f4f7fb;border-radius:12px;' +
           'padding:10px;margin-bottom:16px;font-size:1.15em;font-weight:700;color:#0b5bb0;">…</div>' +
@@ -17977,6 +17982,27 @@ function toggleMonthlyLock() {
     el.disabled = window._monthlyLocked;
     el.style.opacity = window._monthlyLocked ? '0.35' : '';
   });
+  // v0.45.2062: 【権威】2026-09-04、固定中にカレンダーのチップは押せるのに、
+  // 押しても画面が何も変わらない、との指摘。
+  //
+  // 描き直しを入口で止めたので、チップの表示・非表示が反映されなくなっていた。
+  // 押せるのに何も起きないのは、壊れているのと見分けが付かない（第7条）。
+  // 止めるなら、押せないところまで止める。
+  //
+  // 「カレンダー ▾」も同じ。中で選んでも画面が変わらないので、触れなくする。
+  try {
+    var _bar = document.getElementById('monthlyCalendarFilter');
+    if (_bar) {
+      _bar.style.opacity = window._monthlyLocked ? '0.4' : '';
+      _bar.style.pointerEvents = window._monthlyLocked ? 'none' : '';
+      _bar.title = window._monthlyLocked ? '固定中は変えられません' : '';
+    }
+    var _filterBtn = document.getElementById('monthlyFilterToggle');
+    if (_filterBtn) {
+      _filterBtn.disabled = window._monthlyLocked;
+      _filterBtn.style.opacity = window._monthlyLocked ? '0.35' : '';
+    }
+  } catch (eLk) { console.warn('[固定] チップを止められませんでした:', eLk && eLk.message); }
   // 固定を解いたら描き直す。固定中に予定を足していても、ここで画面に出る。
   // 解いたのに出てこないと、消えたと思わせてしまう。
   if (!window._monthlyLocked && typeof renderMonthlyView === 'function') {
@@ -32746,6 +32772,14 @@ function renderCalendarFilter(containerId, onChangeCallback) {
         };
         bar.appendChild(_moneyBtn);
       }
+      // v0.45.2062: 固定中に列を組み直したら、止めた状態も付け直す。
+      // ここを忘れると、描き直した瞬間だけ押せてしまい、押しても何も起きない。
+      try {
+        if (containerId === 'monthlyCalendarFilter') {
+          bar.style.opacity = window._monthlyLocked ? '0.4' : '';
+          bar.style.pointerEvents = window._monthlyLocked ? 'none' : '';
+        }
+      } catch (eLk2) {}
       // v0.45.2035: 【権威】2026-09-04、「入金日と支払日」のチップは何を絞るのか、との問い。
       // 調べると、絞り込みの中身は空だった。押しても画面は何も変わらない。
       // 押した人は「絞り込んだ結果、支払いが無い」と受け取る。
@@ -45393,7 +45427,7 @@ async function refreshSharedCalendarList() {
           // 作った覚えがあるものだけを、リンクとして扱う。
           (!_issued
             ? '<div style="font-size:0.8em;color:#8e8e8e;line-height:1.7;margin-bottom:10px;">' +
-                'まだ招待リンクを作っていません。<br>下から作ると、1時間だけ使えるリンクができます。</div>'
+                'まだ招待リンクを作っていません。<br>下から作ると、24時間だけ使えるリンクができます。</div>'
             : '<div style="font-size:0.8em;line-height:1.7;margin-bottom:' + (_remain.expired ? '10px' : '8px') + ';color:' +
                 (_remain.expired ? '#b3261e' : (_remain.minutes < 10 ? '#c07a2a' : '#3a7a3a')) + ';font-weight:600;">' +
                 (_remain.expired
@@ -45435,8 +45469,8 @@ async function refreshSharedCalendarList() {
                 'style="width:100%;padding:9px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;font-family:inherit;">' +
                 (_issued ? 'リンクを作り直す' : 'リンクを作る') + '</button>' +
               '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">' +
-                (_issued ? '1時間だけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。'
-                         : '1時間だけ使えるリンクができます。') + '</div>' +
+                (_issued ? '24時間だけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。'
+                         : '24時間だけ使えるリンクができます。') + '</div>' +
             '</div>' : '') +
           (_isOwner ?
             '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
@@ -45745,7 +45779,8 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
   var _code = Array.prototype.map.call(_bytes, function(b) {
     return ('0' + b.toString(16)).slice(-2);
   }).join('');
-  var _expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    // v0.45.2063: 1時間から24時間へ。LINEで送って翌朝開かれることを想定する。
+    var _expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
     .update({
       invite_code: _code,
@@ -45762,7 +45797,7 @@ async function regenerateSharedCalendarInvite(calendarId, safeId) {
     _sharedCalSetStatus('⚠️ 作り直せませんでした。少し待ってからお試しください');
     return;
   }
-  var _msg = '✅ 新しい招待リンクを作りました（1時間有効' +
+  var _msg = '✅ 新しい招待リンクを作りました（24時間有効' +
     (_max === null ? '・人数の上限なし' : '・' + _max + '人まで') + '）';
   _sharedCalSetStatus(_msg + '。前のリンクは使えなくなりました');
   // v0.45.2020: 【権威】2026-09-03、作り直すと画面が上に戻される、との報告。二度目。
