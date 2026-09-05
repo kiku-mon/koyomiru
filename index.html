@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2074 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2075 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2074';
+    const APP_VERSION = 'v0.45.2075';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -43112,6 +43112,13 @@ async function loadAdminVisitStats() {
         byDate[d].total += (row.visits || 0);
         byDate[d].first += (row.first_visits || 0);
         byDate[d].dev   += (row.dev_visits || 0);
+        // v0.45.2074: 【権威】2026-09-04、自分がどの経路で来た分が除外されたのか
+        // 知りたい、との要望。「除外済み」とだけ書かれても確かめようがない。
+        // 経路ごとの内訳は元のデータに入っていたのに、合計だけ取って捨てていた。
+        if (!byDate[d].devParts) byDate[d].devParts = [];
+        if ((row.dev_visits || 0) > 0) {
+          byDate[d].devParts.push((row.source || 'direct') + ' ' + row.dev_visits);
+        }
         if (row.visits > 0) byDate[d].parts.push((row.source || 'direct') + ' ' + row.visits);
       });
       var dates = Object.keys(byDate).sort().reverse();
@@ -43121,9 +43128,54 @@ async function loadAdminVisitStats() {
           '<b style="color:#8ec5ff;">' + d + '</b>　' + v.total + '人' +
           (v.first > 0 ? '（新規' + v.first + '）' : '') +
           (v.parts.length > 0 ? '<br><span style="color:#999;font-size:0.92em;">' + v.parts.join('・') + '</span>' : '') +
-          (v.dev > 0 ? '<br><span style="color:#666;font-size:0.88em;">（自分 ' + v.dev + ' 件は除外済み）</span>' : '') +
+          (v.dev > 0 ? '<br><span style="color:#666;font-size:0.88em;">（自分 ' + v.dev + ' 件は除外済み' +
+            (v.devParts && v.devParts.length ? '：' + v.devParts.join('・') : '') + '）</span>' : '')
         '</div>';
       }).join('');
+      // v0.45.2075: 【権威】2026-09-04、誰がいつどの経路で来たのかを知りたい、
+      // 自分の分がどれなのかも確かめたい、との要望。
+      // これまでは日付ごとの合計しか出しておらず、
+      // 「自分 4件は除外済み」と書かれても確かめようがなかった。
+      //
+      // 一件ずつ出す。誰かは端末の印の先頭8文字だけにする。
+      // 個人を特定できる値をそのまま管理画面に出すと、後で困る種になる。
+      // 同じ人が何度も来たことは、この8文字で分かる。
+      try {
+        var dr = await window.supabaseClient.rpc('koyomiru_visit_detail', { p_days: 14 });
+        if (dr && !dr.error && dr.data && dr.data.length > 0) {
+          var _fmt = function(iso) {
+            try {
+              var d = new Date(iso);
+              return (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+                     String(d.getHours()).padStart(2, '0') + ':' +
+                     String(d.getMinutes()).padStart(2, '0');
+            } catch (e) { return String(iso).slice(5, 16).replace('T', ' '); }
+          };
+          listEl.innerHTML +=
+            '<div style="margin-top:14px;padding-top:10px;border-top:1px solid #333;">' +
+            '<div style="color:#8ec5ff;font-weight:700;margin-bottom:6px;">🔍 一件ずつ（新しい順・最大500件）</div>' +
+            '<div style="font-size:0.72em;color:#666;margin-bottom:8px;line-height:1.6;">' +
+            '「自分」は除外されている分です。同じ8文字は同じ端末です。</div>' +
+            dr.data.map(function(row) {
+              var _me = row.is_dev === true;
+              return '<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;' +
+                     'font-size:0.8em;line-height:1.5;' + (_me ? 'opacity:.55;' : '') + '">' +
+                '<span style="color:#8ec5ff;flex:0 0 auto;min-width:66px;">' + _fmt(row.visited_at) + '</span>' +
+                '<span style="color:' + (_me ? '#777' : '#c9c9c9') + ';flex:0 0 auto;min-width:64px;">' +
+                  (_me ? '自分' : escAttr(row.visitor || '?')) + '</span>' +
+                '<span style="color:#999;flex:1;min-width:0;">' + escAttr(row.source || 'direct') +
+                  (row.is_first ? ' <span style="color:#7fd18c;">新規</span>' : '') +
+                  (row.is_logged_in ? ' <span style="color:#8ec5ff;">ログイン済</span>' : '') +
+                  (row.app_version ? ' <span style="color:#666;">' + escAttr(row.app_version) + '</span>' : '') +
+                '</span>' +
+              '</div>';
+            }).join('') +
+            '</div>';
+        } else if (dr && dr.error) {
+          listEl.innerHTML += '<div style="margin-top:12px;color:#666;font-size:0.78em;">' +
+            '一件ずつの記録は取れませんでした（' + escAttr(dr.error.message || '') + '）</div>';
+        }
+      } catch (eDet) { console.warn('[訪問] 明細の取得に失敗:', eDet && eDet.message); }
       // v0.45.1508: 支援リンク等のクリック回数を末尾に添える
       try {
         var er = await window.supabaseClient.rpc('koyomiru_event_stats');
