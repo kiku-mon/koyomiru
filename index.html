@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2080 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2085 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2080';
+    const APP_VERSION = 'v0.45.2085';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -18170,7 +18170,30 @@ function getKingdomEraLabel(targetDate) {
   // ③今日
   var startDate = null;
   if (typeof allTasks !== 'undefined' && allTasks && allTasks.length > 0) {
+    // v0.45.2081: 【権威】2026-09-06、今日はじめて登録した人の画面が
+    // 「元年 124日目」になっていた、との報告。
+    //
+    // 起点を「手元にある一番古い予定の作成日」から決めていた。
+    // だが共有カレンダーに参加すると、相手が何か月も前に作った予定が降りてくる。
+    // それが一番古いので、参加した瞬間に相手の歴を背負わされる。
+    //
+    // 自分の歩みは、自分が作ったものからしか始まらない。
+    // 他人のカレンダーの予定は数えない。
+    var _myCloudIds = {};
+    try {
+      (allSettings.calendar.list || []).forEach(function(c) {
+        if (c && c.cloudCalendarId && c.sharedOwner === false) _myCloudIds[c.cloudCalendarId] = true;
+      });
+    } catch (eEra) {}
     var _oldest = allTasks
+      .filter(function(t) {
+        if (!t) return false;
+        // 参加しただけのカレンダーの予定は、自分の歩みではない
+        if (t.cloudCalendarId && _myCloudIds[t.cloudCalendarId]) return false;
+        // 作った人が分かっていて、自分でないなら数えない
+        if (t.createdBy && window._cloudUserId && t.createdBy !== window._cloudUserId) return false;
+        return true;
+      })
       .map(function(t){ return t.createdAt ? new Date(t.createdAt) : null; })
       .filter(function(d){ return d && !isNaN(d.getTime()); })
       .sort(function(a, b){ return a - b; })[0];
@@ -43186,6 +43209,21 @@ async function loadAdminVisitStats() {
       // 一件ずつ出す。誰かは端末の印の先頭8文字だけにする。
       // 個人を特定できる値をそのまま管理画面に出すと、後で困る種になる。
       // 同じ人が何度も来たことは、この8文字で分かる。
+      // v0.45.2084: 人ごとのまとめはDB側で作る。アプリは受け取って並べるだけ。
+      // 上限は控えめに200。60人まで出し、残りは押したときに開く。
+      try {
+        var _sumLimit = window._visitorShowAll ? 500 : 200;
+        var sr = await window.supabaseClient.rpc('koyomiru_visitor_summary', { p_limit: _sumLimit });
+        window._visitorSummary = (sr && !sr.error && sr.data) ? sr.data : null;
+        if (sr && sr.error) {
+          console.warn('[訪問] 人ごとの集計に失敗:', sr.error.message);
+          listEl.innerHTML += '<div style="margin-top:10px;color:#c07a2a;font-size:0.78em;">' +
+            '人ごとのまとめを取れませんでした（' + escAttr(sr.error.message || '') + '）</div>';
+        }
+      } catch (eSum) {
+        window._visitorSummary = null;
+        console.warn('[訪問] 人ごとの集計に失敗:', eSum && eSum.message);
+      }
       try {
         var dr = await window.supabaseClient.rpc('koyomiru_visit_detail', { p_days: 14 });
         if (dr && !dr.error && dr.data && dr.data.length > 0) {
@@ -43199,56 +43237,108 @@ async function loadAdminVisitStats() {
           };
           listEl.innerHTML +=
             '<div style="margin-top:14px;padding-top:10px;border-top:1px solid #333;">' +
-            // v0.45.2078: 【権威】2026-09-06、どのくらいの頻度で来ているかを見たい、との要望。
-            // 時系列の一覧だけでは「この人は何回来たか」が分からず、
-            // 定着した人と一度きりの人を、目で数えるしかなかった。
-            // 40人来て8人しか戻っていない、という一番大事な数字が人力でしか出せない。
+            // v0.45.2084: 【権威】2026-09-06、集計はDB側でやって、
+            // アプリは受け取って並べるだけにする、との設計判断。
+            // Railsで言えばビジネスロジックをモデルに置くのと同じ考え方。
             //
-            // 人ごとにまとめる。自分は除く。回数の多い順。
-            (function() {
-              var _p = {}, _first = null;
-              dr.data.forEach(function(row) {
-                if (row.is_dev === true) return;
-                var k = row.visitor || '?';
-                if (!_p[k]) _p[k] = { n: 0, first: '', last: '', src: {}, who: '', ver: '' };
-                var d = String(row.visited_at || '').slice(0, 10);
-                _p[k].n++;
-                _p[k].last = _p[k].last || d;        // 新しい順に来るので最初が最終
-                _p[k].first = d;                      // 最後に見たものが最古
-                _p[k].src[row.source || 'direct'] = 1;
-                if (row.who && !_p[k].who) _p[k].who = row.who;
-                if (!_p[k].ver) _p[k].ver = row.app_version || '';
-              });
-              var _list = Object.keys(_p).map(function(k) { return { id: k, v: _p[k] }; })
-                .sort(function(a, b) { return b.v.n - a.v.n || (b.v.last > a.v.last ? 1 : -1); });
-              if (_list.length === 0) return '';
-              var _once = _list.filter(function(x) { return x.v.n === 1; }).length;
+            // これまではブラウザで500件を集計していた。1万件になれば破綻する。
+            // また端末ごとに数えていたので、同じ人がパソコンとスマホで来ると2人に見えていた。
+            // DB側（koyomiru_visitor_summary）はUIDで束ねるので、1人として数えられる。
+            //
+            // 60人まで全部出す。人が覚えていられるのは60人ほどという話に合わせた。
+            // 超えたぶんは畳む。少ないうちに畳むと、毎回押させることになる。
+            (window._visitorSummary && window._visitorSummary.length ? (function() {
+              var _list = window._visitorSummary;
+              var _LIMIT = 60;
+              var _shown = _list.slice(0, _LIMIT);
+              var _rest = _list.length - _shown.length;
+              var _once = _list.filter(function(x) { return x.visits === 1; }).length;
               var _back = _list.length - _once;
+              var _label = function(x) {
+                if (x.display_name) return escAttr(x.display_name);
+                if (x.uid) return escAttr(x.uid);
+                return '<span style="color:#5f6672;">UID未取得</span>';
+              };
               return '<div style="margin-bottom:14px;">' +
                 '<div style="color:#8ec5ff;font-weight:700;margin-bottom:4px;">👥 人ごと（自分を除く・回数の多い順）</div>' +
                 '<div style="font-size:0.74em;color:#999;margin-bottom:7px;line-height:1.6;">' +
                   '来た人 ' + _list.length + '人 ／ 2回以上 ' + _back + '人（' +
                   Math.round(_back * 100 / _list.length) + '%）／ 一度きり ' + _once + '人</div>' +
-                _list.map(function(x) {
-                  var v = x.v, _srcs = Object.keys(v.src).join('・');
+                // 目立つものを先に出す。一覧を眺めて自分で気づくのを待たない。
+                (function() {
+                  var _lines = [];
+                  var _lost = _shown.filter(function(x) { return x.visits >= 3 && x.days_since >= 7; });
+                  if (_lost.length) _lines.push('<div style="color:#e0a458;">🔔 よく来ていたのに7日以上来ていない ' +
+                    _lost.length + '人：' + _lost.slice(0, 6).map(function(x) {
+                      return (x.display_name || x.uid || '端末' + x.visitor) + '（' + x.days_since + '日前）';
+                    }).join('・') + (_lost.length > 6 ? ' ほか' : '') + '</div>');
+                  var _cur = (typeof APP_VERSION === 'string') ? APP_VERSION : '';
+                  var _old = _shown.filter(function(x) {
+                    return x.last_version && _cur && x.last_version < _cur && x.days_since <= 14;
+                  });
+                  if (_old.length) _lines.push('<div style="color:#e0a458;">⚠️ 古い版のまま使っている ' +
+                    _old.length + '人：' + _old.slice(0, 6).map(function(x) {
+                      return (x.display_name || x.uid || '端末' + x.visitor) + '（' + x.last_version + '）';
+                    }).join('・') + (_old.length > 6 ? ' ほか' : '') + '</div>');
+                  var _new = _shown.filter(function(x) { return x.visits === 1 && x.days_since === 0; });
+                  if (_new.length) _lines.push('<div style="color:#7fd18c;">🌱 今日はじめて来た ' + _new.length + '人</div>');
+                  return _lines.length
+                    ? '<div style="font-size:0.76em;line-height:1.9;margin-bottom:8px;padding:7px 9px;' +
+                      'background:rgba(255,255,255,0.04);border-radius:8px;">' + _lines.join('') + '</div>'
+                    : '';
+                })() +
+                _shown.map(function(x) {
+                  var _key = _visitorNoteKey(x);
+                  var _note = _getVisitorNote(x);
+                  var _nid = 'vn_' + String(_key).replace(/[^a-zA-Z0-9]/g, '');
                   return '<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:2px;' +
-                         'font-size:0.79em;line-height:1.5;' + (v.n === 1 ? 'opacity:.6;' : '') + '">' +
-                    '<span style="color:#c9c9c9;flex:0 0 auto;min-width:62px;">' + escAttr(x.id) + '</span>' +
-                    '<span style="color:' + (v.n >= 3 ? '#7fd18c' : '#999') + ';flex:0 0 auto;min-width:34px;">' +
-                      v.n + '回</span>' +
+                         'font-size:0.79em;line-height:1.5;' + (x.visits === 1 ? 'opacity:.6;' : '') + '">' +
+                    '<span style="flex:0 0 auto;min-width:84px;color:#c9a0ff;font-weight:700;">' + _label(x) + '</span>' +
+                    '<span style="color:' + (x.visits >= 3 ? '#7fd18c' : '#999') + ';flex:0 0 auto;min-width:34px;">' +
+                      x.visits + '回</span>' +
                     '<span style="color:#999;flex:1;min-width:0;">' +
-                      escAttr(v.first) + '〜' + escAttr(v.last) + ' ' + escAttr(_srcs) +
-                      (v.who ? ' <span style="color:#c9a0ff;">' + escAttr(v.who) + '</span>' : '') +
-                      (v.ver ? ' <span style="color:#666;">' + escAttr(v.ver) + '</span>' : '') +
+                      escAttr(x.first_at) + '〜' + escAttr(x.last_at) +
+                      (x.days_since === 0 ? ' <span style="color:#7fd18c;">今日</span>' : '') +
+                      ' ' + escAttr(x.sources || '') +
+                      (x.devices > 1 ? ' <span style="color:#5f6672;">' + x.devices + '台</span>' : '') +
+                      ' <span style="color:#5f6672;">端末' + escAttr(x.visitor) + '</span>' +
+                      (x.last_version ? ' <span style="color:#666;">' + escAttr(x.last_version) + '</span>' : '') +
                     '</span>' +
+                    // v0.45.2085: メモの入口。押すと開き、もう一度押すと閉じて保存する。
+                    '<span style="flex:0 0 auto;cursor:pointer;color:' + (_note ? '#e0c46c' : '#5f6672') + ';" ' +
+                      'title="メモを書く" onclick="window._toggleVisitorNote(\'' + escAttr(_key) + '\',\'' + _nid + '\')">✎</span>' +
+                  '</div>' +
+                  // 書いてあるメモは、開かなくても見える。開くのは書くときだけ。
+                  (_note
+                    ? '<div style="font-size:0.76em;color:#c9b37a;line-height:1.6;margin:0 0 4px 90px;' +
+                      'white-space:pre-wrap;word-break:break-word;">' + escAttr(_note) + '</div>'
+                    : '') +
+                  '<div id="' + _nid + '" style="display:none;margin:2px 0 8px 90px;">' +
+                    '<textarea rows="2" placeholder="この人について（自由に）" ' +
+                      'style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #3d4a5c;' +
+                      'border-radius:6px;background:#0f1622;color:#e6e6e6;font-size:0.8em;' +
+                      'font-family:inherit;line-height:1.6;resize:vertical;">' + escAttr(_note) + '</textarea>' +
+                    '<div style="font-size:0.72em;color:#5f6672;margin-top:3px;">✎ をもう一度押すと保存します</div>' +
                   '</div>';
                 }).join('') +
+                (_rest > 0
+                  ? '<div style="font-size:0.76em;color:#8ec5ff;margin-top:6px;cursor:pointer;" ' +
+                    'onclick="window._visitorShowAll=true;loadAdminVisitStats();">' +
+                    '▸ 残り' + _rest + '人を見る</div>'
+                  : '') +
               '</div>';
-            })() +
+            })() : '') +
             '<div style="color:#8ec5ff;font-weight:700;margin-bottom:6px;">🔍 その日ごとに、誰が来たか</div>' +
             '<div style="font-size:0.72em;color:#666;margin-bottom:8px;line-height:1.6;">' +
-            '「自分」は除外されている分です。同じ8文字は同じ端末。' +
-            'アカウントの印があれば、参加者一覧と突き合わせられます。</div>' +
+            // v0.45.2081: 【権威】2026-09-06、左の8文字をUIDだと思って
+            // Supabaseの一覧と突き合わせたが一致しない、との指摘。
+            // 左は端末の印（visitor_id）で、UIDではない。紛らわしい並べ方をしていた。
+            // 何の値なのかを、その場に書く。
+            '「自分」は除外されている分です。<br>' +
+            '<b style="color:#c9a0ff;">左＝UID</b>。Supabaseのユーザー一覧と突き合わせれば誰か分かります。<br>' +
+            '<span style="color:#5f6672;">UID未取得</span>は、記録を始めた v0.45.2076 より前の訪問です。' +
+            'その人が次に開けばUIDが付きます。<br>' +
+            '<span style="color:#5f6672;">端末◯◯</span>はその端末に振った印で、アカウントとは無関係です。</div>' +
             // v0.45.2076: 【権威】2026-09-06、その日ごとに誰が来たかの形にしたい、との要望。
             // 新しい順に全部並べると、日付の切れ目が見えず、その日に誰が来たのかが読めない。
             // 上の集計と同じ日付で束ねる。目が行き来しなくて済む。
@@ -43271,12 +43361,14 @@ async function loadAdminVisitStats() {
                            'padding-left:8px;font-size:0.79em;line-height:1.5;' + (_me ? 'opacity:.5;' : '') + '">' +
                       '<span style="color:#8ec5ff;flex:0 0 auto;min-width:42px;">' +
                         escAttr(String(row.visited_at || '').slice(11, 16)) + '</span>' +
-                      '<span style="color:' + (_me ? '#777' : '#c9c9c9') + ';flex:0 0 auto;min-width:62px;">' +
-                        (_me ? '自分' : escAttr(row.visitor || '?')) + '</span>' +
+                      '<span style="flex:0 0 auto;min-width:74px;">' +
+                        (_me ? '<span style="color:#777;">自分</span>'
+                             : (row.who ? '<b style="color:#c9a0ff;">' + escAttr(row.who) + '</b>'
+                                        : '<span style="color:#5f6672;">UID未取得</span>')) + '</span>' +
                       '<span style="color:#999;flex:1;min-width:0;">' + escAttr(row.source || 'direct') +
                         (row.is_first ? ' <span style="color:#7fd18c;">新規</span>' : '') +
-                        (row.who ? ' <span style="color:#c9a0ff;">' + escAttr(row.who) + '</span>'
-                                 : (row.is_logged_in ? ' <span style="color:#8ec5ff;">ログイン済</span>' : '')) +
+                        (!_me ? ' <span style="color:#5f6672;">端末' + escAttr(row.visitor || '?') + '</span>' : '') +
+                        (row.is_logged_in ? ' <span style="color:#8ec5ff;">ログイン済</span>' : '') +
                         (row.app_version ? ' <span style="color:#666;">' + escAttr(row.app_version) + '</span>' : '') +
                       '</span>' +
                     '</div>';
@@ -45351,6 +45443,143 @@ function _syncFlushPendingRender() {
   } catch(e) { console.warn('[Sync] 保留更新の反映に失敗:', e && e.message); }
 }
 window._syncFlushPendingRender = _syncFlushPendingRender;
+
+// v0.45.2085: 【権威】2026-09-06、人ごとにメモを残せるようにしたい、との要望。
+// 「誰に何と言うか」を決める画面なので、前に何を話したかが要る。
+//
+// 形式は決めない。項目も分類も作らない。何を書くかがまだ決まっていないため。
+// 最初から「好きなもの」「連絡先」のような欄を作ると、埋まらない欄が並ぶ。
+// 自由に書いてもらい、書き方が見えてから整えるのが順序である。
+//
+// 入れ物は { text: '...', updatedAt: '...' } の形にしておく。
+// text は改行を含められるので、1行でも20行でも同じ入れ物に入る。
+// あとから tag などを足しても、text はそのまま残る。既存のメモを壊さずに広げられる。
+//
+// 保存先は allSettings。設定として端末間で同期される。新しい入れ物は作らない。
+// 相手が誰かはUIDで覚える。端末は買い替えで変わるが、アカウントは変わらないため。
+function _visitorNoteKey(x) {
+  if (!x) return '';
+  return x.uid ? ('u:' + x.uid) : ('d:' + (x.visitor || ''));
+}
+function _getVisitorNote(x) {
+  try {
+    var m = (allSettings && allSettings.visitorNotes) || {};
+    var n = m[_visitorNoteKey(x)];
+    return (n && typeof n.text === 'string') ? n.text : '';
+  } catch (e) { return ''; }
+}
+window._getVisitorNote = _getVisitorNote;
+
+function _saveVisitorNote(key, text) {
+  try {
+    if (!allSettings.visitorNotes) allSettings.visitorNotes = {};
+    var t = String(text || '').trim();
+    if (t === '') delete allSettings.visitorNotes[key];
+    else allSettings.visitorNotes[key] = { text: t, updatedAt: new Date().toISOString() };
+    saveAllSettings();
+    return true;
+  } catch (e) { console.warn('[メモ] 保存に失敗:', e && e.message); return false; }
+}
+window._saveVisitorNote = _saveVisitorNote;
+
+// メモ欄を開く。閉じるときに保存する。押すたびに開閉する。
+function _toggleVisitorNote(key, safeId) {
+  try {
+    var box = document.getElementById(safeId);
+    if (!box) return;
+    if (box.style.display !== 'none') {
+      var ta = box.querySelector('textarea');
+      if (ta) _saveVisitorNote(key, ta.value);
+      box.style.display = 'none';
+      if (typeof loadAdminVisitStats === 'function') loadAdminVisitStats();
+      return;
+    }
+    box.style.display = '';
+    var ta2 = box.querySelector('textarea');
+    if (ta2) ta2.focus();
+  } catch (e) { console.warn('[メモ] 開けませんでした:', e && e.message); }
+}
+window._toggleVisitorNote = _toggleVisitorNote;
+
+// v0.45.2083: 【権威】2026-09-06、みんなが最新版にならないのはなぜか、との問い。
+// 調べると、GitHub Pages は全ファイルに Cache-Control: max-age=600 を付けて配信する。
+// この指定は変えられない。独自ドメインを付ければ、その手前にもキャッシュが入る。
+// つまり配る側から、訪問者の手元にある古いHTMLを消す手立てがない。
+// 実際 v0.45.1691 のまま9日間使い続けている端末があった。
+// その人は、その間に直した不具合を全部抱えたままである。
+//
+// 効くのは「アプリ自身が新しい版の有無を確かめる」ことだけ。
+// ファイルは増やさない。index.html 自身を取りに行き、中の版番号を読む。
+// 版を上げる手順は今までと同じ3か所のままでよい。
+//
+// 引き金は3つ。業界の実装（VS Code・Slack・Figma）に倣う。
+//   ① 起動時（描画が終わってから。待たせない）
+//   ② タブに戻ったとき（離れている間にデプロイされていることが多い）
+//   ③ 30分ごと（開きっぱなしの人向け）
+// ただし5分以内に確かめていればやらない。行き来のたびに取りに行かないため。
+//
+// 勝手に読み直さない。書きかけの予定が消えるため、押してもらう。
+var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
+function _checkForNewVersion() {
+  try {
+    var now = Date.now();
+    if (window._verCheckedAt && now - window._verCheckedAt < _VER_CHECK_MIN_INTERVAL) return;
+    window._verCheckedAt = now;
+    if (window._isTesting || window._smokeTestRunning) return;
+    fetch('index.html?_v=' + now, { cache: 'no-store' })
+      .then(function(r) { return r.ok ? r.text() : null; })
+      .then(function(html) {
+        if (!html) return;
+        var m = html.match(/APP_VERSION = '(v[0-9.]+)'/);
+        if (!m || !m[1]) return;
+        if (m[1] === APP_VERSION) return;
+        // 手元より古い版が返ることもある（キャッシュの残り）。新しいときだけ知らせる。
+        if (m[1] < APP_VERSION) return;
+        _showNewVersionBar(m[1]);
+      })
+      .catch(function(e) { console.warn('[版] 確認できませんでした:', e && e.message); });
+  } catch (e) {}
+}
+window._checkForNewVersion = _checkForNewVersion;
+
+function _showNewVersionBar(newVer) {
+  try {
+    if (document.getElementById('koyomiruNewVerBar')) return;
+    if (window._verDismissed === newVer) return;   // この版は「あとで」を押された
+    var bar = document.createElement('div');
+    bar.id = 'koyomiruNewVerBar';
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99995;' +
+      'background:#1f2a37;color:#fff;padding:12px 14px;display:flex;gap:10px;align-items:center;' +
+      'box-shadow:0 -2px 12px rgba(0,0,0,0.25);font-size:0.86em;' +
+      'padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px));';
+    bar.innerHTML =
+      '<span style="flex:1;min-width:0;line-height:1.6;">🔄 新しい版があります（' +
+        String(newVer).replace(/[<>&"]/g, '') + '）<br>' +
+        '<span style="font-size:0.86em;color:#a9b4c2;">読み込み直すと最新になります</span></span>';
+    var yes = document.createElement('button');
+    yes.textContent = '今すぐ読み込む';
+    yes.style.cssText = 'flex:0 0 auto;padding:9px 14px;border:none;border-radius:8px;' +
+      'background:#4a9eff;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;';
+    yes.onclick = function() { try { location.reload(); } catch (e) {} };
+    var no = document.createElement('button');
+    no.textContent = 'あとで';
+    no.style.cssText = 'flex:0 0 auto;padding:9px 12px;border:1px solid #3d4a5c;border-radius:8px;' +
+      'background:transparent;color:#a9b4c2;font-size:0.9em;cursor:pointer;font-family:inherit;';
+    no.onclick = function() { window._verDismissed = newVer; bar.remove(); };
+    bar.appendChild(yes); bar.appendChild(no);
+    document.body.appendChild(bar);
+  } catch (e) { console.warn('[版] 知らせを出せませんでした:', e && e.message); }
+}
+window._showNewVersionBar = _showNewVersionBar;
+
+// ① 起動時（描画が終わってから）
+window.addEventListener('load', function() { setTimeout(_checkForNewVersion, 0); });
+// ② タブに戻ったとき
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') _checkForNewVersion();
+});
+// ③ 30分ごと
+setInterval(_checkForNewVersion, 30 * 60 * 1000);
 
 // v0.45.2079: 時刻を数で比べる。書き方が違っても同じ物差しになる。
 //   手元    2026-09-06T14:33:00.123Z         （toISOString）
