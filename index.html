@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.6 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.1';
+    const APP_VERSION = 'v0.46.6';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -461,6 +461,17 @@ async function _showInviteCard(code) {
       window._koyomiruInviteName[code] = name;
     } catch (eNm) {}
     var members = (typeof data.member_count === 'number') ? data.member_count : null;
+    // v0.46.6: 【権威】2026-09-07、人が来る理由は機能ではなく「誰がいるか」である、との指摘。
+    // これまでの文面は機能の説明で、誰のカレンダーなのかがどこにも書かれていなかった。
+    //
+    // ただし参加者の一覧は出さない。中にいる人の名前を、入っていない人に見せることになる。
+    // 山風蠱——おいしいものには虫が湧く。「誰がいるか」で集める器は、
+    // 中身より人を集めることが目的化し、目当ての人が抜ければ崩れる。
+    // 一度見せれば、それを前提に人が集まる。あとから隠すと、集まった理由を壊す。
+    //
+    // 誘った人の名前だけを出す。誘った人は、自分が誘ったと知られて当然のことであり、
+    // 誰から来たか分からないリンクは、そもそも踏まれない。
+    var _inviter = (data && typeof data.inviter === 'string') ? data.inviter.trim() : '';
     // 初期値は、いま使っている名前。多くの人はそのまま押すだけで済む。
     var _defName = (allSettings.profile && allSettings.profile.name) || '';
 
@@ -474,7 +485,8 @@ async function _showInviteCard(code) {
     ov.innerHTML =
       '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.18);">' +
         '<div style="text-align:center;font-size:2.2em;margin-bottom:4px;">📩</div>' +
-        '<div style="text-align:center;font-size:0.8em;color:#8e8e8e;margin-bottom:4px;">カレンダーに招待されています</div>' +
+        '<div style="text-align:center;font-size:0.8em;color:#8e8e8e;margin-bottom:4px;">' +
+          (_inviter ? _esc(_inviter) + 'さんから招待されています' : 'カレンダーに招待されています') + '</div>' +
         '<div style="text-align:center;font-size:1.25em;font-weight:700;color:#262626;margin-bottom:6px;">' + _esc(name) + '</div>' +
         (members !== null
           ? '<div style="text-align:center;font-size:0.78em;color:#9aa3af;margin-bottom:10px;">' + members + '人が参加しています</div>'
@@ -485,11 +497,27 @@ async function _showInviteCard(code) {
         '<div id="inviteCardTimer" style="text-align:center;background:#f4f7fb;border-radius:12px;' +
           'padding:10px;margin-bottom:16px;font-size:1.15em;font-weight:700;color:#0b5bb0;">…</div>' +
         peek +
+        // v0.46.5: 【権威】2026-09-07、「あなたが書いた予定も相手に見えます」は
+        // 全部見られると読まれる、との指摘。そのとおりで、私の書き方が悪かった。
+        //
+        // 根本は、共有カレンダーという考え方がまだ伝わっていないこと。
+        // カレンダーが複数あって、そのうち1つだけを共有する——これを知らない人に
+        // 結果だけ伝えても、不安になるだけである。
+        //
+        // 見えるものと見えないものを、対にして書く。片方だけでは不安が残る。
+        // 押す前に分かるようにする（第70条：見える範囲が人によって違うものは明示する）。
+        '<div style="text-align:left;background:#f6f8fb;border-radius:12px;padding:12px 14px;' +
+          'font-size:0.78em;color:#5a6470;line-height:1.9;margin-bottom:16px;">' +
+          '<div style="font-weight:700;color:#3a4450;margin-bottom:4px;">入るとどうなるか</div>' +
+          '✅ このカレンダーの予定が、あなたの月間カレンダーにも並びます<br>' +
+          '✅ <b>このカレンダーに書いた</b>予定は、参加している人に見えます<br>' +
+          '🔒 それ以外のあなたの予定は、誰にも見えません' +
+        '</div>' +
         '<div style="text-align:left;margin-bottom:16px;">' +
-          '<div style="font-size:0.76em;color:#8e8e8e;margin-bottom:5px;">このカレンダーでの表示名</div>' +
+          '<div style="font-size:0.76em;color:#8e8e8e;margin-bottom:5px;">このカレンダーでの呼び名</div>' +
           '<input id="inviteCardName" type="text" autocomplete="new-password" data-lpignore="true" value="' + _esc(_defName) + '" maxlength="20" placeholder="お名前" ' +
             'style="width:100%;padding:11px 12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;box-sizing:border-box;font-family:inherit;">' +
-          '<div style="font-size:0.72em;color:#b9b9b9;margin-top:5px;">他の参加者にはこの名前で表示されます</div>' +
+          '<div id="inviteCardNameHint" style="font-size:0.72em;color:#b9b9b9;margin-top:5px;">他の参加者にはこの名前で表示されます。あとから設定で変えられます</div>' +
         '</div>' +
         '<button onclick="_acceptInvite(\'' + code + '\')" ' +
           'style="width:100%;padding:14px;border:none;border-radius:12px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">参加する</button>' +
@@ -620,6 +648,26 @@ async function _acceptInvite(code) {
   var inp = document.getElementById('inviteCardName');
   var nm = inp ? (inp.value || '').trim() : '';
   var btn = document.querySelector('#inviteCardOverlay button');
+  // v0.46.2: 【権威】2026-09-07、名前を入れていない人が多い、との指摘。
+  // 実測すると、参加した人のうち名前が付いていたのは1人だけだった。
+  //
+  // 入力欄はあるが、空のまま参加できる。空なら誰も入れない。
+  // 招いた側にとっても、名前のない人が並ぶのは困る。誰が入ったか分からない。
+  //
+  // ここで止める。ただし「入れないと進めない」だけでは冷たいので、
+  // 後から変えられることを添える。名前は決めきらなくてよい、と伝える。
+  if (!nm) {
+    if (inp) {
+      inp.style.borderColor = '#e0a458';
+      inp.focus();
+    }
+    var _hint = document.getElementById('inviteCardNameHint');
+    if (_hint) {
+      _hint.style.color = '#c07a2a';
+      _hint.textContent = '呼び名を入れてください（あとから設定で変えられます）';
+    }
+    return;
+  }
   if (btn) { btn.disabled = true; btn.textContent = '参加しています…'; }
   var r = await joinSharedCalendarByCode(code, nm);
   if (!r || r.error) {
@@ -704,9 +752,29 @@ function _showInviteWelcome() {
         '</div>' +
         '<div style="background:#f6f8fb;border-radius:12px;padding:12px 14px;font-size:0.76em;' +
           'color:#7a8494;line-height:1.8;margin-bottom:18px;text-align:left;">' +
-          'こよみるは、ログインしなくても使えます。<br>' +
-          'ログインが要るのは、<b>共有カレンダー</b>だけです。<br>' +
-          '（Google・Discord・メールのどれかを選ぶだけ）' +
+          // v0.46.5: 【権威】2026-09-07、「ログインしなくても使えます」は
+          // 招待された人に言う言葉として間が抜けている、との指摘。そのとおり。
+          //
+          // それは新しく来た人向けの売り文句で、「試してから決められる」を伝えるもの。
+          // 招待リンクから来た人は、もう決めている。誰かに誘われて見に来た。
+          // その人に「使わなくてもいい」と言うのは、話が噛み合っていない。
+          //
+          // 知りたいのは「入ったら何が見えるか」だけ。それだけを書く。
+          'このカレンダーの予定が、あなたの月間カレンダーにも並びます。<br>' +
+          '<span style="color:#9aa3af;">ここに書いた予定だけが、参加している人に見えます。' +
+          'それ以外のあなたの予定は、誰にも見えません。</span>' +
+        '</div>' +
+        // v0.46.4: 【権威】2026-09-07、Googleが早いという根拠がない、
+        // ここまで書くのはやりすぎではないか、との指摘。両方そのとおり。
+        //
+        // Googleも二段階認証を設定していれば求められる。確かめずに断言していた。
+        // そして詰まった事例は1件。それで全員に長い注意書きを読ませようとしていた。
+        // ログインの手順を先に細かく説明すると、まだ何も起きていないのに
+        // 「面倒くさそう」という印象だけが残る。
+        //
+        // 書くのは、詰まったときに戻れることだけ。それなら短くて、嘘にならない。
+        '<div style="font-size:0.74em;color:#9aa3af;line-height:1.8;margin-bottom:16px;">' +
+          '途中で分からなくなったら、戻って別の方法を選べます。' +
         '</div>' +
         '<button id="inviteWelcomeLogin" style="width:100%;padding:13px;border:none;border-radius:12px;' +
           'background:#0b6bcb;color:#fff;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;' +
