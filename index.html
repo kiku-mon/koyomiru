@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.45.2075 ★ -->
+<!-- ★ CURRENT VERSION: v0.45.2080 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.45.2075';
+    const APP_VERSION = 'v0.45.2080';
   const APP_LAST_UPDATED = '2026-09-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -657,6 +657,20 @@ async function _acceptInvite(code) {
       window.linkSharedCalendarToLocal(_cid, _cname, null);
     }
   } catch (eL) { console.warn('[招待] 手元への取り込みに失敗:', eL && eL.message); }
+  // v0.45.2080: 【権威】2026-09-06、参加した相手の予定が届かない件を追う中で見つけた。
+  // 参加の直後に、所属の一覧（_myCalendarIds）を引き直していなかった。
+  //
+  // 取り込みはこの一覧に載ったカレンダーだけを問い合わせる。
+  // 参加しても一覧に入らなければ、そのカレンダーの予定は永久に降りてこない。
+  // 手元のチップには出るのに中身が空、という状態になる。
+  //
+  // 引き直してから、いま入ったカレンダーの中身を取り込む。
+  // これをしないと「参加しました」と言った直後の画面が空になる。
+  try {
+    if (typeof unifiedRefreshMyCalendarIds === 'function') await unifiedRefreshMyCalendarIds();
+    window._myCalIdsAt = Date.now();
+    if (typeof unifiedPullTasks === 'function') await unifiedPullTasks();
+  } catch (eJ) { console.warn('[招待] 参加直後の取り込みに失敗:', eJ && eJ.message); }
   // 参加したら、そのカレンダーが見える場所へ連れて行く。
   // 「参加しました」で終わると、どこを見ればいいか分からない。
   try {
@@ -29740,6 +29754,10 @@ function saveMsbEdit() {
     const KEY_WHITELIST = new Set([
       // コアデータ
       'allTasks', 'allSettings', 'deletedTaskIds', 'pendingDeletions', 'koyomiHidden', 'moneyLineHidden',
+      // v0.45.2076: 起動のたびに「未知のキー」と警告が出ていた6件。
+      // 実害は無いが、本物の異常が紛れて見えなくなる。見張りは静かでなければ働かない。
+      'koyomiru_visitor_id', 'koyomiru_dev_visitor', 'koyomiruSplashSeen',
+      'koyomiru_pw_reset_from_here', 'koyomiru_first_visit_done', 'mig_money_note_v3',
       // v0.45.1968: コメントの既読。KPAGの許可一覧に入れ忘れていた。
       'koyomiru_comment_read',
       // 徳・業・ログ
@@ -40779,8 +40797,27 @@ function _getVisitSource() {
     // リファラからの推定（noteやSNSからの遷移を拾う）
     var ref = document.referrer || '';
     if (ref.indexOf('note.com') !== -1) return 'note';
-    if (ref.indexOf('x.com') !== -1 || ref.indexOf('twitter.com') !== -1) return 'x';
+    if (ref.indexOf('x.com') !== -1 || ref.indexOf('twitter.com') !== -1 ||
+        ref.indexOf('t.co') !== -1) return 'x';
     if (ref.indexOf('discord') !== -1) return 'discord';
+
+    // v0.45.2077: 【権威】2026-09-06、URLに印を付けるのは踏みにくい、
+    // 裏で判定してほしい、との指摘。そのとおり。
+    // 配る側に手間をかけさせる設計は続かない。貼り忘れれば数えられなくなる。
+    //
+    // direct ばかりだったのは、印が無いからではなく見分けられていないから。
+    // Discordやスマホのアプリ内ブラウザは、リファラを送らないことがある。
+    // 送られてこない以上、リファラだけでは永久に分からない。
+    //
+    // アプリ内ブラウザは、名乗り（userAgent）に自分の名前を入れている。
+    // リファラが来ないときは、そちらで見分ける。
+    if (!ref) {
+      var ua = String(navigator.userAgent || '');
+      if (/Discord/i.test(ua)) return 'discord';
+      if (/Line\//i.test(ua)) return 'line';
+      if (/FBAN|FBAV|Instagram/i.test(ua)) return 'meta';
+      if (/Twitter/i.test(ua)) return 'x';
+    }
     if (ref && ref.indexOf(window.location.hostname) === -1) return 'other';
     return 'direct';
   } catch(e) { return 'direct'; }
@@ -40835,7 +40872,16 @@ async function _recordVisit() {
       is_first:     isFirst,
       is_logged_in: !!window._cloudIsLoggedIn,
       app_version:  (typeof APP_VERSION !== 'undefined') ? APP_VERSION : null,
-      is_dev:       _isDev
+      is_dev:       _isDev,
+      // v0.45.2076: 【権威】2026-09-06、誰が来たかを知りたい、との要望。
+      // これまでは端末の印しか記録しておらず、
+      // 訪問記録とアカウントを結びつける手段がなかった。
+      // 管理画面には8文字が並ぶだけで、誰なのか永久に分からない。
+      //
+      // ログインしている人だけ、アカウントのIDも残す。
+      // ログインしていない人は空。名乗っていない人を追う仕組みは作らない。
+      // メールアドレスは記録しない。管理画面に出す必要がないため。
+      user_id:      window._cloudUserId || null
     };
     // 同一端末・同一日の重複はUNIQUE制約で弾かれる。それは想定内なので無視する。
     var r = await window.supabaseClient.from('koyomiru_visits').insert(payload);
@@ -43153,23 +43199,91 @@ async function loadAdminVisitStats() {
           };
           listEl.innerHTML +=
             '<div style="margin-top:14px;padding-top:10px;border-top:1px solid #333;">' +
-            '<div style="color:#8ec5ff;font-weight:700;margin-bottom:6px;">🔍 一件ずつ（新しい順・最大500件）</div>' +
-            '<div style="font-size:0.72em;color:#666;margin-bottom:8px;line-height:1.6;">' +
-            '「自分」は除外されている分です。同じ8文字は同じ端末です。</div>' +
-            dr.data.map(function(row) {
-              var _me = row.is_dev === true;
-              return '<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:3px;' +
-                     'font-size:0.8em;line-height:1.5;' + (_me ? 'opacity:.55;' : '') + '">' +
-                '<span style="color:#8ec5ff;flex:0 0 auto;min-width:66px;">' + _fmt(row.visited_at) + '</span>' +
-                '<span style="color:' + (_me ? '#777' : '#c9c9c9') + ';flex:0 0 auto;min-width:64px;">' +
-                  (_me ? '自分' : escAttr(row.visitor || '?')) + '</span>' +
-                '<span style="color:#999;flex:1;min-width:0;">' + escAttr(row.source || 'direct') +
-                  (row.is_first ? ' <span style="color:#7fd18c;">新規</span>' : '') +
-                  (row.is_logged_in ? ' <span style="color:#8ec5ff;">ログイン済</span>' : '') +
-                  (row.app_version ? ' <span style="color:#666;">' + escAttr(row.app_version) + '</span>' : '') +
-                '</span>' +
+            // v0.45.2078: 【権威】2026-09-06、どのくらいの頻度で来ているかを見たい、との要望。
+            // 時系列の一覧だけでは「この人は何回来たか」が分からず、
+            // 定着した人と一度きりの人を、目で数えるしかなかった。
+            // 40人来て8人しか戻っていない、という一番大事な数字が人力でしか出せない。
+            //
+            // 人ごとにまとめる。自分は除く。回数の多い順。
+            (function() {
+              var _p = {}, _first = null;
+              dr.data.forEach(function(row) {
+                if (row.is_dev === true) return;
+                var k = row.visitor || '?';
+                if (!_p[k]) _p[k] = { n: 0, first: '', last: '', src: {}, who: '', ver: '' };
+                var d = String(row.visited_at || '').slice(0, 10);
+                _p[k].n++;
+                _p[k].last = _p[k].last || d;        // 新しい順に来るので最初が最終
+                _p[k].first = d;                      // 最後に見たものが最古
+                _p[k].src[row.source || 'direct'] = 1;
+                if (row.who && !_p[k].who) _p[k].who = row.who;
+                if (!_p[k].ver) _p[k].ver = row.app_version || '';
+              });
+              var _list = Object.keys(_p).map(function(k) { return { id: k, v: _p[k] }; })
+                .sort(function(a, b) { return b.v.n - a.v.n || (b.v.last > a.v.last ? 1 : -1); });
+              if (_list.length === 0) return '';
+              var _once = _list.filter(function(x) { return x.v.n === 1; }).length;
+              var _back = _list.length - _once;
+              return '<div style="margin-bottom:14px;">' +
+                '<div style="color:#8ec5ff;font-weight:700;margin-bottom:4px;">👥 人ごと（自分を除く・回数の多い順）</div>' +
+                '<div style="font-size:0.74em;color:#999;margin-bottom:7px;line-height:1.6;">' +
+                  '来た人 ' + _list.length + '人 ／ 2回以上 ' + _back + '人（' +
+                  Math.round(_back * 100 / _list.length) + '%）／ 一度きり ' + _once + '人</div>' +
+                _list.map(function(x) {
+                  var v = x.v, _srcs = Object.keys(v.src).join('・');
+                  return '<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:2px;' +
+                         'font-size:0.79em;line-height:1.5;' + (v.n === 1 ? 'opacity:.6;' : '') + '">' +
+                    '<span style="color:#c9c9c9;flex:0 0 auto;min-width:62px;">' + escAttr(x.id) + '</span>' +
+                    '<span style="color:' + (v.n >= 3 ? '#7fd18c' : '#999') + ';flex:0 0 auto;min-width:34px;">' +
+                      v.n + '回</span>' +
+                    '<span style="color:#999;flex:1;min-width:0;">' +
+                      escAttr(v.first) + '〜' + escAttr(v.last) + ' ' + escAttr(_srcs) +
+                      (v.who ? ' <span style="color:#c9a0ff;">' + escAttr(v.who) + '</span>' : '') +
+                      (v.ver ? ' <span style="color:#666;">' + escAttr(v.ver) + '</span>' : '') +
+                    '</span>' +
+                  '</div>';
+                }).join('') +
               '</div>';
-            }).join('') +
+            })() +
+            '<div style="color:#8ec5ff;font-weight:700;margin-bottom:6px;">🔍 その日ごとに、誰が来たか</div>' +
+            '<div style="font-size:0.72em;color:#666;margin-bottom:8px;line-height:1.6;">' +
+            '「自分」は除外されている分です。同じ8文字は同じ端末。' +
+            'アカウントの印があれば、参加者一覧と突き合わせられます。</div>' +
+            // v0.45.2076: 【権威】2026-09-06、その日ごとに誰が来たかの形にしたい、との要望。
+            // 新しい順に全部並べると、日付の切れ目が見えず、その日に誰が来たのかが読めない。
+            // 上の集計と同じ日付で束ねる。目が行き来しなくて済む。
+            (function() {
+              var _g = {}, _order = [];
+              dr.data.forEach(function(row) {
+                var d = String(row.visited_at || '').slice(0, 10);
+                if (!_g[d]) { _g[d] = []; _order.push(d); }
+                _g[d].push(row);
+              });
+              return _order.map(function(d) {
+                var _rows = _g[d];
+                var _others = _rows.filter(function(r) { return r.is_dev !== true; }).length;
+                return '<div style="margin-bottom:9px;">' +
+                  '<div style="color:#8ec5ff;font-weight:700;font-size:0.86em;margin-bottom:2px;">' +
+                    escAttr(d) + ' <span style="color:#999;font-weight:400;">' + _others + '人</span></div>' +
+                  _rows.map(function(row) {
+                    var _me = row.is_dev === true;
+                    return '<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:2px;' +
+                           'padding-left:8px;font-size:0.79em;line-height:1.5;' + (_me ? 'opacity:.5;' : '') + '">' +
+                      '<span style="color:#8ec5ff;flex:0 0 auto;min-width:42px;">' +
+                        escAttr(String(row.visited_at || '').slice(11, 16)) + '</span>' +
+                      '<span style="color:' + (_me ? '#777' : '#c9c9c9') + ';flex:0 0 auto;min-width:62px;">' +
+                        (_me ? '自分' : escAttr(row.visitor || '?')) + '</span>' +
+                      '<span style="color:#999;flex:1;min-width:0;">' + escAttr(row.source || 'direct') +
+                        (row.is_first ? ' <span style="color:#7fd18c;">新規</span>' : '') +
+                        (row.who ? ' <span style="color:#c9a0ff;">' + escAttr(row.who) + '</span>'
+                                 : (row.is_logged_in ? ' <span style="color:#8ec5ff;">ログイン済</span>' : '')) +
+                        (row.app_version ? ' <span style="color:#666;">' + escAttr(row.app_version) + '</span>' : '') +
+                      '</span>' +
+                    '</div>';
+                  }).join('') +
+                '</div>';
+              }).join('');
+            })() +
             '</div>';
         } else if (dr && dr.error) {
           listEl.innerHTML += '<div style="margin-top:12px;color:#666;font-size:0.78em;">' +
@@ -45018,7 +45132,7 @@ async function unifiedPushTasks() {
         toPush = toPush.filter(function(x) {
           var c = _cloudAt[x.id];
           if (!c) return true;                    // クラウドに無いものは送る
-          return !(c > (x.updated_at || ''));     // クラウドの方が新しいなら送らない
+          return !(_tsMs(c) > _tsMs(x.updated_at));   // 取り込み側と同じ物差しで比べる
         });
         if (toPush.length !== _before) {
           console.warn('[Unified] クラウドの方が新しい ' + (_before - toPush.length) +
@@ -45238,6 +45352,18 @@ function _syncFlushPendingRender() {
 }
 window._syncFlushPendingRender = _syncFlushPendingRender;
 
+// v0.45.2079: 時刻を数で比べる。書き方が違っても同じ物差しになる。
+//   手元    2026-09-06T14:33:00.123Z         （toISOString）
+//   クラウド 2026-09-06T14:33:00.123456+00:00（Postgres）
+// 文字列のままだと、同じ秒のときに判定が狂う。
+// 読めないものは0を返す。ここで例外を投げると同期そのものが止まる。
+function _tsMs(v) {
+  if (!v) return 0;
+  var t = Date.parse(v);
+  return isFinite(t) ? t : 0;
+}
+window._tsMs = _tsMs;
+
 async function unifiedPullTasks() {
   // v0.45.1776: 閲覧のみの間は取り込まない。
   // allTasks を上書きされると、見せている内容が消え、退避したデータとも食い違う。
@@ -45246,6 +45372,23 @@ async function unifiedPullTasks() {
   if (!window.supabaseClient) return null;
   if (window._myCalendarIds.length === 0) await unifiedRefreshMyCalendarIds();
   if (window._myCalendarIds.length === 0) return null;
+  // v0.45.2080: 【権威】2026-09-06、相手が共有カレンダーに書いた予定が届かず、
+  // アプリを再起動して初めて出てきた、との報告。
+  //
+  // 取り込みは _myCalendarIds に載っているカレンダーだけを問い合わせる。
+  // その一覧は、空のときしか引き直していなかった。
+  // 開いている最中に新しいカレンダーへ参加しても、一覧は古いまま。
+  // 45秒ごとの取り込みは、そのカレンダーを含まない問い合わせを繰り返す。
+  // 再起動で直ったのは、起動時に引き直しているからである。
+  //
+  // 時々引き直す。毎回だと問い合わせが倍になるので、2分に一度でよい。
+  try {
+    var _now = Date.now();
+    if (!window._myCalIdsAt || _now - window._myCalIdsAt > 120000) {
+      window._myCalIdsAt = _now;
+      await unifiedRefreshMyCalendarIds();
+    }
+  } catch (eIds) { console.warn('[Unified] 所属の引き直しに失敗:', eIds && eIds.message); }
   // v0.45.1893: 【権威】2026-09-02、レッドチーム演習より。
   // 共有カレンダーの取得に上限が無かった。メンバーが10万件書き込めば、
   // 相手が開いた瞬間に全部降りてきてブラウザが固まる。
@@ -45317,8 +45460,13 @@ async function unifiedPullTasks() {
     if (myDeviceId && incoming.ownerId === myDeviceId && local.ownerId === myDeviceId && local.id === incoming.id) {
       return; // 自分自身の書き込みの折り返し・ローカルは既に最新
     }
-    var lu = local.updatedAt || local.createdAt || '';
-    var cu = row.updated_at || '';
+    // v0.45.2079: 時刻を文字列のまま比べていた。書き方が両者で違う。
+    //   手元    2026-09-06T14:33:00.123Z         （toISOString）
+    //   クラウド 2026-09-06T14:33:00.123456+00:00（Postgres）
+    // 分単位の違いなら正しく比べられるが、同じ秒のときは狂う。
+    // 数で比べれば、書き方に関わらず正しい。
+    var lu = _tsMs(local.updatedAt || local.createdAt);
+    var cu = _tsMs(row.updated_at);
     if (cu > lu) { localMap[row.id] = incoming; changed = true; } // 同時刻・ローカルが新しい場合はローカル優先（安全側）
   });
   try { localStorage.setItem('deletedTaskIds', JSON.stringify([...deletedIds])); } catch(e) {}
@@ -45347,9 +45495,32 @@ async function unifiedPullTasks() {
       var _pullSnapshot = window._unifiedLastPushedSnapshot || {};
       var _pulledIds = {};
       r.data.forEach(function(row) { if (row && row.id) _pulledIds[row.id] = true; });
+      // v0.45.2080: 【権威】2026-09-06、共有カレンダーで自分が編集したものが
+      // 相手に永久に届かない、との報告。ここが真因だった。
+      //
+      // 取り込みのあと、クラウドにも存在する予定すべてに「送信済み」の印を付けていた。
+      // 印に使っているのは取り込み後の手元の値（t.updatedAt）である。
+      //
+      // 編集した直後に取り込みが走ると、こうなる。
+      //   編集     → updatedAt = T2（手元だけが新しい）
+      //   取り込み → クラウドは T1 のまま。なのに印には T2 を書く
+      //   送信     → 前回の印と一致するので「変わっていない」と見なし、送らない
+      // 編集が一度も送られないまま、送信済みとして葬られていた。
+      //
+      // v0.45.1549 は「手元だけにある変更を守る」ために書かれたが、
+      // 守れていたのは「クラウドに無いもの」だけで、
+      // 「クラウドにあるが手元のほうが新しいもの」は素通りしていた。
+      //
+      // 手元がクラウドより進んでいるときは、印を付けない。次の送信で送られる。
+      var _cloudAtById = {};
+      r.data.forEach(function(row) {
+        if (!row || !row.id) return;
+        _cloudAtById[row.id] = (row.data && row.data.updatedAt) ? row.data.updatedAt : (row.updated_at || '');
+      });
       allTasks.forEach(function(t) {
         if (!t || !t.id) return;
         if (!_pulledIds[t.id]) return;   // 手元だけにある変更は「未送信」のまま残す
+        if (_tsMs(t.updatedAt || t.createdAt) > _tsMs(_cloudAtById[t.id])) return; // 手元が新しい＝まだ送っていない
         _pullSnapshot[t.id] = t.updatedAt || t.createdAt || '';
       });
       window._unifiedLastPushedSnapshot = _pullSnapshot;
