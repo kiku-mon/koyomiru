@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.30 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.31 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.30';
+    const APP_VERSION = 'v0.46.31';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -3187,6 +3187,15 @@ function _showInviteWelcome() {
     body.view-only-mode .koyomiru-fab,
     body.view-only-mode .koyomiru-help-fab,
     body.view-only-mode .nav-tabs,
+    /* v0.46.31: 【権威】2026-09-07、見るだけの人には見ることが全てなので、
+       関係ないものは消して見やすくする、との方針。
+       きくモン歴の帯は、その人の歴ではない。「7日目」と出ていたが、
+       それは持ち主の歩みであって、見に来た人には意味がない。
+       持ち主の私的なものを、招かれただけの人に見せる必要もない。 */
+    body.view-only-mode #monthlyEraLabel,
+    body.view-only-mode #dailyEraLabel,
+    body.view-only-mode #weeklyEraLabel,
+    body.view-only-mode #yearlyEraLabel,
     body.view-only-mode #monthlySidebarAddBtn,
     body.view-only-mode .monthly-sidebar-edit-form,
     body.view-only-mode #msbCommentArea {
@@ -8910,7 +8919,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.30</div>
+          🆕 2026-09-07 &nbsp;v0.46.31</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -23720,6 +23729,11 @@ function saveMsbEdit() {
     }
     // タスク完了トグル（ID版）
     function toggleTaskById(taskId) {
+      // v0.46.30: 見るだけの間は完了を切り替えない。
+      // 保存口（saveAllTasks）は塞いであるので害は出ないが、
+      // 押せば画面上は完了になり、描き直したときに戻る。
+      // 「押したのに戻った」は、壊れていると思わせる。何も起きないようにする。
+      if (window._viewOnlyBackup) return;
       const task = allTasks.find(t => t.id === taskId);
       if (task) {
         const wasCompleted = task.completed;
@@ -42329,7 +42343,17 @@ async function openViewOnlyMode(token) {
     var _vcId = 'viewonly-cal';
     allSettings.calendar = allSettings.calendar || {};
     allSettings.calendar.list = [{
-      id: _vcId, name: calName, color: '#7c9cbf', visible: true, symbol: '◎'
+      // v0.46.31: 【権威】2026-09-07、見るだけの色が灰色で見にくい、
+      // もっと明るい色にすべきではないか、との指摘。測ったところそのとおりだった。
+      // #7c9cbf は白文字との明るさの比が2.9。目安の4.5に届いておらず、
+      // 帯の上の文字が読みにくい状態だった。
+      //
+      // 元のカレンダーの色は届かない（fetchByViewToken が返していない）ので、
+      // 見るだけ用の色を1つ決める。候補を測って #4a6fa5 を選んだ。
+      //   比5.1で白文字が読める／こよみるの他の場所でも使っており浮かない
+      // 明るくしすぎない理由：見るだけの人にとって、これは唯一のカレンダーである。
+      // 派手な色は「特別な状態」を意味するが、その人にとっては普通の画面である。
+      id: _vcId, name: calName, color: '#4a6fa5', visible: true, symbol: '◎'
     }];
     if (typeof calendars !== 'undefined') calendars = allSettings.calendar.list;
     activeCalendarIds = null;   // 全部表示
@@ -42382,7 +42406,12 @@ async function openViewOnlyMode(token) {
       '<span style="flex:1;line-height:1.5;">' +
         '<b>' + _esc(calName) + '</b>' +
         '<span style="opacity:0.75;"> — 閲覧のみ</span><br>' +
-        '<span style="font-size:11.5px;opacity:0.75;">書き込むには、送ってくれた方に招待をお願いしてください</span>' +
+        // v0.46.31: 【権威】2026-09-07、日付を押すと詳しく見られることを知らせるべき、との指摘。
+        // 押せるようになっても、押せると分からなければ誰も押さない。
+        // そして見るだけの人にとって、これは唯一のカレンダーである。
+        // 「書き込めない」より「こう見られる」を先に伝える。
+        '<span style="font-size:12px;opacity:0.85;">日付を押すと、その日の予定を詳しく見られます</span>' +
+        '<br><span style="font-size:11px;opacity:0.6;">書き込むには、送ってくれた方に招待をお願いしてください</span>' +
       '</span>' +
       '<button onclick="closeViewOnlyMode()" style="flex-shrink:0;padding:7px 13px;border:none;border-radius:8px;background:rgba(255,255,255,0.2);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">終了</button>';
     document.body.appendChild(bar);
