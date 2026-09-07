@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.14 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.15 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.14';
+    const APP_VERSION = 'v0.46.15';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8892,7 +8892,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.14</div>
+          🆕 2026-09-07 &nbsp;v0.46.15</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -37954,7 +37954,52 @@ function renderDeckShop(filterCategory) {
   window.renderGantView   = renderGantView;
 
   // 横向き時：志エリアトグル
-  function toggleGantBlueprintLandscape() {
+  // v0.46.15: 【権威】2026-09-07、月間の印刷ボタンを押しても何も起きない、との報告。
+// 調べると printMonthlyCalendar / printMonthlyCalendarPlain が両方とも存在しなかった。
+// 印刷用のCSS（body.print-monthly・body.print-monthly-plain）は115箇所も残っているのに、
+// 呼ぶ側の関数だけが、どこかの編集で失われていた。
+// ボタンは押せて、色も変わり、何も起きない。第7条そのものである。
+//
+// 印はbodyのclassで付ける。CSSがそれを見て、印刷用の見た目に切り替える。
+// 印刷が終わったら必ず外す。外し損ねると画面が壊れたままになる。
+function _printMonthlyWith(cls) {
+  try {
+    if ((localStorage.getItem('currentView') || '') !== 'monthly') {
+      if (typeof switchView === 'function') switchView('monthly');
+    }
+    // 固定中は描き直しが止まっているので、印刷前に最新の状態にする。
+    var _wasLocked = !!window._monthlyLocked;
+    if (_wasLocked) window._monthlyLocked = false;
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+
+    document.body.classList.add(cls);
+    var _restore = function() {
+      document.body.classList.remove(cls);
+      if (_wasLocked) window._monthlyLocked = true;
+      window.removeEventListener('afterprint', _restore);
+    };
+    window.addEventListener('afterprint', _restore);
+    // afterprint が来ない環境（一部のスマホ）に備えて、時間でも戻す。
+    setTimeout(_restore, 60000);
+
+    // classが効いてから印刷を呼ぶ。同じ回で呼ぶと、印刷用の見た目になる前に撮られる。
+    setTimeout(function() {
+      try { window.print(); }
+      catch (e) { _restore(); console.warn('[印刷] 開けませんでした:', e && e.message); }
+    }, 120);
+  } catch (e) {
+    document.body.classList.remove(cls);
+    console.warn('[印刷] 失敗:', e && e.message);
+    if (typeof showToast === 'function') showToast('⚠️ 印刷を開けませんでした');
+  }
+}
+
+function printMonthlyCalendar() { _printMonthlyWith('print-monthly'); }
+function printMonthlyCalendarPlain() { _printMonthlyWith('print-monthly-plain'); }
+window.printMonthlyCalendar = printMonthlyCalendar;
+window.printMonthlyCalendarPlain = printMonthlyCalendarPlain;
+
+function toggleGantBlueprintLandscape() {
     var bp = document.getElementById('gantBlueprintArea');
     var gv = document.getElementById('grandVisionBanner');
     var btn = document.getElementById('gantLandscapeBtn');
@@ -66890,6 +66935,26 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _r77ok = !!(_r77hasMany && _r77read && _r77safe && _r77strict);
        } catch(e) {}
        _checkResult('第77条', _r77ok, '入力記号の衝突検査：増やした記号が読め、伏せ字を誤検知せず、書き損じは見逃さない');
+
+       // v0.46.15: onclickから呼ばれる関数が、全部実在するかを毎回数える。
+       // 印刷ボタンは、CSSが115箇所も残っているのに関数だけが消えていた。
+       // ボタンは押せて色も変わり、何も起きない。押した人には壊れたと分からない。
+       var _r7ok = false, _r7missing = [];
+       try {
+         var _r7src = document.documentElement.innerHTML;
+         var _r7calls = (_r7src.match(/onclick="(?:window\.)?[A-Za-z_][\w]*\s*\(/g) || [])
+           .map(function(x) { return x.replace(/^onclick="(?:window\.)?/, '').replace(/\s*\($/, ''); });
+         var _r7seen = {};
+         _r7calls.forEach(function(f) {
+           if (_r7seen[f] || f === 'if') return;
+           _r7seen[f] = true;
+           if (typeof window[f] !== 'function') _r7missing.push(f);
+         });
+         _r7ok = (_r7missing.length === 0);
+       } catch(e) {}
+       _checkResult('第7条·押せるボタン', _r7ok,
+         _r7ok ? 'onclickから呼ぶ関数が全て実在する'
+               : '実在しない関数: ' + _r7missing.slice(0, 6).join(', '));
 
        // v0.46.9: 第78条【利用者への案内は、機能を足した版のうちに更新する】
        // お知らせの記載と APP_VERSION がずれていないかを、ここでも見る。
