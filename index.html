@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.32 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.33 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.32';
+    const APP_VERSION = 'v0.46.33';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8919,7 +8919,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.32</div>
+          🆕 2026-09-07 &nbsp;v0.46.33</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -14331,6 +14331,13 @@ function myDeckApply(idx) {
       localStorage.setItem('mig_display_scope_empty_v1', '1');
     }
     function loadAllTasks() {
+      // v0.46.33: 見るだけリンクを開いている最中は、手元の予定を読み込まない。
+      // 読み込めば、見せる用に入れ替えた allTasks を上書きし、
+      // 持ち主の予定が招かれただけの人に見えてしまう。
+      if (window._viewOnlyPending || window._viewOnlyBackup) {
+        console.warn('[見るだけ] 手元の予定の読み込みを止めました');
+        return;
+      }
       loadCalendars();
       getOrCreateDeviceId(); // 初回起動時にdeviceIdを発行
       const saved = localStorage.getItem('allTasks');
@@ -42303,10 +42310,23 @@ async function openViewOnlyMode(token) {
   // 手順：取ってきた予定を allTasks に入れ、月間へ切り替え、書き込みの入口だけ塞ぐ。
   // 手元のデータは触らない（この端末で使っている人の予定を壊さないため、
   // 元のデータを退避してから差し替え、閉じるときに戻す）。
+  // v0.46.33: 【権威】2026-09-07、見るだけリンクなのに他のカレンダーの予定
+  // （過去問・民法1・支部開けなど）が出る、最悪中の最悪、との報告。
+  // 「消す前に処理が走って描画している」との読みが当たっていた。
+  //
+  // この関数は起動の途中で呼ばれ、await で通信を待つ。
+  // 待っている間、起動処理は先へ進み、loadAllTasks() が手元の予定を読み込む。
+  // 順番次第で、見せる用に入れ替えたはずの allTasks が上書きされる。
+  // 上書きされれば、持ち主の予定が招かれただけの人に丸見えになる。
+  //
+  // 通信を待つ前に印を立てる。印がある間、手元の予定は読み込ませない。
+  // 待ってから立てるのでは遅い。競争に負ける。
+  window._viewOnlyPending = true;
   try {
     var r = await fetchByViewToken(token);
     var rows = (r && !r.error && r.data) ? r.data : null;
     if (!rows || rows.length === 0) {
+      window._viewOnlyPending = false;   // v0.46.33: 開けなかったら印を下ろす
       _showViewLinkError();
       return;
     }
@@ -42365,6 +42385,9 @@ async function openViewOnlyMode(token) {
     activeCalendarIds = null;   // 全部表示
 
     // 取ってきた予定を流し込む
+    // ここまで来れば _viewOnlyBackup が立っているので、pending の役目は終わり。
+    // 下ろし忘れると、閉じたあとも手元の予定が読めなくなる。
+    window._viewOnlyPending = false;
     allTasks = rows.map(function(row) {
       var t = Object.assign({}, row.data || {});
       t.calendarId = _vcId;
@@ -42428,6 +42451,8 @@ async function openViewOnlyMode(token) {
       showToast('「' + calName + '」を閲覧のみで開きました', {type:'ok'});
     }
   } catch(e) {
+    window._viewOnlyPending = false;   // v0.46.33: 落ちても印は下ろす。
+    // 下ろさないと、この端末では二度と手元の予定が読めなくなる。
     console.warn('[見るだけ] 表示に失敗:', e && e.message);
     _showViewLinkError();
   }
