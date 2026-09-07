@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.16 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.18 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.16';
+    const APP_VERSION = 'v0.46.18';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8892,7 +8892,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.16</div>
+          🆕 2026-09-07 &nbsp;v0.46.18</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -43544,7 +43544,10 @@ async function loadAdminVisitStats() {
                     '</div>';
               };
               return '<div style="margin-bottom:14px;">' +
-                '<div style="color:#8ec5ff;font-weight:700;margin-bottom:4px;">👥 人ごと（自分を除く・回数の多い順）</div>' +
+                // v0.46.17: 【権威】2026-09-07、日付ごとの合計と人ごとの人数が合わない、との気づき。
+                // 上の訪問統計は直近14日、この一覧は全期間を見ている。役割が違うので数え方はこのままでよいが、
+                // 同じ画面に並んでいて期間が書かれていないため、足しても合わないことが分からない。
+                '<div style="color:#8ec5ff;font-weight:700;margin-bottom:4px;">👥 人ごと（全期間・自分を除く・回数の多い順）</div>' +
                 '<div style="font-size:0.74em;color:#999;margin-bottom:7px;line-height:1.6;">' +
                   '来た人 ' + _list.length + '人 ／ 2回以上 ' + _back + '人（' +
                   Math.round(_back * 100 / _list.length) + '%）／ 一度きり ' + _once + '人</div>' +
@@ -43616,7 +43619,13 @@ async function loadAdminVisitStats() {
             (function() {
               var _g = {}, _order = [];
               dr.data.forEach(function(row) {
-                var d = String(row.visited_at || '').slice(0, 10);
+                // v0.46.18: 【権威】2026-09-07、日付ごとの人数と明細の行数が
+                // 15日中10日でずれていた。原因は日付の決め方が上下で違ったこと。
+                // 集計側（stats）は v0.46.14 で日本時間に直したが、
+                // 明細側はUTCのまま slice(0,10) で切っていた。9時間ずれる。
+                // 夜の訪問が、上と下で別の日に入っていた。第79条そのもの。
+                // DB側が日本時間で決めた visit_day を使う。
+                var d = String(row.visit_day || row.visited_at || '').slice(0, 10);
                 if (!_g[d]) { _g[d] = []; _order.push(d); }
                 _g[d].push(row);
               });
