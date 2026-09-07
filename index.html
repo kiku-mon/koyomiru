@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.21 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.23 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.21';
+    const APP_VERSION = 'v0.46.23';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8892,7 +8892,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.21</div>
+          🆕 2026-09-07 &nbsp;v0.46.23</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -43503,11 +43503,27 @@ async function loadAdminVisitStats() {
               var _rest = _list.length - _shown.length;
               var _once = _list.filter(function(x) { return x.visits === 1; }).length;
               var _back = _list.length - _once;
-              var _label = function(x) {
-                if (x.display_name) return escAttr(x.display_name);
-                if (x.uid) return escAttr(x.uid);
-                return '<span style="color:#5f6672;">UID未取得</span>';
-              };
+                              // v0.46.22: 【権威】2026-09-07、UID・表示名・端末IDの3つを並べてほしい、との要望。
+                // これまではUIDか名前のどちらかしか出しておらず、
+                // 「38bd69bf」と「22a40742」が同じ人の別の情報だと分からなかった。
+                // 3つとも常に同じ位置に出す。空なら「—」を置いて、桁を揃える。
+                // v0.46.23: 【権威】2026-09-07、何の値かを頭に書いてほしい、との指摘。
+                // 値だけ3つ並べても、どれがUIDでどれが端末IDか読む側には分からない。
+                // 「UID:」「表示名:」「端末:」と書く。桁を揃えるより、何かが分かるほうが先。
+                var _lbl = function(name, val, valColor, bold) {
+                  return '<span style="color:#7a8494;">' + name + ':</span>' +
+                         '<span style="color:' + valColor + ';' + (bold ? 'font-weight:700;' : '') + '">' +
+                           val + '</span>';
+                };
+                var _label = function(x) {
+                  return _lbl('UID', x.uid ? escAttr(x.uid) : '未取得',
+                              x.uid ? '#c9a0ff' : '#7a8494', !!x.uid) +
+                         ' ' +
+                         _lbl('表示名', x.display_name ? escAttr(x.display_name) : '—',
+                              x.display_name ? '#e6e6e6' : '#7a8494', false) +
+                         ' ' +
+                         _lbl('端末', escAttr(x.visitor), '#9aa6b8', false);
+                };
               // v0.46.1: 行の組み立てを関数にする。上位60人と残りで同じものを使う。
               var _row = function(x) {
                 var _key = _visitorNoteKey(x);
@@ -43515,7 +43531,7 @@ async function loadAdminVisitStats() {
                     var _nid = 'vn_' + String(_key).replace(/[^a-zA-Z0-9]/g, '');
                     return '<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:2px;' +
                            'font-size:0.92em;line-height:1.75;' + (x.visits === 1 ? 'opacity:.6;' : '') + '">' +
-                      '<span style="flex:0 0 auto;min-width:84px;color:#c9a0ff;font-weight:700;">' + _label(x) + '</span>' +
+                      '<span style="flex:1 1 auto;min-width:0;">' + _label(x) + '</span>' +
                       '<span style="color:' + (x.visits >= 3 ? '#7fd18c' : '#999') + ';flex:0 0 auto;min-width:34px;">' +
                         x.visits + '回</span>' +
                       '<span style="color:#999;flex:1;min-width:0;">' +
@@ -43523,7 +43539,7 @@ async function loadAdminVisitStats() {
                         (x.days_since === 0 ? ' <span style="color:#7fd18c;">今日</span>' : '') +
                         ' ' + escAttr(x.sources || '') +
                         (x.devices > 1 ? ' <span style="color:#9aa6b8;">' + x.devices + '台</span>' : '') +
-                        ' <span style="color:#9aa6b8;">端末' + escAttr(x.visitor) + '</span>' +
+                        // v0.46.22: 端末IDは左の見出し側に移した。ここでは出さない。
                         (x.last_version ? ' <span style="color:#666;">' + escAttr(x.last_version) + '</span>' : '') +
                       '</span>' +
                       // v0.45.2085: メモの入口。押すと開き、もう一度押すと閉じて保存する。
@@ -43684,13 +43700,22 @@ async function loadAdminVisitStats() {
                         // 束ねる鍵と表示が別の時間帯を見ていれば、並びは必ず崩れる。
                         // 時刻もDB側が日本時間で返した値を使う。切る場所を2つ持たない。
                         escAttr(row.visit_time || String(row.visited_at || '').slice(11, 16)) + '</span>' +
-                      '<span style="flex:0 0 auto;min-width:74px;">' +
-                        (_me ? '<span style="color:#777;">自分</span>'
-                             : (row.who ? '<b style="color:#c9a0ff;">' + escAttr(row.who) + '</b>'
-                                        : '<span style="color:#9aa6b8;">UID未取得</span>')) + '</span>' +
+                      // v0.46.22: 人ごとの一覧と同じ並びに揃える。UID・表示名・端末ID。
+                      // 片方だけ直せば、また同じものが別の形で並ぶ。
+                      // v0.46.23: 人ごとの一覧と同じ書き方に揃える。
+                      '<span style="flex:1 1 auto;min-width:0;">' +
+                        (_me
+                          ? '<span style="color:#8a8a8a;">自分</span>'
+                          : '<span style="color:#7a8494;">UID:</span>' +
+                            '<span style="color:' + (row.who ? '#c9a0ff' : '#7a8494') + ';' +
+                              (row.who ? 'font-weight:700;' : '') + '">' +
+                              (row.who ? escAttr(row.who) : '未取得') + '</span>' +
+                            ' <span style="color:#7a8494;">端末:</span>' +
+                            '<span style="color:#9aa6b8;">' + escAttr(row.visitor || '?') + '</span>') +
+                      '</span>' +
                       '<span style="color:#999;flex:1;min-width:0;">' + escAttr(row.source || 'direct') +
                         (row.is_first ? ' <span style="color:#7fd18c;">新規</span>' : '') +
-                        (!_me ? ' <span style="color:#9aa6b8;">端末' + escAttr(row.visitor || '?') + '</span>' : '') +
+                        // v0.46.22: 端末IDは左に移した。ここでは出さない。
                         (row.is_logged_in ? ' <span style="color:#8ec5ff;">ログイン済</span>' : '') +
                         (row.app_version ? ' <span style="color:#666;">' + escAttr(row.app_version) + '</span>' : '') +
                       '</span>' +
