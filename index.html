@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.28 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.30 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.28';
+    const APP_VERSION = 'v0.46.30';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -3192,9 +3192,19 @@ function _showInviteWelcome() {
     body.view-only-mode #msbCommentArea {
       display: none !important;
     }
-    /* 升目のクリックも無効にする（新規作成が始まるため） */
+    /* v0.46.30: 【権威】2026-09-07、見るだけリンクで月間しか見られず、
+       日付を押してその日の予定を詳しく見たい、との要望。
+       これまでは升目ごと pointer-events:none で押せなくしていた。
+       新規作成が始まるのを防ぐためだが、見ることまで止めていた。
+       見るだけリンクは「見るためのもの」なので、見る動きは通す。
+       書き込みの入口（＋・編集・削除・コメント）は上の指定で消えているので、
+       押しても書けない。押せるのは、開くことだけ。 */
     body.view-only-mode .monthly-day-cell {
-      cursor: default !important;
+      cursor: pointer;
+    }
+    /* 升目の空きを押したときの新規作成だけを止める。
+       予定そのものや日付の数字は押せるままにする。 */
+    body.view-only-mode .monthly-day-cell > .monthly-cell-blank {
       pointer-events: none;
     }
     /* 予定の完了チェックや削除も押させない */
@@ -8900,7 +8910,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.28</div>
+          🆕 2026-09-07 &nbsp;v0.46.30</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -43532,23 +43542,30 @@ async function loadAdminVisitStats() {
                 var _key = _visitorNoteKey(x);
                     var _note = _getVisitorNote(x);
                     var _nid = 'vn_' + String(_key).replace(/[^a-zA-Z0-9]/g, '');
-                    return '<div style="display:flex;gap:6px;align-items:baseline;margin-bottom:2px;' +
-                           'font-size:0.92em;line-height:1.75;' + (x.visits === 1 ? 'opacity:.6;' : '') + '">' +
-                      '<span style="flex:1 1 auto;min-width:0;">' + _label(x) + '</span>' +
-                      '<span style="color:' + (x.visits >= 3 ? '#7fd18c' : '#999') + ';flex:0 0 auto;min-width:34px;">' +
-                        x.visits + '回</span>' +
-                      '<span style="color:#999;flex:1;min-width:0;">' +
-                        escAttr(x.first_at) + '〜' + escAttr(x.last_at) +
-                        (x.days_since === 0 ? ' <span style="color:#7fd18c;">今日</span>' : '') +
-                        ' ' + escAttr(x.sources || '') +
-                        (x.devices > 1 ? ' <span style="color:#9aa6b8;">' + x.devices + '台</span>' : '') +
-                        // v0.46.22: 端末IDは左の見出し側に移した。ここでは出さない。
-                        (x.last_version ? ' <span style="color:#666;">' + escAttr(x.last_version) + '</span>' : '') +
-                      '</span>' +
-                      // v0.45.2085: メモの入口。押すと開き、もう一度押すと閉じて保存する。
-                      '<span style="flex:0 0 auto;cursor:pointer;color:' + (_note ? '#e0c46c' : '#9aa6b8') + ';" ' +
-                        'title="メモを書く" onclick="window._toggleVisitorNote(\'' + escAttr(_key) + '\',\'' + _nid + '\')">✎</span>' +
-                    '</div>' +
+              // v0.46.30: 【権威】2026-09-07、文字を大きくしたら縦に伸びて読み疲れる、との指摘。
+              // 1行にUID・表示名・端末・回数・期間・経路・版を全部詰めていた。
+              // 狭い画面では全部が折り返し、1人が5行以上になる。
+              // 2段に分ける。1段目に「誰か」、2段目に「いつ・どこから」。
+              // 折り返しを許す（flex-wrap）ので、詰まらずに済む。
+              return '<div style="margin-bottom:7px;padding-bottom:6px;' +
+                     'border-bottom:1px solid rgba(255,255,255,0.06);' +
+                     (x.visits === 1 ? 'opacity:.62;' : '') + '">' +
+                // 1段目：誰か＋回数＋メモの入口
+                '<div style="display:flex;gap:8px;align-items:baseline;font-size:0.92em;line-height:1.6;">' +
+                  '<span style="flex:1 1 auto;min-width:0;">' + _label(x) + '</span>' +
+                  '<span style="flex:0 0 auto;color:' + (x.visits >= 3 ? '#7fd18c' : '#9aa6b8') + ';font-weight:700;">' +
+                    x.visits + '回</span>' +
+                  '<span style="flex:0 0 auto;cursor:pointer;color:' + (_note ? '#e0c46c' : '#9aa6b8') + ';" ' +
+                    'title="メモを書く" onclick="window._toggleVisitorNote(\'' + escAttr(_key) + '\',\'' + _nid + '\')">✎</span>' +
+                '</div>' +
+                // 2段目：いつ・どこから・どの版
+                '<div style="font-size:0.86em;color:#9aa6b8;line-height:1.6;">' +
+                  escAttr(x.first_at) + ' 〜 ' + escAttr(x.last_at) +
+                  (x.days_since === 0 ? ' <span style="color:#7fd18c;">今日</span>' : '') +
+                  ' ・ ' + escAttr(x.sources || '') +
+                  (x.devices > 1 ? ' ・' + x.devices + '台' : '') +
+                  (x.last_version ? ' ・' + escAttr(x.last_version) : '') +
+                '</div>' +
                     // 書いてあるメモは、開かなくても見える。開くのは書くときだけ。
                     (_note
                       ? '<div style="font-size:0.88em;color:#c9b37a;line-height:1.6;margin:0 0 4px 90px;' +
@@ -43560,7 +43577,8 @@ async function loadAdminVisitStats() {
                         'border-radius:6px;background:#0f1622;color:#e6e6e6;font-size:0.8em;' +
                         'font-family:inherit;line-height:1.6;resize:vertical;">' + escAttr(_note) + '</textarea>' +
                       '<div style="font-size:0.84em;color:#9aa6b8;margin-top:3px;">✎ をもう一度押すと保存します</div>' +
-                    '</div>';
+                  '</div>' +
+                '</div>';   // v0.46.30: 1人ぶんの外枠を閉じる
               };
               return '<div style="margin-bottom:14px;">' +
                 // v0.46.17: 【権威】2026-09-07、日付ごとの合計と人ごとの人数が合わない、との気づき。
