@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.20 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.21 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.20';
+    const APP_VERSION = 'v0.46.21';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8892,7 +8892,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.20</div>
+          🆕 2026-09-07 &nbsp;v0.46.21</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -43555,20 +43555,58 @@ async function loadAdminVisitStats() {
                 (function() {
                   var _lines = [];
                   var _lost = _shown.filter(function(x) { return x.visits >= 3 && x.days_since >= 7; });
-                  if (_lost.length) _lines.push('<div style="color:#e0a458;">🔔 よく来ていたのに7日以上来ていない ' +
-                    _lost.length + '人：' + _lost.slice(0, 6).map(function(x) {
-                      return (x.display_name || x.uid || '端末' + x.visitor) + '（' + x.days_since + '日前）';
-                    }).join('・') + (_lost.length > 6 ? ' ほか' : '') + '</div>');
+                  // v0.46.21: 1行にべた書きで読みにくい、との指摘。
+                  // 見出しと中身を分け、1件ずつ改行する。
+                  // 声をかける相手を選ぶ画面なので、名前が拾えなければ意味がない。
+                  var _block = function(icon, color, title, items) {
+                    if (!items.length) return '';
+                    return '<div style="margin-bottom:7px;">' +
+                      '<div style="color:' + color + ';font-weight:700;margin-bottom:3px;">' +
+                        icon + ' ' + title + ' <span style="font-weight:400;">' + items.length + '人</span></div>' +
+                      items.slice(0, 8).map(function(t) {
+                        return '<div style="color:#c9c9c9;padding-left:16px;">・' + t + '</div>';
+                      }).join('') +
+                      (items.length > 8
+                        ? '<div style="color:#9aa6b8;padding-left:16px;">ほか' + (items.length - 8) + '人</div>'
+                        : '') +
+                    '</div>';
+                  };
+                  if (_lost.length) _lines.push(_block('🔔', '#e0a458', 'よく来ていたのに7日以上来ていない',
+                    _lost.map(function(x) {
+                      return escAttr(x.display_name || x.uid || '端末' + x.visitor) +
+                        ' <span style="color:#9aa6b8;">' + x.days_since + '日前</span>';
+                    })));
+                  // v0.46.21: 【権威】2026-09-07、「古い版のまま51人」は本当か、との疑い。
+                  // 文字列で版を比べていた。v0.46.9 と v0.46.20 を文字で比べると
+                  // 8文字目が 9 > 2 なので、9のほうが新しいと判定される。
+                  // 数で比べる。版は文字ではなく数の並びである。
+                  //
+                  // 51人という数も多すぎた。「7日以内に来た人」に絞る。
+                  // 1か月来ていない人が古い版なのは当たり前で、知らせる意味がない。
+                  // 知りたいのは「いま使っているのに古い人」である。
+                  var _vnum = function(v) {
+                    return String(v || '').replace(/^v/, '').split('.').map(function(n){ return Number(n) || 0; });
+                  };
+                  var _vcmp = function(a, b) {
+                    var A = _vnum(a), B = _vnum(b);
+                    for (var i = 0; i < 3; i++) { if (A[i] !== B[i]) return A[i] - B[i]; }
+                    return 0;
+                  };
                   var _cur = (typeof APP_VERSION === 'string') ? APP_VERSION : '';
                   var _old = _shown.filter(function(x) {
-                    return x.last_version && _cur && x.last_version < _cur && x.days_since <= 14;
+                    return x.last_version && _cur && _vcmp(x.last_version, _cur) < 0 && x.days_since <= 7;
                   });
-                  if (_old.length) _lines.push('<div style="color:#e0a458;">⚠️ 古い版のまま使っている ' +
-                    _old.length + '人：' + _old.slice(0, 6).map(function(x) {
-                      return (x.display_name || x.uid || '端末' + x.visitor) + '（' + x.last_version + '）';
-                    }).join('・') + (_old.length > 6 ? ' ほか' : '') + '</div>');
+                  if (_old.length) _lines.push(_block('⚠️', '#e0a458', '7日以内に来たが、古い版のまま',
+                    _old.map(function(x) {
+                      return escAttr(x.display_name || x.uid || '端末' + x.visitor) +
+                        ' <span style="color:#9aa6b8;">' + escAttr(x.last_version) + '</span>';
+                    })));
                   var _new = _shown.filter(function(x) { return x.visits === 1 && x.days_since === 0; });
-                  if (_new.length) _lines.push('<div style="color:#7fd18c;">🌱 今日はじめて来た ' + _new.length + '人</div>');
+                  if (_new.length) _lines.push(_block('🌱', '#7fd18c', '今日はじめて来た',
+                    _new.map(function(x) {
+                      return escAttr(x.display_name || x.uid || '端末' + x.visitor) +
+                        ' <span style="color:#9aa6b8;">' + escAttr(x.sources || '') + '</span>';
+                    })));
                   return _lines.length
                     ? '<div style="font-size:0.88em;line-height:1.9;margin-bottom:8px;padding:7px 9px;' +
                       'background:rgba(255,255,255,0.04);border-radius:8px;">' + _lines.join('') + '</div>'
