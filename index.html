@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.33 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.35 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.33';
+    const APP_VERSION = 'v0.46.35';
   const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -319,8 +319,19 @@
       var _vt = _vp.get('view');
       if (!_vt) return;
       window.history.replaceState({}, '', window.location.pathname);
+      // v0.46.34: 【権威】2026-09-07、見るだけリンクなのに他のカレンダーが映る、との報告。
+      // v0.46.33 で loadAllTasks に見張りを入れたが、効いていなかった。
+      //
+      // 理由はここ。openViewOnlyMode を 300ミリ秒後に始めていた。
+      // その300ミリ秒の間に起動処理は全部走り、loadAllTasks も終わっている。
+      // 見張りは「立てる前に読み込まれる」ので、意味を成さない。
+      //
+      // 印だけは、この場で立てる。URLに ?view= があると分かった瞬間に立てる。
+      // 開くのが後でも、読み込ませないことは先に決められる。
+      window._viewOnlyPending = true;
       setTimeout(function() {
         if (typeof window.openViewOnlyMode === 'function') window.openViewOnlyMode(_vt);
+        else window._viewOnlyPending = false;   // 開けないなら印を下ろす
       }, 300);
     } catch(e) {}
   })();
@@ -8919,7 +8930,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.33</div>
+          🆕 2026-09-07 &nbsp;v0.46.35</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -14336,6 +14347,16 @@ function myDeckApply(idx) {
       // 持ち主の予定が招かれただけの人に見えてしまう。
       if (window._viewOnlyPending || window._viewOnlyBackup) {
         console.warn('[見るだけ] 手元の予定の読み込みを止めました');
+        // v0.46.34: 止めた以上、空で始まる。それでよい。
+        // 見るだけリンクを開いた人は、この端末の予定を見に来たのではない。
+        // ただし退避だけは作っておく。見るだけを閉じたときに戻す先が要る。
+        try {
+          if (!window._viewOnlyBackup) {
+            var _saved = localStorage.getItem('allTasks');
+            window._viewOnlyPreload = _saved ? JSON.parse(_saved) : [];
+          }
+        } catch (e) { window._viewOnlyPreload = []; }
+        allTasks = [];
         return;
       }
       loadCalendars();
@@ -42353,7 +42374,11 @@ async function openViewOnlyMode(token) {
 
     // 元のデータを退避する。閉じるときに必ず戻す。
     window._viewOnlyBackup = {
-      tasks: allTasks,
+      // v0.46.34: loadAllTasks を止めているので allTasks は空。
+      // 退避には、止めたときに控えた手元の予定を使う。
+      // 空を退避すると、閉じたときに手元の予定が消える。
+      tasks: (window._viewOnlyPreload && window._viewOnlyPreload.length)
+               ? window._viewOnlyPreload : allTasks,
       calendars: (allSettings.calendar && allSettings.calendar.list) || [],
       active: (typeof activeCalendarIds !== 'undefined') ? activeCalendarIds : null,
       view: localStorage.getItem('currentView') || 'daily'
@@ -42461,6 +42486,29 @@ window.openViewOnlyMode = openViewOnlyMode;
 
 // 閲覧を終える。退避したデータを必ず戻す。
 function closeViewOnlyMode() {
+  // v0.46.35: 【権威】2026-09-07、終了して元の画面に戻ると予定の帯が全部灰色になる、
+  // 中途半端に戻すくらいなら終了させたほうがいい、との指摘。そのとおり。
+  //
+  // これまでは allTasks・カレンダー一覧・表示中のカレンダーの3つだけを戻していた。
+  // だが見るだけモードは、それ以外にも触っている（描き直し、隠したビュー、
+  // 升目の押せる押せない、色の割り当て、帯の段組み）。
+  // 戻し漏れがあれば、戻ったつもりの壊れた画面が残る。
+  // 何を戻し忘れているかを数え続けるより、読み込み直すほうが確実である。
+  //
+  // 手元のデータは localStorage にあり、見るだけ中は保存口を塞いでいたので無傷。
+  // 読み込み直せば、必ず正しい状態から始まる。
+  try {
+    window._viewOnlyBackup = null;
+    window._viewOnlyPending = false;
+    if (typeof showToast === 'function') showToast('閲覧を終了しました');
+    setTimeout(function() {
+      try { location.reload(); } catch (e) { location.href = location.pathname; }
+    }, 600);
+    return;
+  } catch (e) {
+    console.warn('[見るだけ] 終了に失敗:', e && e.message);
+  }
+  // ここから下は、読み込み直せなかったときの保険。
   try {
     var bk = window._viewOnlyBackup;
     if (bk) {
