@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.42 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.43 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.42';
+    const APP_VERSION = 'v0.46.43';
   const APP_LAST_UPDATED = '2026-09-08'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8995,7 +8995,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-08 &nbsp;v0.46.42</div>
+          🆕 2026-09-08 &nbsp;v0.46.43</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -13544,6 +13544,27 @@ function renderTodoList() {
     console.warn('[見るだけ] 閲覧中の保存を止めました（手元のデータは守られています）');
     return;
   }
+  // v0.46.43: 保存のたびに、送るべきものをキューへ積む。
+  // ここは第4条の唯一の書き込み口なので、ここで積めば取りこぼしがない。
+  // 中身は持たない。IDだけ積み、送るときに allTasks から最新を引く。
+  try {
+    if (typeof pushQueueAdd === 'function' && typeof _pushQueueLoad === 'function') {
+      var _q = _pushQueueLoad();
+      var _prev = window._unifiedLastPushedSnapshot || {};
+      var _n = 0;
+      (allTasks || []).forEach(function(t) {
+        if (!t || !t.id) return;
+        if (t.autoFilled === true) return;
+        if (typeof LOCAL_ONLY_KINDS !== 'undefined' && LOCAL_ONLY_KINDS.indexOf(t.kind) !== -1) return;
+        var _sig = t.updatedAt || t.createdAt || '';
+        if (_prev[t.id] === _sig) return;      // 送信済みと分かっているものは積まない
+        if (_q[t.id]) return;
+        _q[t.id] = { at: new Date().toISOString() };
+        _n++;
+      });
+      if (_n > 0) _pushQueueSave(_q);
+    }
+  } catch (eQ) { console.warn('[送信待ち] 積めませんでした:', eQ && eQ.message); }
       // v0.45.1517: 【権威】2026-08-05、月間サイドバーが独自形式のIDを作っていたため
       // 「invalid input syntax for type uuid」でクラウド同期が失敗し、その予定だけが
       // 他端末に永久に届かない状態が続いていた。静的な走査では見つけ切れない経路が
@@ -30085,6 +30106,7 @@ function saveMsbEdit() {
       'koyomiru_pw_reset_from_here', 'koyomiru_first_visit_done', 'mig_money_note_v3',
       // v0.46.7: 呼び名を一度聞いた印／更新後にお知らせを開く印
       'koyomiruNameAsked', 'koyomiruShowWhatsNew', 'koyomiruOshiraseWarned',
+      'koyomiru_push_queue',   // v0.46.43: 送信待ちの一覧
       // v0.45.1968: コメントの既読。KPAGの許可一覧に入れ忘れていた。
       'koyomiru_comment_read',
       // 徳・業・ログ
@@ -45725,6 +45747,9 @@ async function unifiedPushTasks() {
   var _skipped = 0;
   var _skippedAuto = 0;
   var _skippedLocal = 0;
+  // v0.46.43: 送信待ちの一覧。空なら従来の判定を使う（移行のため）。
+  var _queued = (typeof _pushQueueLoad === 'function') ? _pushQueueLoad() : {};
+  var _queueMode = Object.keys(_queued).length > 0;
   var toPush = allTasks.filter(function(t){
     if (!t || !t.id) return false;
     // v0.45.2052: 【権威】2026-09-04、日誌を勝手にクラウドに上げるのをやめる、との判断。
@@ -45747,8 +45772,19 @@ async function unifiedPushTasks() {
     // dailyStatus は止めない。workMemo と privateMemo に人が書いた文が入る。
     // 見た目が空でも、中身は本人の記録である。ここを一緒に止めると、書いたものが消える。
     if (LOCAL_ONLY_KINDS.indexOf(t.kind) !== -1) { _skippedLocal++; return false; }
+    // v0.46.43: 送るかどうかは、キューに積まれているかで決める。
+    // これまでは _prevSnapshot（送信済みの印）と比べていた。
+    // だが印は取り込みの直後に書き換わり、未送信の変更まで「送った」ことにしていた。
+    // キューなら、送れるまで消えない。
+    //
+    // 移行の間は、キューが空なら従来の判定に落とす。
+    // この版に上げた直後は、まだ何も積まれていないため。
     var _sig = t.updatedAt || t.createdAt || '';
-    if (_prevSnapshot[t.id] === _sig) return false;
+    if (_queueMode) {
+      if (!_queued[t.id]) return false;
+    } else {
+      if (_prevSnapshot[t.id] === _sig) return false;
+    }
     if (_allowed) {
       var _cid = t.cloudCalendarId || window._personalCalendarId;
       if (_cid && !_allowed[_cid]) { _skipped++; return false; }
@@ -45843,6 +45879,13 @@ async function unifiedPushTasks() {
   // まず全部まとめて試し、弾かれたときだけ1件ずつ送り直す。
   // 普段は今までどおり1回で済み、問題があるときだけ丁寧に分ける。
   var r = await window.supabaseClient.from('koyomiru_shared_tasks').upsert(toPush, { onConflict: 'id' });
+  // v0.46.43: 送れたものだけ、キューから消す。
+  // ここでだけ「送った」が確定する。失敗すれば残るので、次に送り直される。
+  try {
+    if (!r.error && typeof pushQueueRemove === 'function') {
+      pushQueueRemove(toPush.map(function(x) { return x.id; }));
+    }
+  } catch (eQR) {}
   if (r.error && toPush.length > 1) {
     _dbg('　まとめて送れなかったので、1件ずつ送り直します（' + toPush.length + '件）');
     var _okRows = [], _ngRows = [];
@@ -46287,6 +46330,78 @@ document.addEventListener('visibilitychange', function() {
 });
 // ③ 30分ごと
 setInterval(_checkForNewVersion, 30 * 60 * 1000);
+
+// v0.46.43: 【権威】2026-09-08、送信キュー（アウトボックス）を入れる、との設計判断。
+//
+// これまでは「送ったかどうか」を _unifiedLastPushedSnapshot という別の記録で覚えていた。
+// updatedAt という真実があるのに、それとは別の帳簿を持つ二重管理である。
+// 2つの記録が食い違ったとき、どちらが正しいか誰も知らない。
+// 実際 v0.45.2080 で、取り込みの直後に未送信の変更まで「送信済み」と記録され、
+// 編集が一度も送られないまま葬られていた。
+//
+// 業界の定石はアウトボックス方式。変更をキューに積み、送れたら消す。
+// 「送ったかどうか」はキューに残っているかどうかだけで決まる。記録は1つになる。
+//
+// ただし提案されたままの形では採らない。
+//   ・snapshot（タスクの中身）はキューに持たない。allTasks にあるものを二重に持てば、
+//     編集の順番によっては古い方が後から送られる。IDだけ持ち、送るとき最新を引く。
+//   ・localStorage は同期的で、毎回の保存で全件を書き直す。
+//     上限を置き、超えたら古いものから捨てる。
+//
+// 第1段階として、キューを作り、送信の判定をキューに寄せる。
+// 再送や試行回数は次の段階。一度に全部入れると、壊れたとき原因が絞れない。
+var PUSH_QUEUE_KEY = 'koyomiru_push_queue';
+var PUSH_QUEUE_MAX = 3000;   // これを超えたら古いものから捨てる
+
+function _pushQueueLoad() {
+  try {
+    var raw = localStorage.getItem(PUSH_QUEUE_KEY);
+    if (!raw) return {};
+    var o = JSON.parse(raw);
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  } catch (e) { return {}; }
+}
+
+function _pushQueueSave(q) {
+  try {
+    var keys = Object.keys(q);
+    if (keys.length > PUSH_QUEUE_MAX) {
+      // 積んだ順に並べ、古いものから捨てる。上限が無いといつか画面が固まる。
+      keys.sort(function(a, b) { return (q[a].at || '') < (q[b].at || '') ? -1 : 1; });
+      var drop = keys.length - PUSH_QUEUE_MAX;
+      for (var i = 0; i < drop; i++) delete q[keys[i]];
+      console.warn('[送信待ち] 上限を超えたので古い ' + drop + '件を捨てました');
+    }
+    localStorage.setItem(PUSH_QUEUE_KEY, JSON.stringify(q));
+  } catch (e) { console.warn('[送信待ち] 保存に失敗:', e && e.message); }
+}
+
+// 変更を積む。中身は持たず、IDと積んだ時刻だけ。送るときに allTasks から引く。
+function pushQueueAdd(id) {
+  if (!id) return;
+  try {
+    var q = _pushQueueLoad();
+    if (!q[id]) q[id] = { at: new Date().toISOString() };
+    _pushQueueSave(q);
+  } catch (e) {}
+}
+window.pushQueueAdd = pushQueueAdd;
+
+// 送れたものを消す。ここでだけ「送った」が確定する。
+function pushQueueRemove(ids) {
+  if (!ids || !ids.length) return;
+  try {
+    var q = _pushQueueLoad();
+    ids.forEach(function(id) { delete q[id]; });
+    _pushQueueSave(q);
+  } catch (e) {}
+}
+window.pushQueueRemove = pushQueueRemove;
+
+function pushQueueCount() {
+  try { return Object.keys(_pushQueueLoad()).length; } catch (e) { return 0; }
+}
+window.pushQueueCount = pushQueueCount;
 
 // v0.45.2079: 時刻を数で比べる。書き方が違っても同じ物差しになる。
 //   手元    2026-09-06T14:33:00.123Z         （toISOString）
