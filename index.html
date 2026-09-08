@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.35 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.38 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,8 +157,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.35';
-  const APP_LAST_UPDATED = '2026-09-06'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.46.38';
+  const APP_LAST_UPDATED = '2026-09-08'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -350,9 +350,44 @@
         // 招待された人にはいきなり2枚の見知らぬ画面が出ることになり、
         // 「何を求められているのか」が分からないまま閉じてしまう。
         // ログインしていない人には、招待の説明だけを1枚見せる。共有の画面は出さない。
+        // v0.46.38: 【権威】2026-09-08、新しい招待を作ったのに古いリンクが
+        // 生きているように見えた、との報告。
+        //
+        // DBを確かめると、古いコードは残っていなかった。作り直しは効いている。
+        // 生きて見えたのは、ログインしていない人に対して
+        // コードを確かめずに「招待されています」を出していたためである。
+        // ログインまでさせておいて、その後で「見つかりません」と断っていた。
+        // 押してから断られるのは、最も避けたい体験である（第7条）。
+        //
+        // 確かめてから案内する。koyomiru_peek_invite はログイン不要で呼べる。
+        // 順番が逆だっただけで、足りない仕組みがあったわけではない。
         if (!window._cloudIsLoggedIn) {
           if (typeof window._savePendingJoin === 'function') window._savePendingJoin(joinCode);
-          _showInviteWelcome();
+          (async function() {
+            var _ok = null;
+            try {
+              if (typeof peekSharedCalendarByCode === 'function') {
+                _ok = await peekSharedCalendarByCode(joinCode);
+              }
+            } catch (e) { _ok = null; }
+            // 確かめられなかったときは、これまでどおり案内を出す。
+            // 通信の具合で入れなくなるより、進んでもらうほうがよい。
+            if (_ok && _ok._failed) { _showInviteWelcome(); return; }
+            if (!_ok) {
+              if (typeof _showViewLinkError === 'function' && false) {}
+              if (typeof _showInviteDeadCard === 'function') _showInviteDeadCard();
+              else _showInviteWelcome();
+              return;
+            }
+            var _rem = (typeof window._inviteRemainText === 'function')
+              ? window._inviteRemainText(_ok.expires_at) : { expired: false };
+            if (_ok.expired === true || _rem.expired) {
+              if (typeof _showInviteDeadCard === 'function') _showInviteDeadCard('⌛ 招待の期限が切れています');
+              else _showInviteWelcome();
+              return;
+            }
+            _showInviteWelcome();
+          })();
           return;
         }
         // v0.45.1777: 招待されたときは、そのカレンダーのことだけを1枚で見せる。
@@ -794,6 +829,34 @@ async function _acceptInvite(code) {
 }
 window._acceptInvite = _acceptInvite;
 
+// v0.46.38: 使えない招待を踏んだ人に、その場で伝える。
+// ログインさせてから断るのではなく、踏んだ時点で分かるようにする。
+// 受け取った人にできるのは「送った人に頼む」ことだけなので、それを先に書く。
+function _showInviteDeadCard(title) {
+  try {
+    var ov = document.getElementById('inviteCardOverlay');
+    if (!ov) { ov = document.createElement('div'); ov.id = 'inviteCardOverlay'; document.body.appendChild(ov); }
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99600;background:rgba(0,0,0,0.45);' +
+      'display:flex;align-items:center;justify-content:center;padding:20px;';
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:26px 22px;width:100%;max-width:380px;' +
+        'box-shadow:0 8px 32px rgba(0,0,0,0.18);text-align:center;">' +
+        '<div style="font-size:2.2em;margin-bottom:8px;">📭</div>' +
+        '<div style="font-size:1.05em;font-weight:700;color:#262626;margin-bottom:10px;">' +
+          (title ? String(title).replace(/[<>&"]/g, '') : 'この招待は使えません') + '</div>' +
+        '<div style="font-size:0.84em;color:#6b7280;line-height:1.9;margin-bottom:18px;">' +
+          '<b>送った方に、新しいリンクをお願いしてください。</b><br>' +
+          'このリンクは、取り消されたか、作り直されたようです。<br>' +
+          '招待リンクには期限があります。' +
+        '</div>' +
+        '<button onclick="var o=document.getElementById(\'inviteCardOverlay\');if(o)o.remove();" ' +
+          'style="width:100%;padding:12px;border:1px solid #dcdcdc;border-radius:12px;' +
+          'background:#fff;color:#555;font-size:0.9em;cursor:pointer;font-family:inherit;">閉じる</button>' +
+      '</div>';
+  } catch (e) { console.warn('[招待] 案内を出せませんでした:', e && e.message); }
+}
+window._showInviteDeadCard = _showInviteDeadCard;
+
 function _showInviteWelcome() {
     try {
       var old = document.getElementById('inviteWelcomeOverlay');
@@ -944,7 +1007,9 @@ function _showInviteWelcome() {
         localStorage.removeItem('guildLicense');
       }
     } catch(e) { console.warn('[migrate v0.29.17] guildLicense失敗', e); }
-    if (changed) {
+      // v0.46.36: 見るだけリンクを開いている間は allTasks が空か見せる用なので、
+      // ここで書き出すと手元の予定が消える。移行は次の起動でやり直せばよい。
+      if (changed && !window._viewOnlyPending && !window._viewOnlyBackup) {
       localStorage.setItem('allTasks', JSON.stringify(allTasks));
     }
   }
@@ -8930,7 +8995,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-07 &nbsp;v0.46.35</div>
+          🆕 2026-09-08 &nbsp;v0.46.38</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -11356,6 +11421,19 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
     };
     let allSettings = JSON.parse(JSON.stringify(SETTINGS_DEFAULT)); // deep copy
     function saveAllSettings(skipCloudSync) {
+      // v0.46.36: 【権威】2026-09-07、見るだけを終了したら設定が全部壊れ、
+      // カレンダーの色が変になった、との報告。
+      //
+      // 見るだけモードは allSettings.calendar.list を「見せる用の1つ」に差し替える。
+      // その状態でここが呼ばれれば、手元のカレンダー一覧が1件で上書きされる。
+      // 色も、表示・非表示も、共有の設定も、まとめて消える。
+      //
+      // saveAllTasks は v0.45.2054 で塞いだのに、こちらを塞いでいなかった。
+      // 予定だけ守って設定を守らないのでは、片手落ちである（第79条）。
+      if (window._viewOnlyBackup || window._viewOnlyPending) {
+        console.warn('[見るだけ] 閲覧中の設定保存を止めました（手元の設定は守られています）');
+        return;
+      }
       // v0.45.1380: 【診断】TPAGが繰り返しallSettings.ui.visibleTabsの汚染を検出するが、
       // 静的なコード読解では原因を特定できなかった。テスト実行中（_isTesting or
       // _smokeTestRunning）にsaveAllSettingsが呼ばれるたび、visibleTabsのJSON表現が
@@ -46425,6 +46503,11 @@ async function unifiedPushSettings() {
 window.unifiedPushSettings = unifiedPushSettings;
 // プル：クラウドの設定を取得し、除外パス以外を現在のallSettingsへ後勝ちでマージ
 async function unifiedPullSettings() {
+  // v0.46.37: 見るだけの間は設定を取り込まない。
+  // 見るだけモードは allSettings.calendar.list を1つに差し替えている。
+  // そこへクラウドの設定が降ってくると、持ち主のカレンダー一覧が画面に現れる。
+  // 予定の取り込み（unifiedPullTasks）は止めていたのに、設定を止めていなかった。
+  if (window._viewOnlyBackup || window._viewOnlyPending) return { data: null, error: null };
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1372
   if (!window.supabaseClient || !window._cloudUserId) return null;
   var r = await window.supabaseClient.from('koyomiru_user_settings')
@@ -49617,6 +49700,9 @@ function _unifiedStartRealtimeSubscription(userId) {
         try {
           if (window._isTesting) return; // v0.45.1340の教訓
           if (window._unifiedRealtimeChannel !== myChannel) return; // v0.45.1357: 現役チャンネルでなければ無視
+          // v0.46.37: 見るだけの間はRealtimeの知らせを捨てる。
+          // 受け取れば取り込みが走り、持ち主の予定が降りてくる。
+          if (window._viewOnlyBackup || window._viewOnlyPending) return;
           var calId = (payload.new && payload.new.calendar_id) || (payload.old && payload.old.calendar_id);
           if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] RTイベント受信: ' + (payload && payload.eventType) + ' cal=' + (calId ? calId.slice(0, 8) : '?') + (calId && window._myCalendarIds.indexOf(calId) === -1 ? '（自分のカレンダーでないため無視）' : ''));
           if (!calId || window._myCalendarIds.indexOf(calId) === -1) return; // 自分のカレンダーでなければ無視
