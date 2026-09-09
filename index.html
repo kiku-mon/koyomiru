@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.59 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.60 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.59';
+    const APP_VERSION = 'v0.46.60';
   const APP_LAST_UPDATED = '2026-09-09'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -30161,7 +30161,8 @@ function saveMsbEdit() {
       'koyomiru_pw_reset_from_here', 'koyomiru_first_visit_done', 'mig_money_note_v3',
       // v0.46.7: 呼び名を一度聞いた印／更新後にお知らせを開く印
       'koyomiruNameAsked', 'koyomiruShowWhatsNew', 'koyomiruOshiraseWarned',
-      'koyomiru_push_queue', 'koyomiru_push_failed', 'koyomiruQueueCleanedAt',   // v0.46.43-45: 送信待ち
+      'koyomiru_push_queue', 'koyomiru_push_failed', 'koyomiruQueueCleanedAt',
+      'koyomiruQueueRescued_v46_60',   // v0.46.43-60: 送信待ち
       // v0.45.1968: コメントの既読。KPAGの許可一覧に入れ忘れていた。
       'koyomiru_comment_read',
       // 徳・業・ログ
@@ -46003,19 +46004,18 @@ async function unifiedPushTasks() {
   // v0.46.43: 送れたものだけ、キューから消す。
   // ここでだけ「送った」が確定する。失敗すれば残るので、次に送り直される。
   try {
+    // v0.46.60: 【権威】2026-09-09、「9件がクラウドへ送れません」がよく出る、との報告。
+    //
+    // 数える場所が早すぎた。この下に「まとめて送れなければ1件ずつ送り直す」処理がある。
+    // それを待たずに、まとめ送りが失敗した時点で全件の回数を +1 していた。
+    // 1件ずつなら送れていても、既に数えられている。
+    // まとめ送りが失敗するたび全件が加算され、5回で「送れません」と出る。
+    // 実際には届いているのに、届いていないと知らせていた。信用の問題である。
+    //
+    // ここでは成功したときだけ消す。数えるのは、1件ずつ送り直した後に移す。
     var _ids = toPush.map(function(x) { return x.id; });
     if (!r.error) {
       if (typeof pushQueueRemove === 'function') pushQueueRemove(_ids);
-    } else {
-      // v0.46.44: 送れなかったら回数を数える。5回で脇へ置く。
-      // 受け取れない中身が1つあると、他の変更まで巻き添えで止まり続ける。
-      if (typeof pushQueueMarkTried === 'function') {
-        var _res = pushQueueMarkTried(_ids);
-        if (_res.stuck.length && typeof showToast === 'function') {
-          showToast('⚠️ ' + _res.stuck.length + '件がクラウドへ送れません。設定→データ管理で確かめられます',
-                    { type: 'warn', duration: 7000 });
-        }
-      }
     }
   } catch (eQR) { console.warn('[送信待ち] 後始末に失敗:', eQR && eQR.message); }
   if (r.error && toPush.length > 1) {
@@ -46027,6 +46027,22 @@ async function unifiedPushTasks() {
       if (_one.error) _ngRows.push({ row: toPush[_i], msg: _one.error.message });
       else _okRows.push(toPush[_i]);
     }
+    // v0.46.60: ここで初めて、本当の結果が分かる。
+    // 送れたものはキューから消し、送れなかったものだけ回数を数える。
+    // まとめ送りの失敗時点で数えていたため、1件ずつなら送れているものまで
+    // 「送れません」と数えられ、5回で警告が出ていた。
+    try {
+      if (_okRows.length && typeof pushQueueRemove === 'function') {
+        pushQueueRemove(_okRows.map(function(row) { return row.id; }));
+      }
+      if (_ngRows.length && typeof pushQueueMarkTried === 'function') {
+        var _resQ = pushQueueMarkTried(_ngRows.map(function(x) { return x.row.id; }));
+        if (_resQ.stuck.length && typeof showToast === 'function') {
+          showToast('⚠️ ' + _resQ.stuck.length + '件がクラウドへ送れません。設定→データ管理で確かめられます',
+                    { type: 'warn', duration: 7000 });
+        }
+      }
+    } catch (eQ2) { console.warn('[送信待ち] 後始末に失敗:', eQ2 && eQ2.message); }
     if (_okRows.length > 0) {
       _dbg('　　' + _okRows.length + '件は送れました');
       // 送れた分だけ控えに入れる。失敗した分は次回また送り直される。
@@ -46289,7 +46305,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.59', date: '2026-09-09',
+    ver: 'v0.46.60', date: '2026-09-09',
     items: [
       { icon:'🎨', t:'カレンダーのアイコン',
         before:'32種（記号だけ）', after:'62種（花・動物・道具など）' },
@@ -46298,7 +46314,9 @@ var _NEWS_DATA = [
       { icon:'📄', t:'日次のマトリクス',
         before:'印刷できなかった', after:'A4横で印刷できる（予定入り／手書き用）' },
       { icon:'🔍', t:'検索',
-        before:'お金の予定が出ると入るで混ざっていた', after:'「▲出る」「▽入る」で絞れる' }
+        before:'お金の予定が出ると入るで混ざっていた', after:'「▲出る」「▽入る」で絞れる' },
+      { icon:'☁️', t:'クラウドへの送信',
+        before:'届いているのに「送れません」と出ることがあった', after:'本当に送れなかったものだけ知らせる' }
     ],
     note: '「相手の予定が届かない」「完了にしたのに戻る」が起きていた方は、読み込み直すと直っています。'
   },
@@ -46589,6 +46607,10 @@ window.addEventListener('load', function() {
   // v0.46.7: 名前が無いまま共有カレンダーを使っている人に、一度だけ聞く。
   // 起動直後に出すと、何を見に来たのかも分からないうちに問われる。少し待つ。
   setTimeout(_askNameIfMissing, 4000);
+  // v0.46.60: 数え違いで脇に置かれたものを戻す。一度だけ。
+  setTimeout(function() {
+    if (typeof _pushQueueRescueMiscounted === 'function') _pushQueueRescueMiscounted();
+  }, 3000);
   // v0.46.9: お知らせの更新忘れを、管理者にだけ知らせる。
   setTimeout(_checkOshiraseFreshness, 5000);
   // v0.46.0: 更新を押して読み込み直した直後だけ、お知らせを開く。
@@ -46823,6 +46845,24 @@ function _refreshPushQueueBox() {
   } catch (e) {}
 }
 window._refreshPushQueueBox = _refreshPushQueueBox;
+
+// v0.46.60: 早すぎる数え上げで脇に置かれてしまったものを、起動時に一度だけ戻す。
+// 本当は送れていたのに「送れません」と数えられていた可能性が高い。
+// そのままにすると、直したあとも警告が出続ける。
+function _pushQueueRescueMiscounted() {
+  try {
+    if (localStorage.getItem('koyomiruQueueRescued_v46_60') === '1') return;
+    localStorage.setItem('koyomiruQueueRescued_v46_60', '1');
+    var n = (typeof pushQueueRetryFailed === 'function') ? pushQueueRetryFailed() : 0;
+    if (n > 0) {
+      console.log('[送信待ち] 数え違いで脇に置かれていた ' + n + '件を、送信待ちに戻しました');
+      if (typeof window._dbgLog === 'function') {
+        window._dbgLog('[送信待ち] ' + n + '件を送信待ちに戻しました（v0.46.60の数え違いの後始末）');
+      }
+    }
+  } catch (e) {}
+}
+window._pushQueueRescueMiscounted = _pushQueueRescueMiscounted;
 
 function pushQueueRetryFailed() {
   try {
