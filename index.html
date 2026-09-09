@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.52 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.53 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.52';
+    const APP_VERSION = 'v0.46.53';
   const APP_LAST_UPDATED = '2026-09-09'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9013,7 +9013,7 @@ function _showInviteWelcome() {
            更新のたびにここへ1行足す。書くのは「使う人にできるようになったこと」だけ。 -->
       <div style="margin-bottom:14px;padding:14px;background:#eef7ee;border-radius:12px;border:1px solid #cfe6cf;">
         <div style="font-size:0.72em;color:#2e7d32;font-weight:700;margin-bottom:6px;">
-          🆕 2026-09-09 &nbsp;v0.46.52</div>
+          🆕 2026-09-09 &nbsp;v0.46.53</div>
         <div style="font-size:0.85em;color:#333;line-height:1.9;">
           👤 共有カレンダーに入るとき、呼び名を決めてもらうようになりました<br>
           🔁 同じカレンダーで呼び名が重なると、その場で知らせます<br>
@@ -13168,6 +13168,11 @@ function renderTodoList() {
       window._searchRange = 'future';
       if (typeof renderSearchCalFilter === 'function') renderSearchCalFilter();
       if (typeof renderSearchRangeFilter === 'function') renderSearchRangeFilter();
+      // v0.46.53: お金の絞り込みも、開くたびに元に戻す。
+      // 前回「支払いだけ」で見ていたことを覚えていると、
+      // 次に開いたとき「なぜ出ないのか」で悩ませる（v0.45.1943と同じ考え）。
+      window._searchMoney = 'off';
+      if (typeof renderSearchMoneyFilter === 'function') renderSearchMoneyFilter();
       // v0.45.1947: 開いた瞬間に一覧を出す。探し始められるようにする。
       if (typeof renderSearchResults === 'function') renderSearchResults();
       setTimeout(() => { var el = document.getElementById('searchInput'); if(el) el.focus(); }, 100);
@@ -13241,6 +13246,57 @@ function renderTodoList() {
     }
     window.renderSearchRangeFilter = renderSearchRangeFilter;
 
+    // v0.46.53: 【権威】2026-09-09、出る・入るが増えるとどれがどれか分からない、
+    // 検索で絞れるようにしてほしい、との要望。
+    // 「10日の支払いが見たいけど、どれかな」——探し方は日付ではなく、種類と期間である。
+    //
+    // 三角を打てばお金の予定が出る仕組みは v0.45.2046 で入っている。
+    // だが出ると入るが混ざるので、支払いだけを見たいときに絞れない。
+    // 種類で絞る帯を足す。期間の絞り込みは既にあるので、そのまま組み合わせる。
+    function renderSearchMoneyFilter() {
+      var box = document.getElementById('searchMoneyFilter');
+      if (!box) return;
+      var _cur = window._searchMoney || 'off';
+      var _b = function(key, label, color) {
+        var _on = (_cur === key);
+        return '<button onclick="setSearchMoney(\'' + key + '\')" ' +
+          'style="padding:5px 12px;border:1px solid ' + (_on ? color : '#e0e0e0') + ';' +
+          'border-radius:14px;background:' + (_on ? color : '#fff') + ';' +
+          'color:' + (_on ? '#fff' : '#666') + ';font-size:0.72em;font-weight:600;' +
+          'cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;">' + label + '</button>';
+      };
+      box.innerHTML =
+        _b('off', 'お金で絞らない', '#333') +
+        _b('out', '▲ 出る（支払い）', '#b3261e') +
+        _b('in',  '▽ 入る（入金）',  '#1f6b4d') +
+        _b('both','▲▽ どちらも',    '#4a6fa5');
+    }
+    window.renderSearchMoneyFilter = renderSearchMoneyFilter;
+
+    function setSearchMoney(kind) {
+      window._searchMoney = kind;
+      renderSearchMoneyFilter();
+      if (typeof renderSearchResults === 'function') renderSearchResults();
+    }
+    window.setSearchMoney = setSearchMoney;
+
+    // その予定が、絞り込みに当てはまるか。
+    // 読めない金額（unreadable）は「どちらも」のときだけ出す。
+    // 書き損じを黙って隠すと、気づけない。
+    function _matchesMoneyFilter(t) {
+      var kind = window._searchMoney || 'off';
+      if (kind === 'off') return true;
+      if (typeof window._parseMoneyLine !== 'function') return true;
+      var r;
+      try { r = window._parseMoneyLine((t.text || '') + ' ' + (t.title || '')); }
+      catch (e) { return false; }
+      if (kind === 'out')  return r.out > 0;
+      if (kind === 'in')   return r['in'] > 0;
+      if (kind === 'both') return r.out > 0 || r['in'] > 0 || r.unreadable > 0;
+      return true;
+    }
+    window._matchesMoneyFilter = _matchesMoneyFilter;
+
     function setSearchRange(range) {
       window._searchRange = range;
       renderSearchRangeFilter();
@@ -13308,6 +13364,8 @@ function renderTodoList() {
         _isMoneyQuery = q.length > 0 && q.split('').every(function(c){ return _allMarks.indexOf(c) !== -1; });
       } catch (eMq) {}
       const taskHits = allTasks.filter(t => t.kind !== 'note' && t.kind !== 'deckHistory' && t.kind !== 'myDeck' && t.kind !== 'guildLicense' &&
+        // v0.46.53: お金の種類で絞る。言葉の検索と組み合わせて効く。
+        (typeof _matchesMoneyFilter === 'function' ? _matchesMoneyFilter(t) : true) &&
         (_isMoneyQuery
           ? (function(){
               if (typeof window._parseMoneyLine !== 'function') return false;
@@ -38361,6 +38419,9 @@ window.addEventListener('afterprint', function() {
              共有カレンダーの予定一覧で使った期間の切り替えが良かったとの評価を受け、
              同じ形にする。押した瞬間に何か出るほうが、探し始められる。 -->
         <div id="searchRangeFilter" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;"></div>
+        <!-- v0.46.53: お金の種類で絞る。期間の帯と並べる。
+             「10日の支払いが見たい」は、種類×期間で辿り着ける。 -->
+        <div id="searchMoneyFilter" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;"></div>
         <div style="font-size:0.78em;color:#aaa;margin-bottom:8px;">
           <span id="searchCount">0件</span>ヒット　<span style="color:#ccc;">完了済みも含む</span>
         </div>
