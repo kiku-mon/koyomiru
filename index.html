@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.63 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.64 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.63';
+    const APP_VERSION = 'v0.46.64';
   const APP_LAST_UPDATED = '2026-09-09'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45700,12 +45700,53 @@ async function unifiedRefreshMyCalendarIds() {
   var u = await window.supabaseClient.auth.getUser();
   if (!u.data || !u.data.user) return [];
   var r = await window.supabaseClient.from('koyomiru_shared_calendar_members')
-    .select('calendar_id, koyomiru_shared_calendars!inner(is_personal)')
+    .select('calendar_id, koyomiru_shared_calendars!inner(is_personal, name)')
     .eq('user_id', u.data.user.id);
   if (r.error) { console.error('[Unified] カレンダー一覧取得失敗:', r.error.message); return []; }
   window._myCalendarIds = r.data.map(function(row){ return row.calendar_id; });
   var personal = r.data.find(function(row){ return row.koyomiru_shared_calendars && row.koyomiru_shared_calendars.is_personal; });
   if (personal) window._personalCalendarId = personal.calendar_id;
+
+  // v0.46.64: 【権威】2026-09-10、貝森さんが「WMカレンダー1」に書いた予定が
+  // 自分の個人用カレンダーに入り、共有されていなかった件。
+  //
+  // 予定を作るとき、手元の calendar.list から cloudCalendarId を引く。
+  // そこが空だと、黙って個人用へ落ちる。画面では共有カレンダーを選べているのに、
+  // 実際は自分だけの場所へ入る。書いた本人は届いたと思い、相手には無い。
+  // v0.45.1544 で「編集」の経路は直したが、繋がり自体が切れている場合は残っていた。
+  //
+  // 参加している一覧はここで取れる。名前で突き合わせ、抜けていたら繋ぎ直す。
+  // 名前で照らすのは、手元のIDと共有のIDが別物だからである。
+  try {
+    var _cl = (allSettings.calendar && allSettings.calendar.list) || [];
+    var _byName = {};
+    r.data.forEach(function(row) {
+      var _c = row.koyomiru_shared_calendars;
+      if (_c && !_c.is_personal && _c.name) _byName[_c.name] = row.calendar_id;
+    });
+    var _fixed = [];
+    _cl.forEach(function(c) {
+      if (!c || !c.name) return;
+      if (c.cloudCalendarId) return;          // 既に繋がっている
+      var _cid = _byName[c.name];
+      if (!_cid) return;                      // 同じ名前の共有カレンダーが無い
+      c.cloudCalendarId = _cid;
+      _fixed.push(c.name);
+    });
+    if (_fixed.length) {
+      saveAllSettings();
+      console.warn('[Unified] 共有カレンダーとの繋がりが切れていたので直しました: ' + _fixed.join('・'));
+      if (typeof window._dbgLog === 'function') {
+        window._dbgLog('[Unified] 繋がりを直した: ' + _fixed.join('・') +
+                       '（これまで自分の個人用に入っていた可能性があります）');
+      }
+      if (typeof showToast === 'function') {
+        showToast('🔗 共有カレンダーとの繋がりを直しました（' + _fixed.join('・') + '）',
+                  { duration: 6000 });
+      }
+    }
+  } catch (eLink) { console.warn('[Unified] 繋がりの確認に失敗:', eLink && eLink.message); }
+
   return window._myCalendarIds;
 }
 
@@ -46329,7 +46370,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.63', date: '2026-09-10',
+    ver: 'v0.46.64', date: '2026-09-10',
     items: [
       { icon:'🎨', t:'カレンダーのアイコン',
         before:'32種（記号だけ）', after:'62種（花・動物・道具など）' },
@@ -46341,6 +46382,9 @@ var _NEWS_DATA = [
         before:'お金の予定が出ると入るで混ざっていた', after:'「▲出る」「▽入る」で絞れる' },
       { icon:'☁️', t:'クラウドへの送信',
         before:'届いているのに「送れません」と出ることがあった', after:'本当に送れなかったものだけ知らせる' },
+      { icon:'🔗', t:'共有カレンダーに書いたのに相手に届かない',
+        before:'画面では共有を選べているのに、自分だけの場所へ入っていることがあった',
+        after:'繋がりが切れていたら、開いたときに直します' },
       { icon:'🔒', t:'他の人が作った予定',
         before:'書き換えて送り返そうとして、送信が繰り返し失敗していた',
         after:'送らない（書き換えられるのは作った人だけ）' },
