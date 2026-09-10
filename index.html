@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.64 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.65 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.64';
+    const APP_VERSION = 'v0.46.65';
   const APP_LAST_UPDATED = '2026-09-09'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -27249,7 +27249,9 @@ function saveMsbEdit() {
     // 個人カレンダーへ送られ続け、相手にはずっと見えない状態になっていた。
     // 生成・編集の経路は直したが、すでに食い違っているものは直さないと届かない。
     // 起動時に「所属カレンダーの同期先」と突き合わせて、ずれているものを正す。
-    (function _repairCloudCalendarIds() {
+    // v0.46.65: 起動時の即時実行だけでなく、後からも呼べるようにする。
+// カレンダー一覧の繋がりを直した直後に、予定側も直す必要があるため。
+window._repairCloudCalendarIds = function _repairCloudCalendarIds() {
       try {
         if (window._isTesting || window._smokeTestRunning) return;
         var _cl = (allSettings.calendar && allSettings.calendar.list) || [];
@@ -27279,7 +27281,9 @@ function saveMsbEdit() {
           console.log('[共有] 同期先がずれていた予定 ' + _fixed + '件を正しい共有カレンダーへ結び直しました');
         }
       } catch(e) { console.warn('[共有] 同期先の修復に失敗:', e && e.message); }
-    })();
+};
+// 起動時に1回走らせる（これまで通り）
+window._repairCloudCalendarIds();
     // v0.45.1550: 【権威】2026-08-06、v0.45.1514〜1549の間に月間サイドバーから
     // 追加した予定は displayScope='daily_only' で作られており、月間の升目に
     // 描かれないまま取り残されている。第10条が警告する「サイレントな表示漏れ」。
@@ -45740,6 +45744,13 @@ async function unifiedRefreshMyCalendarIds() {
         window._dbgLog('[Unified] 繋がりを直した: ' + _fixed.join('・') +
                        '（これまで自分の個人用に入っていた可能性があります）');
       }
+      // v0.46.65: 一覧を直したら、予定側も直す。
+      // 予定の cloudCalendarId は一覧を見て決まるので、
+      // 一覧だけ直しても、既にある予定は個人用を指したままになる。
+      // 起動時の _repairCloudCalendarIds は、壊れた一覧を見て走り終えている。
+      try {
+        if (typeof window._repairCloudCalendarIds === 'function') window._repairCloudCalendarIds();
+      } catch (eRep) { console.warn('[Unified] 予定側の直しに失敗:', eRep && eRep.message); }
       if (typeof showToast === 'function') {
         showToast('🔗 共有カレンダーとの繋がりを直しました（' + _fixed.join('・') + '）',
                   { duration: 6000 });
@@ -46370,7 +46381,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.64', date: '2026-09-10',
+    ver: 'v0.46.65', date: '2026-09-10',
     items: [
       { icon:'🎨', t:'カレンダーのアイコン',
         before:'32種（記号だけ）', after:'62種（花・動物・道具など）' },
@@ -46384,7 +46395,7 @@ var _NEWS_DATA = [
         before:'届いているのに「送れません」と出ることがあった', after:'本当に送れなかったものだけ知らせる' },
       { icon:'🔗', t:'共有カレンダーに書いたのに相手に届かない',
         before:'画面では共有を選べているのに、自分だけの場所へ入っていることがあった',
-        after:'繋がりが切れていたら、開いたときに直します' },
+        after:'繋がりが切れていたら、開いたときに直します（これまでの予定も直します）' },
       { icon:'🔒', t:'他の人が作った予定',
         before:'書き換えて送り返そうとして、送信が繰り返し失敗していた',
         after:'送らない（書き換えられるのは作った人だけ）' },
