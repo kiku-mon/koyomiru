@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.65 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.68 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.65';
+    const APP_VERSION = 'v0.46.68';
   const APP_LAST_UPDATED = '2026-09-09'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14922,6 +14922,28 @@ function myDeckApply(idx) {
         cell.dataset.col = String(i + 1);
         cell.style.cssText = `flex:0 0 ${CELL_W}px;width:${CELL_W}px;min-width:${CELL_W}px;`;
         cell.textContent = `${d.getMonth()+1}/${d.getDate()}（${weekdays[i]}）`;
+    // v0.46.68: 【権威】2026-09-10、週間の日付を押したら、その日の予定を
+    // 月間と同じように一覧で見たい、との要望。
+    //
+    // 週間は時刻のある予定しか出さない。終日の予定は見えない。
+    // 日付を押して一覧が開けば、その日の全部が見られる。
+    // 月間には既に同じ仕組み（openMonthlySidebar）があるので、それを呼ぶ。
+    // 新しく作らない。作れば、片方だけ直る日が来る（第79条）。
+    cell.style.cursor = 'pointer';
+    cell.title = 'この日の予定を一覧で見る';
+    cell.addEventListener('click', (function(_ds) {
+      return function() {
+        // 一覧の器（monthlySidebar）は月間ビューの中にある。
+        // 週間のまま呼んでも画面に出ないので、月間へ移ってから開く。
+        // 日付は押したものを渡すので、その日が開いた状態になる。
+        try {
+          if (typeof switchView === 'function') switchView('monthly');
+          setTimeout(function() {
+            if (typeof openMonthlySidebar === 'function') openMonthlySidebar(_ds);
+          }, 120);
+        } catch (e) { console.warn('[週間] 一覧を開けませんでした:', e && e.message); }
+      };
+    })(ds));
         // v0.45.1556: 列番号（i===5/6）ではなく実際の曜日で判定する。
         // 日曜始まりにすると列がずれ、金曜が土曜色・土曜が日曜色になっていた。
         if (d.getDay() === 6) cell.classList.add('wg-sat');
@@ -15149,25 +15171,18 @@ function myDeckApply(idx) {
             memoLine.innerHTML = ''; memoLine.appendChild(document.createTextNode('📍 ')); renderMemoWithLinks(memoLine, task.memo);
             taskDiv.appendChild(memoLine);
           }
-          taskDiv.addEventListener('click', e => {
-            if (e.target === editBtn) return;
-            // 完了トグル
-            const _wasDone = task.completed;
-            task.completed = !task.completed;
-            task.done = task.completed; // 造営(gantt)のdoneと同期
-            task.updatedAt = new Date().toISOString();
-            saveAllTasks();
-            if (typeof recalcAll === 'function') recalcAll(task.id);
-            if (!_wasDone && task.completed) {
-              onTaskCompleted(task);
-              if (task.deckId && typeof incrementDeckHistoryStat === 'function') {
-                incrementDeckHistoryStat(task.deckId);
-              }
-            }
-            titleSpan.style.textDecoration = task.completed ? 'line-through' : '';
-            titleSpan.style.opacity = task.completed ? '0.6' : '1';
-            taskDiv.style.opacity = task.completed ? '0.65' : '1';
-          });
+              // v0.46.67: 【権威】2026-09-10、週間で予定が埋まってくると、
+              // 押すと完了になるより、編集が開くほうが使いやすい、との判断。
+              //
+              // 完了にするのは、その予定が終わったとき。1日に1回あるかどうか。
+              // 編集は、時間を直す・メモを足す・書き間違いを直すときに何度も使う。
+              // 数の多いほうを、押した先に置く。
+              //
+              // 完了は鉛筆の中（編集画面）からできる。押せなくなるわけではない。
+              taskDiv.addEventListener('click', e => {
+                if (e.target === editBtn) return;
+                editWeeklyTaskById(task.id);
+              });
           col.appendChild(taskDiv);
         });  // wgItems.forEach終わり
         // ── 現在時刻ライン（タスク全描画後に追加 → z-indexで必ず前面） ──
@@ -18537,36 +18552,48 @@ function getKingdomEraLabel(targetDate) {
   // ①allTasksの最古createdAt（最も信頼できる実績値）
   // ②allSettings.meta.createdAt（初回起動時刻）
   // ③今日
+  // v0.46.66: 【権威】2026-09-10、新しく使い始めた人の歴は必ず1日目から、との指示。
+  //
+  // これまでは「手元にある一番古いものの日」を起点にしていた。
+  // その決め方だと、何かを取り込むたびに起点が過去へずれる。
+  //   ・共有カレンダーに参加すると、相手の何か月も前の予定が降りてくる（v0.45.2081で除外）
+  //   ・自動生成の日誌は、過去の日付で作られる（除外できていなかった）
+  //   ・書き出したデータを取り込んでも同じことが起きる
+  // 塞いでも新しい経路が見つかり、今日で3回目になった。
+  //
+  // 決め方そのものを変える。「このアプリを初めて開いた日」を起点にする。
+  // meta.firstLaunchDate は初回に1回だけ記録され、その後は書き換わらない。
+  // 何が入ってこようと動かないので、経路を数え続ける必要がなくなる（第79条）。
+  // firstLaunchDate は、これまでログインしていない人にしか記録されていなかった
+  // （cloudNudgeCheckLaunchTriggers がログイン済みなら先に抜けるため）。
+  // 空のまま使うと、長く使っている人がいきなり1日目に戻る。
+  // 空のときは、これまでの決め方（手元の一番古い日）で埋めてから使う。
+  // 一度埋めれば、その後は動かない。
   var startDate = null;
-  if (typeof allTasks !== 'undefined' && allTasks && allTasks.length > 0) {
-    // v0.45.2081: 【権威】2026-09-06、今日はじめて登録した人の画面が
-    // 「元年 124日目」になっていた、との報告。
-    //
-    // 起点を「手元にある一番古い予定の作成日」から決めていた。
-    // だが共有カレンダーに参加すると、相手が何か月も前に作った予定が降りてくる。
-    // それが一番古いので、参加した瞬間に相手の歴を背負わされる。
-    //
-    // 自分の歩みは、自分が作ったものからしか始まらない。
-    // 他人のカレンダーの予定は数えない。
-    var _myCloudIds = {};
+  var _fl = (allSettings && allSettings.meta && allSettings.meta.firstLaunchDate) || '';
+  if (!_fl) {
     try {
-      (allSettings.calendar.list || []).forEach(function(c) {
-        if (c && c.cloudCalendarId && c.sharedOwner === false) _myCloudIds[c.cloudCalendarId] = true;
+      var _seed = null;
+      (allTasks || []).forEach(function(t) {
+        if (!t || !t.createdAt) return;
+        if (t.autoFilled === true) return;                       // 自動生成の日誌は数えない
+        if (t.createdBy && window._cloudUserId && t.createdBy !== window._cloudUserId) return;
+        if (!_seed || t.createdAt < _seed) _seed = t.createdAt;
       });
-    } catch (eEra) {}
-    var _oldest = allTasks
-      .filter(function(t) {
-        if (!t) return false;
-        // 参加しただけのカレンダーの予定は、自分の歩みではない
-        if (t.cloudCalendarId && _myCloudIds[t.cloudCalendarId]) return false;
-        // 作った人が分かっていて、自分でないなら数えない
-        if (t.createdBy && window._cloudUserId && t.createdBy !== window._cloudUserId) return false;
-        return true;
-      })
-      .map(function(t){ return t.createdAt ? new Date(t.createdAt) : null; })
-      .filter(function(d){ return d && !isNaN(d.getTime()); })
-      .sort(function(a, b){ return a - b; })[0];
-    if (_oldest) startDate = _oldest;
+      var _base = _seed ? new Date(_seed) : new Date();
+      if (!isNaN(_base.getTime())) {
+        _fl = _base.getFullYear() + '-' +
+              String(_base.getMonth() + 1).padStart(2, '0') + '-' +
+              String(_base.getDate()).padStart(2, '0');
+        allSettings.meta.firstLaunchDate = _fl;
+        saveAllSettings();
+        console.log('[歴] 使い始めた日を記録しました: ' + _fl);
+      }
+    } catch (eSeed) { console.warn('[歴] 使い始めた日を決められませんでした:', eSeed && eSeed.message); }
+  }
+  if (_fl) {
+    var _dFL = new Date(_fl + 'T00:00:00+09:00');
+    if (!isNaN(_dFL.getTime())) startDate = _dFL;
   }
   if (!startDate) {
     var startStr = (allSettings && allSettings.meta && allSettings.meta.createdAt) || null;
@@ -30430,6 +30457,14 @@ window._repairCloudCalendarIds();
 
     // v0.45.1250: 起動時トリガー（経過日数・タスク総数・起動回数）優先順位付きで1つだけ提示
     async function cloudNudgeCheckLaunchTriggers() {
+      // v0.46.66: 使い始めた日は、ログインしていてもいなくても記録する。
+      // これまではログイン済みだと先に抜けていたため、記録されていなかった。
+      // 歴の起点に使う値なので、誘導帯の都合で欠けてはいけない。
+      var _todayFL = _cloudNudgeToday();
+      if (!allSettings.meta.firstLaunchDate) {
+        allSettings.meta.firstLaunchDate = _todayFL;
+        saveAllSettings();
+      }
       if (await cloudNudgeIsLoggedIn()) return;
       var today = _cloudNudgeToday();
       // 起動回数カウント・初回起動日の記録（判定より先に更新）
@@ -46381,7 +46416,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.65', date: '2026-09-10',
+    ver: 'v0.46.68', date: '2026-09-10',
     items: [
       { icon:'🎨', t:'カレンダーのアイコン',
         before:'32種（記号だけ）', after:'62種（花・動物・道具など）' },
@@ -46393,6 +46428,13 @@ var _NEWS_DATA = [
         before:'お金の予定が出ると入るで混ざっていた', after:'「▲出る」「▽入る」で絞れる' },
       { icon:'☁️', t:'クラウドへの送信',
         before:'届いているのに「送れません」と出ることがあった', after:'本当に送れなかったものだけ知らせる' },
+      { icon:'👆', t:'週間カレンダーで予定を押したとき',
+        before:'完了になった', after:'編集が開く（完了は編集画面からできます）' },
+      { icon:'📋', t:'週間カレンダーの日付',
+        before:'押しても何も起きなかった', after:'押すと、その日の予定を一覧で見られる' },
+      { icon:'📅', t:'きくモン歴の日数',
+        before:'使い始めたばかりなのに100日以上経過していることがあった',
+        after:'初めて開いた日から数えます（1日目から始まります）' },
       { icon:'🔗', t:'共有カレンダーに書いたのに相手に届かない',
         before:'画面では共有を選べているのに、自分だけの場所へ入っていることがあった',
         after:'繋がりが切れていたら、開いたときに直します（これまでの予定も直します）' },
