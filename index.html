@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.68 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.72 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.68';
+    const APP_VERSION = 'v0.46.72';
   const APP_LAST_UPDATED = '2026-09-09'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10387,6 +10387,17 @@ function _showInviteWelcome() {
         </label>
         <div style="font-size:0.75em;color:#aaa;margin-bottom:12px;">チェックした層だけがセンターサークルのタップで切り替えられます</div>
         <div id="matrixLayerCheckList" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <!-- v0.46.69: 魚の目モードの色分け。既定は無色。
+             色は「4つが別のもの」と示すために付けていたが、
+             見出しと絵文字で既に分かれており、重ねて言っているだけになる。
+             毎日見るものなので静かなほうがよい。色で分けたい人のために残す。 -->
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:14px;padding:8px 10px;background:#fafafa;border-radius:8px;">
+          <input type="checkbox" id="quadColorOnCheck"
+            onchange="if(!allSettings.ui)allSettings.ui={};allSettings.ui.quadColorOn=this.checked;saveAllSettings();if(typeof renderQuadView==='function')renderQuadView();"
+            style="width:16px;height:16px;accent-color:#1976d2;cursor:pointer;">
+          <span style="font-size:0.85em;color:#333;font-weight:600;">🎨 魚の目モードを4色で分ける</span>
+        </label>
+        <div style="font-size:0.75em;color:#aaa;margin-bottom:12px;">外すと白一色になります（既定）</div>
       </div>
 <!-- v0.45.1539: 【権威】2026-08-06、家族共有（コードを手渡しする方式）は共有カレンダーに
         置き換わったため、導線を削除する。選択肢が2つあると初めての人が迷ううえ、コードと
@@ -22132,19 +22143,63 @@ function renderMonthlySidebarTasks() {
           })(taskId);
           _body.appendChild(_asg);
         }
-        if (t.memo && String(t.memo).trim()) {
-          var _memoEl = document.createElement('div');
-          _memoEl.className = 'msb-task-memo';
-          _memoEl.style.cssText = 'font-size:14px;color:#8e8e8e;line-height:1.7;margin-top:3px;white-space:pre-wrap;word-break:break-all;';
-          _memoEl.innerHTML = (typeof linkifyText === 'function') ? linkifyText(t.memo) : _escapeHtml(t.memo);
-          // リンクを押したときに、行の編集が始まらないようにする
-          _memoEl.onclick = function(e) {
-            if (e && e.target && e.target.tagName === 'A') { e.stopPropagation(); return; }
-            e && e.stopPropagation();
-            startSidebarInlineEdit(taskId);
-          };
-          _body.appendChild(_memoEl);
-        }
+              if (t.memo && String(t.memo).trim()) {
+                // v0.46.71: 【権威】2026-09-10、主催者からの案内をそのまま貼っていて、
+                // 長いメモが画面を埋めてしまう。折りたためるようにしたい、との要望。
+                //
+                // 短いメモまで畳むと、押す手間が増えるだけになる。
+                // 3行に収まるものはそのまま出し、超えるものだけ畳む。
+                // 畳んだ状態を既定にする。長いメモは「あることが分かればよい」ことが多い。
+                var _memoText = String(t.memo);
+                var _memoLines = _memoText.split('\n').length;
+                var _isLong = (_memoLines > 3 || _memoText.length > 90);
+
+                var _memoEl = document.createElement('div');
+                _memoEl.className = 'msb-task-memo';
+                _memoEl.style.cssText = 'font-size:14px;color:#8e8e8e;line-height:1.7;margin-top:3px;white-space:pre-wrap;word-break:break-word;';
+                _memoEl.innerHTML = (typeof linkifyText === 'function') ? linkifyText(t.memo) : _escapeHtml(t.memo);
+                // リンクを押したときに、行の編集が始まらないようにする
+                _memoEl.onclick = function(e) {
+                  if (e && e.target && e.target.tagName === 'A') { e.stopPropagation(); return; }
+                  e && e.stopPropagation();
+                  startSidebarInlineEdit(taskId);
+                };
+
+                if (_isLong) {
+                  // v0.46.72: 既定は開いた状態にする。
+                  // 畳むのを既定にしていたが、メモは読むために書いている。
+                  // 毎回押して開くなら、折りたたむ意味がない。
+                  // 邪魔なときに畳めればよい、という要望だった。
+                  var _memoBtn = document.createElement('div');
+                  _memoBtn.style.cssText = 'font-size:12px;color:#4a6fa5;cursor:pointer;margin-top:2px;user-select:none;';
+                  // 行数が少なくても長い文があるので、行数だけでは実感に合わない。
+                  // 3行を超えるものは行数、1〜3行で長いものは文字数で伝える。
+                  var _memoHint = (_memoLines > 3)
+                    ? (_memoLines + '行')
+                    : (_memoText.length + '文字');
+                  _memoBtn.textContent = '▾ メモを畳む';
+                  _memoBtn.onclick = (function(_el, _btn, _n) {
+                    return function(e) {
+                      e && e.stopPropagation();
+                      // 開いている（高さの制限なし）なら畳む。畳んでいるなら開く。
+                      var _isOpen = !_el.style.maxHeight || _el.style.maxHeight === 'none';
+                      if (_isOpen) {
+                        _el.style.maxHeight = '4.8em';
+                        _el.style.overflow  = 'hidden';
+                        _btn.textContent = '▸ メモを開く（' + _n + '）';
+                      } else {
+                        _el.style.maxHeight = 'none';
+                        _el.style.overflow  = '';
+                        _btn.textContent = '▾ メモを畳む';
+                      }
+                    };
+                  })(_memoEl, _memoBtn, _memoHint);
+                  _body.appendChild(_memoEl);
+                  _body.appendChild(_memoBtn);
+                } else {
+                  _body.appendChild(_memoEl);
+                }
+              }
         // ⚙️ 詳細編集ボタン（既存モーダルを開く）
         var detailBtn = document.createElement('button');
         detailBtn.textContent = '✏️';
@@ -32355,6 +32410,9 @@ function loadSettingsUI() {
       } catch (eKy) {}
       var _showMccCheck = document.getElementById('showMatrixCenterCircleCheck');
       if (_showMccCheck) _showMccCheck.checked = allSettings.ui.showMatrixCenterCircle === true;
+      // v0.46.69: 魚の目モードの色分け。既定は外れた状態（無色）。
+      var _quadColorCheck = document.getElementById('quadColorOnCheck');
+      if (_quadColorCheck) _quadColorCheck.checked = (allSettings.ui && allSettings.ui.quadColorOn === true);
 
       // マトリクス層チェックボックス一覧を動的生成
       var _mlCheckList = document.getElementById('matrixLayerCheckList');
@@ -35944,19 +36002,26 @@ function renderDashboardView() {
       { key: 'slot3', label: '午後',         emoji: '☀️',  color: '#f3e5f5' },
       { key: 'slot4', label: '夕方',         emoji: '🌆', color: '#e8f5e9' }
     ];
+    // v0.46.69: 【権威】2026-09-10、魚の目モードの4色がうるさい、
+    // 無色を既定にして設定で切り替えたい、との指示。
+    //
+    // 色は「4つの場所が別のもの」と示すために付けていた。
+    // だが見出しと絵文字で既に分かれており、色は重ねて言っているだけになる。
+    // 毎日見るものなので、静かなほうがよい。色で分けたい日もあるので設定で戻せる。
     function getQuadSlots() {
-      // allSettingsに保存済みならそれを使う、なければデフォルト
+      var _plain = !(allSettings.ui && allSettings.ui.quadColorOn === true);
+      var _mk = function(i, label, emoji) {
+        return {
+          key:   QUAD_SLOT_DEFAULTS[i].key,
+          label: label || QUAD_SLOT_DEFAULTS[i].label,
+          emoji: emoji || QUAD_SLOT_DEFAULTS[i].emoji,
+          color: _plain ? '#ffffff' : QUAD_SLOT_DEFAULTS[i].color
+        };
+      };
       if (allSettings.quadViewSlots && allSettings.quadViewSlots.length === 4) {
-        return allSettings.quadViewSlots.map(function(c, i) {
-          return {
-            key: QUAD_SLOT_DEFAULTS[i].key,
-            label: c.label || QUAD_SLOT_DEFAULTS[i].label,
-            emoji: c.emoji || QUAD_SLOT_DEFAULTS[i].emoji,
-            color: QUAD_SLOT_DEFAULTS[i].color
-          };
-        });
+        return allSettings.quadViewSlots.map(function(c, i) { return _mk(i, c.label, c.emoji); });
       }
-      return QUAD_SLOT_DEFAULTS.slice();
+      return QUAD_SLOT_DEFAULTS.map(function(d, i) { return _mk(i, d.label, d.emoji); });
     }
     function renderQuadView() {
       var body = document.getElementById('quadViewBody');
@@ -36046,6 +36111,8 @@ function renderDashboardView() {
       // 誤認識していた。第266条（ST-266）の他の入力欄と同じ対策を適用する。
       input.autocomplete = 'off';
       input.name = 'quad-task-text-' + col.key;
+        // v0.46.70: 描き直したあと、同じ入力欄に戻れるようにする目印。
+        input.dataset.quadInput = col.key;
       input.style.cssText = 'flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:0.75em;background:#fff;min-width:0;';
       var addBtn = document.createElement('button');
       addBtn.type = 'button'; // フォーム送信防止
@@ -36077,6 +36144,14 @@ function renderDashboardView() {
         setTimeout(function() {
           window._quadAddTaskRunning = false;
           renderQuadView(); // Enterイベント完全終了後に再描画
+          // v0.46.70: 【権威】2026-09-10、1つ入力し終えるたびに
+          // 入力欄までマウスを持っていき直す手間がある、との指摘。
+          // Enterで blur() したあと作り直しているため、入力欄が入れ替わる。
+          // 続けて書きたいのが普通なので、描き直した後に同じ場所へ戻す。
+          try {
+            var _again = document.querySelector('[data-quad-input="' + col.key + '"]');
+            if (_again) _again.focus();
+          } catch (eF) {}
         }, 50);
       }
       addBtn.onclick = _quadAddTask;
@@ -46416,7 +46491,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.68', date: '2026-09-10',
+    ver: 'v0.46.72', date: '2026-09-10',
     items: [
       { icon:'🎨', t:'カレンダーのアイコン',
         before:'32種（記号だけ）', after:'62種（花・動物・道具など）' },
@@ -46428,6 +46503,13 @@ var _NEWS_DATA = [
         before:'お金の予定が出ると入るで混ざっていた', after:'「▲出る」「▽入る」で絞れる' },
       { icon:'☁️', t:'クラウドへの送信',
         before:'届いているのに「送れません」と出ることがあった', after:'本当に送れなかったものだけ知らせる' },
+      { icon:'📄', t:'月間カレンダーの長いメモ',
+        before:'案内文を貼ると画面を埋めてしまい、畳む手立てがなかった',
+        after:'「▾ メモを畳む」で畳めます（ふだんは開いたまま）' },
+      { icon:'🎨', t:'魚の目モードの色',
+        before:'いつも4色に分かれていた', after:'白一色になりました（設定で4色に戻せます）' },
+      { icon:'⌨️', t:'魚の目モードで続けて入力するとき',
+        before:'1つ書くたびに、入力欄を押し直す必要があった', after:'そのまま次を書けます' },
       { icon:'👆', t:'週間カレンダーで予定を押したとき',
         before:'完了になった', after:'編集が開く（完了は編集画面からできます）' },
       { icon:'📋', t:'週間カレンダーの日付',
