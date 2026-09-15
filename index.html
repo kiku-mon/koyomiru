@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.90 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.91 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.90';
+    const APP_VERSION = 'v0.46.91';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -716,7 +716,7 @@ window._cleanDisplayName = _cleanDisplayName;
 async function _isNameTaken(calendarId, name) {
   try {
     if (!window.supabaseClient || !calendarId || !name) return false;
-    var r = await window.supabaseClient.rpc('koyomiru_name_taken', {
+    var r = await rpcWithTimeout('koyomiru_name_taken', {
       p_calendar_id: calendarId, p_name: name
     });
     if (r && r.error) { console.warn('[呼び名] 重なりを確かめられません:', r.error.message); return false; }
@@ -41828,7 +41828,7 @@ async function lookupInviteCode(code) {
   // 守る必要がないところに見張りを置き、一番大事な入口を塞いでいた。
   // 実際に半日、期限のせいだと思い込んで回り道をした。読むだけの経路から外す。
   if (!window.supabaseClient) { console.warn('[SharedCal] クライアント未初期化'); return null; }
-  var r = await window.supabaseClient.rpc('koyomiru_lookup_invite', { code: code });
+  var r = await rpcWithTimeout('koyomiru_lookup_invite', { code: code });
   if (r.error) { console.error('[SharedCal] コード確認失敗:', r.error.message); }
   return r;
 }
@@ -41873,7 +41873,7 @@ async function peekSharedCalendarByCode(code) {
     window._peekLog.push(_now);
   } catch(eRl) {}
   try {
-    var r = await window.supabaseClient.rpc('koyomiru_peek_invite', { code: code });
+    var r = await rpcWithTimeout('koyomiru_peek_invite', { code: code });
     // v0.45.1813: 失敗の理由を分ける。これまでは何が起きても空を返していたため、
     // 呼び出し側は全部「期限切れ」として表示していた。実際には期限が切れておらず、
     // 通信や権限で失敗しただけのことがある。嘘の説明は調査を丸ごと誤らせる。
@@ -41956,7 +41956,7 @@ async function joinSharedCalendarByCode(code, displayName) {
     _displayName = _displayName.replace(/koyomiru\s*(official|support|staff)/ig, '');
     _displayName = _displayName.trim() || 'メンバー';
   }
-  var r = await window.supabaseClient.rpc('koyomiru_join_by_invite', { code: code, p_display_name: _displayName });
+  var r = await rpcWithTimeout('koyomiru_join_by_invite', { code: code, p_display_name: _displayName });
   if (r.error) { console.error('[SharedCal] 参加失敗:', r.error.message); }
   else { console.log('[SharedCal] 参加OK。calendar_id=' + r.data); }
   return r;
@@ -42998,7 +42998,7 @@ window.revokeViewLink = revokeViewLink;
 // リンクから、そのカレンダーの予定を取ってくる（ログイン不要）
 async function fetchByViewToken(token) {
   if (!window.supabaseClient || !token) return null;
-  var r = await window.supabaseClient.rpc('koyomiru_view_by_token', { p_token: token });
+  var r = await rpcWithTimeout('koyomiru_view_by_token', { p_token: token });
   if (r.error) console.error('[見るだけ] 取得失敗:', r.error.message);
   return r;
 }
@@ -43732,7 +43732,7 @@ async function kickCalendarMember(calendarId, userId, name, btnEl) {
       return;
     }
     window._kickArmed = null;
-    var r = await window.supabaseClient.rpc('koyomiru_kick_member', {
+    var r = await rpcWithTimeout('koyomiru_kick_member', {
       p_calendar_id: calendarId,
       p_user_id: userId
     });
@@ -43940,9 +43940,15 @@ async function loadAdminVisitStats() {
     // 引数の数が違うため置き換えにならず、別物として追加されていた。
     // 引数なしで呼ぶと「どちらか分からない」でエラーになる。
     // 引数を明示して呼ぶ。古いほうはSQLで消す。
-    var r = await window.supabaseClient.rpc('koyomiru_visit_stats', { p_days: 14 });
+    var r = await rpcWithTimeout('koyomiru_visit_stats', { p_days: 14 });
     if (r.error) {
-      listEl.innerHTML = '<span style="color:#ff9a9a;">取得できませんでした。DB側の関数が未作成か、管理者として認識されていない可能性があります。</span>';
+      // v0.46.91: 打ち切りに引っかかったときも、ここへ来る。
+      // 原因が「関数が無い」のか「繋がらない」のかで、やることが違う。
+      var _why = String((r.error && r.error.message) || '');
+      listEl.innerHTML = /返事がありません|繋がって/.test(_why)
+        ? '<span style="color:#ff9a9a;">クラウドに繋がりませんでした。' +
+          '会社や学校のネットワークでは、接続が遮断されていることがあります。</span>'
+        : '<span style="color:#ff9a9a;">取得できませんでした。DB側の関数が未作成か、管理者として認識されていない可能性があります。</span>';
     } else if (!r.data || r.data.length === 0) {
       listEl.innerHTML = '<span style="color:#999;">まだ訪問記録がありません。</span>';
     } else {
@@ -43987,7 +43993,7 @@ async function loadAdminVisitStats() {
       // 上限は控えめに200。60人まで出し、残りは押したときに開く。
       try {
         var _sumLimit = window._visitorShowAll ? 500 : 200;
-        var sr = await window.supabaseClient.rpc('koyomiru_visitor_summary', { p_limit: _sumLimit });
+        var sr = await rpcWithTimeout('koyomiru_visitor_summary', { p_limit: _sumLimit });
         window._visitorSummary = (sr && !sr.error && sr.data) ? sr.data : null;
         if (sr && sr.error) {
           console.warn('[訪問] 人ごとの集計に失敗:', sr.error.message);
@@ -43999,7 +44005,7 @@ async function loadAdminVisitStats() {
         console.warn('[訪問] 人ごとの集計に失敗:', eSum && eSum.message);
       }
       try {
-        var dr = await window.supabaseClient.rpc('koyomiru_visit_detail', { p_days: 14 });
+        var dr = await rpcWithTimeout('koyomiru_visit_detail', { p_days: 14 });
         if (dr && !dr.error && dr.data && dr.data.length > 0) {
           var _fmt = function(iso) {
             try {
@@ -44265,7 +44271,7 @@ async function loadAdminVisitStats() {
       } catch (eDet) { console.warn('[訪問] 明細の取得に失敗:', eDet && eDet.message); }
       // v0.45.1508: 支援リンク等のクリック回数を末尾に添える
       try {
-        var er = await window.supabaseClient.rpc('koyomiru_event_stats');
+        var er = await rpcWithTimeout('koyomiru_event_stats');
         if (er && !er.error && er.data && er.data.length > 0) {
           listEl.innerHTML += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #333;">' +
             '<div style="color:#8ec5ff;font-weight:700;margin-bottom:6px;">🌱 支援リンクのクリック</div>' +
@@ -45953,7 +45959,7 @@ async function unifiedRefreshMyCalendarIds() {
 async function unifiedEnsurePersonalCalendarAndMigrate() {
   if (!window.supabaseClient) return;
   var already = localStorage.getItem('unifiedMigrationDone');
-  var r1 = await window.supabaseClient.rpc('koyomiru_ensure_personal_calendar');
+  var r1 = await rpcWithTimeout('koyomiru_ensure_personal_calendar');
   if (r1.error) {
     console.error('[Unified] 個人カレンダー保証失敗:', r1.error.message);
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 個人カレンダー保証失敗: ' + r1.error.message);
@@ -45962,7 +45968,7 @@ async function unifiedEnsurePersonalCalendarAndMigrate() {
   window._personalCalendarId = r1.data;
   if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 個人カレンダー確認OK: ' + r1.data);
   if (!already) {
-    var r2 = await window.supabaseClient.rpc('koyomiru_migrate_personal_tasks');
+    var r2 = await rpcWithTimeout('koyomiru_migrate_personal_tasks');
     if (r2.error) {
       console.error('[Unified] 旧データ移行失敗:', r2.error.message);
       if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 旧データ移行失敗: ' + r2.error.message);
@@ -46569,11 +46575,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.90', date: '2026-09-15',
+    ver: 'v0.46.91', date: '2026-09-15',
     items: [
       { icon:'⌨️', t:'入力欄に、打っていない文字が入る',
         before:'ブラウザの自動入力が、関係のない文字を入れてしまうことがあった',
         after:'入力欄すべてに名前を付け、自動入力が働かないようにしました' },
+      { icon:'📡', t:'クラウドに繋がらないとき',
+        before:'画面が固まり、ボタンも押せなくなることがあった',
+        after:'しばらく待って諦め、「繋がりませんでした」と出ます' },
       { icon:'☂️', t:'天気へのリンク',
         before:'天気を見るたびに、ブラウザで開き直していた',
         after:'月間カレンダーの上から開けます（3つまで）。設定でアドレスを入れてください' },
@@ -46701,6 +46710,31 @@ window.renderMonthlyWeatherLine = renderMonthlyWeatherLine;
 //
 // 判定を1か所に集める（第79条②）。両方がここを通る。
 // 長すぎる値も弾く。アドレスが2000字を超えることはない。
+// v0.46.91: 【権威】2026-09-15、会社のPCで画面が固まり、ボタンも押せなくなる、との報告。
+// 訪問統計が「読み込み中...」のまま止まっていた。
+//
+// 調べると、DBを呼ぶ12か所すべてに打ち切りが無かった。
+// 会社のネットワークは supabase.co を弾いており、応答が返らない。
+// 返らなければ永久に待ち、その間ずっと画面が固まる。
+//
+// 待つ時間に上限を置く。応えなければ諦めて、そう伝える。
+// 黙って止まるより、「繋がりませんでした」と出るほうがよい。
+function rpcWithTimeout(name, args, ms) {
+  var _ms = ms || 12000;
+  if (!window.supabaseClient) {
+    return Promise.resolve({ data: null, error: { message: 'クラウドに繋がっていません' } });
+  }
+  return Promise.race([
+    window.supabaseClient.rpc(name, args || {}),
+    new Promise(function(resolve) {
+      setTimeout(function() {
+        resolve({ data: null, error: { message: 'クラウドからの返事がありません（' + Math.round(_ms/1000) + '秒）' } });
+      }, _ms);
+    })
+  ]);
+}
+window.rpcWithTimeout = rpcWithTimeout;
+
 // v0.46.90: D&Dの一覧をやめ、固定の3つに戻す。
 // 一覧を入れてから全体が重くなったため。原因の切り分けは、動く版に戻してからやる。
 // 入れ物は weatherLinks（配列）のまま。名前は決め打ちにする。
