@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.88 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.90 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.88';
+    const APP_VERSION = 'v0.46.90';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10392,20 +10392,33 @@ function _showInviteWelcome() {
       </div>
       <!-- マトリクス層表示設定 -->
       <div style="background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
-        <!-- v0.46.86: よく見るページへのリンク。名前もアドレスも自分で決める。
-             台風・地震・避難情報など、何を見たいかは人によって違う。
-             カレンダーと同じように、足す・直す・消す・並べ替えができる。 -->
-        <div style="font-size:0.8em;color:#888;font-weight:700;letter-spacing:.08em;margin:18px 0 6px;">🔗 よく見るページ</div>
+        <!-- v0.46.90: 【権威】2026-09-15、D&Dの一覧を入れてから全体が重くなり、
+             F12も開かないほどになった、との報告。まず動く状態へ戻す。
+             原因の切り分けは、動く版に戻してからやる。
+             天気のリンクは固定の3つに戻す。入れたアドレスはそのまま残る。 -->
+        <div style="font-size:0.8em;color:#888;font-weight:700;letter-spacing:.08em;margin:18px 0 6px;">☂️ 天気へのリンク</div>
         <div style="font-size:0.75em;color:#aaa;line-height:1.8;margin-bottom:8px;">
-          月間カレンダーの上から開けます。天気・台風・地震・避難情報など、自由に足せます。<br>
-          つまんで動かすと並べ替えられます。
+          入れておくと、月間カレンダーの上から開けます。空にすると出ません。<br>
+          書き換えて、入力欄の外を押すと保存されます。
         </div>
-        <div id="weatherLinkList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
-        <button onclick="window.editWeatherLink()"
-          style="width:100%;padding:9px;border:1px dashed #c8d8ea;border-radius:8px;background:#fafcff;
-                 color:#4a6fa5;font-size:0.85em;cursor:pointer;font-family:inherit;margin-bottom:12px;">
-          ＋ リンクを足す
-        </button>
+        <input type="url" maxlength="300" id="weatherLink0" name="koyomiru-weather-0"
+          autocomplete="off" inputmode="url" spellcheck="false"
+          data-form-type="other" data-lpignore="true" data-1p-ignore
+          placeholder="1つ目のアドレス（例：雨雲レーダー）"
+          onchange="window.saveWeatherSlot(0, this.value);"
+          style="width:100%;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px;">
+        <input type="url" maxlength="300" id="weatherLink1" name="koyomiru-weather-1"
+          autocomplete="off" inputmode="url" spellcheck="false"
+          data-form-type="other" data-lpignore="true" data-1p-ignore
+          placeholder="2つ目のアドレス（例：別の雨雲レーダー）"
+          onchange="window.saveWeatherSlot(1, this.value);"
+          style="width:100%;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px;">
+        <input type="url" maxlength="300" id="weatherLink2" name="koyomiru-weather-2"
+          autocomplete="off" inputmode="url" spellcheck="false"
+          data-form-type="other" data-lpignore="true" data-1p-ignore
+          placeholder="3つ目のアドレス（例：週間天気）"
+          onchange="window.saveWeatherSlot(2, this.value);"
+          style="width:100%;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px;">
       </div>
       <!-- v0.45.1539: 【権威】2026-08-06、家族共有（コードを手渡しする方式）は共有カレンダーに
         置き換わったため、導線を削除する。選択肢が2つあると初めての人が迷ううえ、コードと
@@ -32462,7 +32475,14 @@ function loadSettingsUI() {
       var _quadColorCheck = document.getElementById('quadColorOnCheck');
       if (_quadColorCheck) _quadColorCheck.checked = (allSettings.ui && allSettings.ui.quadColorOn === true);
       // v0.46.86: よく見るページの一覧を描く。
-      try { if (typeof renderWeatherLinkSettings === 'function') renderWeatherLinkSettings(); } catch (eW) {}
+      // v0.46.90: 天気のリンクを入力欄に戻す（固定の3つ）。
+      try {
+        var _wl = getWeatherLinks();
+        for (var _i = 0; _i < 3; _i++) {
+          var _el = document.getElementById('weatherLink' + _i);
+          if (_el) _el.value = (_wl[_i] && _wl[_i].url) || '';
+        }
+      } catch (eWL) {}
 
       // マトリクス層チェックボックス一覧を動的生成
       var _mlCheckList = document.getElementById('matrixLayerCheckList');
@@ -32690,7 +32710,15 @@ function loadCalendarSettingsUI() {
           setTimeout(() => row.style.opacity = '0.4', 0);
           e.dataTransfer.effectAllowed = 'move';
         });
-        row.addEventListener('dragend', function() { row.style.opacity = '1'; });
+        // v0.46.89: 【権威】2026-09-15、リンクを並べ替えた後、カレンダーのD&Dが効かなくなる、との報告。
+      // 調べると、カレンダー側は dragend で dragSrcIdx を戻していなかった。
+      // 途中でやめたときや、別の一覧を動かしたときに、前の値が残る。
+      // 残った値のまま次に落とすと、意図しない場所へ動くか、何も起きない。
+      // つまみ終わったら必ず戻す。
+      row.addEventListener('dragend', function() {
+        row.style.opacity = '1';
+        dragSrcIdx = null;
+      });
         row.addEventListener('dragover', function(e) {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'move';
@@ -46541,16 +46569,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.88', date: '2026-09-15',
+    ver: 'v0.46.90', date: '2026-09-15',
     items: [
       { icon:'⌨️', t:'入力欄に、打っていない文字が入る',
         before:'ブラウザの自動入力が、関係のない文字を入れてしまうことがあった',
         after:'入力欄すべてに名前を付け、自動入力が働かないようにしました' },
-      { icon:'🔗', t:'よく見るページ',
+      { icon:'☂️', t:'天気へのリンク',
         before:'天気を見るたびに、ブラウザで開き直していた',
-        after:'月間カレンダーの上に置けます。名前も行き先も自分で決められ、' +
-              'つまんで並べ替えられます。<br>' +
-              '雨雲レーダーを2つ並べて見比べる、台風・地震・避難情報を足す、といった使い方ができます。' },
+        after:'月間カレンダーの上から開けます（3つまで）。設定でアドレスを入れてください' },
       { icon:'✏️', t:'メモを書く欄',
         before:'2行ぶんしかなく、広げることもできなかった',
         after:'6行ぶんに広げ、手でも大きくできます' },
@@ -46675,34 +46701,25 @@ window.renderMonthlyWeatherLine = renderMonthlyWeatherLine;
 //
 // 判定を1か所に集める（第79条②）。両方がここを通る。
 // 長すぎる値も弾く。アドレスが2000字を超えることはない。
-// v0.46.86: 【権威】2026-09-15、台風・地震・避難情報なども自分で足したい、
-// カレンダーのように追加・編集・削除・並べ替えをしたい、との要望。
-//
-// 私が種類を決めるのをやめる。何を見たいかは人によって違い、来年また変わる。
-// 「よく見るページ」の一覧として持ち、名前もアドレスも自分で決められるようにする。
-//
-// 形： allSettings.ui.weatherLinks = [{ id, name, url }, ...]
-// 古い weatherRainUrl / weatherRainUrl2 / weatherWeekUrl は、一度だけこの形へ移す。
+// v0.46.90: D&Dの一覧をやめ、固定の3つに戻す。
+// 一覧を入れてから全体が重くなったため。原因の切り分けは、動く版に戻してからやる。
+// 入れ物は weatherLinks（配列）のまま。名前は決め打ちにする。
+var WEATHER_SLOT_NAMES = ['☂️ 雨雲レーダー1', '☂️ 雨雲レーダー2', '📅 週間天気'];
+
 function getWeatherLinks() {
   try {
     if (!allSettings.ui) allSettings.ui = {};
     var _list = allSettings.ui.weatherLinks;
     if (Array.isArray(_list)) return _list;
-
-    // 一度だけ、古い3つを移す。移し終えたら古い値は消す。
+    // 古い3つ（weatherRainUrl 等）から、一度だけ移す。
     _list = [];
-    [['weatherRainUrl', '雨雲レーダー1'],
-     ['weatherRainUrl2', '雨雲レーダー2'],
-     ['weatherWeekUrl', '週間天気']].forEach(function(pair) {
-      var _u = String(allSettings.ui[pair[0]] || '').trim();
-      if (_u && /^https?:\/\//i.test(_u)) {
-        _list.push({ id: 'wl_' + Date.now() + '_' + _list.length, name: pair[1], url: _u });
-      }
-      delete allSettings.ui[pair[0]];
+    ['weatherRainUrl', 'weatherRainUrl2', 'weatherWeekUrl'].forEach(function(k, i) {
+      var _u = String(allSettings.ui[k] || '').trim();
+      _list.push({ name: WEATHER_SLOT_NAMES[i], url: (_u && /^https?:\/\//i.test(_u)) ? _u : '' });
+      delete allSettings.ui[k];
     });
     allSettings.ui.weatherLinks = _list;
     saveAllSettings();
-    if (_list.length) console.log('[リンク] 天気のリンク ' + _list.length + '件を一覧に移しました');
     return _list;
   } catch (e) { return []; }
 }
@@ -46711,221 +46728,33 @@ window.getWeatherLinks = getWeatherLinks;
 // 入れてよい値か。ここ1か所で決める（第79条②）。
 function _isValidLinkUrl(v) {
   var _v = String(v == null ? '' : v).trim();
-  if (!_v) return { ok: false, why: 'アドレスが空です' };
+  if (!_v) return { ok: true, url: '' };            // 空は「消す」
   if (!/^https?:\/\//i.test(_v)) return { ok: false, why: 'https:// で始まるアドレスを入れてください' };
   if (_v.length > 300) return { ok: false, why: 'アドレスが長すぎます（' + _v.length + '字）' };
   if (/[\s<>]/.test(_v)) return { ok: false, why: 'アドレスではないものが貼られています' };
   return { ok: true, url: _v };
 }
 
-function saveWeatherLinks(list) {
-  if (!allSettings.ui) allSettings.ui = {};
-  allSettings.ui.weatherLinks = list;
-  saveAllSettings();
-  if (typeof renderMonthlyWeatherLine === 'function') renderMonthlyWeatherLine();
-  if (typeof renderWeatherLinkSettings === 'function') renderWeatherLinkSettings();
-}
-window.saveWeatherLinks = saveWeatherLinks;
-
-// v0.46.86: リンクを1つ足す／直す。名前とアドレスの両方を扱う。
-// prompt は第55条で禁止されているので、下から出る小さなフォームにする。
-function editWeatherLink(id) {
+function saveWeatherSlot(idx, value) {
   try {
-    var _list = getWeatherLinks();
-    var _cur = id ? _list.find(function(x){ return x.id === id; }) : null;
-
-    var host = document.getElementById('weatherUrlEditHost');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'weatherUrlEditHost';
-      host.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99700;background:#fff;' +
-        'border-top:2px solid #4a6fa5;padding:14px 16px;box-shadow:0 -4px 16px rgba(0,0,0,0.12);';
-      document.body.appendChild(host);
-    }
-    host.innerHTML = '';
-    try { document.body.classList.add('weather-edit-open'); } catch (eC) {}
-
-    var ttl = document.createElement('div');
-    ttl.style.cssText = 'font-size:0.85em;font-weight:700;color:#333;margin-bottom:8px;';
-    ttl.textContent = _cur ? 'リンクを直す' : 'リンクを足す';
-    host.appendChild(ttl);
-
-    var _mkInput = function(ph, val, ml) {
-      var el = document.createElement('input');
-      el.type = 'text'; el.value = val || ''; el.placeholder = ph;
-      el.maxLength = ml;
-      el.autocomplete = 'off';
-      el.name = 'koyomiru-link-' + ph;
-      el.setAttribute('data-form-type', 'other');
-      el.setAttribute('data-lpignore', 'true');
-      el.setAttribute('data-1p-ignore', '');
-      el.style.cssText = 'width:100%;padding:9px 10px;border:1px solid #dcdcdc;border-radius:8px;' +
-        'font-size:16px;box-sizing:border-box;margin-bottom:8px;';
-      return el;
-    };
-    var nameEl = _mkInput('名前（例：台風情報）', _cur ? _cur.name : '', 20);
-    var urlEl  = _mkInput('https:// から始まるアドレス', _cur ? _cur.url : '', 300);
-    host.appendChild(nameEl);
-    host.appendChild(urlEl);
-
-    var row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:8px;';
-    var _close = function() {
-      try { host.remove(); } catch (e) {}
-      try { document.body.classList.remove('weather-edit-open'); } catch (e2) {}
-    };
-
-    var ok = document.createElement('button');
-    ok.textContent = '保存';
-    ok.style.cssText = 'flex:1;padding:10px;border:none;border-radius:8px;background:#4a6fa5;' +
-      'color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;font-family:inherit;';
-    ok.onclick = function() {
-      var _chk = _isValidLinkUrl(urlEl.value);
-      if (!_chk.ok) {
-        if (typeof showToast === 'function') showToast('⚠️ ' + _chk.why, {type:'warn'});
-        return;
-      }
-      var _nm = String(nameEl.value || '').trim().slice(0, 20) || 'リンク';
-      if (_cur) { _cur.name = _nm; _cur.url = _chk.url; }
-      else { _list.push({ id: 'wl_' + Date.now(), name: _nm, url: _chk.url }); }
-      saveWeatherLinks(_list);
-      if (typeof showToast === 'function') showToast(_cur ? '直しました' : '足しました');
-      _close();
-    };
-
-    var cancel = document.createElement('button');
-    cancel.textContent = 'やめる';
-    cancel.style.cssText = 'flex:0 0 auto;padding:10px 18px;border:1px solid #dcdcdc;border-radius:8px;' +
-      'background:#fff;color:#666;font-size:0.9em;cursor:pointer;font-family:inherit;';
-    cancel.onclick = _close;
-
-    row.appendChild(ok); row.appendChild(cancel);
-    host.appendChild(row);
-    setTimeout(function(){ try { (_cur ? urlEl : nameEl).focus(); } catch (e) {} }, 60);
-  } catch (e) { console.warn('[リンク] 開けませんでした:', e && e.message); }
-}
-window.editWeatherLink = editWeatherLink;
-
-// 1つ消す。2回押しで確かめる（第55条②）。
-function deleteWeatherLink(id, btn) {
-  try {
-    if (btn && btn.dataset.confirm !== '1') {
-      btn.dataset.confirm = '1';
-      var _t = btn.textContent;
-      btn.textContent = '本当に消す？';
-      btn.style.background = '#b3261e';
-      btn.style.color = '#fff';
-      setTimeout(function() {
-        if (!btn) return;
-        btn.dataset.confirm = '';
-        btn.textContent = _t;
-        btn.style.background = '';
-        btn.style.color = '';
-      }, 3000);
+    var _chk = _isValidLinkUrl(value);
+    if (!_chk.ok) {
+      if (typeof showToast === 'function') showToast('⚠️ ' + _chk.why, {type:'warn'});
       return;
     }
-    var _list = getWeatherLinks().filter(function(x){ return x.id !== id; });
-    saveWeatherLinks(_list);
-    if (typeof showToast === 'function') showToast('消しました');
-  } catch (e) { console.warn('[リンク] 消せませんでした:', e && e.message); }
-}
-window.deleteWeatherLink = deleteWeatherLink;
-
-// v0.46.86: 設定の一覧を描く。つまんで動かすと並べ替えられる。
-// 並べ替えはスタンプと同じやり方（dragstart / dragover / drop）にする。
-function renderWeatherLinkSettings() {
-  try {
-    var box = document.getElementById('weatherLinkList');
-    if (!box) return;
     var _list = getWeatherLinks();
-    box.innerHTML = '';
-    if (!_list.length) {
-      var _empty = document.createElement('div');
-      _empty.style.cssText = 'font-size:0.8em;color:#c8c8c8;padding:8px 2px;';
-      _empty.textContent = 'まだありません。下の「＋ リンクを足す」から足してください。';
-      box.appendChild(_empty);
-      return;
+    while (_list.length < 3) _list.push({ name: WEATHER_SLOT_NAMES[_list.length], url: '' });
+    _list[idx] = { name: WEATHER_SLOT_NAMES[idx], url: _chk.url };
+    allSettings.ui.weatherLinks = _list;
+    saveAllSettings();
+    if (typeof renderMonthlyWeatherLine === 'function') renderMonthlyWeatherLine();
+    if (typeof showToast === 'function') {
+      showToast(_chk.url ? (WEATHER_SLOT_NAMES[idx] + 'を保存しました')
+                         : (WEATHER_SLOT_NAMES[idx] + 'を消しました'));
     }
-    _list.forEach(function(it, idx) {
-      var row = document.createElement('div');
-      row.draggable = true;
-      row.dataset.idx = String(idx);
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;' +
-        'border:1px solid #e5e7eb;border-radius:8px;background:#fff;';
-
-      var grip = document.createElement('span');
-      grip.textContent = '⠿';
-      grip.title = 'つまんで動かすと並べ替えられます';
-      grip.style.cssText = 'color:#c8c8c8;cursor:grab;flex-shrink:0;font-size:1.1em;';
-      row.appendChild(grip);
-
-      var body = document.createElement('div');
-      body.style.cssText = 'flex:1;min-width:0;';
-      var nm = document.createElement('div');
-      nm.textContent = it.name || 'リンク';
-      nm.style.cssText = 'font-size:0.88em;color:#333;font-weight:600;';
-      var ur = document.createElement('div');
-      ur.textContent = it.url || '';
-      ur.style.cssText = 'font-size:0.72em;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-      body.appendChild(nm); body.appendChild(ur);
-      row.appendChild(body);
-
-      var ed = document.createElement('button');
-      ed.textContent = '✎';
-      ed.title = '直す';
-      ed.style.cssText = 'flex-shrink:0;padding:4px 9px;border:1px solid #dcdcdc;border-radius:6px;' +
-        'background:#fff;color:#666;cursor:pointer;font-family:inherit;';
-      ed.onclick = (function(_id){ return function(){ editWeatherLink(_id); }; })(it.id);
-      row.appendChild(ed);
-
-      var del = document.createElement('button');
-      del.textContent = '消す';
-      del.style.cssText = 'flex-shrink:0;padding:4px 9px;border:1px solid #f0d0d0;border-radius:6px;' +
-        'background:#fff;color:#b3261e;font-size:0.8em;cursor:pointer;font-family:inherit;';
-      del.onclick = (function(_id){ return function(){ deleteWeatherLink(_id, this); }; })(it.id);
-      row.appendChild(del);
-
-      // 並べ替え
-      row.addEventListener('dragstart', function(e) {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', String(idx));
-        row.style.opacity = '0.4';
-      });
-      row.addEventListener('dragend', function() {
-        row.style.opacity = '1';
-        // 印が付いているものだけ戻す。全部を舐めると、件数が増えたときに重い。
-        box.querySelectorAll('div[data-hl="1"]').forEach(function(r) {
-          r.dataset.hl = ''; r.style.borderColor = '#e5e7eb';
-        });
-      });
-      // v0.46.88: 【権威】2026-09-15、つまんで動かすと重い、との指摘。
-      // dragover は指が動くたびに何度も走る。そのたびに見た目を書き換えていた。
-      // 既に同じ色なら何もしない。書き換えの回数が一気に減る。
-      row.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        if (row.dataset.hl !== '1') { row.dataset.hl = '1'; row.style.borderColor = '#4a6fa5'; }
-      });
-      row.addEventListener('dragleave', function() {
-        if (row.dataset.hl === '1') { row.dataset.hl = ''; row.style.borderColor = '#e5e7eb'; }
-      });
-      row.addEventListener('drop', function(e) {
-        e.preventDefault();
-        row.style.borderColor = '#e5e7eb';
-        var from = parseInt(e.dataTransfer.getData('text/plain'), 10);
-        var to = idx;
-        if (isNaN(from) || from === to) return;
-        var _l = getWeatherLinks();
-        var _moved = _l.splice(from, 1)[0];
-        _l.splice(to, 0, _moved);
-        saveWeatherLinks(_l);
-      });
-
-      box.appendChild(row);
-    });
-  } catch (e) { console.warn('[リンク] 一覧を描けませんでした:', e && e.message); }
+  } catch (e) { console.warn('[天気] 保存に失敗:', e && e.message); }
 }
-window.renderWeatherLinkSettings = renderWeatherLinkSettings;
+window.saveWeatherSlot = saveWeatherSlot;
 
 function renderOshiraseNews() {
   try {
