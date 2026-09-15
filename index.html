@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.84 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.85 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.84';
+    const APP_VERSION = 'v0.46.85';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10407,14 +10407,20 @@ function _showInviteWelcome() {
                オートコンプリートが誤って入れていた。type を url にし、name も付けたが、
                既に入ってしまった値を消す手立てが「全部選んで消す」しかなかった。
                消すボタンを置く。空にすればリンクは出なくなる。 -->
-          <span onclick="if(!allSettings.ui)allSettings.ui={};allSettings.ui.weatherRainUrl='';allSettings.ui.weatherWeekUrl='';saveAllSettings();var a=document.getElementById('weatherRainUrlInput');if(a)a.value='';var b=document.getElementById('weatherWeekUrlInput');if(b)b.value='';if(typeof renderMonthlyWeatherLine==='function')renderMonthlyWeatherLine();if(typeof showToast==='function')showToast('天気のリンクを消しました');"
-            style="color:#b3261e;cursor:pointer;text-decoration:underline;">両方とも消す</span>
+          <span onclick="if(!allSettings.ui)allSettings.ui={};allSettings.ui.weatherRainUrl='';allSettings.ui.weatherRainUrl2='';allSettings.ui.weatherWeekUrl='';saveAllSettings();['weatherRainUrlInput','weatherRainUrl2Input','weatherWeekUrlInput'].forEach(function(i){var e=document.getElementById(i);if(e)e.value='';});if(typeof renderMonthlyWeatherLine==='function')renderMonthlyWeatherLine();if(typeof showToast==='function')showToast('天気のリンクを消しました');"
+            style="color:#b3261e;cursor:pointer;text-decoration:underline;">すべて消す</span>
         </div>
         <input type="url" maxlength="300" id="weatherRainUrlInput" name="koyomiru-weather-rain"
           autocomplete="off" inputmode="url" spellcheck="false"
           data-form-type="other" data-lpignore="true" data-1p-ignore
-          placeholder="雨雲レーダーのアドレス（いつも見ている天気のページを開いて、アドレスを貼る）"
+          placeholder="雨雲レーダー1のアドレス（いつも見ている天気のページを開いて、アドレスを貼る）"
           onchange="window._saveWeatherUrl('weatherRainUrl', this.value);"
+          style="width:100%;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px;">
+        <input type="url" maxlength="300" id="weatherRainUrl2Input" name="koyomiru-weather-rain2"
+          autocomplete="off" inputmode="url" spellcheck="false"
+          data-form-type="other" data-lpignore="true" data-1p-ignore
+          placeholder="雨雲レーダー2のアドレス（別の天気のページを見たいとき）"
+          onchange="window._saveWeatherUrl('weatherRainUrl2', this.value);"
           style="width:100%;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px;">
         <input type="url" maxlength="300" id="weatherWeekUrlInput" name="koyomiru-weather-week"
           autocomplete="off" inputmode="url" spellcheck="false"
@@ -32501,10 +32507,12 @@ function loadSettingsUI() {
       if (_quadColorCheck) _quadColorCheck.checked = (allSettings.ui && allSettings.ui.quadColorOn === true);
       // v0.46.77: 天気へのリンク。入れた値を戻す。
       try {
-        var _wR = document.getElementById('weatherRainUrlInput');
-        var _wW = document.getElementById('weatherWeekUrlInput');
-        if (_wR) _wR.value = (allSettings.ui && allSettings.ui.weatherRainUrl) || '';
-        if (_wW) _wW.value = (allSettings.ui && allSettings.ui.weatherWeekUrl) || '';
+        [['weatherRainUrlInput','weatherRainUrl'],
+         ['weatherRainUrl2Input','weatherRainUrl2'],
+         ['weatherWeekUrlInput','weatherWeekUrl']].forEach(function(pair) {
+          var _el = document.getElementById(pair[0]);
+          if (_el) _el.value = (allSettings.ui && allSettings.ui[pair[1]]) || '';
+        });
       } catch (eW) {}
 
       // マトリクス層チェックボックス一覧を動的生成
@@ -46584,14 +46592,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.84', date: '2026-09-15',
+    ver: 'v0.46.85', date: '2026-09-15',
     items: [
       { icon:'⌨️', t:'入力欄に、打っていない文字が入る',
         before:'ブラウザの自動入力が、関係のない文字を入れてしまうことがあった',
         after:'入力欄すべてに名前を付け、自動入力が働かないようにしました' },
       { icon:'☂️', t:'天気',
         before:'見るたびにブラウザで開き直していた',
-        after:'月間カレンダーの上から開けます。✎でその場でアドレスを直せます' },
+        after:'月間カレンダーの上から開けます（雨雲レーダー2つ＋週間天気）。✎でその場で直せます' },
       { icon:'✏️', t:'メモを書く欄',
         before:'2行ぶんしかなく、広げることもできなかった',
         after:'6行ぶんに広げ、手でも大きくできます' },
@@ -46694,26 +46702,33 @@ function renderMonthlyWeatherLine() {
     try {
       var _u2 = allSettings.ui || {};
       var _bad = [];
-      ['weatherRainUrl', 'weatherWeekUrl'].forEach(function(k) {
+      ['weatherRainUrl', 'weatherRainUrl2', 'weatherWeekUrl'].forEach(function(k) {
         var _v = String(_u2[k] || '');
         if (_v && (!/^https?:\/\//i.test(_v) || _v.length > 300 || /[\s<>]/.test(_v))) {
           allSettings.ui[k] = '';
-          _bad.push(k === 'weatherRainUrl' ? '雨雲レーダー' : '週間天気');
+          _bad.push(k === 'weatherWeekUrl' ? '週間天気' :
+                    (k === 'weatherRainUrl2' ? '雨雲レーダー2' : '雨雲レーダー1'));
         }
       });
       if (_bad.length) {
         saveAllSettings();
         console.warn('[天気] アドレスでない値が入っていたので消しました: ' + _bad.join('・'));
-        ['weatherRainUrlInput', 'weatherWeekUrlInput'].forEach(function(id) {
-          var _el = document.getElementById(id);
-          if (_el) _el.value = (allSettings.ui[id === 'weatherRainUrlInput' ? 'weatherRainUrl' : 'weatherWeekUrl']) || '';
+        [['weatherRainUrlInput','weatherRainUrl'],
+         ['weatherRainUrl2Input','weatherRainUrl2'],
+         ['weatherWeekUrlInput','weatherWeekUrl']].forEach(function(pair) {
+          var _el = document.getElementById(pair[0]);
+          if (_el) _el.value = allSettings.ui[pair[1]] || '';
         });
       }
     } catch (eClean) {}
     var _ui = allSettings.ui || {};
-    var _rain = String(_ui.weatherRainUrl || '').trim();
-    var _week = String(_ui.weatherWeekUrl || '').trim();
-    if (!_rain && !_week) { box.style.display = 'none'; return; }
+    // v0.46.85: 【権威】2026-09-15、雨雲レーダーは2つ見たい、との要望。
+    // 見る場所によって映り方が違うので、比べたいということ。
+    // 天気は1つでよい、とのことなので増やさない。
+    var _rain  = String(_ui.weatherRainUrl  || '').trim();
+    var _rain2 = String(_ui.weatherRainUrl2 || '').trim();
+    var _week  = String(_ui.weatherWeekUrl  || '').trim();
+    if (!_rain && !_rain2 && !_week) { box.style.display = 'none'; return; }
     var _esc = (typeof escAttr === 'function') ? escAttr : function(x){ return String(x); };
     // v0.46.79: 旅行の「🗺️ 地図を開く ✎」と同じ形にする。
     // 先に作られていた仕組みを数えずに、別の形を作っていた（第79条）。
@@ -46729,8 +46744,9 @@ function renderMonthlyWeatherLine() {
           'color:#9aa6b8;font-size:0.9em;cursor:pointer;font-family:inherit;">✎</button>' +
       '</span>';
     };
-    var html = _a(_rain, '☂️ 雨雲レーダー', 'weatherRainUrl') +
-               _a(_week, '📅 週間天気',     'weatherWeekUrl');
+    var html = _a(_rain,  '☂️ 雨雲レーダー1', 'weatherRainUrl')  +
+               _a(_rain2, '☂️ 雨雲レーダー2', 'weatherRainUrl2') +
+               _a(_week,  '📅 週間天気',      'weatherWeekUrl');
     if (!html) { box.style.display = 'none'; return; }
     box.innerHTML = html;
     box.style.display = '';
@@ -46777,11 +46793,12 @@ function _saveWeatherUrl(key, value) {
   if (typeof renderMonthlyWeatherLine === 'function') renderMonthlyWeatherLine();
   // 設定の入力欄と、押した場所の値を揃える。2か所が食い違うと、どちらが正か分からなくなる。
   try {
-    var _el = document.getElementById(key === 'weatherRainUrl' ? 'weatherRainUrlInput' : 'weatherWeekUrlInput');
+    var _el = document.getElementById(key + 'Input');
     if (_el && _el.value !== _v) _el.value = _v;
   } catch (e) {}
   if (typeof showToast === 'function') {
-    var _name = (key === 'weatherRainUrl') ? '☂️ 雨雲レーダー' : '📅 週間天気';
+    var _name = (key === 'weatherWeekUrl') ? '📅 週間天気'
+              : (key === 'weatherRainUrl2' ? '☂️ 雨雲レーダー2' : '☂️ 雨雲レーダー1');
     showToast(_v ? (_name + 'を保存しました') : (_name + 'を消しました'));
   }
   return true;
@@ -46794,7 +46811,8 @@ window._saveWeatherUrl = _saveWeatherUrl;
 function editWeatherUrl(key) {
   try {
     var _cur = (allSettings.ui && allSettings.ui[key]) || '';
-    var _name = (key === 'weatherRainUrl') ? '雨雲レーダー' : '週間天気';
+    var _name = (key === 'weatherWeekUrl') ? '週間天気'
+              : (key === 'weatherRainUrl2' ? '雨雲レーダー2' : '雨雲レーダー1');
 
     var host = document.getElementById('weatherUrlEditHost');
     if (!host) {
