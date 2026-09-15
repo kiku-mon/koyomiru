@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.94';
+    const APP_VERSION = 'v0.46.95';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22233,7 +22233,7 @@ function renderMonthlySidebarTasks() {
                   var _memoHint = (_memoLines > 3)
                     ? (_memoLines + '行')
                     : (_memoText.length + '文字');
-                  _memoBtn.textContent = '▾ メモを畳む';
+                  _memoBtn.textContent = '▾ メモをたたむ';
                   _memoBtn.onclick = (function(_el, _btn, _n) {
                     return function(e) {
                       e && e.stopPropagation();
@@ -22242,11 +22242,11 @@ function renderMonthlySidebarTasks() {
                       if (_isOpen) {
                         _el.style.maxHeight = '4.8em';
                         _el.style.overflow  = 'hidden';
-                        _btn.textContent = '▸ メモを開く（' + _n + '）';
+                        _btn.textContent = '▸ メモをひらく（' + _n + '）';
                       } else {
                         _el.style.maxHeight = 'none';
                         _el.style.overflow  = '';
-                        _btn.textContent = '▾ メモを畳む';
+                        _btn.textContent = '▾ メモをたたむ';
                       }
                     };
                   })(_memoEl, _memoBtn, _memoHint);
@@ -30307,7 +30307,7 @@ window._repairCloudCalendarIds();
       'koyomiru_visitor_id', 'koyomiru_dev_visitor', 'koyomiruSplashSeen',
       'koyomiru_pw_reset_from_here', 'koyomiru_first_visit_done', 'mig_money_note_v3',
       // v0.46.7: 呼び名を一度聞いた印／更新後にお知らせを開く印
-      'koyomiruNameAsked', 'koyomiruShowWhatsNew', 'koyomiruOshiraseWarned',
+      'koyomiruNameAsked', 'koyomiruShowWhatsNew', 'koyomiruOshiraseWarned', 'weatherLineHidden',
       'koyomiru_push_queue', 'koyomiru_push_failed', 'koyomiruQueueCleanedAt',
       'koyomiruQueueRescued_v46_60',   // v0.46.43-60: 送信待ち
       // v0.45.1968: コメントの既読。KPAGの許可一覧に入れ忘れていた。
@@ -33064,7 +33064,12 @@ function loadCalendarSettingsUI() {
       _dcRow.appendChild(_dcInput);
       _dcRow.appendChild(_dcMentionRow);
       // v0.45.1911: 作った人だけに見せる。
-      if (_dcIsOwner) row.appendChild(_dcRow);
+        // v0.46.95: 【権威】2026-09-15、Discordの通知はいつか使いたいが、
+        // いまは使わず、設定が煩雑になるので隠しておく、との判断。
+        //
+        // 作る処理は残す。消すと、戻すときに全部書き直すことになる。
+        // 画面に出す1行だけを止める。この行を戻せば、そのまま使える。
+        // if (_dcIsOwner) row.appendChild(_dcRow);
 
       // 削除ボタン（複数ある場合のみ）
         if (calendars.length > 1) {
@@ -33406,7 +33411,28 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           if (typeof toggleMoneyLineVisible === 'function') toggleMoneyLineVisible();
           renderCalendarFilter(containerId, onChangeCallback);
         };
-        bar.appendChild(_moneyBtn);
+      bar.appendChild(_moneyBtn);
+      // v0.46.95: 【権威】2026-09-15、天気のリンクも金額と同じように、
+      // チップで出し入れしたい、との要望。
+      // 入れている人にだけ出す。入れていない人に押す先を作らない。
+      try {
+        var _wl = (typeof getWeatherLinks === 'function') ? getWeatherLinks() : [];
+        var _hasWeather = _wl.some(function(x){ return x && x.url; });
+        if (_hasWeather) {
+          var _wBtn = document.createElement('button');
+          var _wOn = (typeof isWeatherLineVisible === 'function') ? isWeatherLineVisible() : true;
+          _wBtn.style.cssText = 'padding:5px 12px;border-radius:14px;font-size:0.75em;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;' +
+            (_wOn ? 'border:2px solid #e5e5e5;background:#fff;color:#b0b0b0;'
+                  : 'border:2px solid #4a6fa5;background:#eef4fb;color:#2a6aa8;');
+          _wBtn.textContent = _wOn ? '☂️ 天気を隠す' : '☂️ 天気を出す';
+          _wBtn.title = _wOn ? '天気へのリンクを隠します' : '天気へのリンクを出します';
+          _wBtn.onclick = function() {
+            if (typeof toggleWeatherLineVisible === 'function') toggleWeatherLineVisible();
+            renderCalendarFilter(containerId, onChangeCallback);
+          };
+          bar.appendChild(_wBtn);
+        }
+      } catch (eWB) {}
       }
       // v0.45.2062: 固定中に列を組み直したら、止めた状態も付け直す。
       // ここを忘れると、描き直した瞬間だけ押せてしまい、押しても何も起きない。
@@ -33592,7 +33618,24 @@ function renderCalendarFilter(containerId, onChangeCallback) {
     }
     window.toggleMoneyLineVisible = toggleMoneyLineVisible;
 
-    function renderMonthlyMoneyLine() {
+    // v0.46.95: 天気のリンクの出し入れ。金額と同じ作りにする。
+// 人に画面を見せるとき、住んでいる地域が分かる情報を隠せるようにする。
+function isWeatherLineVisible() {
+  try { return localStorage.getItem('weatherLineHidden') !== '1'; }
+  catch (e) { return true; }
+}
+window.isWeatherLineVisible = isWeatherLineVisible;
+
+function toggleWeatherLineVisible(force) {
+  try {
+    var _next = (typeof force === 'boolean') ? !force : isWeatherLineVisible();
+    localStorage.setItem('weatherLineHidden', _next ? '1' : '0');
+  } catch (e) {}
+  if (typeof renderMonthlyWeatherLine === 'function') renderMonthlyWeatherLine();
+}
+window.toggleWeatherLineVisible = toggleWeatherLineVisible;
+
+function renderMonthlyMoneyLine() {
       var el = document.getElementById('monthlyMoneyLine');
       if (!el) return;
       // 隠しているときは、数えることもしない。
@@ -46590,8 +46633,11 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.94', date: '2026-09-15',
+    ver: 'v0.46.95', date: '2026-09-15',
     items: [
+      { icon:'☂️', t:'天気へのリンクの出し入れ',
+        before:'いつも出ていて、人に画面を見せるとき隠せなかった',
+        after:'月間カレンダーの「☂️ 天気を隠す」で切り替えられます' },
       { icon:'🛠️', t:'管理まわり',
         before:'状況をつかむのに手間がかかっていた',
         after:'見やすくしました（管理者向けの画面です）' },
@@ -46611,7 +46657,7 @@ var _NEWS_DATA = [
         before:'押しても何も起きなかった', after:'押すと、その日の予定を一覧で見られる' },
       { icon:'📄', t:'月間カレンダーの長いメモ',
         before:'案内文を貼ると画面を埋めてしまい、畳む手立てがなかった',
-        after:'メモの上に「▾ メモを畳む」が出ます（ふだんは開いたまま）' },
+        after:'メモの上に「▾ メモをたたむ」が出ます（ふだんは開いたまま）' },
       { icon:'✏️', t:'メモを書く欄',
         before:'2行ぶんしかなく、広げることもできなかった',
         after:'6行ぶんに広げ、手でも大きくできます' },
@@ -46700,6 +46746,10 @@ function renderMonthlyWeatherLine() {
   try {
     var box = document.getElementById('monthlyWeatherLine');
     if (!box) return;
+    // v0.46.95: 隠しているときは出さない。
+    if (typeof isWeatherLineVisible === 'function' && !isWeatherLineVisible()) {
+      box.style.display = 'none'; return;
+    }
     var _list = getWeatherLinks();
     if (!_list.length) { box.style.display = 'none'; return; }
     var _esc = (typeof escAttr === 'function') ? escAttr : function(x){ return String(x); };
