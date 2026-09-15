@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.80 ★ -->
+<!-- ★ CURRENT VERSION: v0.46.82 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.80';
+    const APP_VERSION = 'v0.46.82';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10394,6 +10394,11 @@ function _showInviteWelcome() {
         <div style="font-size:0.8em;color:#888;font-weight:700;letter-spacing:.08em;margin:18px 0 6px;">☂️ 天気へのリンク</div>
         <div style="font-size:0.75em;color:#aaa;line-height:1.8;margin-bottom:8px;">
           入れておくと、月間カレンダーの上から開けます。空にすると出ません。<br>
+          <!-- v0.46.81: 【権威】2026-09-15、編集や削除ができるのか、保存ボタンが要るのか
+               分からない、との指摘。画面に何も書いていなかった。
+               入力欄から離れた瞬間に保存される作りだが、それが伝わっていない。
+               下に保存ボタンがあるので、押さないと保存されないと思うのが自然である。 -->
+          書き換えて、入力欄の外を押すと保存されます。空にすれば消えます。<br>
           <!-- v0.46.80: 【権威】2026-09-15、入力欄に見当のつかない値が入って消せない、との報告。
                オートコンプリートが誤って入れていた。type を url にし、name も付けたが、
                既に入ってしまった値を消す手立てが「全部選んで消す」しかなかった。
@@ -10405,13 +10410,13 @@ function _showInviteWelcome() {
           autocomplete="off" inputmode="url" spellcheck="false"
           data-form-type="other" data-lpignore="true" data-1p-ignore
           placeholder="雨雲レーダーのアドレス（いつも見ている天気のページを開いて、アドレスを貼る）"
-          onchange="if(!allSettings.ui)allSettings.ui={};allSettings.ui.weatherRainUrl=this.value.trim();saveAllSettings();if(typeof renderMonthlyWeatherLine==='function')renderMonthlyWeatherLine();"
+          onchange="window._saveWeatherUrl('weatherRainUrl', this.value);"
           style="width:100%;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:8px;">
         <input type="url" id="weatherWeekUrlInput" name="koyomiru-weather-week"
           autocomplete="off" inputmode="url" spellcheck="false"
           data-form-type="other" data-lpignore="true" data-1p-ignore
           placeholder="週間天気のアドレス（自分の地域の週間天気を開いて、アドレスを貼る）"
-          onchange="if(!allSettings.ui)allSettings.ui={};allSettings.ui.weatherWeekUrl=this.value.trim();saveAllSettings();if(typeof renderMonthlyWeatherLine==='function')renderMonthlyWeatherLine();"
+          onchange="window._saveWeatherUrl('weatherWeekUrl', this.value);"
           style="width:100%;padding:8px 10px;border:1px solid #dcdcdc;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px;">
 
         <div style="font-size:0.8em;color:#888;font-weight:700;letter-spacing:.08em;margin-bottom:4px;">🗂️ マトリクス層の表示設定</div>
@@ -46575,7 +46580,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.80', date: '2026-09-15',
+    ver: 'v0.46.82', date: '2026-09-15',
     items: [
       { icon:'☂️', t:'天気',
         before:'見るたびにブラウザで開き直していた',
@@ -46676,6 +46681,28 @@ function renderMonthlyWeatherLine() {
   try {
     var box = document.getElementById('monthlyWeatherLine');
     if (!box) return;
+    // v0.46.82: 素通りで保存されてしまった値を捨てる。
+    // 自動入力が入れたHTMLやメールアドレスが、そのまま保存されていた。
+    // 黙って捨てると気づけないので、開発者ログに残す。
+    try {
+      var _u2 = allSettings.ui || {};
+      var _bad = [];
+      ['weatherRainUrl', 'weatherWeekUrl'].forEach(function(k) {
+        var _v = String(_u2[k] || '');
+        if (_v && (!/^https?:\/\//i.test(_v) || _v.length > 2000)) {
+          allSettings.ui[k] = '';
+          _bad.push(k === 'weatherRainUrl' ? '雨雲レーダー' : '週間天気');
+        }
+      });
+      if (_bad.length) {
+        saveAllSettings();
+        console.warn('[天気] アドレスでない値が入っていたので消しました: ' + _bad.join('・'));
+        ['weatherRainUrlInput', 'weatherWeekUrlInput'].forEach(function(id) {
+          var _el = document.getElementById(id);
+          if (_el) _el.value = (allSettings.ui[id === 'weatherRainUrlInput' ? 'weatherRainUrl' : 'weatherWeekUrl']) || '';
+        });
+      }
+    } catch (eClean) {}
     var _ui = allSettings.ui || {};
     var _rain = String(_ui.weatherRainUrl || '').trim();
     var _week = String(_ui.weatherWeekUrl || '').trim();
@@ -46703,6 +46730,43 @@ function renderMonthlyWeatherLine() {
   } catch (e) { console.warn('[天気] 描けませんでした:', e && e.message); }
 }
 window.renderMonthlyWeatherLine = renderMonthlyWeatherLine;
+
+// v0.46.82: 【権威】2026-09-15、天気の欄にソースコードが入っている、との報告。
+// 実測すると、設定に保存された値そのものが index.html の中身だった。
+//
+// 原因は、保存する経路が2つあり、片方だけ形を確かめていたこと。
+//   ✎ボタン          → https:// で始まるかを見る
+//   設定の入力欄      → 何も見ずにそのまま保存  ← ここ
+// 自動入力が入れた値を、そのまま受け取って保存していた。
+//
+// 判定を1か所に集める（第79条②）。両方がここを通る。
+// 長すぎる値も弾く。アドレスが2000字を超えることはない。
+function _saveWeatherUrl(key, value) {
+  var _v = String(value == null ? '' : value).trim();
+  if (_v && !/^https?:\/\//i.test(_v)) {
+    if (typeof showToast === 'function') showToast('⚠️ https:// で始まるアドレスを入れてください', {type:'warn'});
+    return false;
+  }
+  if (_v.length > 2000) {
+    if (typeof showToast === 'function') showToast('⚠️ アドレスが長すぎます。貼り間違いではありませんか', {type:'warn'});
+    return false;
+  }
+  if (!allSettings.ui) allSettings.ui = {};
+  allSettings.ui[key] = _v;
+  saveAllSettings();
+  if (typeof renderMonthlyWeatherLine === 'function') renderMonthlyWeatherLine();
+  // 設定の入力欄と、押した場所の値を揃える。2か所が食い違うと、どちらが正か分からなくなる。
+  try {
+    var _el = document.getElementById(key === 'weatherRainUrl' ? 'weatherRainUrlInput' : 'weatherWeekUrlInput');
+    if (_el && _el.value !== _v) _el.value = _v;
+  } catch (e) {}
+  if (typeof showToast === 'function') {
+    var _name = (key === 'weatherRainUrl') ? '☂️ 雨雲レーダー' : '📅 週間天気';
+    showToast(_v ? (_name + 'を保存しました') : (_name + 'を消しました'));
+  }
+  return true;
+}
+window._saveWeatherUrl = _saveWeatherUrl;
 
 // v0.46.79: 天気のアドレスをその場で直す。旅行の editTravelLinkUrl と同じ形にする。
 // prompt() は第55条で禁止されている。旅行は下から出る小さなフォームで直している。
@@ -46751,20 +46815,8 @@ function editWeatherUrl(key) {
     ok.style.cssText = 'flex:1;padding:10px;border:none;border-radius:8px;background:#4a6fa5;' +
       'color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;font-family:inherit;';
     ok.onclick = function() {
-      var _v = String(inp.value || '').trim();
-      if (_v && !/^https?:\/\//i.test(_v)) {
-        if (typeof showToast === 'function') showToast('⚠️ https:// で始まるアドレスを入れてください', {type:'warn'});
-        return;
-      }
-      if (!allSettings.ui) allSettings.ui = {};
-      allSettings.ui[key] = _v;
-      saveAllSettings();
-      renderMonthlyWeatherLine();
-      // 設定の入力欄も揃える。2か所が食い違うと、どちらが正か分からなくなる。
-      try {
-        var _el = document.getElementById(key === 'weatherRainUrl' ? 'weatherRainUrlInput' : 'weatherWeekUrlInput');
-        if (_el) _el.value = _v;
-      } catch (e2) {}
+      // v0.46.82: 判定は _saveWeatherUrl に集めた。ここでは呼ぶだけ。
+      if (!_saveWeatherUrl(key, inp.value)) return;
       _close();
     };
 
