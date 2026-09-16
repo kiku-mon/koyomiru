@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.0';
+    const APP_VERSION = 'v0.47.2';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10286,7 +10286,7 @@ function _showInviteWelcome() {
              v0.45.1913: 開発者本人だけに見せる。番組も支援先も、こよみるとして
              発信する内容であり、利用者ごとに変えられるものではない。
              特に支援ページを他人が自分の口座へ差し替えられるのは筋が通らない。 -->
-        <div id="devVoiceSettingsBox" style="display:none;margin-bottom:18px;padding:14px;border:1px solid #d4b483;border-radius:10px;background:#fffdf7;">
+        <div data-setgroup="admin" id="devVoiceSettingsBox" style="display:none;margin-bottom:18px;padding:14px;border:1px solid #d4b483;border-radius:10px;background:#fffdf7;">
           <!-- v0.45.1916: 【権威】2026-09-02、自分にしか見えていない設定なのか、
                全員に見えているのか、開いていて分からない、との指摘。
                書き換えた内容がどこまで届くのかが分からないまま触るのは落ち着かない。
@@ -10417,6 +10417,12 @@ function _showInviteWelcome() {
           <span style="font-size:0.85em;color:#333;font-weight:600;">🎨 魚の目モードを4色で分ける</span>
         </label>
         <div style="font-size:0.75em;color:#aaa;margin-bottom:12px;">外すと白一色になります（既定）</div>
+        </div>
+        <!-- v0.47.1: 【権威】2026-09-15、分類がふさわしくないものがある、との指摘。
+             天気がマトリクス層と同じ器に入っていたため、「庭と成長」に分類されていた。
+             v0.46.96 で戻したとき、同じ器の中に入れてしまった。
+             器を分け、「カレンダーの見え方」に移す。 -->
+        <div data-setgroup="view" style="background:#fff;border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
         <!-- v0.46.90: 【権威】2026-09-15、D&Dの一覧を入れてから全体が重くなり、
              F12も開かないほどになった、との報告。まず動く状態へ戻す。
              原因の切り分けは、動く版に戻してからやる。
@@ -33665,7 +33671,7 @@ var SET_GROUPS = [
   { key: 'garden',   icon: '🌳', name: '庭と成長' },
   { key: 'data',     icon: '🗄️', name: 'データ' },
   { key: 'admin',    icon: '👑', name: '管理者向け' },
-  { key: 'about',    icon: '📜', name: 'このアプリについて' }
+  { key: 'about',    icon: '📜', name: 'このアプリについて（規約・プライバシー）' }
 ];
 
 function _setGroupOpen(key) {
@@ -46764,8 +46770,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.47.0', date: '2026-09-15',
+    ver: 'v0.47.2', date: '2026-09-15',
     items: [
+      { icon:'👤', t:'共有カレンダーの呼び名',
+        before:'決めたつもりでも「メンバー」のままのことがあった',
+        after:'その場で決められ、入っている全部のカレンダーに反映されます' },
+      { icon:'🔒', t:'管理者向けの設定',
+        before:'合言葉を知っていれば、誰でも入れる状態だった',
+        after:'持ち主の端末でしか入れません（帯そのものも出しません）' },
       { icon:'💾', t:'設定の保存ボタン',
         before:'一番下に1つだけあり、どこにあるか分からなかった',
         after:'開いた分類の下に出ます（応援のリンクも一緒に）' },
@@ -47242,10 +47254,18 @@ window._checkOshiraseFreshness = _checkOshiraseFreshness;
 
 function _askNameIfMissing() {
   try {
+    // v0.47.2: 【権威】2026-09-15、呼び名の必須化が本当に効いているか、との指摘。
+    // 調べると、穴が2つあった。
+    //
+    // ① koyomiruNameAsked の印で黙る道が残っていた。
+    //    v0.46.8 で「入れるまで毎回聞く」と決めたのに、印を見て抜けていた。
+    // ② 見ていたのは手元の profile.name で、共有カレンダーの display_name ではない。
+    //    手元に名前があっても、DBが空なら他の人には「メンバー」と出る。
+    //
+    // 印は見ない。そしてDB側の呼び名を確かめる。
     if (!window._cloudIsLoggedIn) return;
-    if (localStorage.getItem('koyomiruNameAsked') === '1') return;
+    if (window._askNameRunning) return;          // 二重に開かない
     var _name = ((allSettings.profile && allSettings.profile.name) || '').trim();
-    if (_name) return;
     // 共有カレンダーに入っていない人には聞かない。名乗る相手がいない。
     var _joined = 0;
     try {
@@ -47255,6 +47275,113 @@ function _askNameIfMissing() {
     } catch (e) {}
     if (_joined === 0) return;
     if (typeof showChoiceModal !== 'function') return;
+
+    // v0.47.2: DB側の呼び名を確かめる。手元に名前があっても、
+    // 共有カレンダーの display_name が空なら、相手には「メンバー」と出る。
+    // そこが空のときだけ聞く。埋まっていれば黙る。
+    window._askNameRunning = true;
+    (async function() {
+      try {
+        var _needed = false;
+        if (window.supabaseClient && window._cloudUserId) {
+          var r = await rpcWithTimeout('koyomiru_my_display_names', {}, 8000);
+          if (r && !r.error && Array.isArray(r.data)) {
+            // 1つでも空なら聞く
+            _needed = r.data.some(function(x) {
+              return !x || !String(x.display_name || '').trim();
+            });
+          } else {
+            // 確かめられないときは、手元の名前で判断する（これまで通り）
+            _needed = !_name;
+          }
+        } else {
+          _needed = !_name;
+        }
+        if (!_needed) { window._askNameRunning = false; return; }
+        _showNamePrompt(_name);
+      } catch (e) {
+        window._askNameRunning = false;
+        console.warn('[呼び名] 確かめられませんでした:', e && e.message);
+      }
+    })();
+    return;
+  } catch (e) { console.warn('[呼び名] 失敗:', e && e.message); }
+}
+
+// 呼び名を聞く画面。DB側が空のときだけ呼ばれる。
+// v0.47.2: 呼び名を入れてもらい、空のカレンダーへまとめて書く。
+// カレンダーごとに持つ値なので、1つ入れても他は空のまま。そこをまとめて埋める。
+function _showNameInput(_cur) {
+  try {
+    var host = document.getElementById('nameInputHost');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'nameInputHost';
+      host.style.cssText = 'position:fixed;inset:0;z-index:99800;background:rgba(0,0,0,0.45);' +
+        'display:flex;align-items:center;justify-content:center;padding:20px;';
+      document.body.appendChild(host);
+    }
+    host.innerHTML =
+      '<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:360px;">' +
+        '<div style="font-size:1.02em;font-weight:700;color:#262626;margin-bottom:8px;">呼び名を決めてください</div>' +
+        '<div style="font-size:0.8em;color:#8e8e8e;line-height:1.8;margin-bottom:14px;">' +
+          '共有カレンダーで、一緒に使っている方に見える名前です。<br>' +
+          'あとから設定でいつでも変えられます。</div>' +
+        '<input type="text" id="nameInputField" maxlength="20" ' +
+          'name="koyomiru-displayname" autocomplete="off" ' +
+          'data-form-type="other" data-lpignore="true" data-1p-ignore ' +
+          'placeholder="例：きくモン" ' +
+          'style="width:100%;padding:11px 12px;border:1px solid #dcdcdc;border-radius:10px;' +
+          'font-size:16px;box-sizing:border-box;margin-bottom:12px;">' +
+        '<button id="nameInputSave" ' +
+          'style="width:100%;padding:12px;border:none;border-radius:10px;background:#0b6bcb;' +
+          'color:#fff;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;">決める</button>' +
+      '</div>';
+
+    var _f = document.getElementById('nameInputField');
+    if (_f) { _f.value = _cur || ''; setTimeout(function(){ try { _f.focus(); } catch (e) {} }, 60); }
+
+    var _btn = document.getElementById('nameInputSave');
+    if (_btn) _btn.onclick = async function() {
+      var _v = String((_f && _f.value) || '').trim();
+      if (typeof _cleanDisplayName === 'function') _v = _cleanDisplayName(_v);
+      if (!_v) {
+        if (typeof showToast === 'function') showToast('⚠️ 呼び名を入れてください', {type:'warn'});
+        if (_f) _f.style.borderColor = '#e0a458';
+        return;
+      }
+      _btn.disabled = true;
+      _btn.textContent = '書き込んでいます…';
+      try {
+        var r = await rpcWithTimeout('koyomiru_my_display_names', {}, 8000);
+        var _list = (r && !r.error && Array.isArray(r.data)) ? r.data : [];
+        var _done = 0;
+        for (var i = 0; i < _list.length; i++) {
+          if (String(_list[i].display_name || '').trim()) continue;   // 入っているものは触らない
+          var _u = await updateMyDisplayName(_list[i].calendar_id, _v);
+          if (_u && !_u.error) _done++;
+        }
+        // 手元にも残す。次に聞かれたとき、既定値として出せる。
+        if (!allSettings.profile) allSettings.profile = {};
+        allSettings.profile.name = _v;
+        saveAllSettings();
+        try { host.remove(); } catch (e) {}
+        if (typeof showToast === 'function') {
+          showToast(_done > 0 ? ('「' + _v + '」にしました（' + _done + '件）') : ('「' + _v + '」にしました'));
+        }
+        window._askNameRunning = false;
+      } catch (e) {
+        _btn.disabled = false;
+        _btn.textContent = '決める';
+        if (typeof showToast === 'function') showToast('⚠️ 書き込めませんでした', {type:'warn'});
+      }
+    };
+  } catch (e) { console.warn('[呼び名] 開けませんでした:', e && e.message); }
+}
+window._showNameInput = _showNameInput;
+
+function _showNamePrompt(_name) {
+  try {
     // v0.46.8: 一度出したら終わり、にしない。入れるまで、開くたびに聞く。
     // 「あとで」を消した以上、印を付けて黙る道も塞ぐ。名前が入れば自然に出なくなる。
     showChoiceModal({
@@ -47266,25 +47393,25 @@ function _askNameIfMissing() {
       // 「あとで」を消す。押せる選択肢が1つなら、それは選択ではなく手順である。
       // 名前のない人が共有カレンダーにいることを、そもそも認めない。
       buttons: [
+        // v0.47.2: 【権威】2026-09-15、呼び名の必須化が効いていない、との指摘。
+        // 実測すると29件のうち13件が空だった。
+        //
+        // これまでは設定の profileNameInput へ案内するだけで、
+        // 共有カレンダーの display_name には何も送っていなかった。
+        // 手元に名前を書いても、他の人には「メンバー」と出たままになる。
+        //
+        // その場で入れてもらい、空のカレンダーへまとめて書く。
         { label: '呼び名を入れる', style: 'primary', onClick: function() {
-            try {
-              if (typeof switchView === 'function') switchView('settings');
-              setTimeout(function() {
-                var el = document.getElementById('profileNameInput');
-                if (el) {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  el.focus();
-                  el.style.boxShadow = '0 0 0 3px rgba(74,111,165,0.45)';
-                  setTimeout(function(){ el.style.boxShadow = ''; }, 2000);
-                }
-              }, 500);
-            } catch (e) {}
+            _showNameInput(_name);
           } },
       ]
     });
   } catch (e) { console.warn('[呼び名] 確認に失敗:', e && e.message); }
+  // v0.47.2: 開き終わったら印を下ろす。下ろし忘れると、二度と聞かなくなる。
+  window._askNameRunning = false;
 }
 window._askNameIfMissing = _askNameIfMissing;
+window._showNamePrompt = _showNamePrompt;
 
 function _checkForNewVersion(byHand) {
   // v0.46.41: 【権威】2026-09-08、「更新を確認」を押しても、更新が無ければ
