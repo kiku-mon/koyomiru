@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.46.99';
+    const APP_VERSION = 'v0.47.0';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10643,10 +10643,10 @@ function _showInviteWelcome() {
           </div>
           <div id="adminPwMsg" style="font-size:0.75em;margin-top:6px;"></div>
         </div>
-        <div data-setgroup="about" id="settingsSaveFooter" style="text-align:center;margin-top:8px;"><button class="modal-btn modal-btn-primary" style="padding:14px 40px;font-size:1em;border-radius:12px;" onclick="saveSettings()">設定を保存</button></div>
+        <div style="display:none;" id="settingsSaveFooter" style="text-align:center;margin-top:8px;"><button class="modal-btn modal-btn-primary" style="padding:14px 40px;font-size:1em;border-radius:12px;" onclick="saveSettings()">設定を保存</button></div>
 
         <!-- ===== ⭐ 開発支援フッター v0.45.1448〜（北極星モード限定表示から常設導線へ変更） ===== -->
-        <div data-setgroup="about" id="settingsSupportFooter" style="margin-top:40px;padding:0 16px;text-align:center;">
+        <div style="display:none;" id="settingsSupportFooter" style="margin-top:40px;padding:0 16px;text-align:center;">
           <a href="https://ofuse.me/b9ca4c85" target="_blank" rel="noopener"
             style="display:inline-block;background:linear-gradient(135deg,#fbbf24 0%,#f59e0b 50%,#d97706 100%);color:#1a1a00;font-weight:800;font-size:0.85em;padding:11px 22px;border-radius:10px;text-decoration:none;letter-spacing:0.03em;box-shadow:0 3px 14px rgba(251,191,36,0.35);">
             ⭐ OFUSEで開発を応援する（¥100〜）
@@ -11092,9 +11092,13 @@ window.highlightSafe = highlightSafe;
 // なお空のままなら、この確認は行わない。IDを書く前のこの版で、
 // きくモンさん自身が締め出されることを避けるための逃げ道である。
 // IDは 設定 → クラウド か、管理者メニューの開発者ログで見られる。
-var KOYOMIRU_OWNER_IDS = [
-  // 例: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',   // きくモン
-];
+    var KOYOMIRU_OWNER_IDS = [
+      // v0.47.0: きくモンさんのIDを書く。
+      // これまで空のままで、合言葉さえ知っていれば誰でも管理者モードに入れた。
+      // 過去に王姫コマンドを2〜3人へ伝えた記録もあり、その人たちも入れる状態だった。
+      // ここに書けば、他の端末では入れなくなる。
+      'fcef1c30-599c-4c05-9730-af3059832e0a',   // きくモン
+    ];
 window.KOYOMIRU_OWNER_IDS = KOYOMIRU_OWNER_IDS;
 
 function isKoyomiruOwner() {
@@ -33689,7 +33693,14 @@ function applySettingsGroups() {
     var _open = '';
     try { _open = localStorage.getItem('setGroupOpen') || ''; } catch (e) {}
     bar.innerHTML = SET_GROUPS.map(function(g) {
-      // 中身が1つも無い分類は出さない（管理者向けは、管理者モードでないと空になる）
+      // v0.47.0: 管理者向けは、管理者モードのときだけ出す。
+      // 節そのものは display:none で存在するので、数えるだけでは消えない。
+      // 帯が見えていれば「何かある」と分かってしまう。存在ごと伏せる。
+      if (g.key === 'admin') {
+        var _isAdmin = (typeof isKoyomiruAdminMode === 'function') ? isKoyomiruAdminMode() : false;
+        if (!_isAdmin) return '';
+      }
+      // 中身が1つも無い分類は出さない
       var _n = view.querySelectorAll('[data-setgroup="' + g.key + '"]').length;
       if (!_n) return '';
       var _on = (_open === g.key);
@@ -33707,6 +33718,35 @@ function applySettingsGroups() {
         el.style.display = (_open === g.key) ? '' : 'none';
       });
     });
+
+    // v0.47.0: 【権威】2026-09-15、保存ボタンが7つの分類のうち一番下に1つしかなく、
+    // どこにあるか分からない、との指摘。お布施も同じ場所に置きたい、とのこと。
+    //
+    // 開いている分類の最後に、保存とお布施を差し込む。
+    // 1か所で作るので、分類が増えても揃う。
+    try {
+      var _old = document.getElementById('setGroupFooter');
+      if (_old) _old.remove();
+      if (_open) {
+        var _els = view.querySelectorAll('[data-setgroup="' + _open + '"]');
+        var _last = _els.length ? _els[_els.length - 1] : null;
+        if (_last && _last.parentNode) {
+          var _f = document.createElement('div');
+          _f.id = 'setGroupFooter';
+          _f.style.cssText = 'margin:18px 0 8px;text-align:center;';
+          _f.innerHTML =
+            '<button onclick="saveSettings()" class="modal-btn modal-btn-primary" ' +
+              'style="padding:13px 36px;font-size:0.95em;border-radius:12px;">設定を保存</button>' +
+            '<div style="margin-top:14px;">' +
+              '<a href="https://ofuse.me/b9ca4c85" target="_blank" rel="noopener" ' +
+                'style="display:inline-block;background:linear-gradient(135deg,#fbbf24 0%,#f59e0b 50%,#d97706 100%);' +
+                'color:#1a1a1a;text-decoration:none;padding:9px 20px;border-radius:20px;' +
+                'font-size:0.82em;font-weight:700;">⭐ OFUSEで開発を応援する（¥100〜）</a>' +
+            '</div>';
+          _last.parentNode.insertBefore(_f, _last.nextSibling);
+        }
+      }
+    } catch (eF) {}
 
     // v0.46.99: 器そのものにも手当てする。
     // settingsViewsBlock は19の節を包む器で、上に線と余白を持っている。
@@ -46724,8 +46764,11 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.46.99', date: '2026-09-15',
+    ver: 'v0.47.0', date: '2026-09-15',
     items: [
+      { icon:'💾', t:'設定の保存ボタン',
+        before:'一番下に1つだけあり、どこにあるか分からなかった',
+        after:'開いた分類の下に出ます（応援のリンクも一緒に）' },
       { icon:'🔗', t:'天気へのリンク',
         before:'3つ固定で、名前も決まっていた',
         after:'いくつでも足せ（8つまで）、名前も自分で決められます。⌃⌄で並べ替え' },
@@ -52266,6 +52309,20 @@ function adminBadgeTap() {
 function checkAdminPw() {
   var input = document.getElementById('adminPwInput');
   if (!input) return;
+  // v0.47.0: 【権威】2026-09-15、管理者向けの欄が一般の人に見えていないか、との指摘。
+  //
+  // 調べると、合言葉だけで誰でも管理者モードに入れた。
+  // KOYOMIRU_OWNER_IDS が空のままで、isKoyomiruOwner() が常に true を返していた。
+  // 過去に王姫コマンドを2〜3人へ伝えた記録もある。その人たちも入れる状態だった。
+  //
+  // 合言葉の前に、本人かどうかを確かめる。
+  // 一覧が空のままだと確かめようがないので、そのときは合言葉だけで通す（これまで通り）。
+  // IDを書けば、その人以外は入れなくなる。
+  if (KOYOMIRU_OWNER_IDS.length && typeof isKoyomiruOwner === 'function' && !isKoyomiruOwner()) {
+    if (typeof showToast === 'function') showToast('この端末では使えません', {type:'warn'});
+    input.value = '';
+    return;
+  }
   if (input.value === ADMIN_PW) {
     allSettings.flags.adminMode = true; saveAllSettings();
     // v0.45.1924: window側にも印を付ける。片方だけ立てると食い違う。
