@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.11';
+    const APP_VERSION = 'v0.47.12';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -33779,7 +33779,16 @@ async function renderProfileFacts() {
       if (_fl) {
         var _d0 = new Date(_fl + 'T00:00:00+09:00');
         var _days = Math.floor((Date.now() - _d0.getTime()) / 86400000) + 1;
-        html += _row('使い始めた日', _esc(_fl) + '　（' + _days + '日目）');
+        // v0.47.12: 【権威】2026-09-15、使い始めた日が短すぎる、との報告。
+        //
+        // firstLaunchDate が空のとき、手元の一番古い予定から埋めている。
+        // そこで何かが落ちていると、実際より後の日になる。
+        // 押せば、手元の一番古い日と見比べられるようにする。
+        // 直すかどうかは、見てから決める。
+        html += _row('使い始めた日',
+          _esc(_fl) + '　（' + _days + '日目）' +
+          ' <span onclick="window._showOldestTask()" ' +
+          'style="color:#2a6aa8;cursor:pointer;text-decoration:underline;font-size:0.92em;">確かめる</span>');
       }
     } catch (e) {}
 
@@ -33812,6 +33821,64 @@ async function renderProfileFacts() {
   } catch (e) { console.warn('[プロフィール] 描けませんでした:', e && e.message); }
 }
 window.renderProfileFacts = renderProfileFacts;
+
+// v0.47.12: 手元の一番古い予定を見せる。スマホでも中身を確かめられるようにする。
+function _showOldestTask() {
+  try {
+    var _all = (allTasks || []).filter(function(t){ return t && t.createdAt; });
+    if (!_all.length) {
+      if (typeof showToast === 'function') showToast('予定がありません');
+      return;
+    }
+    var _sorted = _all.slice().sort(function(a, b) {
+      return String(a.createdAt) < String(b.createdAt) ? -1 : 1;
+    });
+    var _me = window._cloudUserId || '';
+    // 埋めるときに使う条件で、それぞれ何件落ちるか
+    var _auto = _all.filter(function(t){ return t.autoFilled === true; }).length;
+    var _other = _all.filter(function(t){ return t.createdBy && _me && t.createdBy !== _me; }).length;
+    var _noDate = (allTasks || []).filter(function(t){ return t && !t.createdAt; }).length;
+
+    var _lines = _sorted.slice(0, 8).map(function(t) {
+      var _mark = (t.autoFilled === true) ? '［自動］'
+                : (t.createdBy && _me && t.createdBy !== _me) ? '［他人］' : '　　　';
+      return String(t.createdAt).slice(0, 10) + ' ' + _mark + ' ' +
+             String(t.text || t.kind || '').slice(0, 14);
+    }).join('\n');
+
+    var _msg = '手元の一番古い10件\n\n' + _lines +
+      '\n\n予定の数 ' + (allTasks || []).length +
+      '\n日付なし ' + _noDate +
+      '\n自動で書かれたもの ' + _auto +
+      '\n他人が作ったもの ' + _other +
+      '\n\n記録されている日 ' + ((allSettings.meta && allSettings.meta.firstLaunchDate) || '(なし)');
+
+    if (typeof showChoiceModal === 'function') {
+      showChoiceModal({
+        title: '使い始めた日を確かめる',
+        desc: _msg,
+        choices: [
+          { label: '閉じる', style: 'secondary', onClick: function() {} },
+          { label: '一番古い日に直す', style: 'primary', onClick: function() {
+            try {
+              var _first = _sorted[0];
+              var _d = new Date(_first.createdAt);
+              if (isNaN(_d.getTime())) return;
+              var _v = _d.getFullYear() + '-' +
+                       String(_d.getMonth() + 1).padStart(2, '0') + '-' +
+                       String(_d.getDate()).padStart(2, '0');
+              allSettings.meta.firstLaunchDate = _v;
+              saveAllSettings();
+              renderProfileFacts();
+              if (typeof showToast === 'function') showToast('使い始めた日を ' + _v + ' にしました');
+            } catch (e) {}
+          } }
+        ]
+      });
+    }
+  } catch (e) { console.warn('[プロフィール] 確かめられませんでした:', e && e.message); }
+}
+window._showOldestTask = _showOldestTask;
 
 function applySettingsGroups() {
   try {
@@ -46895,7 +46962,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.47.11', date: '2026-09-15',
+    ver: 'v0.47.12', date: '2026-09-15',
     items: [
       { icon:'📇', t:'プロフィール',
         before:'表示名と性別しかなく、どのアカウントで入っているかも分からなかった',
