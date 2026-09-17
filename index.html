@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.25 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.29 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.25';
+    const APP_VERSION = 'v0.47.29';
   const APP_LAST_UPDATED = '2026-09-17'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7936,6 +7936,17 @@ function _showInviteWelcome() {
           <label class="msb-label">メモ</label>
           <textarea id="msbEditMemo" class="msb-textarea" rows="6" placeholder="メモ・URL（任意）　例：調整さんのURL、場所、持ち物"></textarea>
         </div>
+        <!-- v0.47.28: 【権威】2026-09-17、メモと一緒にGoogleマップや調整さんのリンクを貼る、
+             メモを2つにしたい、との要望。1つの欄に混ぜると、長い案内の中にリンクが埋もれる。
+             同じ大きさを2つ並べると窮屈なので、こちらは2行から始める。書けば広がる。 -->
+        <div class="msb-edit-row">
+          <!-- 見出しは2段にして、他の見出し（2文字）と幅を揃える。3文字だと欄が右にずれる。 -->
+          <label class="msb-label" for="msbEditMemo2" style="line-height:1.15;text-align:center;">メモ<br>２</label>
+          <!-- 共通の指定では最低120pxになる。こちらは2行から始めたいので、ここだけ下げる。 -->
+          <textarea id="msbEditMemo2" class="msb-textarea" rows="2" maxlength="2000" style="min-height:56px;"
+            placeholder="リンクなど（任意）　例：Googleマップ、調整さん"
+            oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,240)+'px';"></textarea>
+        </div>
         <!-- v0.45.2046: 【権威】2026-09-04、三角を自分で打つのは手間なので、
              出る・入るを選んで金額を入れる欄がほしい、との要望。
              三角は変換で探す必要があり、端末ごとに出る候補も違う。
@@ -12677,6 +12688,8 @@ function isCalendarVisible(calendarId) {
       var calendarId   = (opts && opts.calendarId)   || null;
       var instinct     = (opts && opts.instinct !== undefined) ? opts.instinct : (allSettings.ui.instinctMode ? 'survival' : null);
       var memo         = (opts && opts.memo)         || null;
+      // v0.47.28: 2つ目のメモ（リンク用）。無ければ持たせない（既存の予定と同じ形のまま）。
+      var memo2        = (opts && opts.memo2)        || null;
       // v0.45.1999: 【権威】2026-09-03、複数日にまたがる予定が1回目の保存で
       // 帯にならず、2回目で伸びる、との報告。原因はここだった。
       // 呼び出し側は endDate・capacity・repeat・repeatEnd を渡しているのに、
@@ -12733,6 +12746,7 @@ function isCalendarVisible(calendarId) {
         kind:         'task',
         text:         text,
         memo:         memo,
+        memo2:        memo2,
         date:         date,
         time:         time,
         endTime:      endTime,
@@ -13483,7 +13497,8 @@ function renderTodoList() {
             })()
           : ((t.text || '').toLowerCase().includes(q) ||
              (t.title || '').toLowerCase().includes(q) ||
-             (t.memo || '').toLowerCase().includes(q)))
+             (t.memo || '').toLowerCase().includes(q) ||
+              (t.memo2 || '').toLowerCase().includes(q)))
       ).filter(t => {
         // v0.45.1942: カレンダーで絞り込む。未選択なら全部。
         if (window._searchCalFilter && t.calendarId !== window._searchCalFilter) return false;
@@ -22392,21 +22407,27 @@ function renderMonthlySidebarTasks() {
           })(taskId);
           _body.appendChild(_asg);
         }
-              if (t.memo && String(t.memo).trim()) {
+              // v0.47.28: メモ２も同じ見せ方で出す。畳み方・開いた状態の覚え方も同じにする。
+              // 開いた状態はメモごとに覚える（メモを開いてもメモ２は開かない）。
+              [[t.memo, taskId, false], [t.memo2, taskId + '#memo2', true]].forEach(function(_mp) {
+              var _memoSrc = _mp[0], _memoKey = _mp[1], _isMemo2 = _mp[2];
+              if (_memoSrc && String(_memoSrc).trim()) {
                 // v0.46.71: 【権威】2026-09-10、主催者からの案内をそのまま貼っていて、
                 // 長いメモが画面を埋めてしまう。折りたためるようにしたい、との要望。
                 //
                 // 短いメモまで畳むと、押す手間が増えるだけになる。
                 // 3行に収まるものはそのまま出し、超えるものだけ畳む。
                 // 畳んだ状態を既定にする。長いメモは「あることが分かればよい」ことが多い。
-                var _memoText = String(t.memo);
+                var _memoText = String(_memoSrc);
                 var _memoLines = _memoText.split('\n').length;
                 var _isLong = (_memoLines > 3 || _memoText.length > 90);
 
                 var _memoEl = document.createElement('div');
-                _memoEl.className = 'msb-task-memo';
-                _memoEl.style.cssText = 'font-size:14px;color:#8e8e8e;line-height:1.7;margin-top:3px;white-space:pre-wrap;word-break:break-word;';
-                _memoEl.innerHTML = (typeof linkifyText === 'function') ? linkifyText(t.memo) : _escapeHtml(t.memo);
+                _memoEl.className = _isMemo2 ? 'msb-task-memo msb-task-memo2' : 'msb-task-memo';
+                _memoEl.style.cssText = 'font-size:14px;color:#8e8e8e;line-height:1.7;margin-top:3px;white-space:pre-wrap;word-break:break-word;' +
+                  // メモ２は左に細い線を引き、1つ目と続けて読まないようにする
+                  (_isMemo2 ? 'border-left:2px solid #d6e4f5;padding-left:8px;' : '');
+                _memoEl.innerHTML = (typeof linkifyText === 'function') ? linkifyText(_memoText) : _escapeHtml(_memoText);
                 // リンクを押したときに、行の編集が始まらないようにする
                 _memoEl.onclick = function(e) {
                   if (e && e.target && e.target.tagName === 'A') { e.stopPropagation(); return; }
@@ -22428,23 +22449,36 @@ function renderMonthlySidebarTasks() {
                   var _memoHint = (_memoLines > 3)
                     ? (_memoLines + '行')
                     : (_memoText.length + '文字');
-                  _memoBtn.textContent = '▾ メモをたたむ';
-                  _memoBtn.onclick = (function(_el, _btn, _n) {
+                  // v0.47.27: 【権威】2026-09-17、メモがうるさくなってきたので、既定は畳んでおきたい、との要望。
+                  //
+                  // v0.46.72 で「毎回押して開くなら意味がない」として開く側へ戻した経緯がある。
+                  // この欄は同期のたびに描き直されるので、開いた状態を覚えていないと、
+                  // 開いたそばから閉じる。それでは本当に「毎回押す」ことになる。
+                  // 既定は畳み、一度開いたメモは、アプリを開き直すまで開いたままにする。
+                  // 覚えるのはメモリの中だけ（保存しない）。開き直せば、また静かな状態から始まる。
+                  window._msbMemoOpenIds = window._msbMemoOpenIds || {};
+                  var _setMemoOpen = function(_el, _btn, _n, _open) {
+                    if (_open) {
+                      _el.style.maxHeight = 'none';
+                      _el.style.overflow  = '';
+                      _btn.textContent = '▾ メモをたたむ';
+                    } else {
+                      _el.style.maxHeight = '4.8em';
+                      _el.style.overflow  = 'hidden';
+                      _btn.textContent = '▸ メモをひらく（' + _n + '）';
+                    }
+                  };
+                  if (_isMemo2) _memoHint = 'メモ２・' + _memoHint;
+                  _setMemoOpen(_memoEl, _memoBtn, _memoHint, window._msbMemoOpenIds[_memoKey] === true);
+                  _memoBtn.onclick = (function(_el, _btn, _n, _tid) {
                     return function(e) {
                       e && e.stopPropagation();
-                      // 開いている（高さの制限なし）なら畳む。畳んでいるなら開く。
-                      var _isOpen = !_el.style.maxHeight || _el.style.maxHeight === 'none';
-                      if (_isOpen) {
-                        _el.style.maxHeight = '4.8em';
-                        _el.style.overflow  = 'hidden';
-                        _btn.textContent = '▸ メモをひらく（' + _n + '）';
-                      } else {
-                        _el.style.maxHeight = 'none';
-                        _el.style.overflow  = '';
-                        _btn.textContent = '▾ メモをたたむ';
-                      }
+                      var _nowOpen = !(window._msbMemoOpenIds[_tid] === true);
+                      if (_nowOpen) window._msbMemoOpenIds[_tid] = true;
+                      else delete window._msbMemoOpenIds[_tid];
+                      _setMemoOpen(_el, _btn, _n, _nowOpen);
                     };
-                  })(_memoEl, _memoBtn, _memoHint);
+                  })(_memoEl, _memoBtn, _memoHint, _memoKey);
                   // v0.46.74: 【権威】2026-09-14、畳むボタンがメモの下にあり、
                   // 32行スクロールしないと押せない、との指摘。
                   // 畳みたいのは「長くて邪魔だから」なので、
@@ -22456,6 +22490,7 @@ function renderMonthlySidebarTasks() {
                   _body.appendChild(_memoEl);
                 }
               }
+              });
         // ⚙️ 詳細編集ボタン（既存モーダルを開く）
         var detailBtn = document.createElement('button');
         detailBtn.textContent = '✏️';
@@ -23132,7 +23167,8 @@ function openSidebarEditForm(item, task) {
       // 開いて閉じるだけで毎回聞かれる。新規作成のために書いた判定が、編集にも効いていた。
       // 毎回聞かれる確認は、読まずに押す癖をつくる。守りたかったものを守れなくなる。
       // 開いたときの内容を控え、変わったかどうかで判定する。
-      window._msbOpenSnapshot = { text: String(task.text || ''), memo: String(task.memo || '') };
+      window._msbOpenSnapshot = { text: String(task.text || ''), memo: String(task.memo || ''),
+                                  memo2: String(task.memo2 || '') };
       document.getElementById('msbEditId').value      = task.id;
       document.getElementById('msbEditText').value    = task.text;
       document.getElementById('msbEditDate').value    = task.date || _sidebarDateStr;
@@ -23141,6 +23177,13 @@ function openSidebarEditForm(item, task) {
       var _endEl = document.getElementById('msbEditEndTime');
       if (_endEl) _endEl.value = task.endTime || '';
       document.getElementById('msbEditMemo').value    = task.memo || '';
+      // v0.47.28: メモ２。高さは中身に合わせる（空なら2行）。
+      var _m2El = document.getElementById('msbEditMemo2');
+      if (_m2El) {
+        _m2El.value = task.memo2 || '';
+        _m2El.style.height = 'auto';
+        if (_m2El.value) _m2El.style.height = Math.min(_m2El.scrollHeight, 240) + 'px';
+      }
       // v0.45.1602: 終日の状態を時刻欄に反映する。
       // これが無いと、終日ONなのに時刻欄が残って「何を入れるのか」が分からなくなる。
       try {
@@ -23340,9 +23383,12 @@ function msbAllDayChange() {
         var _snap = window._msbOpenSnapshot;
         var _nowTx = _tx ? String(_tx.value) : '';
         var _nowMm = _mm ? String(_mm.value) : '';
+        // v0.47.28: メモ２も、書きかけの判定に入れる。入れないと、貼ったリンクを黙って失う。
+        var _m2 = document.getElementById('msbEditMemo2');
+        var _nowM2 = _m2 ? String(_m2.value) : '';
         var _dirty = _snap
-          ? (_nowTx !== _snap.text || _nowMm !== _snap.memo)
-          : (_nowTx.trim() !== '' || _nowMm.trim() !== '');
+          ? (_nowTx !== _snap.text || _nowMm !== _snap.memo || _nowM2 !== (_snap.memo2 || ''))
+          : (_nowTx.trim() !== '' || _nowMm.trim() !== '' || _nowM2.trim() !== '');
         // v0.45.1736: ブラウザ標準の確認窓をやめる（第55条）。私が v0.45.1663 で入れたもの。
     if (_dirty) {
       // v0.45.2027: 【権威】2026-09-03、閉じるを押しただけで
@@ -23542,6 +23588,9 @@ function saveMsbEdit() {
       var _endInput = document.getElementById('msbEditEndTime');
       var endTime  = (_endInput && _endInput.value) ? _endInput.value : null;
       var memo     = document.getElementById('msbEditMemo').value.trim() || null;
+      // v0.47.28: メモ２。欄の上限は見た目の親切なので、ここでも切る（第71条①・第72条③）。
+      var _m2In    = document.getElementById('msbEditMemo2');
+      var memo2    = _m2In ? (String(_m2In.value || '').trim().slice(0, 2000) || null) : undefined;
       // v0.45.1581: 象限（section）は編集画面から変えない。元の値を保つ。
       // ここで変えていたのは「カテゴリ」という名の別物で、利用者の意図と無関係だった。
       // v0.45.1587: 【権威】2026-08-12、保存ボタンを押しても何も起きないとの報告。
@@ -23599,7 +23648,7 @@ function saveMsbEdit() {
       // ここで作るのか更新するのかを分ける。作る側は createTask を通す（第29条）。
       if (!id) {
         var _newTask = createTask({
-          text: text, date: date, time: time, endTime: endTime, memo: memo, section: 1,
+          text: text, date: date, time: time, endTime: endTime, memo: memo, memo2: memo2 || null, section: 1,
           calendarId: _newCalId || 'default',
           displayScope: 'both',   // 月間から入れたものは月間に出る（v0.45.1550の教訓）
           capacity: _capacity,
@@ -23630,7 +23679,9 @@ function saveMsbEdit() {
         return;
       }
       if (typeof updateTask === 'function') {
-        updateTask(id, {
+        // v0.47.28: メモ２。欄が無い（古い画面）ときは触らない。undefined を書くと消えてしまう。
+        var _m2Update = (memo2 !== undefined) ? { memo2: memo2 } : {};
+        updateTask(id, Object.assign({
           text: text, date: date, time: time, endTime: endTime, memo: memo, section: section,
           // v0.45.1581: 編集画面で選んだカレンダーを使う。
           // updateTask 側が cloudCalendarId（同期先）も追従させるので、
@@ -23641,7 +23692,7 @@ function saveMsbEdit() {
           repeat: repeat !== 'none' ? repeat : null,
           repeatEnd: repEnd,
           repeatGroupId: repeat !== 'none' ? id : null
-        });
+        }, _m2Update));
         if (repeat !== 'none' && typeof applyRepeatSave === 'function') {
           applyRepeatSave(id, null, repeat, repEnd, date);
         }
@@ -33745,6 +33796,31 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           var el = document.getElementById(id);
           if (el && _parent.firstChild) _parent.insertBefore(el, _parent.firstChild);
         });
+        // v0.47.26: 【権威】2026-09-17、「カレンダーの見え方」を開くと、
+        // 一部（📆 カレンダーの表示）だけがお問い合わせより上に出る、との報告。
+        //
+        // v0.47.6 で「タブ表示」の中から外へ出した節で、一覧にも載っておらず、id も無い。
+        // 一覧に無い節は元の位置に残るので、下へ積まれたお問い合わせより上になっていた。
+        // 同じ分類の他の節は、お問い合わせより下にある。1つの分類が上下に割れていた。
+        //
+        // 一覧に足すと、次に節を出したときにまた忘れる（v0.47.10 と同じ理由）。
+        // 「分類の印が付いているのに一覧に無い節は、日次などの器の直前へ移す」と決めておく。
+        // 元の並び順は保つので、同じ分類の中では先頭に来る。何度呼んでも同じ結果になる。
+        try {
+          var _listed = {};
+          SETTINGS_ORDER.concat(SETTINGS_TAIL).forEach(function(id) { _listed[id] = true; });
+          var _anchor = document.getElementById('settingsViewsBlock');
+          var _stray = [];
+          Array.prototype.forEach.call(_parent.children, function(c) {
+            if (!c.hasAttribute || !c.hasAttribute('data-setgroup')) return;
+            if (c.id && _listed[c.id]) return;
+            _stray.push(c);
+          });
+          _stray.forEach(function(c) {
+            if (_anchor && _anchor.parentNode === _parent) _parent.insertBefore(c, _anchor);
+            else _parent.appendChild(c);
+          });
+        } catch (eStray) { console.warn('[設定] 一覧に無い節を移せませんでした:', eStray && eStray.message); }
       } catch (e) { console.warn('[設定] 並べ替えに失敗:', e && e.message); }
     }
     window.applySettingsOrder = applySettingsOrder;
@@ -33855,15 +33931,34 @@ window.toggleWeatherLineVisible = toggleWeatherLineVisible;
 var SET_GROUPS = [
   // v0.47.7: 【権威】2026-09-15、管理者向けは一番上、との指示。
   // 管理者モードのときしか出ない。出るときは、その人が使うために開いている。
+  //
+  // v0.47.29: 【権威】2026-09-17、分類の名前だけでは中身が分からない、副題を入れたい、との要望。
+  // 実測すると「カレンダーの見え方」には日次・タイムラインまで入っており、名前と中身がずれていた。
+  // 抽象的な言い換え（表示制御・構成）より、中に何があるかを並べるほうが伝わる（第80条）。
+  // 「タブ」ではなく「ナビタブ」と書く。使う人にもこの呼び名で伝えている、との指示。
+  //
+  // sub の各項目は [見せる言葉, その分類の中で探す言葉] の組。
+  // 節を別の分類へ移すと、説明と中身がずれる。探す言葉が見つからなければ、ST-337 が落ちる。
+  // 中身が名前どおりのもの（管理者向け・プロフィール）には付けない。
   { key: 'admin',    icon: '👑', name: '管理者向け' },
   { key: 'profile',  icon: '👤', name: 'プロフィール' },
-  { key: 'view',     icon: '🗓️', name: 'カレンダーの見え方' },
-  { key: 'calendar', icon: '📅', name: 'カレンダーの管理' },
-  { key: 'layout',   icon: '🗂️', name: '画面の並び' },
-  { key: 'garden',   icon: '🌳', name: '庭と成長' },
-  { key: 'data',     icon: '🗄️', name: 'データ' },
-  { key: 'about',    icon: '📜', name: 'このアプリについて（規約・プライバシー）' }
+  { key: 'view',     icon: '🗓️', name: '画面の見え方',
+    sub: [['週の始まり', '週の始まり'], ['日次', '表示形式'], ['週間', '週間ビュー'],
+          ['月間', '月間ビュー'], ['タイムライン', 'タイムライン開始位置'], ['天気', '天気へのリンク']] },
+  { key: 'calendar', icon: '📅', name: 'カレンダーの管理',
+    sub: [['カレンダーの追加', 'カレンダーを追加'], ['メインカレンダー', 'メインカレンダー'],
+          ['記号', 'カレンダー記号']] },
+  { key: 'layout',   icon: '🗂️', name: 'ナビタブと最初の画面',
+    sub: [['出すナビタブ', 'タブ表示'], ['最初に開く画面', '初期表示'],
+          ['スマホのナビタブの位置', 'ナビゲーション表示位置']] },
+  { key: 'garden',   icon: '🌳', name: '庭と成長',
+    sub: [['本能マトリクス', '本能マトリクス'], ['庭の規模', '庭の規模'], ['振り返り時間', '振り返り時間']] },
+  { key: 'data',     icon: '🗄️', name: 'データ',
+    sub: [['バックアップ', 'バックアップ'], ['復元', 'インポート'], ['音声と動画の保存', '全動画をまとめて保存']] },
+  { key: 'about',    icon: '📜', name: 'このアプリについて',
+    sub: [['利用規約', '利用規約'], ['プライバシーポリシー', 'プライバシーポリシー']] }
 ];
+window.SET_GROUPS = SET_GROUPS;   // v0.47.29: 検査（ST-337）から中身と見比べるため
 
 function _setGroupOpen(key) {
   try { return localStorage.getItem('setGroupOpen') === key; } catch (e) { return false; }
@@ -34041,12 +34136,20 @@ function applySettingsGroups() {
       var _n = view.querySelectorAll('[data-setgroup="' + g.key + '"]').length;
       if (!_n) return '';
       var _on = (_open === g.key);
+      // v0.47.29: 副題は2段目に小さく出す。帯が縦に伸びるぶん、上下の余白を詰める。
+      // 中身は固定の文言だが、念のため無害化してから差し込む（第68条）。
+      var _esc = (typeof escAttr === 'function') ? escAttr : function(x) { return String(x); };
+      var _sub = (g.sub && g.sub.length)
+        ? '<span style="display:block;margin-top:3px;padding-left:1.7em;font-size:0.8em;' +
+            'font-weight:400;color:#9aa3af;line-height:1.45;">' +
+            g.sub.map(function(s) { return _esc(s[0]); }).join('・') + '</span>'
+        : '';
       return '<button onclick="window.toggleSetGroup(\'' + g.key + '\')" ' +
-        'style="display:block;width:100%;text-align:left;padding:13px 14px;margin-bottom:6px;' +
+        'style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;' +
         'border:1px solid ' + (_on ? '#4a6fa5' : '#e5e7eb') + ';border-radius:10px;' +
         'background:' + (_on ? '#eef4fb' : '#fff') + ';color:#333;font-size:0.92em;' +
         'font-weight:600;cursor:pointer;font-family:inherit;">' +
-        (_on ? '▾ ' : '▸ ') + g.icon + ' ' + g.name + '</button>';
+        (_on ? '▾ ' : '▸ ') + g.icon + ' ' + _esc(g.name) + _sub + '</button>';
     }).join('');
 
     // v0.47.15: 【権威】2026-09-17、管理者権限を奪えないか攻めてほしい、との指示。
@@ -47106,6 +47209,38 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.29', date: '2026-09-17',
+    items: [
+      { icon:'🗂️', t:'設定の分類',
+        before:'名前だけで、開くまで何が入っているか分かりませんでした',
+        after:'名前の下に、中身が小さく並びます。「画面の見え方」「ナビタブと最初の画面」に名前も改めました' }
+    ]
+  },
+  {
+    ver: 'v0.47.28', date: '2026-09-17',
+    items: [
+      { icon:'🔗', t:'月間の予定の「メモ２」',
+        before:'メモ欄が1つだけで、案内文とGoogleマップや調整さんのリンクが混ざり、長い文の中でリンクが埋もれていました',
+        after:'リンク用に2つ目のメモ欄ができました。月間の横の欄では、メモの下に分けて出ます' }
+    ]
+  },
+  {
+    ver: 'v0.47.27', date: '2026-09-17',
+    items: [
+      { icon:'📝', t:'月間の長いメモ',
+        before:'いつも開いた状態で出て、予定が多い日は画面がメモで埋まっていました',
+        after:'最初は畳んで出ます。開いたメモは、アプリを開き直すまで開いたままです' }
+    ]
+  },
+  {
+    ver: 'v0.47.26', date: '2026-09-17',
+    items: [
+      { icon:'🗓️', t:'設定の「画面の見え方」',
+        before:'開くと、週の始まりなど一部だけがお問い合わせ窓口より上に離れて出ていました',
+        after:'お問い合わせの下に、まとめて並びます' }
+    ]
+  },
   {
     ver: 'v0.47.25', date: '2026-09-17',
     items: [
@@ -64702,6 +64837,225 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ok('ST-213: 記念日システムテスト 完了');
      } catch(e) {
        ng('ST-213: 例外', e.message);
+     }
+
+     // ===== ST-334: 設定の分類が上下に割れない（v0.47.26〜） =====
+     // 背景：「カレンダーの見え方」を開くと、📆 カレンダーの表示だけがお問い合わせより上に出た。
+     // 並べ替えの一覧に無い節は元の位置に残るため。一覧に足す方式は忘れるので、
+     // 「印があって一覧に無い節は下へ移す」と決めた。それが効いているかを、実際に動かして確かめる。
+     // 画面の並びだけを触る。予定・設定・保存には触れない。仮の節は必ず取り除く（第66条）。
+     var _st334tmp = null;
+     try {
+       var _st334contact = document.getElementById('settingsContactSection');
+       var _st334parent = _st334contact && _st334contact.parentElement;
+       if (!_st334parent || typeof window.applySettingsOrder !== 'function') {
+         ng('ST-334: 設定の器か並べ替えが見つからない', '');
+       } else {
+         _st334tmp = document.createElement('div');
+         _st334tmp.setAttribute('data-setgroup', 'view');
+         _st334tmp.style.display = 'none';
+         _st334parent.insertBefore(_st334tmp, _st334parent.firstChild);   // わざと一番上に置く
+         window.applySettingsOrder();
+         var _st334below = !!(_st334contact.compareDocumentPosition(_st334tmp) & Node.DOCUMENT_POSITION_FOLLOWING);
+         _st334below
+           ? ok('ST-334·①: 一覧に無い節も、お問い合わせより下へ移る')
+           : ng('ST-334·①: 一覧に無い節がお問い合わせより上に残った', '');
+         // 管理者向け以外の分類が、お問い合わせより上に残っていないこと
+         var _st334above = [];
+         Array.prototype.forEach.call(_st334parent.children, function(c) {
+           var g = c.getAttribute && c.getAttribute('data-setgroup');
+           if (!g || g === 'admin') return;
+           if (c.compareDocumentPosition(_st334contact) & Node.DOCUMENT_POSITION_FOLLOWING) _st334above.push(g);
+         });
+         _st334above.length === 0
+           ? ok('ST-334·②: 管理者向け以外の分類は、お問い合わせより上に無い')
+           : ng('ST-334·②: お問い合わせより上に分類の節がある', _st334above.join(','));
+       }
+     } catch(e) {
+       ng('ST-334: 例外', e.message);
+     } finally {
+       if (_st334tmp && _st334tmp.parentNode) _st334tmp.parentNode.removeChild(_st334tmp);
+     }
+
+     // ===== ST-335: 月間の横の欄の長いメモは、既定で畳む（v0.47.27〜） =====
+     // 背景：メモがうるさくなってきたので既定は畳みたい、との要望。
+     // ただし同期のたびに描き直されるので、開いた状態を覚えないと開いたそばから閉じる。
+     // 実際に描いて、①既定で畳む ②開いたら描き直しても開いたまま ③短いメモは畳まない、を確かめる。
+     // 本物の予定は丸ごと控えて戻す（第66条）。保存は止める（第37条）。
+     var _st335backup = JSON.parse(JSON.stringify(allTasks));
+     var _st335save = window.saveAllTasks;
+     var _st335date = window._sidebarDateStr;
+     var _st335open = window._msbMemoOpenIds;
+     try {
+       if (typeof renderMonthlySidebarTasks !== 'function') {
+         ng('ST-335: renderMonthlySidebarTasks が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         window._msbMemoOpenIds = {};
+         var _st335ds = '2000-01-01';
+         var _st335long = Array.from({length: 8}, function(_, i) { return '行' + (i + 1); }).join('\n');
+         allTasks.push({ id: 'st335-long', kind: 'task', text: 'ST-335長', date: _st335ds, section: 1,
+                         displayScope: 'both', memo: _st335long, updatedAt: '2000-01-01T00:00:00.000Z' });
+         allTasks.push({ id: 'st335-short', kind: 'task', text: 'ST-335短', date: _st335ds, section: 1,
+                         displayScope: 'both', memo: '短い', updatedAt: '2000-01-01T00:00:00.000Z' });
+         window._sidebarDateStr = _st335ds;
+         renderMonthlySidebarTasks();
+         var _st335memo = function(id) {
+           var it = document.querySelector('.monthly-sidebar-task-item[data-id="' + id + '"]');
+           return it ? it.querySelector('.msb-task-memo') : null;
+         };
+         var _st335btn = function(id) {
+           var it = document.querySelector('.monthly-sidebar-task-item[data-id="' + id + '"]');
+           if (!it) return null;
+           return Array.prototype.filter.call(it.querySelectorAll('div'), function(x) {
+             return x.children.length === 0 && /メモを(たたむ|ひらく)/.test(x.textContent);
+           })[0] || null;
+         };
+         var _st335m = _st335memo('st335-long');
+         if (!_st335m) {
+           ng('ST-335: 横の欄に予定が描かれない（欄が無い環境の可能性）', '');
+         } else {
+           (_st335m.style.maxHeight && _st335m.style.maxHeight !== 'none')
+             ? ok('ST-335·①: 長いメモは既定で畳まれる')
+             : ng('ST-335·①: 長いメモが開いたまま', _st335m.style.maxHeight);
+           var _st335b = _st335btn('st335-long');
+           if (_st335b) _st335b.click();
+           renderMonthlySidebarTasks();   // 同期で描き直された想定
+           var _st335m2 = _st335memo('st335-long');
+           (_st335m2 && _st335m2.style.maxHeight === 'none')
+             ? ok('ST-335·②: 開いたメモは、描き直しても開いたまま')
+             : ng('ST-335·②: 描き直しで閉じた', _st335m2 ? _st335m2.style.maxHeight : 'なし');
+           var _st335s = _st335memo('st335-short');
+           (_st335s && !_st335s.style.maxHeight && !_st335btn('st335-short'))
+             ? ok('ST-335·③: 短いメモは畳まず、そのまま出る')
+             : ng('ST-335·③: 短いメモの扱いが違う', '');
+         }
+       }
+     } catch(e) {
+       ng('ST-335: 例外', e.message);
+     } finally {
+       allTasks = _st335backup;
+       window.saveAllTasks = _st335save;
+       window._sidebarDateStr = _st335date;
+       window._msbMemoOpenIds = _st335open;
+       try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); } catch (e2) {}
+     }
+
+     // ===== ST-336: メモ２が、書く欄から横の欄の表示まで繋がっている（v0.47.28〜） =====
+     // 背景：メモと一緒にGoogleマップや調整さんのリンクを貼るため、メモを2つにした。
+     // 欄があるだけでは足りない。開いた予定の値が入るか、表示されるか、リンクになるか、
+     // 悪い文字が無害か、メモとメモ２の開閉が別々か、を実際に描いて確かめる。
+     // 本物の予定は丸ごと控えて戻す（第66条）。保存は止める（第37条）。
+     var _st336backup = JSON.parse(JSON.stringify(allTasks));
+     var _st336save = window.saveAllTasks;
+     var _st336date = window._sidebarDateStr;
+     var _st336open = window._msbMemoOpenIds;
+     try {
+       var _st336field = document.getElementById('msbEditMemo2');
+       _st336field
+         ? ok('ST-336·①: 月間の横の欄の編集に、メモ２の欄がある')
+         : ng('ST-336·①: メモ２の欄が無い', '');
+       if (_st336field && typeof renderMonthlySidebarTasks === 'function') {
+         window.saveAllTasks = function(){};
+         window._msbMemoOpenIds = {};
+         var _st336ds = '2000-01-02';
+         var _st336m1 = Array.from({length: 6}, function(_, i) { return 'メモ' + (i + 1); }).join('\n');
+         var _st336m2 = 'https://chouseisan.com/st336\n<img src=x onerror=1>\njavascript:void(0)\n4\n5';
+         allTasks.push({ id: 'st336-a', kind: 'task', text: 'ST-336', date: _st336ds, section: 1,
+                         displayScope: 'both', memo: _st336m1, memo2: _st336m2,
+                         updatedAt: '2000-01-02T00:00:00.000Z' });
+         window._sidebarDateStr = _st336ds;
+         renderMonthlySidebarTasks();
+         var _st336item = function() {
+           return document.querySelector('.monthly-sidebar-task-item[data-id="st336-a"]');
+         };
+         var _st336el = _st336item() && _st336item().querySelector('.msb-task-memo2');
+         if (!_st336el) {
+           ng('ST-336·②: メモ２が横の欄に出ない', '');
+         } else {
+           var _st336links = Array.prototype.map.call(_st336el.querySelectorAll('a'), function(a) { return a.getAttribute('href'); });
+           (_st336links.length === 1 && _st336links[0] === 'https://chouseisan.com/st336')
+             ? ok('ST-336·②: メモ２のURLだけがリンクになる（javascript: はならない）')
+             : ng('ST-336·②: リンクの数や中身が違う', _st336links.join(' '));
+           _st336el.querySelectorAll('img').length === 0
+             ? ok('ST-336·③: メモ２のタグは無害化される（第68条）')
+             : ng('ST-336·③: メモ２にタグがそのまま入った', '');
+           // 1つ目のメモだけ開く
+           var _st336btn = Array.prototype.filter.call(_st336item().querySelectorAll('div'), function(x) {
+             return x.children.length === 0 && /メモをひらく/.test(x.textContent) && x.textContent.indexOf('メモ２') === -1;
+           })[0];
+           if (_st336btn) _st336btn.click();
+           renderMonthlySidebarTasks();
+           var _st336a = _st336item().querySelector('.msb-task-memo:not(.msb-task-memo2)');
+           var _st336b = _st336item().querySelector('.msb-task-memo2');
+           (_st336a && _st336b && _st336a.style.maxHeight === 'none' && _st336b.style.maxHeight !== 'none')
+             ? ok('ST-336·④: メモを開いても、メモ２は畳まれたまま')
+             : ng('ST-336·④: 開閉がつながっている', '');
+         }
+         // 編集を開くと、その予定のメモ２が欄に入る
+         if (typeof openSidebarEditForm === 'function' && _st336item()) {
+           openSidebarEditForm(_st336item(), allTasks.filter(function(x) { return x.id === 'st336-a'; })[0]);
+           (_st336field.value === _st336m2)
+             ? ok('ST-336·⑤: 編集を開くと、メモ２の値が欄に入る')
+             : ng('ST-336·⑤: 欄の値が違う', '');
+           _st336field.value = '';
+           if (typeof closeMsbEdit === 'function') closeMsbEdit();
+         }
+       }
+     } catch(e) {
+       ng('ST-336: 例外', e.message);
+     } finally {
+       allTasks = _st336backup;
+       window.saveAllTasks = _st336save;
+       window._sidebarDateStr = _st336date;
+       window._msbMemoOpenIds = _st336open;
+       window._msbOpenSnapshot = null;
+       try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); } catch (e2) {}
+     }
+
+     // ===== ST-337: 設定の分類の副題が、中身と一致している（v0.47.29〜） =====
+     // 背景：分類の名前だけでは中身が分からないため、副題で中身を並べた。
+     // 副題は手で書くので、節を別の分類へ移すと説明だけが残ってずれる。
+     // 副題の各項目について、その分類の節の中に探す言葉が本当にあるかを確かめる。
+     // 画面の文字を読むだけで、何も書き換えない。
+     try {
+       var _st337groups = window.SET_GROUPS;
+       var _st337view = document.getElementById('settingsView');
+       if (!Array.isArray(_st337groups) || !_st337view) {
+         ng('ST-337: 分類の一覧か設定画面が見つからない', '');
+       } else {
+         // 副題が1つも無ければ、下の2つは確かめる対象が無いまま通ってしまう。先に数える。
+         var _st337withSub = _st337groups.filter(function(g) { return g.sub && g.sub.length; }).length;
+         _st337withSub >= 5
+           ? ok('ST-337·⓪: 副題を持つ分類がある（' + _st337withSub + '件）')
+           : ng('ST-337·⓪: 副題を持つ分類が足りない', _st337withSub + '件');
+         var _st337miss = [];
+         _st337groups.forEach(function(g) {
+           if (!g.sub) return;
+           var _txt = Array.prototype.map.call(
+             _st337view.querySelectorAll('[data-setgroup="' + g.key + '"]'),
+             function(el) { return el.textContent || ''; }).join('\n');
+           g.sub.forEach(function(s) {
+             if (_txt.indexOf(s[1]) === -1) _st337miss.push(g.name + '→' + s[0]);
+           });
+         });
+         _st337miss.length === 0
+           ? ok('ST-337·①: 副題に書いた項目は、すべてその分類の中にある')
+           : ng('ST-337·①: 副題と中身がずれている', _st337miss.join(' / '));
+         // 帯に副題が出ていること（描き直してから読む）
+         if (typeof applySettingsGroups === 'function') applySettingsGroups();
+         var _st337bar = document.getElementById('settingsGroupBar');
+         var _st337text = _st337bar ? _st337bar.textContent : '';
+         var _st337noSub = _st337groups.filter(function(g) {
+           return g.sub && g.key !== 'admin' && _st337text.indexOf(g.name) !== -1 &&
+                  _st337text.indexOf(g.sub[0][0]) === -1;
+         }).map(function(g) { return g.name; });
+         _st337noSub.length === 0
+           ? ok('ST-337·②: 帯に副題が出ている')
+           : ng('ST-337·②: 副題が出ていない分類がある', _st337noSub.join(','));
+       }
+     } catch(e) {
+       ng('ST-337: 例外', e.message);
      }
 
 
