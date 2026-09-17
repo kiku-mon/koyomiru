@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.23 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.25 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.23';
+    const APP_VERSION = 'v0.47.25';
   const APP_LAST_UPDATED = '2026-09-17'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -4288,16 +4288,22 @@ function _showInviteWelcome() {
       }
     }
     @media print {
+      /* v0.47.24: 用紙は印刷の画面で選んだものに従う。向きだけ横に決める。
+         A4 に固定していたため、A3を選んでもA4の大きさでしか描かれなかった。 */
       @page {
         margin: 0;
-        size: A4 landscape;
+        size: landscape;
       }
       * { box-sizing: border-box; }
       #navSpacer { display: none !important; }
       .nav-tabs { display: none !important; }
+      /* v0.47.24: 【権威】2026-09-17、日次をA3で印刷すると、左上にA4の大きさで小さく出た。
+         大きさを 297mm×210mm に固定していたため、紙がA4より大きいと余白が残る。
+         紙の大きさに合わせて広げる（vw/vh は印刷では紙の1枚の大きさを指す）。
+         月間の印刷は body.print-monthly 側で別に決めているので、ここでは触れない。 */
       body, html {
-        width: 297mm;
-        height: 210mm;
+        width: 100%;
+        height: 100%;
         margin: 0;
         padding: 0;
         overflow: hidden;
@@ -4307,6 +4313,7 @@ function _showInviteWelcome() {
       #weeklyView, #yearlyView, #notebookView,
       #settingsView, #setupOverlay, #tutorialHelpBtn,
       #escapeMessage, #modal-root,
+      #koyomiruAddFab,
       .custom-modal, .escape-message,
       #craftEraLabel, #dbEraLabel, #settingsEraLabel, #gantEraLabel,
       #dailyEraLabel, #weeklyEraLabel, #monthlyEraLabel, #yearlyEraLabel,
@@ -4319,15 +4326,15 @@ function _showInviteWelcome() {
         display: grid !important;
         grid-template-columns: 1fr 1fr;
         grid-template-rows: 1fr 1fr;
-        height: 210mm;
-        width: 297mm;
+        height: 100vh;
+        width: 100vw;
         gap: 0;
         margin: 0;
         position: static !important;
         left: 0 !important;
       }
       .section {
-        height: calc(210mm / 2);
+        height: 50vh;
         min-height: unset;
         overflow: hidden;
         page-break-inside: avoid;
@@ -39006,8 +39013,9 @@ window.addEventListener('beforeprint', function() {
   const c = document.querySelector('.container');
   if (c) {
     c.style.setProperty('display','grid','important');
-    c.style.width = '297mm';
-    c.style.height = '210mm';
+    // v0.47.24: 紙の大きさに合わせる。297mm×210mm 固定だと、A3では左上に小さく出た。
+    c.style.width = '100vw';
+    c.style.height = '100vh';
     c.style.gridTemplateColumns = '1fr 1fr';
     c.style.gridTemplateRows = '1fr 1fr';
     c.style.margin = '0';
@@ -47099,6 +47107,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.25', date: '2026-09-17',
+    items: [
+      { icon:'✅', t:'別の端末での完了',
+        before:'ある端末で作った予定を別の端末で完了にしても、作った端末では未完了のままでした',
+        after:'どの端末で完了にしても、ほかの端末に届きます' }
+    ]
+  },
+  {
+    ver: 'v0.47.24', date: '2026-09-17',
+    items: [
+      { icon:'🖨️', t:'日次の印刷',
+        before:'紙がA4以外だと左上に小さく寄り、予定を足す「＋」まで印刷されていました',
+        after:'選んだ紙いっぱいに広がり、「＋」も出ません' }
+    ]
+  },
+  {
     ver: 'v0.47.23', date: '2026-09-17',
     items: [
       { icon:'📤', t:'予定の送り届け',
@@ -48201,6 +48225,16 @@ function _tsMs(v) {
 }
 window._tsMs = _tsMs;
 
+// v0.47.25: 取り込みで「クラウドの内容を採るか」を決める。ここだけが決める。
+// 作った端末（ownerId）は見ない。編集しても変わらない印なので、判断の材料にならない。
+// 同じ時刻（自分の書き込みの折り返し）と、クラウドの方が古いときは手元を残す。
+function _pullShouldTakeCloud(local, row) {
+  if (!local) return true;
+  if (!row) return false;
+  return _tsMs(row.updated_at) > _tsMs(local.updatedAt || local.createdAt);
+}
+window._pullShouldTakeCloud = _pullShouldTakeCloud;
+
 async function unifiedPullTasks() {
   // v0.45.1776: 閲覧のみの間は取り込まない。
   // allTasks を上書きされると、見せている内容が消え、退避したデータとも食い違う。
@@ -48293,18 +48327,23 @@ async function unifiedPullTasks() {
     // Realtime経由で自分に返ってきた際の判定が曖昧になりうる。ownerId
     // （端末ID）で「自分の端末からの書き込みで、ローカルも同じ端末発」と
     // 明示的に確認できる場合は、無駄な上書き・再描画を避ける。
-    var myDeviceId = (typeof getOrCreateDeviceId === 'function') ? getOrCreateDeviceId() : null;
-    if (myDeviceId && incoming.ownerId === myDeviceId && local.ownerId === myDeviceId && local.id === incoming.id) {
-      return; // 自分自身の書き込みの折り返し・ローカルは既に最新
-    }
+    // v0.47.25: 【権威】2026-09-17、完了にしたのに、別の端末では未完了のまま、との報告。
+    // ここが真因だった。ownerId は「その予定を作った端末」であり、編集しても変わらない
+    // （書き込むのは createTask だけ）。そのため上の判定は「自分の書き込みの折り返し」ではなく
+    // 「この端末で作った予定」をすべて素通りさせていた。
+    // 端末Aで作った予定を端末Bで完了にしても、端末Aは取り込みを無視し、未完了のまま残る。
+    // 手で再現して確かめた（他端末で1分後に完了 → 取り込み後も未完了）。
+    //
+    // 折り返しは、下の時刻比較だけで見分けられる。自分が送った内容は時刻が同じなので、
+    // 「クラウドの方が新しい」にならず、手元が残る。判定を2つ持つ理由はない。
+    // 即時反映（Realtime）もこの関数を通るので、ここ1か所で全経路が直る（第79条）。
     // v0.45.2079: 時刻を文字列のまま比べていた。書き方が両者で違う。
     //   手元    2026-09-06T14:33:00.123Z         （toISOString）
     //   クラウド 2026-09-06T14:33:00.123456+00:00（Postgres）
     // 分単位の違いなら正しく比べられるが、同じ秒のときは狂う。
     // 数で比べれば、書き方に関わらず正しい。
-    var lu = _tsMs(local.updatedAt || local.createdAt);
-    var cu = _tsMs(row.updated_at);
-    if (cu > lu) { localMap[row.id] = incoming; changed = true; } // 同時刻・ローカルが新しい場合はローカル優先（安全側）
+    // 同時刻・ローカルが新しい場合はローカル優先（安全側）。判断は _pullShouldTakeCloud に一本化。
+    if (_pullShouldTakeCloud(local, row)) { localMap[row.id] = incoming; changed = true; }
   });
   try { localStorage.setItem('deletedTaskIds', JSON.stringify([...deletedIds])); } catch(e) {}
 
@@ -58671,9 +58710,12 @@ window._stFnSrc = _stFnSrc;
        _srcHtml.includes('@page') && _srcHtml.includes('margin: 0')
          ? ok('ST-91: @page margin:0 定義確認')
          : ng('ST-91: @page margin:0 未定義', '');
-       _srcHtml.includes('size: A4')
-         ? ok('ST-91: @page size:A4 定義確認')
-         : ng('ST-91: @page size:A4 未定義', '');
+       // v0.47.24: 用紙をA4に固定しない方針に変えた（A3で左上に小さく出たため）。
+       // 見るのは「横向きの指定があること」と「A4に縛っていないこと」。
+       var _st91a4 = 'size: ' + 'A4';   // 第58条：自分の文に反応しないよう分けて書く
+       (_srcHtml.includes('size: landscape') && !_srcHtml.includes(_st91a4))
+         ? ok('ST-91: @page 横向き・用紙は選んだものに従う 確認')
+         : ng('ST-91: @page の用紙指定が想定と違う', '');
        // dailyDateNavBar非表示定義確認
        _srcHtml.includes('#dailyDateNavBar') && _srcHtml.includes('display: none !important')
          ? ok('ST-91: 印刷CSS #dailyDateNavBar非表示定義確認')
@@ -66548,10 +66590,29 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-249·②b: 認証イベントでのユーザーID保持確認')
          : ng('ST-249·②b: ユーザーID保持コードが見つからない', '');
        // ③
+       // v0.47.25: ③を書き直した。以前は「作った端末なら取り込まない」判定の存在を確かめていたが、
+       // その判定こそが、他の端末で完了にした予定を受け取れない原因だった（第76条⑤）。
+       // 判断の関数を実際に動かし、作った端末がこの端末でも、新しい変更を採ることを確かめる。
+       var _st249take = window._pullShouldTakeCloud;
+       if (typeof _st249take !== 'function') {
+         ng('ST-249·③: _pullShouldTakeCloud が見つからない', '');
+       } else {
+         var _st249me = (typeof getOrCreateDeviceId === 'function') ? getOrCreateDeviceId() : 'me';
+         var _st249local = { id: 'st249', ownerId: _st249me, updatedAt: '2026-09-17T01:00:00.000Z' };
+         var _st249ok =
+           _st249take(_st249local, { updated_at: '2026-09-17T01:01:00.000Z' }) === true &&          // 他端末で後から変更 → 採る
+           _st249take(_st249local, { updated_at: '2026-09-17T01:00:00.000000+00:00' }) === false &&  // 折り返し（同じ時刻）→ 手元
+           _st249take(_st249local, { updated_at: '2026-09-17T00:59:00.000Z' }) === false &&          // クラウドが古い → 手元
+           _st249take(null, { updated_at: '2026-09-17T00:00:00.000Z' }) === true;                     // 手元に無い → 採る
+         _st249ok
+           ? ok('ST-249·③: この端末で作った予定でも、他の端末の新しい変更を採る')
+           : ng('ST-249·③: 取り込みの判断が想定と違う', '');
+       }
        var _st249pullSrc = _stFnSrc('async function unifiedPullTasks()');
-       _st249pullSrc.indexOf('incoming.ownerId === myDeviceId && local.ownerId === myDeviceId') !== -1
-         ? ok('ST-249·③: ownerIdベースの自分自身判定確認')
-         : ng('ST-249·③: 自分自身判定の強化が見つからない', '');
+       var _st249oldGuard = 'incoming.' + 'ownerId === myDeviceId';   // 第58条：分けて書く
+       (_st249pullSrc && _st249pullSrc.indexOf(_st249oldGuard) === -1 && _st249pullSrc.indexOf('_pullShouldTakeCloud(') !== -1)
+         ? ok('ST-249·③b: 取り込みが判断の関数を通り、作った端末で無視していない')
+         : ng('ST-249·③b: 取り込みの判断が関数を通っていない', '');
        ok('ST-249: Realtime重大バグ3件 修正確認 完了');
      } catch(e) {
        ng('ST-249: 例外', e.message);
