@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.10';
+    const APP_VERSION = 'v0.47.11';
   const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9714,6 +9714,12 @@ function _showInviteWelcome() {
           </div>
           <!-- プロフィール即時保存ボタン -->
           <button onclick="saveProfileQuick()" style="margin-top:10px;width:100%;padding:11px;background:linear-gradient(135deg,#4facfe,#00c6fb);border:none;border-radius:10px;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(79,172,254,0.3);">👑 名前・性別・暦を保存する</button>
+          <!-- v0.47.11: 【権威】2026-09-15、プロフィールが薄い、との指摘。
+               表示名・性別・暦の名前しかなく、一般的なサービスにあるものが無かった。
+               自分がどのアカウントで入っているか、いつから使っているか、
+               共有カレンダーで何と呼ばれているかが、どこにも出ていない。
+               書き換えるものではないので、読むだけの欄として下に並べる。 -->
+          <div id="profileFacts" style="margin-top:20px;padding-top:16px;border-top:1px solid #f0f0f0;"></div>
         </div>
       </div>
       <div data-setgroup="garden" id="settingsGardenSection" class="settings-section">
@@ -32513,6 +32519,8 @@ function loadSettingsUI() {
       try { if (typeof applySettingsOrder === 'function') applySettingsOrder(); } catch (eOrd) {}
         // v0.47.8: 並べ替えた後に畳む。順が逆だと、保存ボタンを差し込む位置がずれる。
         try { if (typeof applySettingsGroups === 'function') applySettingsGroups(); } catch (eSG) {}
+        // v0.47.11: プロフィールの読むだけの情報。DBを見るので、待たずに投げる。
+        try { if (typeof renderProfileFacts === 'function') renderProfileFacts(); } catch (ePF) {}
       // v0.45.2029: 暦の表示。設定と月間のボタンは同じ場所を見る（第71条④）。
       try {
         var _koyomiCheck = document.getElementById('showKoyomiCheck');
@@ -33717,7 +33725,7 @@ var SET_GROUPS = [
   // v0.47.7: 【権威】2026-09-15、管理者向けは一番上、との指示。
   // 管理者モードのときしか出ない。出るときは、その人が使うために開いている。
   { key: 'admin',    icon: '👑', name: '管理者向け' },
-  { key: 'profile',  icon: '👤', name: 'あなたのこと（呼び名）' },
+  { key: 'profile',  icon: '👤', name: 'プロフィール' },
   { key: 'view',     icon: '🗓️', name: 'カレンダーの見え方' },
   { key: 'calendar', icon: '📅', name: 'カレンダーの管理' },
   { key: 'layout',   icon: '🗂️', name: '画面の並び' },
@@ -33739,6 +33747,71 @@ function toggleSetGroup(key) {
   applySettingsGroups();
 }
 window.toggleSetGroup = toggleSetGroup;
+
+// v0.47.11: プロフィールに、読むだけの情報を並べる。
+// 書き換えるものではないので、入力欄の下にまとめて置く。
+// 呼び名はカレンダーごとに違うので、空のものが分かるようにする。
+async function renderProfileFacts() {
+  try {
+    var box = document.getElementById('profileFacts');
+    if (!box) return;
+    var _esc = (typeof escAttr === 'function') ? escAttr : function(x){ return String(x); };
+    var _row = function(label, value, warn) {
+      return '<div style="display:flex;gap:10px;padding:7px 0;font-size:0.82em;">' +
+        '<span style="flex:0 0 7.5em;color:#9aa3af;">' + label + '</span>' +
+        '<span style="flex:1;min-width:0;color:' + (warn ? '#c0700a' : '#444') + ';word-break:break-all;">' +
+          value + '</span></div>';
+    };
+    var html = '';
+
+    // ログインしているアカウント
+    if (window._cloudIsLoggedIn && window._cloudUserEmail) {
+      html += _row('アカウント', _esc(window._cloudUserEmail));
+    } else if (window._cloudIsLoggedIn) {
+      html += _row('アカウント', 'ログイン中');
+    } else {
+      html += _row('アカウント', 'ログインしていません', true);
+    }
+
+    // 使い始めた日
+    try {
+      var _fl = (allSettings.meta && allSettings.meta.firstLaunchDate) || '';
+      if (_fl) {
+        var _d0 = new Date(_fl + 'T00:00:00+09:00');
+        var _days = Math.floor((Date.now() - _d0.getTime()) / 86400000) + 1;
+        html += _row('使い始めた日', _esc(_fl) + '　（' + _days + '日目）');
+      }
+    } catch (e) {}
+
+    box.innerHTML = html +
+      '<div id="profileNames" style="margin-top:6px;"></div>';
+
+    // 共有カレンダーでの呼び名（DBから取る。取れなければ黙る）
+    if (!window._cloudIsLoggedIn) return;
+    var r = await rpcWithTimeout('koyomiru_my_display_names', {}, 8000);
+    if (!r || r.error || !Array.isArray(r.data) || !r.data.length) return;
+    var _nb = document.getElementById('profileNames');
+    if (!_nb) return;
+    var _empty = r.data.filter(function(x){ return !String(x.display_name || '').trim(); }).length;
+    var _items = r.data.map(function(x) {
+      var _n = String(x.display_name || '').trim();
+      return '<div style="display:flex;gap:8px;padding:3px 0;font-size:0.8em;">' +
+        '<span style="flex:1;min-width:0;color:#8e8e8e;overflow:hidden;text-overflow:ellipsis;">' +
+          _esc(x.calendar_name || 'カレンダー') + '</span>' +
+        '<span style="color:' + (_n ? '#444' : '#c0700a') + ';">' +
+          (_n ? _esc(_n) : '未設定') + '</span></div>';
+    }).join('');
+    _nb.innerHTML =
+      '<div style="padding:7px 0 4px;font-size:0.82em;color:#9aa3af;">共有カレンダーでの呼び名' +
+      (_empty ? ('　<span style="color:#c0700a;">' + _empty + '件が未設定</span>') : '') + '</div>' +
+      _items +
+      (_empty ? '<button onclick="window._showNameInput(((allSettings.profile||{}).name)||\'\')" ' +
+        'style="margin-top:8px;padding:7px 14px;border:1px solid #d4e4f5;border-radius:8px;' +
+        'background:#fafcff;color:#2a6aa8;font-size:0.8em;cursor:pointer;font-family:inherit;">' +
+        '呼び名をまとめて決める</button>' : '');
+  } catch (e) { console.warn('[プロフィール] 描けませんでした:', e && e.message); }
+}
+window.renderProfileFacts = renderProfileFacts;
 
 function applySettingsGroups() {
   try {
@@ -46822,8 +46895,11 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.47.10', date: '2026-09-15',
+    ver: 'v0.47.11', date: '2026-09-15',
     items: [
+      { icon:'📇', t:'プロフィール',
+        before:'表示名と性別しかなく、どのアカウントで入っているかも分からなかった',
+        after:'アカウント・使い始めた日・共有カレンダーでの呼び名が出ます' },
       { icon:'👤', t:'設定のプロフィール',
         before:'管理者向けの中にあり、開けない方がいました',
         after:'「👤 あなたのこと」として独立しました' },
