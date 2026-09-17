@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.46.92 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.23 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.22';
+    const APP_VERSION = 'v0.47.23';
   const APP_LAST_UPDATED = '2026-09-17'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13719,6 +13719,51 @@ function renderTodoList() {
         });
     }
     // マスターデータ保存
+    // v0.47.23: 【権威】2026-09-17、送信の「送ったかどうか」が2つの帳簿に分かれていた件。
+    //   送信待ちの列（koyomiru_push_queue）… 端末に保存される
+    //   _unifiedLastPushedSnapshot       … メモリだけ。開くたびに空から始まる
+    // 列が空のときは古い控えで判断する抜け道が残っており、どちらが正しいか決まらなかった。
+    // さらに保存口（このブロック）は列の関数より前に読まれるため、
+    // 起動直後の保存は列に積めず、古い控えがたまたま拾っていた。
+    //
+    // 積むかどうかは「この端末に前回保存した内容から変わったか」だけで決める。
+    // 送ったかどうかは列だけが知る。帳簿は1つになる。
+    //
+    // 取り込み（クラウドから来た分）は変わっていても積まない。送り返しになるため。
+    // その判定に使うクラウド側の時刻は cloudSig で受け取る。
+    // 積めなかったときに基準を進めないのは、呼ぶ側の仕事（ids と prev を返す）。
+    function _pushQueueDiff(prevSigById, tasks, cloudSigById) {
+      var prev = prevSigById || {};
+      var next = {};
+      var ids = [];
+      var localOnly = (typeof window !== 'undefined' && window.LOCAL_ONLY_KINDS) || [];
+      var toMs = function(v) { var n = v ? Date.parse(v) : NaN; return isFinite(n) ? n : 0; };
+      (tasks || []).forEach(function(t) {
+        if (!t || !t.id) return;
+        var sig = t.updatedAt || t.createdAt || '';
+        next[t.id] = sig;
+        if (prev[t.id] === sig) return;                        // 変わっていない
+        if (t.autoFilled === true) return;                     // アプリが書いた文は送らない
+        if (localOnly.indexOf(t.kind) !== -1) return;          // 手元だけで持つ種類
+        if (cloudSigById && cloudSigById[t.id] &&
+            toMs(sig) <= toMs(cloudSigById[t.id])) return;     // クラウドから来たもの
+        ids.push(t.id);
+      });
+      return { ids: ids, next: next };
+    }
+    // 前回この端末に保存した内容を、保存されているものから作る。
+    // 読めなければ空を返す。空なら全部が「変わった」扱いになり、送りすぎる側に倒れる。
+    // 送りそびれるより、送りすぎるほうが害が小さい。
+    function _taskSigBaselineFromDisk() {
+      var map = {};
+      try {
+        var arr = JSON.parse(localStorage.getItem('allTasks') || '[]');
+        if (Array.isArray(arr)) arr.forEach(function(t) {
+          if (t && t.id) map[t.id] = t.updatedAt || t.createdAt || '';
+        });
+      } catch (e) {}
+      return map;
+    }
     function saveAllTasks(skipCloudSync) {
   // v0.45.2054: 【権威】2026-09-04、見るだけリンクで1つのカレンダーを開いたのに、
   // 画面を移ったら自分の別のカレンダーまで見えた、との報告。
@@ -13739,22 +13784,24 @@ function renderTodoList() {
   // v0.46.43: 保存のたびに、送るべきものをキューへ積む。
   // ここは第4条の唯一の書き込み口なので、ここで積めば取りこぼしがない。
   // 中身は持たない。IDだけ積み、送るときに allTasks から最新を引く。
+  // v0.47.23: 積む判定を「前回この端末に保存した内容」との比較に変えた（_pushQueueDiff）。
+  // 列の関数がまだ読まれていない起動直後は、積まずに基準も進めない。
+  // 次の保存で、同じ変更がもう一度「変わった」と判定され、そのとき積まれる。
   try {
-    if (typeof pushQueueAdd === 'function' && typeof _pushQueueLoad === 'function') {
-      var _q = _pushQueueLoad();
-      var _prev = window._unifiedLastPushedSnapshot || {};
-      var _n = 0;
-      (allTasks || []).forEach(function(t) {
-        if (!t || !t.id) return;
-        if (t.autoFilled === true) return;
-        if (typeof LOCAL_ONLY_KINDS !== 'undefined' && LOCAL_ONLY_KINDS.indexOf(t.kind) !== -1) return;
-        var _sig = t.updatedAt || t.createdAt || '';
-        if (_prev[t.id] === _sig) return;      // 送信済みと分かっているものは積まない
-        if (_q[t.id]) return;
-        _q[t.id] = { at: new Date().toISOString() };
-        _n++;
-      });
-      if (_n > 0) _pushQueueSave(_q);
+    if (!window._isTesting && !window._smokeTestRunning) {
+      if (!window._lastLocalSaveSigById) window._lastLocalSaveSigById = _taskSigBaselineFromDisk();
+      var _prevSig = window._lastLocalSaveSigById;
+      var _diff = _pushQueueDiff(_prevSig, allTasks, window._pullCloudSigById || null);
+      var _queued = (_diff.ids.length === 0) ||
+                    (typeof window.pushQueueAddMany === 'function' && window.pushQueueAddMany(_diff.ids) === true);
+      if (!_queued) {
+        // 積めなかった分だけ基準を据え置く。進めると二度と「変わった」にならない。
+        _diff.ids.forEach(function(id) {
+          if (Object.prototype.hasOwnProperty.call(_prevSig, id)) _diff.next[id] = _prevSig[id];
+          else delete _diff.next[id];
+        });
+      }
+      window._lastLocalSaveSigById = _diff.next;
     }
   } catch (eQ) { console.warn('[送信待ち] 積めませんでした:', eQ && eQ.message); }
       // v0.45.1517: 【権威】2026-08-05、月間サイドバーが独自形式のIDを作っていたため
@@ -27556,12 +27603,7 @@ window._repairCloudCalendarIds = function _repairCloudCalendarIds() {
         });
         if (_fixed > 0) {
           saveAllTasks();
-          // v0.45.1549: 修復したものが確実にクラウドへ届くよう、送信済みの印を外す。
-          // 印が残っていると差分プッシュの対象から漏れ、直したのに相手へ届かない。
-          try {
-            var _snap = window._unifiedLastPushedSnapshot;
-            if (_snap) _fixedIds.forEach(function(id) { delete _snap[id]; });
-          } catch(eSnap) {}
+          // v0.47.23: updatedAt を更新してから保存したので、保存口が送信待ちに積む。印の操作は不要になった。
           console.log('[共有] 同期先がずれていた予定 ' + _fixed + '件を正しい共有カレンダーへ結び直しました');
         }
       } catch(e) { console.warn('[共有] 同期先の修復に失敗:', e && e.message); }
@@ -27588,10 +27630,7 @@ window._repairCloudCalendarIds();
         });
         if (_n2 > 0) {
           saveAllTasks();
-          try {
-            var _snap2 = window._unifiedLastPushedSnapshot;
-            if (_snap2) _fixedIds2.forEach(function(id) { delete _snap2[id]; });
-          } catch(eS) {}
+          // v0.47.23: 送信待ちへは保存口が積む（updatedAt を更新済み）。
           console.log('[表示] 月間に出ていなかった予定 ' + _n2 + '件を月間にも表示するようにしました');
         }
       } catch(e) { console.warn('[表示] 月間表示の修復に失敗:', e && e.message); }
@@ -27627,10 +27666,7 @@ window._repairCloudCalendarIds();
         });
         if (_n > 0) {
           saveAllTasks();
-          try {
-            var _sn = window._unifiedLastPushedSnapshot;
-            if (_sn) _ids.forEach(function(id) { delete _sn[id]; });
-          } catch(eS) {}
+          // v0.47.23: 送信待ちへは保存口が積む（updatedAt を更新済み）。
           console.log('[カレンダー] 迷子になっていた予定 ' + _n + '件を、正しいカレンダーに結び直しました');
         }
       } catch(e) { console.warn('[カレンダー] 参照切れの修復に失敗:', e && e.message); }
@@ -35000,6 +35036,7 @@ function renderMonthlyMoneyLine() {
     window.resetTlRowHeight = resetTlRowHeight;
     window.saveAllSettings = saveAllSettings;
     window.saveAllTasks = saveAllTasks;
+    window._pushQueueDiff = _pushQueueDiff;   // v0.47.23: 検査から呼ぶため
     window.recalcStorageUsage = recalcStorageUsage;
     window.moveScratchToThoughts = moveScratchToThoughts;
     window._buildEmptyDayMetaText = _buildEmptyDayMetaText;
@@ -44017,14 +44054,7 @@ async function leaveSharedCalendar(calendarId) {
     });
     if (_moved > 0) {
       saveAllTasks();
-      // 送信済みの控えからも外し、新しい送り先へ送り直させる
-      try {
-        var _snap = window._unifiedLastPushedSnapshot || {};
-        allTasks.forEach(function(t) {
-          if (t && t.cloudCalendarId === _dest) delete _snap[t.id];
-        });
-        window._unifiedLastPushedSnapshot = _snap;
-      } catch (eSnap) {}
+      // v0.47.23: 移した予定は updatedAt を更新済みなので、保存口が送信待ちに積む。
       console.log('[SharedCal] 抜けたカレンダーの予定 ' + _moved + '件を「' + _destName + '」へ移しました');
       if (window.showToast) {
         showToast('このカレンダーの予定 ' + _moved + '件を「' + (_destName || 'あなたのカレンダー') + '」へ移しました', {type:'ok', duration:5000});
@@ -46315,8 +46345,7 @@ async function makeLocalCalendarShareable(localCalId) {
     saveAllSettings();
     if (moved > 0) {
       saveAllTasks();
-      // 送信済みの印を消して、新しい行き先へ送り直させる
-      try { window._unifiedLastPushedSnapshot = {}; } catch(eSnap) {}
+      // v0.47.23: 移した予定は updatedAt を更新済み。保存口が送信待ちに積むので、すぐ送れる。
       if (typeof unifiedPushTasks === 'function') { try { await unifiedPushTasks(); } catch(eP) {} }
     }
     console.log('[SharedCal] 「' + (cal.name||'') + '」を共有できるようにしました（予定 ' + moved + '件を引っ越し）');
@@ -46377,8 +46406,7 @@ async function pushLocalCalendarsToCloud() {
       saveAllSettings();
       if (movedTotal > 0) {
         saveAllTasks();
-        // 送信済みの印を消し、新しい行き先へ送り直させる
-        try { window._unifiedLastPushedSnapshot = {}; } catch(eSnap) {}
+        // v0.47.23: 移した予定は updatedAt を更新済み。保存口が送信待ちに積む。
       }
       console.log('[SharedCal] カレンダー ' + made + '件に器を作り、予定 ' + movedTotal + '件を揃えました');
     }
@@ -46540,7 +46568,7 @@ async function unifiedPushTasks() {
   // 実際に発生した（デバッグパネルで確認）。前回プッシュ成功時点のスナップショット
   // （id→updatedAt）と比較し、実際に変更・新規追加されたタスクだけを送る
   // 差分プッシュに変更する。無駄な通信・DB負荷・Realtimeイベント量を削減する。
-  var _prevSnapshot = window._unifiedLastPushedSnapshot || {};
+  // v0.47.23: 差分の判断は送信待ちの列だけで行う。前回の控えとの比較は捨てた（二重帳簿の解消）。
   // v0.45.1683: 【権威】2026-08-20、連携の直後に403が出続ける件。
   // 手元の予定には、他の人のカレンダーを指したものが混ざっている
   // （招かれて見ているカレンダーの予定など）。それを自分の名前で送ろうとすると、
@@ -46613,11 +46641,16 @@ async function unifiedPushTasks() {
       }
     }
   } catch (eCl) {}
-  // v0.46.43: 送信待ちの一覧。空なら従来の判定を使う（移行のため）。
+  // v0.46.43: 送信待ちの一覧。
+  // v0.47.23: 空なら送るものは無い。以前は空のとき古い控えで判断していたが、
+  // それが二重帳簿の抜け道だった。
   var _queued = (typeof _pushQueueLoad === 'function') ? _pushQueueLoad() : {};
-  var _queueMode = Object.keys(_queued).length > 0;
+  // 送らないと決まったもの。列に残すと、毎回調べ直され、30日経つまで居座る。
+  // 中身が変われば保存口がもう一度積むので、ここで下ろしても取りこぼさない。
+  var _dropFromQueue = [];
   var toPush = allTasks.filter(function(t){
     if (!t || !t.id) return false;
+    if (!_queued[t.id]) return false;   // 送信待ちに無いものは送らない
     // v0.45.2052: 【権威】2026-09-04、日誌を勝手にクラウドに上げるのをやめる、との判断。
     // 実測すると、クラウドの日誌1,229件のうち人が書いたのは12件だけだった。
     // 残る1,217件は、予定の無い日を埋めるためにアプリが書いた文である。
@@ -46628,7 +46661,7 @@ async function unifiedPushTasks() {
     //
     // 手元にあれば足りる。書いた覚えのないものを、クラウドに置く理由がない。
     // 人が後から書き足せば autoFilled は外れるので、そのときは上がる。
-    if (t.autoFilled === true) { _skippedAuto++; return false; }
+    if (t.autoFilled === true) { _skippedAuto++; _dropFromQueue.push(t.id); return false; }
     // v0.46.63: 【権威】2026-09-10、koyomiru_shared_tasks へのPOSTが403を繰り返す件。
     // 調べると、弾かれていた8件は貝森さんが自分の個人用カレンダーに書いた予定だった。
     //   DBでの居場所 : 262e0e13（貝森さんの個人用・きくモンさんは参加していない）
@@ -46645,6 +46678,7 @@ async function unifiedPushTasks() {
     // 作った人が自分でない予定は送らない。手元には残るので、画面からは消えない。
     if (t.createdBy && window._cloudUserId && t.createdBy !== window._cloudUserId) {
       _skippedOther++;
+      _dropFromQueue.push(t.id);
       return false;
     }
     // v0.45.2053: 【権威】2026-09-04、空の記録もクラウドに上げないようにする、との判断。
@@ -46655,20 +46689,10 @@ async function unifiedPushTasks() {
     //
     // dailyStatus は止めない。workMemo と privateMemo に人が書いた文が入る。
     // 見た目が空でも、中身は本人の記録である。ここを一緒に止めると、書いたものが消える。
-    if (LOCAL_ONLY_KINDS.indexOf(t.kind) !== -1) { _skippedLocal++; return false; }
-    // v0.46.43: 送るかどうかは、キューに積まれているかで決める。
-    // これまでは _prevSnapshot（送信済みの印）と比べていた。
-    // だが印は取り込みの直後に書き換わり、未送信の変更まで「送った」ことにしていた。
+    if (LOCAL_ONLY_KINDS.indexOf(t.kind) !== -1) { _skippedLocal++; _dropFromQueue.push(t.id); return false; }
+    // v0.46.43: 送るかどうかは、キューに積まれているかで決める（この関数の冒頭で判定済み）。
+    // 以前の「送信済みの印」は取り込みの直後に書き換わり、未送信の変更まで「送った」ことにしていた。
     // キューなら、送れるまで消えない。
-    //
-    // 移行の間は、キューが空なら従来の判定に落とす。
-    // この版に上げた直後は、まだ何も積まれていないため。
-    var _sig = t.updatedAt || t.createdAt || '';
-    if (_queueMode) {
-      if (!_queued[t.id]) return false;
-    } else {
-      if (_prevSnapshot[t.id] === _sig) return false;
-    }
     if (_allowed) {
       var _cid = t.cloudCalendarId || window._personalCalendarId;
       if (_cid && !_allowed[_cid]) { _skipped++; return false; }
@@ -46686,6 +46710,9 @@ async function unifiedPushTasks() {
       updated_at: t.updatedAt || t.createdAt || new Date().toISOString()
     };
   });
+  try {
+    if (_dropFromQueue.length && typeof pushQueueRemove === 'function') pushQueueRemove(_dropFromQueue);
+  } catch (eDrop) {}
   // v0.45.2069: 送る直前に、クラウドより古いものを落とす。
   //
   // 順序を直しても、これは要る。取り込みが失敗した回、
@@ -46703,11 +46730,18 @@ async function unifiedPushTasks() {
         var _cloudAt = {};
         _cur.data.forEach(function(row){ _cloudAt[row.id] = row.updated_at || ''; });
         var _before = toPush.length;
+        var _olderIds = [];
         toPush = toPush.filter(function(x) {
           var c = _cloudAt[x.id];
           if (!c) return true;                    // クラウドに無いものは送る
-          return !(_tsMs(c) > _tsMs(x.updated_at));   // 取り込み側と同じ物差しで比べる
+          var _keep = !(_tsMs(c) > _tsMs(x.updated_at));   // 取り込み側と同じ物差しで比べる
+          if (!_keep) _olderIds.push(x.id);
+          return _keep;
         });
+        // v0.47.23: 送らないと決めたものは列から下ろす。
+        // 残すと毎回問い合わせ直し、30日経つまで「送信待ち」に数えられ続ける。
+        // クラウドの新しい内容は次の取り込みで手元に来る。
+        if (_olderIds.length && typeof pushQueueRemove === 'function') pushQueueRemove(_olderIds);
         if (toPush.length !== _before) {
           console.warn('[Unified] クラウドの方が新しい ' + (_before - toPush.length) +
                        '件は送りませんでした（巻き戻しを防ぎました）');
@@ -46747,7 +46781,7 @@ async function unifiedPushTasks() {
     _dbg('════════════════════════════════');
     _dbg('　⚠️  クラウドへ送るものがありません');
     _dbg('　　　この端末の予定　　' + allTasks.length + '件');
-    _dbg('　　　保存済みの控え　　' + Object.keys(_prevSnapshot).length + '件');
+    _dbg('　　　送信待ち　　　　' + Object.keys(_queued).length + '件');
     _dbg('　　　すべてクラウドに保存済みと判断されました');
     _dbg('════════════════════════════════');
     _dbg('');
@@ -46812,10 +46846,7 @@ async function unifiedPushTasks() {
     } catch (eQ2) { console.warn('[送信待ち] 後始末に失敗:', eQ2 && eQ2.message); }
     if (_okRows.length > 0) {
       _dbg('　　' + _okRows.length + '件は送れました');
-      // 送れた分だけ控えに入れる。失敗した分は次回また送り直される。
-      var _snap = Object.assign({}, _prevSnapshot);
-      _okRows.forEach(function(row) { _snap[row.id] = row.updated_at; });
-      window._unifiedLastPushedSnapshot = _snap;
+      // 送れた分は上で列から下ろした。失敗した分は列に残り、次回また送り直される。
       try {
         window._unsentTaskIds = window._unsentTaskIds || {};
         _okRows.forEach(function(row) { delete window._unsentTaskIds[row.id]; });
@@ -46873,11 +46904,7 @@ async function unifiedPushTasks() {
   }
   else {
     window._cloudPushFailed = false;
-    // v0.45.1365: プッシュ成功した分だけスナップショットを更新する
-    // （失敗したタスクは次回また差分として検出され、再送される）。
-    var _newSnapshot = Object.assign({}, _prevSnapshot);
-    toPush.forEach(function(row) { _newSnapshot[row.id] = row.updated_at; });
-    window._unifiedLastPushedSnapshot = _newSnapshot;
+    // v0.47.23: 送れた分は列から下ろし済み（上の pushQueueRemove）。控えはもう持たない。
     if (typeof _syncLog === 'function') _syncLog('統一同期：プッシュ完了', toPush.length + '件（差分）');
     // v0.45.1348: デバッグパネル（_dbg_log）にも記録。console.logはスマホのDevToolsが
     // なければ確認できないため、デバッグパネルで直接見える形にする。
@@ -47071,6 +47098,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.23', date: '2026-09-17',
+    items: [
+      { icon:'📤', t:'予定の送り届け',
+        before:'送ったかどうかの記録が2つあり、食い違うと、直した予定が相手や別の端末に届かないことがありました',
+        after:'記録を1つにまとめました。届くまで、この端末で覚えて送り直します' }
+    ]
+  },
   {
     ver: 'v0.47.22', date: '2026-09-17',
     items: [
@@ -47911,7 +47946,8 @@ function _pushQueueSave(q) {
       console.warn('[送信待ち] 上限を超えたので古い ' + drop + '件を捨てました');
     }
     localStorage.setItem(PUSH_QUEUE_KEY, JSON.stringify(q));
-  } catch (e) { console.warn('[送信待ち] 保存に失敗:', e && e.message); }
+    return true;
+  } catch (e) { console.warn('[送信待ち] 保存に失敗:', e && e.message); return false; }
 }
 
 // 変更を積む。中身は持たず、IDと積んだ時刻だけ。送るときに allTasks から引く。
@@ -47924,6 +47960,29 @@ function pushQueueAdd(id) {
   } catch (e) {}
 }
 window.pushQueueAdd = pushQueueAdd;
+
+// v0.47.23: まとめて積む。保存のたびに1件ずつ書き直すと重いので、1回で書く。
+// 積めたかどうかを返す。積めなかったのに「積んだ」ことにすると、
+// 呼んだ側が比較の基準を先へ進めてしまい、その変更は二度と送られない。
+function pushQueueAddMany(ids) {
+  if (!ids || !ids.length) return true;
+  try {
+    var q = _pushQueueLoad();
+    var now = new Date().toISOString();
+    var added = 0;
+    ids.forEach(function(id) {
+      if (!id || q[id]) return;
+      q[id] = { at: now, tries: 0 };
+      added++;
+    });
+    if (added === 0) return true;
+    return _pushQueueSave(q) === true;
+  } catch (e) {
+    console.warn('[送信待ち] まとめて積めませんでした:', e && e.message);
+    return false;
+  }
+}
+window.pushQueueAddMany = pushQueueAddMany;
 
 // v0.46.44: 【第2段階】送れなかったときの再送。
 //
@@ -48269,8 +48328,12 @@ async function unifiedPullTasks() {
     // 付けていたため、プルより前に手元で加えた変更（起動時の同期先修復など）まで
     // 送信済み扱いになり、二度と送られなくなっていた。
     // 印を付けてよいのは「今クラウドから受け取ったもの」だけである。
+    // v0.47.23: 印（送信済みの控え）は捨てた。代わりに次の2つをする。
+    //   ① 手元の方が新しいものを送信待ちに積み直す。
+    //      どこかで積みそびれていても、取り込みのたびにここで拾える。
+    //   ② クラウドの時刻を保存口へ渡す。取り込んだ分を「変わった」と誤って積まないため。
+    var _pullCloudAtForSave = null;
     try {
-      var _pullSnapshot = window._unifiedLastPushedSnapshot || {};
       var _pulledIds = {};
       r.data.forEach(function(row) { if (row && row.id) _pulledIds[row.id] = true; });
       // v0.45.2080: 【権威】2026-09-06、共有カレンダーで自分が編集したものが
@@ -48295,15 +48358,22 @@ async function unifiedPullTasks() {
         if (!row || !row.id) return;
         _cloudAtById[row.id] = (row.data && row.data.updatedAt) ? row.data.updatedAt : (row.updated_at || '');
       });
+      var _localNewerIds = [];
       allTasks.forEach(function(t) {
         if (!t || !t.id) return;
-        if (!_pulledIds[t.id]) return;   // 手元だけにある変更は「未送信」のまま残す
-        if (_tsMs(t.updatedAt || t.createdAt) > _tsMs(_cloudAtById[t.id])) return; // 手元が新しい＝まだ送っていない
-        _pullSnapshot[t.id] = t.updatedAt || t.createdAt || '';
+        if (!_pulledIds[t.id]) return;   // 手元だけにあるものは、保存口の判定に任せる
+        if (_tsMs(t.updatedAt || t.createdAt) > _tsMs(_cloudAtById[t.id])) _localNewerIds.push(t.id); // 手元が新しい＝まだ送っていない
       });
-      window._unifiedLastPushedSnapshot = _pullSnapshot;
-    } catch(e) { console.warn('[Unified] プルスナップショット更新エラー:', e); }
-    saveAllTasks(true); // v0.45.1333の教訓：ダウンロード経由の保存は再アップロード予約なし
+      if (_localNewerIds.length && typeof pushQueueAddMany === 'function') pushQueueAddMany(_localNewerIds);
+      _pullCloudAtForSave = _cloudAtById;
+    } catch(e) { console.warn('[Unified] 取り込み後の送信待ち確認エラー:', e); }
+    // 保存口へクラウドの時刻を渡すのは、この1回の保存の間だけ。必ず外す。
+    window._pullCloudSigById = _pullCloudAtForSave;
+    try {
+      saveAllTasks(true); // v0.45.1333の教訓：ダウンロード経由の保存は再アップロード予約なし
+    } finally {
+      window._pullCloudSigById = null;
+    }
     // v0.45.1528: 【権威】2026-08-06、入力の途中で同期が走ると、書きかけの内容が
     // 再描画で消えるとの報告。データ損失であり最優先で直すべき不具合。
     // リアルタイム更新の定石は「届いた更新を、利用者の操作を邪魔しない時点まで
@@ -52223,7 +52293,13 @@ async function _takeOverAfterLink() {
     if (window._isTesting || window._smokeTestRunning) return;
     if (!window._cloudIsLoggedIn) return;
     // 手元のタスクを全部「まだ送っていない」状態に戻す
-    window._unifiedLastPushedSnapshot = {};
+    // v0.47.23: 控えを空にする方式から、送信待ちに全部積む方式に変えた。
+    // 送らない種類（アプリが書いた文・手元だけの種類・他人の予定）は、送信のときに列から下ろされる。
+    try {
+      var _allIds = (allTasks || []).filter(function(t) { return t && t.id; })
+                                     .map(function(t) { return t.id; });
+      if (typeof pushQueueAddMany === 'function') pushQueueAddMany(_allIds);
+    } catch (eAll) { console.warn('[連携] 送信待ちに積めませんでした:', eAll && eAll.message); }
     try { localStorage.removeItem('unifiedLastPushedSnapshot'); } catch(e) {}
     // 個人カレンダーを今のアカウントで作り直す（無ければ作られる）
     if (typeof unifiedEnsurePersonalCalendarAndMigrate === 'function') {
@@ -66648,25 +66724,68 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-256: 例外', e.message);
      }
 
-     // ===== ST-257: 差分プッシュ方式の確認（v0.45.1365〜） =====
+     // ===== ST-257: 差分プッシュ方式の確認（v0.45.1365〜・v0.47.23で書き直し） =====
      // 背景：unifiedPushTasksが毎回allTasks全件を無条件でupsertしていたため、
-     // validateCalendarIds()等の些細な補完1件をきっかけに194件全部のupdated_atが
-     // 更新され、Realtimeが同一ミリ秒で何十件ものUPDATEイベントを一気に配信する
-     // 現象が実際にデバッグパネルで確認された。前回プッシュ成功時点のスナップショット
-     // と比較し、実際に変更・新規追加されたタスクだけを送る差分方式に変更した。
+     // Realtimeが同一ミリ秒で何十件ものUPDATEイベントを一気に配信する現象が起きた（v0.45.1365）。
+     // v0.47.23：「送ったかどうか」を控え（メモリ）と送信待ちの列の2か所で持っていた。
+     // 控えを捨て、積む判定を _pushQueueDiff（前回この端末に保存した内容との比較）に一本化した。
+     // 以前のST-257は「控えを参照しているか」を文字で探していたため、
+     // 控えが食い違っても落ちなかった（第76条⑤）。ここでは判定を実際に動かして確かめる。
+     // 純粋な関数なので、本物の予定にも保存にも触れない（第7条・第66条）。
      try {
-       var _st257scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
+       var _st257diff = window._pushQueueDiff;
+       if (typeof _st257diff !== 'function') {
+         ng('ST-257·①: _pushQueueDiff が見つからない', '');
+       } else {
+         var _st257T1 = '2026-09-17T01:00:00.000Z';
+         var _st257T2 = '2026-09-17T02:00:00.000Z';
+         var _st257prev = { a: _st257T1, b: _st257T1, auto: _st257T1, loc: _st257T1,
+                            cl: _st257T1, nw: _st257T1, fmt: _st257T1, gone: _st257T1 };
+         var _st257tasks = [
+           { id: 'a',    updatedAt: _st257T1 },                          // 変わっていない
+           { id: 'b',    updatedAt: _st257T2 },                          // 手元で変えた
+           { id: 'c',    updatedAt: _st257T2 },                          // 新しく作った
+           { id: 'auto', updatedAt: _st257T2, autoFilled: true },        // アプリが書いた文
+           { id: 'loc',  updatedAt: _st257T2, kind: 'stamp' },           // 手元だけの種類
+           { id: 'cl',   updatedAt: _st257T2 },                          // クラウドから来た
+           { id: 'nw',   updatedAt: '2026-09-17T03:00:00.000Z' },        // 取り込み中でも手元が新しい
+           { id: 'fmt',  updatedAt: _st257T2 },                          // 書き方違いの同じ時刻
+           null, { updatedAt: _st257T2 }                                 // 壊れた行
+         ];
+         var _st257cloud = { cl: _st257T2, nw: _st257T2, fmt: '2026-09-17T02:00:00.000000+00:00' };
+         var _st257r = _st257diff(_st257prev, _st257tasks, _st257cloud);
+         var _st257ids = (_st257r.ids || []).slice().sort().join(',');
+         _st257ids === 'b,c,nw'
+           ? ok('ST-257·①: 変わったもの・新しいもの・手元が新しいものだけ積む')
+           : ng('ST-257·①: 積む対象が違う', '期待 b,c,nw / 実際 ' + _st257ids);
+         var _st257next = _st257r.next || {};
+         (_st257next.auto === _st257T2 && _st257next.cl === _st257T2 && _st257next.a === _st257T1)
+           ? ok('ST-257·②: 積まなかったものも基準は進める（次回また積まない）')
+           : ng('ST-257·②: 基準の更新が違う', JSON.stringify(_st257next));
+         !Object.prototype.hasOwnProperty.call(_st257next, 'gone')
+           ? ok('ST-257·③: 手元から消えたものは基準からも外れる')
+           : ng('ST-257·③: 消えたものが基準に残っている', '');
+         var _st257empty = _st257diff({}, [{ id: 'x', updatedAt: _st257T1 }, { id: 'y' }], null);
+         _st257empty.ids.slice().sort().join(',') === 'x,y'
+           ? ok('ST-257·④: 基準が無いときは全部積む（送りそびれより送りすぎに倒す）')
+           : ng('ST-257·④: 基準なしの扱いが違う', _st257empty.ids.join(','));
+         var _st257same = _st257diff(_st257r.next, _st257tasks, null);
+         _st257same.ids.length === 0
+           ? ok('ST-257·⑤: 同じ内容で二度保存しても積まない')
+           : ng('ST-257·⑤: 二度目に積まれた', _st257same.ids.join(','));
+       }
+       (typeof window.pushQueueAddMany === 'function' && window.pushQueueAddMany([]) === true)
+         ? ok('ST-257·⑥: pushQueueAddMany が使える（空なら何もせず成功）')
+         : ng('ST-257·⑥: pushQueueAddMany が使えない', '');
+       // 古い控えが送信・取り込みに戻っていないこと（二重帳簿の再発防止）。
+       // 名前は分割して書く（第58条：自分の説明文に反応しないため）。
+       var _st257oldName = '_unifiedLast' + 'PushedSnapshot';
        var _st257pushSrc = _stFnSrc('async function unifiedPushTasks()');
-       _st257pushSrc.indexOf('_unifiedLastPushedSnapshot') !== -1
-         ? ok('ST-257·①: 差分検出用スナップショットの参照確認')
-         : ng('ST-257·①: 差分方式が見つからない', '');
-       _st257pushSrc.indexOf('_prevSnapshot[t.id] === _sig') !== -1
-         ? ok('ST-257·②: 変更のあったタスクだけをフィルタする条件確認')
-         : ng('ST-257·②: 差分フィルタ条件が見つからない', '');
        var _st257pullSrc = _stFnSrc('async function unifiedPullTasks()');
-       _st257pullSrc.indexOf('_unifiedLastPushedSnapshot') !== -1
-         ? ok('ST-257·③: プル時にもスナップショットを更新確認（送り返し防止）')
-         : ng('ST-257·③: プル時のスナップショット更新が見つからない', '');
+       (_st257pushSrc && _st257pullSrc &&
+        _st257pushSrc.indexOf(_st257oldName) === -1 && _st257pullSrc.indexOf(_st257oldName) === -1)
+         ? ok('ST-257·⑦: 送信・取り込みが古い控えを使っていない')
+         : ng('ST-257·⑦: 古い控えが残っている', '');
        ok('ST-257: 差分プッシュ方式 確認 完了');
      } catch(e) {
        ng('ST-257: 例外', e.message);
