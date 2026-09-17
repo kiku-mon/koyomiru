@@ -157,8 +157,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.12';
-  const APP_LAST_UPDATED = '2026-09-15'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.47.13';
+  const APP_LAST_UPDATED = '2026-09-17'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -18676,6 +18676,38 @@ function getKingdomEraLabel(targetDate) {
   // 一度埋めれば、その後は動かない。
   var startDate = null;
   var _fl = (allSettings && allSettings.meta && allSettings.meta.firstLaunchDate) || '';
+  // v0.47.13: 【権威】2026-09-15、きくモン歴が195日から58日に戻った、との報告。
+  //
+  // v0.46.66 で firstLaunchDate を埋めたとき、その端末にあった一番古い予定が
+  // 7/22 だったため、そこが起点として記録された。
+  // あとからクラウドの古い予定（3/07）が降りてきても、一度埋めた値は動かさない
+  // 作りにしていたので、58日のままになっていた。
+  //
+  // 記録されている日より古い予定が手元にあれば、そちらへ直す。
+  // 起点が後ろへずれることはない。前へ戻るだけなので、日数が減ることはない。
+  try {
+    var _older = null;
+    (allTasks || []).forEach(function(t) {
+      if (!t || !t.createdAt) return;
+      if (t.autoFilled === true) return;
+      if (t.createdBy && window._cloudUserId && t.createdBy !== window._cloudUserId) return;
+      if (!_older || t.createdAt < _older) _older = t.createdAt;
+    });
+    if (_older && _fl) {
+      var _od = new Date(_older);
+      if (!isNaN(_od.getTime())) {
+        var _ov = _od.getFullYear() + '-' +
+                  String(_od.getMonth() + 1).padStart(2, '0') + '-' +
+                  String(_od.getDate()).padStart(2, '0');
+        if (_ov < _fl) {
+          allSettings.meta.firstLaunchDate = _ov;
+          saveAllSettings();
+          console.log('[歴] 使い始めた日を ' + _fl + ' から ' + _ov + ' に直しました');
+          _fl = _ov;
+        }
+      }
+    }
+  } catch (eOld) {}
   if (!_fl) {
     try {
       var _seed = null;
@@ -46962,8 +46994,11 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.47.12', date: '2026-09-15',
+    ver: 'v0.47.13', date: '2026-09-17',
     items: [
+      { icon:'📅', t:'きくモン歴の日数',
+        before:'使い始めた日より後の日が記録され、日数が少なく出ていた',
+        after:'手元にもっと古い記録があれば、そちらへ直します' },
       { icon:'📇', t:'プロフィール',
         before:'表示名と性別しかなく、どのアカウントで入っているかも分からなかった',
         after:'アカウント・使い始めた日・共有カレンダーでの呼び名が出ます' },
