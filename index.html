@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.35 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.36 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.35';
+    const APP_VERSION = 'v0.47.36';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -33970,6 +33970,207 @@ function renderCalendarFilter(containerId, onChangeCallback) {
     }
     window._parseMoneyLine = _parseMoneyLine;
 
+    // ===== 月ごとの決算 v0.47.36 =====
+    // 【権威】2026-09-18、「8月にウーバーでいくら稼いだか」を知りたい、との要望。
+    //
+    // 金額だけでは答えられない。何の金かが要る。書き方の決まりを使い、
+    // 金額のすぐ後ろの言葉を「名目」とみなす（▽3,500 ウーバー → ウーバー）。
+    // 表記ゆれ（ウーバー／Uber）はまとめない。勝手に同じ扱いにすると、
+    // 数字が合っているのか読む側が確かめられなくなる。
+    //
+    // 読み取りの決まりは _parseMoneyLine と同じものを使う（判定を2つ持たない・第71条④）。
+    //   ・行の先頭か、直前が空白であること
+    //   ・直後が三角でないこと（△△ は伏せ字）
+    function _parseMoneyEntries(text) {
+      var res = { entries: [], unreadable: 0 };
+      if (!text) return res;
+      var s = String(text);
+      var ALL = MONEY_OUT_MARKS + MONEY_IN_MARKS;
+      var re = new RegExp('([' + ALL + '])\\s*([0-9０-９,，\\s]*)', 'g');
+      var m;
+      while ((m = re.exec(s)) !== null) {
+        var at = m.index;
+        var prev = at > 0 ? s.charAt(at - 1) : '';
+        var next = s.charAt(at + 1);
+        if (at > 0 && !/\s/.test(prev)) continue;
+        if (next && ALL.indexOf(next) !== -1) continue;
+        var raw = String(m[2] || '')
+          .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+          .replace(/[,，\s]/g, '');
+        var n = parseInt(raw, 10);
+        if (!isFinite(n) || n <= 0) { res.unreadable++; continue; }
+        // 名目＝金額の直後にある最初の言葉。空白・三角・行末で切る。
+        var rest = s.slice(at + m[0].length);
+        var name = '';
+        var mm = rest.match(/^[ \u3000\t]*([^\s\u3000]+)/);
+        if (mm) name = mm[1];
+        if (name && ALL.indexOf(name.charAt(0)) !== -1) name = '';   // 次の金額が続いただけ
+        name = name.replace(/^[、。・:：]+/, '').slice(0, 20);
+        res.entries.push({
+          dir: (MONEY_OUT_MARKS.indexOf(m[1]) !== -1) ? 'out' : 'in',
+          amount: n,
+          name: name || '（名目なし）'
+        });
+      }
+      return res;
+    }
+    window._parseMoneyEntries = _parseMoneyEntries;
+
+    // 月ごとに集める。月は 'YYYY-MM'。
+    // 今月とこれからの月は「過ぎた日」と「これから」に分ける。意味の違う数字を混ぜないため。
+    function getMoneyMonthlySummary(monthsBack) {
+      var _n = (typeof monthsBack === 'number') ? monthsBack : 12;
+      var now = new Date();
+      var _p = function(x) { return String(x).padStart(2, '0'); };
+      var todayStr = now.getFullYear() + '-' + _p(now.getMonth() + 1) + '-' + _p(now.getDate());
+      var keys = [];
+      for (var i = 0; i < _n; i++) {
+        var dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        keys.push(dt.getFullYear() + '-' + _p(dt.getMonth() + 1));
+      }
+      var map = {};
+      keys.forEach(function(k) {
+        map[k] = { month: k, out: 0, 'in': 0, past: { out: 0, 'in': 0 }, future: { out: 0, 'in': 0 },
+                   names: { out: {}, 'in': {} }, items: [], unreadable: 0 };
+      });
+      (allTasks || []).forEach(function(t) {
+        if (!t || t.deleted) return;
+        if ((t.kind || 'task') !== 'task') return;
+        if (!t.date || t.date.length < 7) return;
+        var k = t.date.slice(0, 7);
+        var slot = map[k];
+        if (!slot) return;
+        var r = _parseMoneyEntries((t.text || '') + ' ' + (t.title || ''));
+        slot.unreadable += r.unreadable;
+        r.entries.forEach(function(e) {
+          slot[e.dir] += e.amount;
+          (t.date <= todayStr ? slot.past : slot.future)[e.dir] += e.amount;
+          var box = slot.names[e.dir];
+          if (!box[e.name]) box[e.name] = { total: 0, count: 0 };
+          box[e.name].total += e.amount;
+          box[e.name].count++;
+          slot.items.push({ date: t.date, text: String(t.text || ''), dir: e.dir, amount: e.amount, name: e.name });
+        });
+      });
+      return keys.map(function(k) {
+        var s = map[k];
+        s.items.sort(function(a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+        var _top = function(box) {
+          return Object.keys(box).map(function(nm) {
+            return { name: nm, total: box[nm].total, count: box[nm].count };
+          }).sort(function(a, b) { return b.total - a.total; });
+        };
+        s.topIn = _top(s.names['in']);
+        s.topOut = _top(s.names.out);
+        s.hasData = (s.out > 0 || s['in'] > 0 || s.unreadable > 0);
+        s.isCurrentOrFuture = (k >= todayStr.slice(0, 7));
+        return s;
+      });
+    }
+    window.getMoneyMonthlySummary = getMoneyMonthlySummary;
+
+    // 決算の小窓。金額の行から開く（第56条：設定画面は増やさない）。
+    // 月を押すと、その月の明細を開く。開いているかは画面の中だけで覚える（保存しない）。
+    function openMoneyReportModal() {
+      var id = 'moneyReportModal';
+      var box = document.getElementById(id);
+      if (!box) {
+        box = document.createElement('div');
+        box.id = id;
+        box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+        box.onclick = function(e) { if (e.target === box) closeMoneyReportModal(); };
+        document.body.appendChild(box);
+      }
+      window._moneyReportOpenMonth = window._moneyReportOpenMonth || null;
+      box.style.display = 'flex';
+      renderMoneyReportModal();
+    }
+    window.openMoneyReportModal = openMoneyReportModal;
+
+    function closeMoneyReportModal() {
+      var box = document.getElementById('moneyReportModal');
+      if (box) box.style.display = 'none';
+    }
+    window.closeMoneyReportModal = closeMoneyReportModal;
+
+    function toggleMoneyReportMonth(key) {
+      window._moneyReportOpenMonth = (window._moneyReportOpenMonth === key) ? null : key;
+      renderMoneyReportModal();
+    }
+    window.toggleMoneyReportMonth = toggleMoneyReportMonth;
+
+    function renderMoneyReportModal() {
+      var box = document.getElementById('moneyReportModal');
+      if (!box) return;
+      var list = getMoneyMonthlySummary(12);
+      var y = function(n) { return Number(n).toLocaleString('ja-JP'); };
+      var _names = function(arr, color) {
+        if (!arr.length) return '';
+        return '<div style="font-size:0.88em;color:#555;margin-top:2px;">' +
+          arr.slice(0, 6).map(function(x) {
+            return '<span style="color:' + color + ';">' + _escapeHtml(x.name) + '</span> ' + y(x.total) +
+                   '<span style="color:#aaa;">（' + x.count + '件）</span>';
+          }).join('　') +
+          (arr.length > 6 ? '<span style="color:#aaa;">　ほか' + (arr.length - 6) + '種</span>' : '') +
+          '</div>';
+      };
+      var rows = list.map(function(s) {
+        var ym = s.month.split('-');
+        var label = ym[0] + '年' + Number(ym[1]) + '月';
+        if (!s.hasData) {
+          return '<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;color:#bbb;">' + label + '　記録なし</div>';
+        }
+        var diff = s['in'] - s.out;
+        var open = (window._moneyReportOpenMonth === s.month);
+        var head =
+          '<div onclick="toggleMoneyReportMonth(\'' + s.month + '\')" style="cursor:pointer;padding:8px 0;">' +
+            '<div style="font-weight:700;">' + (open ? '▾ ' : '▸ ') + label + '</div>' +
+            '<div style="margin-top:2px;">' +
+              '<span style="color:#c0392b;font-weight:700;">▲ 出る ' + y(s.out) + '</span>　' +
+              '<span style="color:#1b5e20;font-weight:700;">▽ 入る ' + y(s['in']) + '</span>　' +
+              '<span style="color:' + (diff < 0 ? '#c0392b' : '#1b5e20') + ';">差 ' + (diff >= 0 ? '+' : '') + y(diff) + '</span>' +
+            '</div>' +
+            // 今月とこれからの月だけ、過ぎた分とこれからの分を分けて出す
+            (s.isCurrentOrFuture
+              ? '<div style="font-size:0.85em;color:#8e8e8e;margin-top:2px;">' +
+                  'うち過ぎた日　▲' + y(s.past.out) + '／▽' + y(s.past['in']) +
+                  '　　これから　▲' + y(s.future.out) + '／▽' + y(s.future['in']) +
+                '</div>'
+              : '') +
+            _names(s.topIn, '#1b5e20') + _names(s.topOut, '#c0392b') +
+            (s.unreadable > 0 ? '<div style="color:#c07a2a;font-size:0.85em;">⚠️ 金額を読めませんでした ' + s.unreadable + '件</div>' : '') +
+          '</div>';
+        var detail = '';
+        if (open) {
+          detail = '<div style="background:#fafafa;border-radius:8px;padding:8px;margin-bottom:8px;font-size:0.85em;">' +
+            (s.items.length
+              ? s.items.map(function(it) {
+                  return '<div style="display:flex;gap:8px;padding:2px 0;">' +
+                    '<span style="color:#8e8e8e;flex:0 0 3.2em;">' + it.date.slice(5).replace('-', '/') + '</span>' +
+                    '<span style="flex:1 1 auto;word-break:break-all;">' + _escapeHtml(it.text) + '</span>' +
+                    '<span style="flex:0 0 auto;color:' + (it.dir === 'out' ? '#c0392b' : '#1b5e20') + ';font-weight:700;">' +
+                      (it.dir === 'out' ? '▲' : '▽') + y(it.amount) + '</span>' +
+                  '</div>';
+                }).join('')
+              : '<div style="color:#aaa;">明細はありません</div>') +
+            '</div>';
+        }
+        return '<div style="border-bottom:1px solid #f0f0f0;">' + head + detail + '</div>';
+      }).join('');
+      box.innerHTML =
+        '<div style="background:#fff;border-radius:14px;padding:18px;max-width:560px;width:100%;max-height:86vh;overflow:auto;">' +
+          '<div style="font-weight:700;font-size:1.05em;margin-bottom:4px;">📊 月ごとの決算</div>' +
+          '<div style="color:#8e8e8e;font-size:0.85em;line-height:1.6;margin-bottom:10px;">' +
+            '予定に書いた ▲出る ▽入る を、月ごとに数えました。<br>' +
+            '金額のすぐ後ろの言葉を名目として分けています（例：▽3,500 ウーバー）。' +
+          '</div>' +
+          rows +
+          '<div style="margin-top:14px;">' +
+            '<button onclick="closeMoneyReportModal()" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;background:#fff;">閉じる</button>' +
+          '</div>' +
+        '</div>';
+    }
+
     // ===== 手持ち（財布・銀行の残高） v0.47.35 =====
     // 【権威】2026-09-18、給料を受け取ると「入る予定」が0になり、
     // いま実際いくらあるのかが分からない、との要望。
@@ -34590,7 +34791,10 @@ function renderMonthlyMoneyLine() {
         html += '<div style="margin-top:3px;">' +
           '<span onclick="openMoneyPurseModal()" style="cursor:pointer;color:#2f6fed;">' +
           '💰 手持ちを' + ((typeof getMoneyPursesTotal === 'function' && getMoneyPursesTotal().count > 0) ? '直す' : '入れる') +
-          '</span></div>';
+          '</span>' +
+          '<span style="color:#ddd;">　|　</span>' +
+          '<span onclick="openMoneyReportModal()" style="cursor:pointer;color:#2f6fed;">📊 月ごとの決算</span>' +
+          '</div>';
 
         if (!html && bad === 0) { el.style.display = 'none'; return; }
         if (bad > 0) {
@@ -47531,6 +47735,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.36', date: '2026-09-18',
+    items: [
+      { icon:'📊', t:'月ごとの決算',
+        before:'過ぎた月にいくら出て、いくら入ったのかを見る場所がありませんでした',
+        after:'月間の金額の行から開けます。「8月のウーバーは12,700（3件）」のように、名目ごとにも出ます' }
+    ]
+  },
   {
     ver: 'v0.47.35', date: '2026-09-18',
     items: [
@@ -65589,6 +65801,52 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-340: 例外', e.message);
+     }
+
+     // ===== ST-341: 月ごとの決算（v0.47.36〜） =====
+     // 背景：「8月にウーバーでいくら稼いだか」を知りたい、との要望。
+     // 金額だけでは答えられないので、金額のすぐ後ろの言葉を名目として読む。
+     // 読み取りの決まりは _parseMoneyLine と同じ（伏せ字の△△・語の途中の三角は数えない）。
+     // 実物に触らず、読み取りの関数だけを確かめる。
+     try {
+       var _st341 = window._parseMoneyEntries;
+       if (typeof _st341 !== 'function' || typeof window.getMoneyMonthlySummary !== 'function') {
+         ng('ST-341: 決算の関数が見つからない', '');
+       } else {
+         var _st341bad = [];
+         var _chk = function(text, want) {
+           var r = _st341(text);
+           var got = r.entries.map(function(e) { return e.dir + ':' + e.amount + ':' + e.name; }).join(' , ') +
+                     '|読めない' + r.unreadable;
+           if (got !== want) _st341bad.push('「' + text + '」→ ' + got + '（期待 ' + want + '）');
+         };
+         _chk('▽3,500 ウーバー', 'in:3500:ウーバー|読めない0');
+         _chk('▲58,000 家賃',   'out:58000:家賃|読めない0');
+         _chk('▽250000 給料 9月分', 'in:250000:給料|読めない0');          // 2語目は見ない
+         _chk('▽4200', 'in:4200:（名目なし）|読めない0');
+         _chk('▲1,200 コンビニ ▽3,000 返金', 'out:1200:コンビニ , in:3000:返金|読めない0');
+         _chk('△△社と打合せ', '|読めない0');                              // 伏せ字は数えない
+         _chk('打合せ▲500 埋め込み', '|読めない0');                        // 語の途中は数えない
+         _chk('▲ よくわからない', '|読めない1');                           // 読めないものは黙って0にしない
+         _chk('▽１２３４ 全角', 'in:1234:全角|読めない0');
+         _st341bad.length === 0
+           ? ok('ST-341·①: 金額と名目を、書き方の決まりどおりに読む')
+           : ng('ST-341·①: 名目の読み取りが想定と違う', _st341bad.join(' / '));
+         var _st341list = window.getMoneyMonthlySummary(12);
+         (Array.isArray(_st341list) && _st341list.length === 12 &&
+          _st341list[0].month > _st341list[11].month &&
+          /^\d{4}-\d{2}$/.test(_st341list[0].month))
+           ? ok('ST-341·②: 直近12か月ぶんを、新しい月から並べて返す')
+           : ng('ST-341·②: 月の並びが想定と違う', '');
+         // 表記ゆれはまとめない（勝手に同じ扱いにすると、数字を確かめられなくなる）
+         var _st341u = _st341('▽1,000 ウーバー').entries[0].name;
+         var _st341u2 = _st341('▽1,000 Uber').entries[0].name;
+         (_st341u !== _st341u2)
+           ? ok('ST-341·③: 表記ゆれ（ウーバー／Uber）はまとめない')
+           : ng('ST-341·③: 別の言葉が同じ名目になっている', '');
+       }
+     } catch(e) {
+       ng('ST-341: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
