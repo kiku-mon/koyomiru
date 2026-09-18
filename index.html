@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.36 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.37 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.36';
+    const APP_VERSION = 'v0.47.37';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9271,9 +9271,17 @@ function _showInviteWelcome() {
     <div style="font-size:2.5em;margin-bottom:12px;">🌳</div>
     <div style="font-size:0.95em;line-height:1.8;">お使いの端末では、庭の3D表示を読み込めませんでした。<br>通信環境の良い場所で、もう一度開いてみてください。</div>
   </div>
-  <div id="gardenVisitPanel" style="position:fixed;bottom:16px;left:78px;width:220px;max-height:38vh;overflow-y:auto;background:rgba(20,30,25,0.55);backdrop-filter:blur(8px);border-radius:14px;padding:14px;z-index:10;color:#f3ead9;font-size:12.5px;scrollbar-width:thin;scrollbar-gutter:stable;">
-    <div style="font-weight:700;margin-bottom:8px;letter-spacing:0.05em;">🚪 庭をたずねる</div>
-    <div id="gardenVisitList" style="font-size:0.9em;opacity:0.8;">読み込み中…</div>
+  <!-- v0.47.37: 【権威】2026-09-18、カレンダーが多いと、この枠が縦に伸びて池が見えない、との報告。
+       参加している共有カレンダーを1件1行で並べるため、16件で高さ321px（画面の40%）になり、
+       池のあたりの71%を覆っていた（実測）。
+       ふだんは札だけにして、押したときだけ開く。まだ使っていない機能なので、既定はたたむ。 -->
+  <div id="gardenVisitPanel" style="position:fixed;bottom:16px;left:78px;width:auto;max-width:220px;max-height:38vh;overflow-y:auto;background:rgba(20,30,25,0.55);backdrop-filter:blur(8px);border-radius:14px;padding:10px 12px;color:#f3ead9;font-size:0.82em;z-index:12;display:none;">
+    <div onclick="toggleGardenVisitPanel()" style="font-weight:700;letter-spacing:0.05em;cursor:pointer;white-space:nowrap;">
+      <span id="gardenVisitArrow">▸</span> 🚪 庭をたずねる<span id="gardenVisitCount" style="opacity:0.7;"></span>
+    </div>
+    <div id="gardenVisitBody" style="display:none;margin-top:8px;">
+      <div id="gardenVisitList" style="font-size:0.9em;opacity:0.8;">読み込み中…</div>
+    </div>
   </div>
 </div>
 
@@ -45523,6 +45531,8 @@ function initGardenWorld() {
   if (_gardenInitialized) {
     if (_gardenBuilt) _gardenApplyTodaySeasonAndMoon();
     if (typeof _loadGardenVisitList === 'function') _loadGardenVisitList();
+    // v0.47.37: 開くたびにたたんだ状態へ戻す。前に開いたまま池を隠し続けないため。
+    if (typeof collapseGardenVisitPanel === 'function') collapseGardenVisitPanel();
     return;
   }
   if (window._gardenLoading) return; // 重複ロード防止
@@ -45539,6 +45549,7 @@ function initGardenWorld() {
     _gardenInitialized = true;
     _buildGardenScene(mods[0], mods[1].OrbitControls, mods[2].Sky, mods[3], mods[4].Water);
     if (typeof _loadGardenVisitList === 'function') _loadGardenVisitList();
+    if (typeof collapseGardenVisitPanel === 'function') collapseGardenVisitPanel();
   }).catch(function(e) {
     console.warn('[Garden] Three.js読み込み失敗、フォールバック表示:', e);
     window._gardenLoading = false;
@@ -46756,8 +46767,32 @@ async function _loadGardenVisitList() {
   listEl.innerHTML = r.data.map(function(c) {
     return '<div style="padding:5px 0;border-top:1px solid rgba(243,234,217,0.12);">🌱 ' + (c.name || '(無題)') + '</div>';
   }).join('');
+  // v0.47.37: 件数は札に出す。開かなくても、何件あるか分かるようにするため。
+  var cntEl = document.getElementById('gardenVisitCount');
+  if (cntEl) cntEl.textContent = '（' + r.data.length + '）';
 }
 window._loadGardenVisitList = _loadGardenVisitList;
+
+// v0.47.37: 庭をたずねる枠の開閉。開いているかは画面の中だけで覚える（保存しない）。
+// 庭を開き直すと、またたたまれた状態から始まる。池を隠したままにしないため。
+function toggleGardenVisitPanel() {
+  var body = document.getElementById('gardenVisitBody');
+  var arrow = document.getElementById('gardenVisitArrow');
+  if (!body) return;
+  var willOpen = (body.style.display === 'none');
+  body.style.display = willOpen ? 'block' : 'none';
+  if (arrow) arrow.textContent = willOpen ? '▾' : '▸';
+}
+window.toggleGardenVisitPanel = toggleGardenVisitPanel;
+
+// 庭を開くたび、たたんだ状態に戻す。
+function collapseGardenVisitPanel() {
+  var body = document.getElementById('gardenVisitBody');
+  var arrow = document.getElementById('gardenVisitArrow');
+  if (body) body.style.display = 'none';
+  if (arrow) arrow.textContent = '▸';
+}
+window.collapseGardenVisitPanel = collapseGardenVisitPanel;
 
 
 // ===== END v0.45.1342 共有カレンダー =====
@@ -47735,6 +47770,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.37', date: '2026-09-18',
+    items: [
+      { icon:'🌳', t:'庭の「庭をたずねる」',
+        before:'共有カレンダーが多いと枠が縦に伸び、スマホでは池が隠れていました',
+        after:'ふだんは小さな札だけになり、押したときだけ一覧が開きます' }
+    ]
+  },
   {
     ver: 'v0.47.36', date: '2026-09-18',
     items: [
@@ -65847,6 +65890,56 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-341: 例外', e.message);
+     }
+
+     // ===== ST-342: 庭をたずねる枠が、池を覆わない（v0.47.37〜） =====
+     // 背景：参加している共有カレンダーを1件1行で並べるため、16件で高さ321px（画面の40%）になり、
+     // 池のあたりの71%を覆っていた（実測）。ふだんは札だけにして、押したときだけ開く形にした。
+     // 実際に16件入れて高さを測る。触った中身と開閉は元に戻す（第66条）。
+     try {
+       var _st342panel = document.getElementById('gardenVisitPanel');
+       var _st342body  = document.getElementById('gardenVisitBody');
+       var _st342list  = document.getElementById('gardenVisitList');
+       if (!_st342panel || !_st342body || !_st342list || typeof window.toggleGardenVisitPanel !== 'function') {
+         ng('ST-342: 庭をたずねる枠の部品が見つからない', '');
+       } else {
+         var _st342wasHtml = _st342list.innerHTML;
+         var _st342wasDisp = _st342panel.style.display;
+         var _st342wasBody = _st342body.style.display;
+         // 庭を開いていないと高さが0で測れない。測る間だけ出して、必ず元へ戻す。
+         var _st342view = document.getElementById('gardenView');
+         var _st342wasView = _st342view ? _st342view.style.display : null;
+         try {
+           if (_st342view) _st342view.style.display = 'block';
+           _st342panel.style.display = 'block';
+           var _rows = [];
+           for (var _i = 0; _i < 16; _i++) _rows.push('<div style="padding:5px 0;">🌱 ST-342の' + (_i + 1) + '</div>');
+           _st342list.innerHTML = _rows.join('');
+           if (typeof collapseGardenVisitPanel === 'function') collapseGardenVisitPanel();
+           var _hClosed = _st342panel.getBoundingClientRect().height;
+           window.toggleGardenVisitPanel();
+           var _hOpen = _st342panel.getBoundingClientRect().height;
+           window.toggleGardenVisitPanel();
+           var _hClosed2 = _st342panel.getBoundingClientRect().height;
+           var _vh = window.innerHeight || 844;
+           (_hClosed > 0 && _hClosed < _vh * 0.12)
+             ? ok('ST-342·①: 16件あっても、たたんだ枠は画面の12%未満（' + Math.round(_hClosed / _vh * 100) + '%）')
+             : ng('ST-342·①: たたんだ枠が大きすぎる', Math.round(_hClosed) + 'px');
+           (_hOpen > _hClosed)
+             ? ok('ST-342·②: 押すと開いて、一覧が見られる')
+             : ng('ST-342·②: 押しても開かない', '');
+           (Math.abs(_hClosed2 - _hClosed) < 2)
+             ? ok('ST-342·③: もう一度押すと、またたたまれる')
+             : ng('ST-342·③: たたみ直せない', '');
+         } finally {
+           _st342list.innerHTML = _st342wasHtml;
+           _st342body.style.display = _st342wasBody;
+           _st342panel.style.display = _st342wasDisp;
+           if (_st342view) _st342view.style.display = _st342wasView;
+         }
+       }
+     } catch(e) {
+       ng('ST-342: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
