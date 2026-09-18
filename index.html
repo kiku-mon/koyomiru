@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.38 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.39 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.38';
+    const APP_VERSION = 'v0.47.39';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22358,7 +22358,23 @@ function renderMonthlySidebarTasks() {
         // タスク名（タップでインライン編集）
         var txt = document.createElement('span');
         txt.className = 'msb-task-text';
-        txt.textContent = t.text;
+        // v0.47.39: 【権威】2026-09-18、時刻の入った予定が、鉛筆を押さないと分からない、との指摘。
+        // 月間の日付のマスは以前から時刻を出しているが（9:00 支部開け）、
+        // 日付を押したときのこの欄だけが文言しか出していなかった。
+        // ここは幅があるので、終わりの時刻まで出す（週間・タイムラインと同じ 9:00–10:30 の形）。
+        // 始まりだけの予定は始まりだけ。時刻が無い予定は、今までどおり文言だけ。
+        var _tTime = String(t.time || '').trim();
+        var _tEnd  = String(t.endTime || '').trim();
+        if (_tTime) {
+          var _timeEl = document.createElement('span');
+          _timeEl.className = 'msb-task-time';
+          // 空白も入れる。余白だけだと、文字を選んで写したときに詰まって読めない。
+          _timeEl.textContent = _tTime + (_tEnd ? '–' + _tEnd : '') + ' ';
+          _timeEl.style.cssText = 'margin-right:6px;font-variant-numeric:tabular-nums;font-weight:700;' +
+                                  'color:' + (done ? '#9ca3af' : '#4b5563') + ';';
+          txt.appendChild(_timeEl);
+        }
+        txt.appendChild(document.createTextNode(t.text));
         // v0.45.1860: 【権威】2026-09-01、予定の本文とコメントの見分けがつかない、
         // 本文が途中で切れて読めない、との指摘。
         // 予定が主役でコメントは補足なのに、同じ大きさで並んでいた。
@@ -47794,6 +47810,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.39', date: '2026-09-18',
+    items: [
+      { icon:'🕐', t:'月間で日付を押したとき、時刻が見えます',
+        before:'予定の名前だけが並び、何時の予定かは鉛筆を押して開くまで分かりませんでした',
+        after:'「14:00–15:30 登記相談」のように、始まりと終わりが並びます。始まりだけの予定は始まりだけ、時刻のない予定はこれまでどおりです' }
+    ]
+  },
+  {
     ver: 'v0.47.38', date: '2026-09-18',
     items: [
       { icon:'✅', t:'共有カレンダーの予定は、誰が作ったものでも直せます',
@@ -66032,6 +66056,59 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-343: 例外', e.message);
+     }
+
+     // ===== ST-344: 月間の横の欄に時刻が出る（v0.47.39〜） =====
+     // 背景：時刻の入った予定が、鉛筆を押さないと分からない、との指摘。
+     // 日付のマスは以前から時刻を出していたが、日付を押したときの欄だけが文言しか出していなかった。
+     // 始まりと終わり・始まりだけ・時刻なし、の3通りを実際に描いて確かめる。
+     // 本物の予定は丸ごと控えて戻す（第66条）。保存は止める（第37条）。
+     var _st344backup = JSON.parse(JSON.stringify(allTasks));
+     var _st344save = window.saveAllTasks;
+     var _st344date = window._sidebarDateStr;
+     try {
+       if (typeof renderMonthlySidebarTasks !== 'function') {
+         ng('ST-344: 横の欄の描画が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         var _st344ds = '2000-01-03';
+         allTasks.push({ id: 'st344-both', kind: 'task', text: 'ST-344両方', date: _st344ds, section: 1,
+                         displayScope: 'both', time: '14:00', endTime: '15:30', updatedAt: '2000-01-03T00:00:00.000Z' });
+         allTasks.push({ id: 'st344-start', kind: 'task', text: 'ST-344始まりだけ', date: _st344ds, section: 1,
+                         displayScope: 'both', time: '09:00', updatedAt: '2000-01-03T00:00:00.000Z' });
+         allTasks.push({ id: 'st344-none', kind: 'task', text: 'ST-344時刻なし', date: _st344ds, section: 1,
+                         displayScope: 'both', updatedAt: '2000-01-03T00:00:00.000Z' });
+         window._sidebarDateStr = _st344ds;
+         renderMonthlySidebarTasks();
+         var _st344txt = function(id) {
+           var it = document.querySelector('.monthly-sidebar-task-item[data-id="' + id + '"]');
+           var el = it && it.querySelector('.msb-task-text');
+           return el ? el.textContent.replace(/\s+/g, ' ').trim() : null;
+         };
+         var _both = _st344txt('st344-both');
+         var _start = _st344txt('st344-start');
+         var _none = _st344txt('st344-none');
+         if (_both === null) {
+           ng('ST-344: 横の欄に予定が描かれない（欄が無い環境の可能性）', '');
+         } else {
+           (_both === '14:00–15:30 ST-344両方')
+             ? ok('ST-344·①: 始まりと終わりが両方あれば、14:00–15:30 の形で出る')
+             : ng('ST-344·①: 表示が違う', String(_both));
+           (_start === '09:00 ST-344始まりだけ')
+             ? ok('ST-344·②: 始まりだけの予定は、始まりだけ出る')
+             : ng('ST-344·②: 表示が違う', String(_start));
+           (_none === 'ST-344時刻なし')
+             ? ok('ST-344·③: 時刻の無い予定には、何も足さない')
+             : ng('ST-344·③: 余計なものが付いている', String(_none));
+         }
+       }
+     } catch(e) {
+       ng('ST-344: 例外', e.message);
+     } finally {
+       allTasks = _st344backup;
+       window.saveAllTasks = _st344save;
+       window._sidebarDateStr = _st344date;
+       try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
