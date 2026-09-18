@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.32 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.34 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,8 +157,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.32';
-  const APP_LAST_UPDATED = '2026-09-17'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.47.34';
+  const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -4889,6 +4889,24 @@ function _showInviteWelcome() {
       background: #22c55e;
       border: 2px solid #fff;
       box-sizing: content-box;
+    }
+    /* v0.47.34: 【権威】2026-09-18、アイコンのときも、ログイン中だと分かる緑の丸が欲しい。
+       緑の丸は v0.45.1239 からあるが、付け先が人型（.settings-gear-only）だけだった。
+       写真を出しているときは人型が隠れるため、丸も一緒に消えていた。
+       写真の入れ物にも同じ丸を出す。大きさ・色・白フチは人型側と揃える。 */
+    #navSettings.nav-account-loggedin .nav-avatar-wrapper::after {
+      content: '';
+      position: absolute;
+      right: -2px;
+      bottom: -1px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #22c55e;
+      border: 2px solid #fff;
+      box-sizing: content-box;
+      z-index: 2;          /* 虹色の枠の上に出す */
+      pointer-events: none;
     }
     .nav-avatar-wrapper {
       position: relative;
@@ -47286,6 +47304,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.34', date: '2026-09-18',
+    items: [
+      { icon:'🟢', t:'右上のアカウント',
+        before:'プロフィール写真を出していると、ログイン中かどうかが見て分かりませんでした',
+        after:'写真の右下にも緑の丸が付きます。ログアウト中は付きません' }
+    ]
+  },
+  {
+    ver: 'v0.47.33', date: '2026-09-18',
+    items: [
+      { icon:'🔑', t:'パスワードの後付け設定',
+        before:'「このアカウントにパスワードを設定」を押しても、何も起きませんでした',
+        after:'ログイン中のアカウントにパスワードを設定できます。会社のPCなどからも、メールとパスワードで入れます' }
+    ]
+  },
+  {
     ver: 'v0.47.32', date: '2026-09-17',
     items: [
       { icon:'🗺️', t:'旅行の使い方（自由帳）',
@@ -51816,16 +51850,52 @@ function switchCloudAuthTab(mode) {
   }
 }
 window.switchCloudAuthTab = switchCloudAuthTab;
-// v0.45.2007: 【権威】2026-09-03、パスワードのフローを点検した。
-// cloudSetPasswordForCurrentAccount（ログイン中のアカウントにパスワードを
-// 後付けする関数）は、どこからも呼ばれていなかった。
-// 画面にボタンも入力欄（cloudSetPasswordInput）も存在しない。
-// 第31条に従い削除する。必要になったら最良の形で作り直す。
+// v0.47.33: 【権威】2026-09-18、スモークテストで「実在しない関数を呼ぶボタン」として検出。
+// v0.45.2007 で「どこからも呼ばれておらず、画面にボタンも入力欄も無い」として
+// この関数を消したが、その判断は誤っていた。cloudSetPasswordInput と
+// cloudSetPasswordBtn は「⚙️ その他の設定」の中に今もあり、押しても何も起きない。
+// 消すべきは関数ではなかったので、作り直す（第31条は「使われていないもの」を消す規定）。
 //
-// なおGoogle・Discordで作ったアカウントにパスワードを足す手段は、
-// 現状「パスワードをお忘れですか？」から再設定する経路で足りている。
-// Supabaseは同じメールアドレスなら同じアカウントに紐づけるため、
-// 再設定すればメール＋パスワードでも入れるようになる。
+// 作り方：新しいアカウントを作らない。いまログインしているアカウントに
+// パスワードを足す（updateUser）。Discordで入った人が、会社のPCなど
+// Discordを開けない場所からも、同じデータに入れるようにするため。
+// 判定は共通の _cloudValidatePasswordStrength に任せる（基準を2つ持たない）。
+async function cloudSetPasswordForCurrentAccount() {
+  var input = document.getElementById('cloudSetPasswordInput');
+  var btn   = document.getElementById('cloudSetPasswordBtn');
+  if (!input) return;
+  var password = input.value || '';
+  if (!window.supabaseClient) {
+    _cloudLoginSetStatus('⚠️ クラウドに繋がっていません。', 'error');
+    return;
+  }
+  // ログインしていない人には使えない。新しいアカウントを作ってしまわないよう、先に止める。
+  if (!window._cloudIsLoggedIn) {
+    _cloudLoginSetStatus('⚠️ 先にログインしてください。', 'error');
+    return;
+  }
+  var _check = _cloudValidatePasswordStrength(password);
+  if (!_check.ok) { _cloudLoginSetStatus('⚠️ ' + _check.msg, 'error', 'cloudSetPasswordInput'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '設定中…'; }
+  try {
+    var r = await window.supabaseClient.auth.updateUser({ password: password });
+    if (r && r.error) {
+      var _e = (typeof _cloudTranslateAuthError === 'function')
+        ? _cloudTranslateAuthError(r.error.message) : { msg: r.error.message, field: null };
+      _cloudLoginSetStatus('⚠️ ' + _e.msg, 'error', _e.field);
+    } else {
+      // 設定できたら欄を空にする。伏せ字でも、画面に残したままにしない。
+      input.value = '';
+      _cloudLoginSetStatus('🔑 パスワードを設定しました。次からメールアドレスとパスワードでも入れます。', 'success');
+      if (typeof cloudLoginRefreshStatus === 'function') cloudLoginRefreshStatus();
+    }
+  } catch (e) {
+    _cloudLoginSetStatus('⚠️ 設定できませんでした: ' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'このアカウントにパスワードを設定'; }
+  }
+}
+window.cloudSetPasswordForCurrentAccount = cloudSetPasswordForCurrentAccount;
 async function cloudLogoutFromModal() {
   await supabaseSignOut();
   // v0.45.1523: ログアウトした瞬間に右上の表示を人型へ戻す。
@@ -53460,7 +53530,13 @@ function showDebugLog(_initOnly) {
     var _ngLines = [];
     var _summary = [];
     (smokeResult || '').split('\n').forEach(function(ln) {
-      if (ln.indexOf('❌') !== -1 || ln.indexOf('★NG') !== -1) _ngLines.push(ln);
+      // v0.47.33: 落ちた行は「❌ で始まる行」だけにする。
+      // ng() は必ず先頭に ❌ を置く（53807行）。一方、合格の行でも状況の印として
+      // 文中に ❌ を使っている箇所が21ある（例：ST-76b の「画像=❌」、ST-67の各判定）。
+      // これまでは文中の ❌ も拾っていたため、落ちていないものが「落ちた」に並び、
+      // 直す相手を見誤っていた。
+      var _lnT = String(ln).trim();
+      if (_lnT.indexOf('❌') === 0 || _lnT.indexOf('★NG') !== -1) _ngLines.push(ln);
       if (ln.indexOf('GUARDIAN') !== -1 || ln.indexOf('GREAT') !== -1 ||
           ln.indexOf('VERDICT') !== -1 || ln.indexOf('件失敗') !== -1) _summary.push(ln);
     });
@@ -65203,6 +65279,42 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-338: 例外', e.message);
      }
 
+     // ===== ST-339: ログイン中の緑の丸は、写真のときも出る（v0.47.34〜） =====
+     // 背景：緑の丸（v0.45.1239）は人型（.settings-gear-only）にだけ付いていた。
+     // 写真を出しているときは人型が隠れるため、丸も消え、ログイン中か分からなかった。
+     // 見た目の指定なので、実際に描かれているか（::after の中身と大きさ）を測って確かめる。
+     // 触るのはクラスだけ。終わったら元の状態に戻す（第66条）。
+     try {
+       var _st339btn = document.getElementById('navSettings');
+       var _st339wrap = document.getElementById('navAvatarWrapper');
+       var _st339ph = document.querySelector('#navSettings .settings-gear-only');
+       if (!_st339btn || !_st339wrap || !_st339ph) {
+         ng('ST-339: 右上のアカウントのDOMが見つからない', '');
+       } else {
+         var _st339was = _st339btn.classList.contains('nav-account-loggedin');
+         var _st339dot = function(el) {
+           var cs = window.getComputedStyle(el, '::after');
+           return (cs.content && cs.content !== 'none') && parseFloat(cs.width) > 0;
+         };
+         _st339btn.classList.add('nav-account-loggedin');
+         var _st339onAvatar = _st339dot(_st339wrap);
+         var _st339onPlace  = _st339dot(_st339ph);
+         _st339btn.classList.remove('nav-account-loggedin');
+         var _st339offAvatar = _st339dot(_st339wrap);
+         var _st339offPlace  = _st339dot(_st339ph);
+         if (_st339was) _st339btn.classList.add('nav-account-loggedin');   // 元に戻す
+         (_st339onAvatar && _st339onPlace)
+           ? ok('ST-339·①: ログイン中は、写真にも人型にも緑の丸が出る')
+           : ng('ST-339·①: 緑の丸が出ない',
+                (_st339onAvatar ? '' : '写真 ') + (_st339onPlace ? '' : '人型'));
+         (!_st339offAvatar && !_st339offPlace)
+           ? ok('ST-339·②: ログアウト中は、どちらにも緑の丸が出ない')
+           : ng('ST-339·②: ログアウト中なのに緑の丸が出ている', '');
+       }
+     } catch(e) {
+       ng('ST-339: 例外', e.message);
+     }
+
      // ===== APAG LAUNCH SEQUENCE =====
      ok('');
      ok('🚀 APAG LAUNCH SEQUENCE — 五ガーディアン起動');
@@ -66145,14 +66257,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _st247src.indexOf('_cloudValidatePasswordStrength') !== -1
          ? ok('ST-247·④: パスワード最小文字数ガード確認')
          : ng('ST-247·④: パスワードガードが見つからない', '');
-       // v0.45.1471: パスワード複雑性チェックの挙動テスト（第7条：挙動テストを優先）
+       // v0.45.1471: パスワードの判定の挙動テスト（第7条：挙動テストを優先）
+       // v0.47.33: 期待値を今の方針に合わせた（第45条）。
+       // v0.45.2002（2026-09-03）に、大文字・数字を混ぜさせる条件を撤廃し、
+       // 「8文字以上」だけに変えている。理由はコード側に記録済み。
+       //   ・混ぜさせる条件のせいで、作った本人が思い出せずログインできなくなった
+       //   ・短く覚えにくいものを生み、かえって破られやすい（NISTも2017年の指針で非推奨）
+       // テストだけが古い条件を確かめ続け、方針どおりの動きを「失敗」と呼んでいた。
        if (typeof window._cloudValidatePasswordStrength === 'function') {
          var _pwCases = [
            { pw: 'Abc12345', expect: true,  label: '8文字・大小英字と数字あり→合格' },
-           { pw: 'abcd1234', expect: true,  label: '大文字なしでも合格（v0.45.2002で緩和）' },
-           { pw: 'ABCD1234', expect: false, label: '英小文字なし→不合格' },
-           { pw: 'Abcdefgh', expect: false, label: '数字なし→不合格' },
-           { pw: 'Ab1',      expect: false, label: '8文字未満→不合格' }
+           { pw: 'abcd1234', expect: true,  label: '大文字なしでも合格' },
+           { pw: 'ABCD1234', expect: true,  label: '英小文字が無くても、8文字あれば合格' },
+           { pw: 'Abcdefgh', expect: true,  label: '数字が無くても、8文字あれば合格' },
+           { pw: 'ねこのひるねとこたつ', expect: true, label: '日本語でも、8文字あれば合格' },
+           { pw: 'Ab1',      expect: false, label: '8文字未満→不合格' },
+           { pw: '',         expect: false, label: '空→不合格' }
          ];
          var _pwNg = _pwCases.filter(function(c) {
            return window._cloudValidatePasswordStrength(c.pw).ok !== c.expect;
@@ -69863,10 +69983,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _r7calls = (_r7src.match(/onclick="(?:window\.)?[A-Za-z_][\w]*\s*\(/g) || [])
            .map(function(x) { return x.replace(/^onclick="(?:window\.)?/, '').replace(/\s*\($/, ''); });
          var _r7seen = {};
+         // v0.47.33: 動的に作られる関数（GREY_LIST）は、テスト中は存在しない。
+         // これまでこのチェックだけが免除リストを見ておらず、毎回落ちていた。
+         // ただし免除を隠れ場所にしない。コードの中に代入が実在することを必ず確かめ、
+         // 無ければ免除せず落とす（消えた関数を見逃さないため）。
+         var _r7allSrc = (typeof _stAllSrc === 'function') ? _stAllSrc() : '';
+         var _r7grey = (typeof GREY_LIST !== 'undefined') ? GREY_LIST : {};
          _r7calls.forEach(function(f) {
            if (_r7seen[f] || f === 'if') return;
            _r7seen[f] = true;
-           if (typeof window[f] !== 'function') _r7missing.push(f);
+           if (typeof window[f] === 'function') return;
+           if (_r7grey[f] && _r7allSrc.indexOf('window.' + f + ' =') !== -1) return;
+           _r7missing.push(f);
          });
          _r7ok = (_r7missing.length === 0);
        } catch(e) {}
@@ -79225,7 +79353,7 @@ window.addMigration = addMigration;
         <div style="margin-top:10px;">
           <div style="border-top:1px solid #e5dccc;padding-top:12px;margin-bottom:14px;">
             <div style="font-size:0.78em;color:#8a7a63;margin-bottom:8px;">🔑 パスワードでもログインできるようにする（会社PC等、Discordログインが使えない環境向け）</div>
-            <input type="password" id="cloudSetPasswordInput" placeholder="新しいパスワード（8文字以上・大小英字と数字）" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #d8cbb8;border-radius:8px;font-size:0.9em;margin-bottom:8px;">
+            <input type="password" id="cloudSetPasswordInput" placeholder="新しいパスワード（8文字以上）" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #d8cbb8;border-radius:8px;font-size:0.9em;margin-bottom:8px;">
             <button id="cloudSetPasswordBtn" onclick="cloudSetPasswordForCurrentAccount()" style="width:100%;padding:9px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.85em;font-weight:600;cursor:pointer;">このアカウントにパスワードを設定</button>
           </div>
           <button onclick="signOutOtherDevicesFromModal()" style="width:100%;padding:9px;border:1px solid #e0cba0;border-radius:8px;background:transparent;color:#a67c00;font-size:0.8em;cursor:pointer;margin-bottom:10px;">📵 他端末を全てログアウトさせる</button>
