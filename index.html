@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.39 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.40 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.39';
+    const APP_VERSION = 'v0.47.40';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7934,8 +7934,20 @@ function _showInviteWelcome() {
           <label class="msb-label">開始</label>
           <div class="msb-dt-pair">
             <input id="msbEditDate" type="date" class="msb-input-sm">
-            <input id="msbEditTime" type="time" class="msb-input-sm msb-dt-time" placeholder="開始時刻" title="開始時刻">
+            <input id="msbEditTime" type="time" class="msb-input-sm msb-dt-time" placeholder="開始時刻" title="開始時刻"
+              onchange="window._msbOnStartTimeChange()">
             <button type="button" onclick="window._msbFillTime('msbEditTime')" class="msb-now-btn" title="いまの時刻を入れる">今</button>
+          </div>
+        </div>
+        <!-- v0.47.40: 【権威】2026-09-18、時刻を入れる方へ導きつつ、面倒なときは一度で消せるようにしたい、との要望。
+             勝手に現在時刻を確定させない。明日の予定に今の時刻が黙って入ると、通知も並び順も狂う。
+             押せば入る候補を置き、押さなければ空のまま。入れた後に「やっぱり要らない」も一度で戻せる。 -->
+        <div class="msb-edit-row" style="margin-top:-4px;">
+          <label class="msb-label"></label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" onclick="window._msbQuickTime(30)" class="msb-now-btn" title="いまから30分後">30分後</button>
+            <button type="button" onclick="window._msbQuickTomorrow9()" class="msb-now-btn" title="明日の9時">明日9:00</button>
+            <button type="button" onclick="window._msbClearTimes()" class="msb-now-btn" title="開始と終了の時刻を消す">時刻なし</button>
           </div>
         </div>
         <!-- v0.45.1785: id が抜けていた。終日ONで終了行を隠す処理と、その検査が
@@ -23322,10 +23334,24 @@ function openSidebarEditForm(item, task) {
         try {
           var _tEl = document.getElementById('msbEditTime');
           if (_tEl && !_tEl.value) {
+            var _p2 = function(v) { return String(v).padStart(2, '0'); };
             var _n = new Date();
-            _n.setMinutes(0, 0, 0);
-            _n.setHours(_n.getHours() + 1);   // 次の正時
-            _tEl.value = String(_n.getHours()).padStart(2, '0') + ':' + '00';
+            // v0.47.40: 開いている日付が今日なら、いまの時刻を入れる。
+            // 今日の予定を足す場面では、そのまま保存できて速い。
+            // 別の日なら、これまでどおり次の正時にする。今の時刻を入れても意味がないため。
+            var _todayStr = _n.getFullYear() + '-' + _p2(_n.getMonth() + 1) + '-' + _p2(_n.getDate());
+            var _dEl = document.getElementById('msbEditDate');
+            var _openDate = (_dEl && _dEl.value) || (task && task.date) || '';
+            if (_openDate === _todayStr) {
+              _tEl.value = _p2(_n.getHours()) + ':' + _p2(_n.getMinutes());
+            } else {
+              _n.setMinutes(0, 0, 0);
+              _n.setHours(_n.getHours() + 1);   // 次の正時
+              _tEl.value = _p2(_n.getHours()) + ':00';
+            }
+            // 終了は1時間後を入れておく。外れても直すのは一度で済む。
+            // 要らないときは「時刻なし」で両方まとめて消せる。
+            if (typeof _msbOnStartTimeChange === 'function') _msbOnStartTimeChange();
           }
         } catch(eT) {}
       }
@@ -23579,6 +23605,74 @@ function _msbInsertMoney() {
   } catch (e) { console.warn('[お金] 書き足しに失敗:', e && e.message); }
 }
 window._msbInsertMoney = _msbInsertMoney;
+
+// v0.47.40: 開始を入れたら、終了が空のときだけ1時間後を入れる。
+// すでに終了が入っているものは触らない（打った値を勝手に動かさないため）。
+// 外れても害は小さく、直すのも一度で済む。
+function _msbOnStartTimeChange() {
+  try {
+    var st = document.getElementById('msbEditTime');
+    var et = document.getElementById('msbEditEndTime');
+    if (!st || !et) return;
+    if (!st.value) return;      // 消したときは、終了も触らない
+    if (et.value) return;       // すでに入っているものは動かさない
+    _msbAddFromStart(60);
+  } catch (e) {}
+}
+window._msbOnStartTimeChange = _msbOnStartTimeChange;
+
+// いまから○分後を開始に入れる。押したときだけ入る。
+function _msbQuickTime(minutes) {
+  try {
+    var st = document.getElementById('msbEditTime');
+    if (!st) return;
+    var p = function(v) { return String(v).padStart(2, '0'); };
+    var t = new Date();
+    t.setMinutes(t.getMinutes() + (minutes || 0));
+    st.value = p(t.getHours()) + ':' + p(t.getMinutes());
+    var allDay = document.getElementById('msbEditAllDay');
+    if (allDay && allDay.checked) { allDay.checked = false; if (typeof msbAllDayChange === 'function') msbAllDayChange(); }
+    // 開始を動かしたので、終了も入れ直す（前の終了が開始より前に残らないように）
+    var etQ = document.getElementById('msbEditEndTime');
+    if (etQ) etQ.value = '';
+    _msbOnStartTimeChange();
+  } catch (e) {}
+}
+window._msbQuickTime = _msbQuickTime;
+
+// 明日の9時。日付の欄も明日にする。時刻だけ変えて日付が今日のままだと、過ぎた予定になる。
+function _msbQuickTomorrow9() {
+  try {
+    var st = document.getElementById('msbEditTime');
+    var dt = document.getElementById('msbEditDate');
+    if (!st) return;
+    var p = function(v) { return String(v).padStart(2, '0'); };
+    var base = dt && dt.value ? new Date(dt.value + 'T00:00:00') : new Date();
+    if (!dt || !dt.value) base = new Date();
+    base.setDate(base.getDate() + 1);
+    if (dt) dt.value = base.getFullYear() + '-' + p(base.getMonth() + 1) + '-' + p(base.getDate());
+    st.value = '09:00';
+    var allDay = document.getElementById('msbEditAllDay');
+    if (allDay && allDay.checked) { allDay.checked = false; if (typeof msbAllDayChange === 'function') msbAllDayChange(); }
+    // 前に入っていた終了は、開始より前になってしまう。入れ直す。
+    var et9 = document.getElementById('msbEditEndTime');
+    if (et9) et9.value = '';
+    _msbOnStartTimeChange();
+  } catch (e) {}
+}
+window._msbQuickTomorrow9 = _msbQuickTomorrow9;
+
+// 時刻をまとめて消す。終日とは別物で、日付はそのまま残す。
+// 入れる方へ導くには、戻す道が一度で済むことが要る。
+function _msbClearTimes() {
+  try {
+    var st = document.getElementById('msbEditTime');
+    var et = document.getElementById('msbEditEndTime');
+    if (st) st.value = '';
+    if (et) et.value = '';
+  } catch (e) {}
+}
+window._msbClearTimes = _msbClearTimes;
 
 function _msbAddFromStart(minutes) {
   try {
@@ -47810,6 +47904,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.40', date: '2026-09-18',
+    items: [
+      { icon:'🕑', t:'予定を追加するとき、時刻が先に入ります',
+        before:'開始も終了も空から始まり、時刻を入れるのが面倒でした',
+        after:'今日の予定なら、いまの時刻が入ります。別の日なら次の正時です。終了はその1時間後が入ります' },
+      { icon:'🧹', t:'時刻が要らないときは、ひと押しで消せます',
+        before:'開始と終了を1つずつ消すしかありませんでした',
+        after:'「時刻なし」を押すと両方消えます。「30分後」「明日9:00」も、押したときだけ入ります' }
+    ]
+  },
+  {
     ver: 'v0.47.39', date: '2026-09-18',
     items: [
       { icon:'🕐', t:'月間で日付を押したとき、時刻が見えます',
@@ -66109,6 +66214,58 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window.saveAllTasks = _st344save;
        window._sidebarDateStr = _st344date;
        try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); } catch (e2) {}
+     }
+
+     // ===== ST-345: 新しい予定の時刻の入り方（v0.47.40〜） =====
+     // 背景：時刻を入れる方へ導きつつ、面倒なときは一度で消せるようにしたい、との要望。
+     //   ・開始を入れたら、終了が空のときだけ1時間後を入れる（入っているものは動かさない）
+     //   ・押せば入る候補（30分後・明日9:00）。押さなければ空のまま
+     //   ・「時刻なし」で両方まとめて消せる
+     // 欄の値を直接動かして確かめ、終わったら空に戻す（第66条）。予定は作らない。
+     try {
+       var _st345st = document.getElementById('msbEditTime');
+       var _st345et = document.getElementById('msbEditEndTime');
+       if (!_st345st || !_st345et || typeof window._msbOnStartTimeChange !== 'function' ||
+           typeof window._msbClearTimes !== 'function' || typeof window._msbQuickTime !== 'function') {
+         ng('ST-345: 時刻の欄か処理が見つからない', '');
+       } else {
+         var _st345was = [_st345st.value, _st345et.value];
+         try {
+           // ① 開始を入れると、終了に1時間後が入る
+           _st345st.value = '13:00'; _st345et.value = '';
+           window._msbOnStartTimeChange();
+           (_st345et.value === '14:00')
+             ? ok('ST-345·①: 開始を入れると、終了に1時間後が入る')
+             : ng('ST-345·①: 終了が想定と違う', _st345et.value);
+           // ② すでに終了があれば動かさない（打った値を勝手に変えない）
+           _st345st.value = '15:00';
+           window._msbOnStartTimeChange();
+           (_st345et.value === '14:00')
+             ? ok('ST-345·②: すでに終了が入っていれば動かさない')
+             : ng('ST-345·②: 終了を勝手に動かした', _st345et.value);
+           // ③ 時刻なしで両方消える
+           window._msbClearTimes();
+           (_st345st.value === '' && _st345et.value === '')
+             ? ok('ST-345·③: 「時刻なし」で開始と終了が両方消える')
+             : ng('ST-345·③: 消え残りがある', _st345st.value + ' / ' + _st345et.value);
+           // ④ 候補を押すと、開始と終了がそろって入る
+           window._msbQuickTime(30);
+           (/^\d{2}:\d{2}$/.test(_st345st.value) && /^\d{2}:\d{2}$/.test(_st345et.value))
+             ? ok('ST-345·④: 候補を押すと、開始と終了がそろって入る')
+             : ng('ST-345·④: 候補が入らない', _st345st.value + ' / ' + _st345et.value);
+           // ⑤ 開始を消したときは、終了を勝手に入れない
+           _st345st.value = ''; _st345et.value = '';
+           window._msbOnStartTimeChange();
+           (_st345et.value === '')
+             ? ok('ST-345·⑤: 開始が空なら、終了も入れない')
+             : ng('ST-345·⑤: 開始が空なのに終了が入った', _st345et.value);
+         } finally {
+           _st345st.value = _st345was[0];
+           _st345et.value = _st345was[1];
+         }
+       }
+     } catch(e) {
+       ng('ST-345: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
