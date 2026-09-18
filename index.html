@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.31 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.32 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.31';
+    const APP_VERSION = 'v0.47.32';
   const APP_LAST_UPDATED = '2026-09-17'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -28190,6 +28190,52 @@ window._repairCloudCalendarIds();
       window._dbgLog && window._dbgLog('mig_travel_note_add_v1: 旅行の使い方を' + (_found ? '新しくしました' : '追加しました'));
     });
 
+    // v0.47.32: 【権威】2026-09-17、上の切り替えは「ナビタブ」と呼ぶ、との指示。
+    // 旅行の使い方には「① 旅行のタブを開く」と書いてあり、既に配った人の手元にはその文が残る。
+    //
+    // v1 のように全文を差し替えない。利用者が自分で書き足している場合、それを消してしまう。
+    // 直すのは「旅行のタブを開く」という言い方だけ。その文が無ければ何もしない。
+    // ノートが見つからない人（消した人）にも、配り直さない。要らないから消したのかもしれない。
+    // 直す相手かどうかの判断だけを切り出す。検査から同じ判断を呼べるようにするため。
+    window._travelNoteNeedsNavtabFix = function(t) {
+      if (!t || typeof t.textL !== 'string') return false;
+      var _mine = (t.id === '019e3a10-1000-7000-9000-000000000009') ||
+                  (t.kind === 'note' && String(t.title || '').indexOf('旅行の使い方') !== -1);
+      if (!_mine) return false;
+      return t.textL.indexOf('旅行のタブを開く') !== -1;
+    };
+    addMigration('mig_travel_note_navtab_v1', function() {
+      // IDだけで探してはいけない。実機で確かめたところ、配ったノートのIDは
+      // 利用者の手元で作り直されており（例：01a0b1d4-…）、固定IDでは1件も見つからなかった。
+      // 題名でも探す。そのうえで「① 旅行のタブを開く」という文があるものだけを直す。
+      var _id = '019e3a10-1000-7000-9000-000000000009';
+      var _title = '旅行の使い方';
+      var _old = '旅行のタブを開く';
+      var _new = '旅行のナビタブを開く';
+      var _raw = localStorage.getItem('allTasks');
+      var _list = [];
+      try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
+      if (!Array.isArray(_list)) return;
+      var _fixed = 0;
+      _list.forEach(function(t) {
+        if (!window._travelNoteNeedsNavtabFix(t)) return;
+        t.textL = t.textL.split(_old).join(_new);
+        t.updatedAt = new Date().toISOString();   // 第61条：直したら印を新しくする（他の端末へも届く）
+        _fixed++;
+      });
+      if (_fixed === 0) {
+        window._dbgLog && window._dbgLog('mig_travel_note_navtab_v1: 直すところはありませんでした');
+        return;
+      }
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try {
+        if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) {
+          allTasks.length = 0; _list.forEach(function(t){ allTasks.push(t); });
+        }
+      } catch(e) {}
+      window._dbgLog && window._dbgLog('mig_travel_note_navtab_v1: 旅行の使い方の言い方を直しました');
+    });
+
     addMigration('mig_link_note_add_v3', function() {
       // v0.45.1686: 【権威】2026-08-20、v2を走らせても自由帳が変わらない、との報告。
       // 原因は、v2が「既にあるページを書き換える」だけで、
@@ -30609,6 +30655,8 @@ window._repairCloudCalendarIds();
       'mig_link_note_add_v3',
       // 旅行の使い方を配る（v0.45.1700〜）
       'mig_travel_note_add_v1',
+      // 旅行の使い方の「タブ」を「ナビタブ」に直す（v0.47.32〜）
+      'mig_travel_note_navtab_v1',
       // 一生の暦の説明を配る（v0.45.1732〜）
       'mig_life_note_add_v1',
       // 自由帳の並びを使う順に直す（v0.45.2045〜）
@@ -47237,6 +47285,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.32', date: '2026-09-17',
+    items: [
+      { icon:'🗺️', t:'旅行の使い方（自由帳）',
+        before:'「① 旅行のタブを開く」と、古い言い方のままでした',
+        after:'「ナビタブ」に直しました。ご自身で書き足した部分はそのまま残ります' }
+    ]
+  },
   {
     ver: 'v0.47.31', date: '2026-09-17',
     items: [
@@ -65116,6 +65172,36 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-337: 例外', e.message);
      }
 
+
+     // ===== ST-338: 旅行の使い方の「タブ」を「ナビタブ」に直す移行（v0.47.32〜） =====
+     // 背景：既に配ったノートには「① 旅行のタブを開く」が残る。言い方だけを直す移行を入れた。
+     // 実機で確かめたところ、配ったノートのIDは手元で作り直されており、固定IDでは見つからなかった。
+     // 題名でも探すようにした。その判断が効いているかを、実物を触らずに確かめる。
+     try {
+       var _st338 = window._travelNoteNeedsNavtabFix;
+       if (typeof _st338 !== 'function') {
+         ng('ST-338: 判断の関数が見つからない', '');
+       } else {
+         var _st338old = '本文\n① 旅行のタブを開く\n続き';
+         var _st338ok =
+           _st338({ id: 'なんでもよいID', kind: 'note', title: '🗺️ 旅行の使い方', textL: _st338old }) === true &&
+           _st338({ id: '019e3a10-1000-7000-9000-000000000009', kind: 'note', title: '別の題', textL: _st338old }) === true &&
+           _st338({ id: 'x', kind: 'note', title: '🗺️ 旅行の使い方', textL: '① 旅行のナビタブを開く' }) === false &&
+           _st338({ id: 'x', kind: 'note', title: '別の題', textL: _st338old }) === false &&
+           _st338({ id: 'x', kind: 'task', title: '🗺️ 旅行の使い方', text: _st338old }) === false &&
+           _st338(null) === false;
+         _st338ok
+           ? ok('ST-338·①: 題名かIDが合い、古い言い方があるものだけを直す')
+           : ng('ST-338·①: 直す相手の判断が想定と違う', '');
+         // 移行が、その判断を通っていること（判断だけ直して移行が別扱いだと意味がない）
+         var _st338src = _stFnSrc("addMigration('mig_travel_note_navtab_v1'");
+         (_st338src && _st338src.indexOf('_travelNoteNeedsNavtabFix') !== -1)
+           ? ok('ST-338·②: 移行が同じ判断を使っている')
+           : ng('ST-338·②: 移行が別の判断を持っている', '');
+       }
+     } catch(e) {
+       ng('ST-338: 例外', e.message);
+     }
 
      // ===== APAG LAUNCH SEQUENCE =====
      ok('');
