@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.37 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.38 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.37';
+    const APP_VERSION = 'v0.47.38';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -47295,7 +47295,12 @@ async function unifiedPushTasks() {
   var _skipped = 0;
   var _skippedAuto = 0;
   var _skippedLocal = 0;
-  var _skippedOther = 0;   // v0.46.63: 他人が作った予定
+  var _skippedOther = 0;   // v0.47.38: 権限で弾かれ、脇に置いた予定
+  // 脇に置いた行（koyomiru_push_failed）。ここに載っているものは、もう送らない。
+  var _setAsideIds = {};
+  try {
+    if (typeof pushQueueListSetAside === 'function') _setAsideIds = pushQueueListSetAside();
+  } catch (eSA) { _setAsideIds = {}; }
   // v0.46.45: 送る前に掃除する。ここなら allTasks が揃っている。
   // 別の仕掛けで回すと「掃除が動いているか」を見張る手間が増える。
   // 送るついでに片付ければ、見張らなくてよい。
@@ -47335,20 +47340,22 @@ async function unifiedPushTasks() {
     // 人が後から書き足せば autoFilled は外れるので、そのときは上がる。
     if (t.autoFilled === true) { _skippedAuto++; _dropFromQueue.push(t.id); return false; }
     // v0.46.63: 【権威】2026-09-10、koyomiru_shared_tasks へのPOSTが403を繰り返す件。
-    // 調べると、弾かれていた8件は貝森さんが自分の個人用カレンダーに書いた予定だった。
-    //   DBでの居場所 : 262e0e13（貝森さんの個人用・きくモンさんは参加していない）
-    //   作った人     : 04ea733f（貝森さん）
-    //   中身        : 展示会・振神祭・ゴルフ・手相フェア…
-    // それが手元では別のカレンダーの予定として存在し、送り返そうとしていた。
-    // RLSの USING が「DBにある行の calendar_id」を見て、参加していないので拒否する。
-    // これは正しい防御動作であり、乗っ取りではない。
+    // 弾かれていた8件は貝森さんが自分の個人用カレンダー（きくモンさんは参加していない）に
+    // 書いた予定で、それが手元では別のカレンダーの予定として存在し、送り返そうとしていた。
+    // RLSの USING が「DBにある行の calendar_id」を見て、参加していないので拒否した。
+    // これは正しい防御動作である。
+    // そのときの対処は「作った人が自分でない予定は送らない」だった。
     //
-    // 他人が作った予定を、こちらから書き換えて送り返す必要はない。
-    // 送っても必ず弾かれ、そのたびに正常な予定まで巻き添えで止まる。
-    // 実際、支部開けと救霊師上段成就（自分のもの）が一緒に403になっていた。
+    // v0.47.38: 【権威】2026-09-18、共有カレンダーで他の人の予定を完了にしても
+    // 相手に伝わらない件。真因はこの対処だった。
+    // RLSを読み直すと、UPDATE は koyomiru_is_calendar_member(calendar_id, auth.uid()) だけで、
+    // 「作った人に限る」条件は無い。参加していれば誰の行でも直せる。
+    // つまり本来送れるものを、アプリが自分で止めていた。
     //
-    // 作った人が自分でない予定は送らない。手元には残るので、画面からは消えない。
-    if (t.createdBy && window._cloudUserId && t.createdBy !== window._cloudUserId) {
+    // 止める相手は「他人が作った予定」ではなく「実際に権限で弾かれた行」である。
+    // 弾かれた行は下の1件ずつの送り直しで分かるので、そこで脇に置く（_pushQueueSetAside）。
+    // ここでは、すでに脇に置いた行だけを送らない。
+    if (_setAsideIds[t.id]) {
       _skippedOther++;
       _dropFromQueue.push(t.id);
       return false;
@@ -47454,6 +47461,8 @@ async function unifiedPushTasks() {
     _dbg('　⚠️  クラウドへ送るものがありません');
     _dbg('　　　この端末の予定　　' + allTasks.length + '件');
     _dbg('　　　送信待ち　　　　' + Object.keys(_queued).length + '件');
+    // v0.47.38: 脇に置いた件数も出す。黙って送らないものがあると、原因を追えない。
+    _dbg('　　　脇に置いた分　　' + Object.keys(_setAsideIds).length + '件（権限で弾かれたもの）');
     _dbg('　　　すべてクラウドに保存済みと判断されました');
     _dbg('════════════════════════════════');
     _dbg('');
@@ -47508,8 +47517,22 @@ async function unifiedPushTasks() {
       if (_okRows.length && typeof pushQueueRemove === 'function') {
         pushQueueRemove(_okRows.map(function(row) { return row.id; }));
       }
-      if (_ngRows.length && typeof pushQueueMarkTried === 'function') {
-        var _resQ = pushQueueMarkTried(_ngRows.map(function(x) { return x.row.id; }));
+      // v0.47.38: 権限で弾かれた行は、5回待たずにその場で脇に置く。
+      // 何度送っても弾かれるので、待つあいだ毎回まとめ送りを失敗させ、
+      // 正常な予定まで1件ずつの送り直しに巻き込んでしまう。
+      var _deniedRows = _ngRows.filter(function(x) {
+        return (typeof _isPermissionError === 'function') && _isPermissionError(x.msg);
+      });
+      var _otherNg = _ngRows.filter(function(x) { return _deniedRows.indexOf(x) === -1; });
+      if (_deniedRows.length && typeof _pushQueueSetAside === 'function') {
+        _pushQueueSetAside(_deniedRows.map(function(x) { return x.row.id; }), 'permission');
+        if (typeof showToast === 'function') {
+          showToast('⚠️ ' + _deniedRows.length + '件は変更を送れません（作った人のカレンダーにある予定です）。' +
+                    'この端末には残ります', { type: 'warn', duration: 7000 });
+        }
+      }
+      if (_otherNg.length && typeof pushQueueMarkTried === 'function') {
+        var _resQ = pushQueueMarkTried(_otherNg.map(function(x) { return x.row.id; }));
         if (_resQ.stuck.length && typeof showToast === 'function') {
           showToast('⚠️ ' + _resQ.stuck.length + '件がクラウドへ送れません。設定→データ管理で確かめられます',
                     { type: 'warn', duration: 7000 });
@@ -47770,6 +47793,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.38', date: '2026-09-18',
+    items: [
+      { icon:'✅', t:'共有カレンダーの予定は、誰が作ったものでも直せます',
+        before:'他の人が作った予定を完了にしても、自分の画面だけが完了になり、相手には届きませんでした。しばらくすると、その完了も消えていました',
+        after:'同じ共有カレンダーに入っている予定なら、誰が作ったものでも、完了や書き換えが相手にも届きます' },
+      { icon:'🚫', t:'相手が自分だけのカレンダーに書いた予定は、直せません',
+        before:'直せないことが画面に出ず、完了にしたつもりのまま、いつのまにか元に戻っていました',
+        after:'「この予定は変更を送れません（作った人のカレンダーにある予定です）」とその場でお伝えします。予定はこの端末に残ります' }
+    ]
+  },
   {
     ver: 'v0.47.37', date: '2026-09-18',
     items: [
@@ -48797,14 +48831,36 @@ function pushQueueMarkTried(ids) {
 }
 window.pushQueueMarkTried = pushQueueMarkTried;
 
+// 脇に置いた一覧を読む。送信のたびに、ここに載っている行は送らない。
+// v0.47.38: これまでは「他人が作った予定」を一律で止めていた。
+// 止める相手は、実際に権限で弾かれた行だけにする。
+function pushQueueListSetAside() {
+  try { return JSON.parse(localStorage.getItem(PUSH_QUEUE_FAILED_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+window.pushQueueListSetAside = pushQueueListSetAside;
+
+// 権限で弾かれた行かどうか。弾かれたものは何度送っても弾かれるので、その場で脇に置く。
+// 通信の不調や一時的な失敗は、ここに入れない（次回また送るべきものだから）。
+function _isPermissionError(msg) {
+  var s = String(msg || '').toLowerCase();
+  return s.indexOf('row-level security') !== -1 ||
+         s.indexOf('violates row-level') !== -1 ||
+         s.indexOf('permission denied') !== -1 ||
+         s.indexOf('42501') !== -1 ||
+         s.indexOf('403') !== -1;
+}
+window._isPermissionError = _isPermissionError;
+
 // 送れないものを脇へ置く。キューからは外すが、記録は残す。
-function _pushQueueSetAside(ids) {
+function _pushQueueSetAside(ids, reason) {
   try {
     var q = _pushQueueLoad();
     var failed = {};
     try { failed = JSON.parse(localStorage.getItem(PUSH_QUEUE_FAILED_KEY) || '{}') || {}; } catch (e) {}
     ids.forEach(function(id) {
-      failed[id] = { at: new Date().toISOString(), tries: (q[id] && q[id].tries) || 0 };
+      failed[id] = { at: new Date().toISOString(), tries: (q[id] && q[id].tries) || 0,
+                     reason: reason || '' };
       delete q[id];
     });
     _pushQueueSave(q);
@@ -65940,6 +65996,42 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-342: 例外', e.message);
+     }
+
+     // ===== ST-343: 他の人が作った予定の変更も送る（v0.47.38〜） =====
+     // 背景：共有カレンダーで他の人の予定を完了にしても、相手に伝わらなかった。
+     // 原因は v0.46.63 の「作った人が自分でない予定は送らない」。
+     // RLSを読み直すと UPDATE は参加者かどうかだけを見ており、作った人に限っていない。
+     // 本来送れるものを、アプリが自分で止めていた。
+     // 止める相手は「実際に権限で弾かれた行」だけにした。それを確かめる。
+     try {
+       var _st343perm = window._isPermissionError;
+       var _st343list = window.pushQueueListSetAside;
+       var _st343src  = _stFnSrc('async function unifiedPushTasks()') || '';
+       if (typeof _st343perm !== 'function' || typeof _st343list !== 'function') {
+         ng('ST-343: 判定の関数が見つからない', '');
+       } else {
+         var _st343ok =
+           _st343perm('new row violates row-level security policy for table "koyomiru_shared_tasks"') === true &&
+           _st343perm('permission denied for table koyomiru_shared_tasks') === true &&
+           _st343perm('42501') === true &&
+           _st343perm('Failed to fetch') === false &&      // 通信の不調は脇に置かない
+           _st343perm('timeout') === false &&
+           _st343perm('') === false;
+         _st343ok
+           ? ok('ST-343·①: 権限で弾かれたものだけを見分ける（通信の不調は数えない）')
+           : ng('ST-343·①: 権限の判定が想定と違う', '');
+         (typeof _st343list() === 'object')
+           ? ok('ST-343·②: 脇に置いた一覧を読める')
+           : ng('ST-343·②: 脇に置いた一覧が読めない', '');
+         // 作った人で止めていないこと（第58条：自分の文に反応しないよう分けて書く）
+         var _st343old = 't.createdBy !== window.' + '_cloudUserId';
+         (_st343src.indexOf(_st343old) === -1 && _st343src.indexOf('_setAsideIds[t.id]') !== -1)
+           ? ok('ST-343·③: 送信は「作った人」で止めず、脇に置いた行だけを止める')
+           : ng('ST-343·③: まだ作った人で止めている', '');
+       }
+     } catch(e) {
+       ng('ST-343: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
