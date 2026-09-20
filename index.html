@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.42 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.44 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.42';
+    const APP_VERSION = 'v0.47.44';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11078,6 +11078,85 @@ function _showInviteWelcome() {
       }
       return result;
     }
+    // ===== 月の傾き v0.47.44 =====
+    // 【権威】2026-09-18、実際の月は傾いて見えるのに、絵は真横から見た形のまま、との指摘。
+    //
+    // 月の明るい側は必ず太陽の方を向く。地平線を基準にしたときの傾きは、
+    // 月から見て太陽がどの向きにあるかで決まり、見る時刻と場所で変わる。
+    // 南に行くほど月の通り道が天頂寄りになるので、明るい側の向きも寝てくる。
+    //
+    // 出すのは「明るい側の向き」を、地平線から測った角度（度）。
+    // 0度＝右が光る、90度＝上が光る、-90度＝下が光る。
+    // 位置情報は使わない。設定に地域があればそれを、無ければ東京を使う（第2条：無くても落ちない）。
+    //
+    // 精度：太陽・月とも低精度の公式（誤差およそ1度以内）。
+    // 絵を回すのに使う角度なので、この精度で足りる。秒単位の正確さは要らない。
+    function _calcMoonTiltDeg(date, geo) {
+      var rad = Math.PI / 180, deg = 180 / Math.PI;
+      var g = (geo && typeof geo.lat === 'number') ? geo : _TOKYO_GEO;
+      var d = (date instanceof Date) ? date : new Date();
+      // ユリウス日（UTC基準）
+      var jd = d.getTime() / 86400000 + 2440587.5;
+      var T = (jd - 2451545.0) / 36525;
+
+      // 太陽の黄経（低精度）
+      var L0 = 280.46646 + 36000.76983 * T;
+      var M  = 357.52911 + 35999.05029 * T;
+      var C  = (1.914602 - 0.004817 * T) * Math.sin(M * rad) + 0.019993 * Math.sin(2 * M * rad);
+      var sunLon = (L0 + C) % 360;
+
+      // 月の黄経・黄緯（低精度。主要な項のみ）
+      var Lm = 218.316 + 481267.8813 * T;
+      var Mm = 134.963 + 477198.8676 * T;
+      var Fm = 93.272 + 483202.0175 * T;
+      var moonLon = Lm + 6.289 * Math.sin(Mm * rad);
+      var moonLat = 5.128 * Math.sin(Fm * rad);
+
+      var eps = 23.439 - 0.0000004 * (jd - 2451545.0);   // 地軸の傾き
+
+      // 黄道座標 → 赤道座標
+      function toEquatorial(lon, lat) {
+        var l = lon * rad, b = lat * rad, e = eps * rad;
+        var ra = Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l));
+        var dec = Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l));
+        return { ra: ra, dec: dec };
+      }
+      var S = toEquatorial(sunLon, 0);
+      var Mo = toEquatorial(moonLon, moonLat);
+
+      // グリニッジ恒星時 → その土地の恒星時 → 月の時角
+      // 時角は -180〜180 に収める。収めないと視差角が大きく狂う
+      // （373度のような値のまま計算し、上弦の向きが100度近くずれていた）。
+      var gmst = 280.46061837 + 360.98564736629 * (jd - 2451545.0);
+      var lstDeg = ((gmst + g.lng) % 360 + 360) % 360;
+      var Hdeg = ((lstDeg - Mo.ra * deg + 540) % 360) - 180;
+      var H = Hdeg * rad;
+
+      // ① 太陽の向き（月から見て、天の北極を0度として東回りに測る角度）
+      // 分子は「太陽の赤経が月よりどれだけ東にあるか」。
+      // ra の引き算の向きを逆にすると、明るい側が左右反対になる。
+      // 上弦の夕方（南の空・右が光る）で 0度付近になることを確かめてある。
+      var chi = Math.atan2(
+        Math.cos(S.dec) * Math.sin(Mo.ra - S.ra),
+        Math.sin(S.dec) * Math.cos(Mo.dec) - Math.cos(S.dec) * Math.sin(Mo.dec) * Math.cos(Mo.ra - S.ra)
+      );
+      // ② 天の北極が、地平線に対してどれだけ傾いているか（視差角）
+      var q = Math.atan2(
+        Math.sin(H),
+        Math.tan(g.lat * rad) * Math.cos(Mo.dec) - Math.sin(Mo.dec) * Math.cos(H)
+      );
+      // ③ 地平線から測った「明るい側の向き」
+      // chi と q は測る向きが逆なので、引くのではなく足す。
+      // 引く形にしていたときは、上弦の夕方が70度ずれていた。
+      var tilt = (chi + q) * deg;
+      // 0度＝右が光る、90度＝上、-90度＝下。-180〜180 に収める
+      var out = 90 - tilt;
+      while (out > 180) out -= 360;
+      while (out < -180) out += 360;
+      return out;
+    }
+    window._calcMoonTiltDeg = _calcMoonTiltDeg;
+
     // 現在地の、東京に対する日の出/日没/薄明の差分(時・小数)を返す。既存テーブル(東京)にこの差分を足す。
     function _calcGeoOffsetHours(geo, date) {
       if (!geo || typeof geo.lat !== 'number' || typeof geo.lng !== 'number') return { rise: 0, set: 0, dawn: 0, dusk: 0 };
@@ -16508,7 +16587,10 @@ function myDeckApply(idx) {
     // 月の絵だけを見せ、文字はタップした人にだけ見せる設計に変更する。ダッシュボードに
     // あった月Canvas描画ロジックを、canvasId・ageを引数に取る共通関数として切り出し、
     // 季節の風だよりモーダルからも呼べるようにする（第9条：コード共有）。
-    function _drawMoonCanvas(canvasId, age) {
+    // v0.47.44: 傾きを足した。実際の月は真横から見た形では出ず、時刻と場所で向きが変わる。
+    // 回すのは月の形だけ。星と空の背景は回さない（空ごと傾いて見え、かえって不自然になる）。
+    // tiltDeg を渡さなければ、これまでどおり真横のまま描く（第2条：無くても落ちない）。
+    function _drawMoonCanvas(canvasId, age, tiltDeg) {
       var _cv = document.getElementById(canvasId);
     if (_cv) {
       _cv.width=160; _cv.height=160;
@@ -16541,6 +16623,14 @@ function myDeckApply(idx) {
         var _md = _calcMeeusIllum(age);
         var _il = _md.il, _isWax = _md.isWax;
         _ctx.save();
+        // 月の中心を軸に、明るい側の向きぶんだけ回す。
+        // ここから _ctx.restore() までが月の形。星・暈・縁光はこの外なので回らない。
+        var _tilt = (typeof tiltDeg === 'number' && isFinite(tiltDeg)) ? tiltDeg : 0;
+        if (_tilt) {
+          _ctx.translate(_cx, _cy);
+          _ctx.rotate(-_tilt * Math.PI / 180);   // 画面のy軸は下向きなので符号を反転
+          _ctx.translate(-_cx, -_cy);
+        }
         _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2); _ctx.clip();
         var _mg=_ctx.createRadialGradient(_cx-_R*.25,_cy-_R*.25,_R*.05,_cx,_cy,_R);
         _mg.addColorStop(0,'rgba(255,251,230,.95)'); _mg.addColorStop(.5,'rgba(244,216,120,.9)'); _mg.addColorStop(1,'rgba(184,134,11,.85)');
@@ -35079,7 +35169,32 @@ function renderMonthlyMoneyLine() {
         if (bad > 0) {
           html += '<div style="color:#c07a2a;">⚠️ ▲▽が' + bad + '件、金額を読めませんでした</div>';
         }
-        el.innerHTML = html;
+
+        // v0.47.43: 【権威】2026-09-18、金額が5行を取り、カレンダーが押し下げられて見づらい、との報告。
+        // 手持ち（v0.47.35）と決算の入口（v0.47.36）を足したぶん、行が増えた。
+        //
+        // 畳んだときは1行だけにする。「いくらあって、今月どうなるか」は、
+        // 手持ちの合計と今月の差の2つで足りる。内訳・見込み・入口は開いたときに出す。
+        // 開いたままにしたい人もいるので、状態は覚える（次に開いたときも同じ）。
+        // 「金額を隠す」（まるごと消す）は別のものとして残す。
+        var _moneyOpen = false;
+        try { _moneyOpen = localStorage.getItem('moneyLineOpen') === '1'; } catch (eLs) {}
+        var _curDiff = _sum.cur['in'] - _sum.cur.out;
+        var _ptShort = (typeof getMoneyPursesTotal === 'function') ? getMoneyPursesTotal() : { count: 0, total: 0 };
+        var _short =
+          '<div onclick="toggleMoneyLineOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+            (_ptShort.count > 0
+              ? '<span><span style="color:#8e8e8e;">💰</span> <span style="color:#1b5e20;font-weight:700;">' + y(_ptShort.total) + '</span></span>'
+              : '') +
+            ((_sum.cur.out > 0 || _sum.cur['in'] > 0)
+              ? '<span><span style="color:#8e8e8e;">' + _m + '月</span> ' +
+                '<span style="color:' + (_curDiff < 0 ? '#c0392b' : '#1b5e20') + ';font-weight:700;">' +
+                (_curDiff >= 0 ? '+' : '') + y(_curDiff) + '</span></span>'
+              : '') +
+            (bad > 0 ? '<span style="color:#c07a2a;">⚠️' + bad + '</span>' : '') +
+            '<span style="color:#2f6fed;">' + (_moneyOpen ? '▾ 畳む' : '▸ くわしく') + '</span>' +
+          '</div>';
+        el.innerHTML = _short + (_moneyOpen ? '<div style="margin-top:4px;">' + html + '</div>' : '');
         el.style.display = '';
       } catch (e) {
         console.warn('[お金] 合計に失敗:', e && e.message);
@@ -35087,6 +35202,15 @@ function renderMonthlyMoneyLine() {
       }
     }
     window.renderMonthlyMoneyLine = renderMonthlyMoneyLine;
+
+    // 金額の行の開閉。開いたままにしたい人のために覚える。
+    function toggleMoneyLineOpen() {
+      var now = false;
+      try { now = localStorage.getItem('moneyLineOpen') === '1'; } catch (e) {}
+      try { localStorage.setItem('moneyLineOpen', now ? '0' : '1'); } catch (e) {}
+      renderMonthlyMoneyLine();
+    }
+    window.toggleMoneyLineOpen = toggleMoneyLineOpen;
 
     // プロフィール即時保存
     function saveProfileQuick() {
@@ -36357,7 +36481,17 @@ function renderMonthlyMoneyLine() {
         // 前（まだ非表示のDOM状態）に実行されていたため、正しく描画されず不自然な
         // 見た目になっていた。表示状態になった直後に描画するよう修正する。
         if (typeof _drawMoonCanvas === 'function' && typeof _age !== 'undefined') {
-          _drawMoonCanvas('kazedayoriMoonCanvas', _age);
+          // v0.47.44: 季節の風だよりの月に、実際の傾きを反映する。
+      // 位置情報は使わない。地域が分かっていればそれを、無ければ東京を使う。
+      var _kzTilt = 0;
+      try {
+        if (typeof _calcMoonTiltDeg === 'function') {
+          var _kzGeo = (window._userGeoLocation && typeof window._userGeoLocation.lat === 'number')
+            ? window._userGeoLocation : null;
+          _kzTilt = _calcMoonTiltDeg(new Date(), _kzGeo);
+        }
+      } catch (eTilt) { _kzTilt = 0; }   // 計算できなければ、これまでどおり真横で描く
+      _drawMoonCanvas('kazedayoriMoonCanvas', _age, _kzTilt);
         }
         var _card = document.getElementById('kazedayoriCard');
         if (_card) {
@@ -48064,6 +48198,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.44', date: '2026-09-18',
+    items: [
+      { icon:'🌙', t:'季節の風だよりの月が、実際の傾きで出ます',
+        before:'いつも真横から見た形で、空を見上げたときの月とは向きが違っていました',
+        after:'明るい側が、実際に見える向きに傾きます。時刻が進めば向きも回ります' }
+    ]
+  },
+  {
+    ver: 'v0.47.43', date: '2026-09-18',
+    items: [
+      { icon:'💰', t:'金額はふだん1行になりました',
+        before:'手持ちや決算が5行ぶん場所を取り、カレンダーが下に押されていました',
+        after:'「💰 合計　9月 差」の1行だけになります。「くわしく」を押すと内訳・月末の見込み・決算が出ます。開いたままにもできます' }
+    ]
+  },
   {
     ver: 'v0.47.42', date: '2026-09-18',
     items: [
@@ -66486,6 +66636,107 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-346: 例外', e.message);
+     }
+
+     // ===== ST-347: 金額の行は畳んで1行（v0.47.43〜） =====
+     // 背景：手持ちと決算の入口を足したぶん、金額の行が5行（114px）になり、
+     // カレンダーが押し下げられて見づらい、との報告。
+     // 畳んだときは1行にし、押すと今までの内容が出る。状態は覚える。
+     // 実際に描いて高さを測る。触った設定は元に戻す（第66条）。
+     try {
+       var _st347el = document.getElementById('monthlyMoneyLine');
+       if (!_st347el || typeof window.toggleMoneyLineOpen !== 'function' ||
+           typeof window.renderMonthlyMoneyLine !== 'function') {
+         ng('ST-347: 金額の行か開閉の処理が見つからない', '');
+       } else {
+         var _st347was = null;
+         try { _st347was = localStorage.getItem('moneyLineOpen'); } catch (e1) {}
+         var _st347wasDisp = _st347el.style.display;
+         try {
+           localStorage.setItem('moneyLineOpen', '0');
+           window.renderMonthlyMoneyLine();
+           var _st347txt = _st347el.innerText || '';
+           var _closedH = _st347el.getBoundingClientRect().height;
+           localStorage.setItem('moneyLineOpen', '1');
+           window.renderMonthlyMoneyLine();
+           var _openH = _st347el.getBoundingClientRect().height;
+           if (_st347el.style.display === 'none') {
+             ok('ST-347·①: 金額が1件も無いときは、行そのものを出さない');
+           } else {
+             (_closedH > 0 && _closedH <= 48)
+               ? ok('ST-347·①: 畳んだときは1行に収まる（' + Math.round(_closedH) + 'px）')
+               : ng('ST-347·①: 畳んでも高い', Math.round(_closedH) + 'px');
+             (_openH > _closedH)
+               ? ok('ST-347·②: 押すと開いて、内訳や決算の入口が出る')
+               : ng('ST-347·②: 開いても増えない', Math.round(_openH) + 'px');
+             (_st347txt.indexOf('くわしく') !== -1)
+               ? ok('ST-347·③: 畳んだ行に「くわしく」が出ていて、開けると分かる')
+               : ng('ST-347·③: 開ける手がかりが無い', _st347txt.slice(0, 40));
+           }
+         } finally {
+           try {
+             if (_st347was === null) localStorage.removeItem('moneyLineOpen');
+             else localStorage.setItem('moneyLineOpen', _st347was);
+           } catch (e2) {}
+           window.renderMonthlyMoneyLine();
+           _st347el.style.display = _st347wasDisp;
+         }
+       }
+     } catch(e) {
+       ng('ST-347: 例外', e.message);
+     }
+
+     // ===== ST-348: 月の傾き（v0.47.44〜） =====
+     // 背景：実際の月は真横から見た形では出ず、明るい側は必ず太陽の方を向く。
+     // 地平線から測った向きは、時刻と場所で変わる（南ほど寝て見える）。
+     //
+     // 作る途中で3回まちがえた。いずれも「上弦の夕方は右が光る」という見え方と
+     // 突き合わせて見つけた。同じまちがいに戻らないよう、見え方の側から確かめる。
+     //   ・太陽の向きの引き算を逆にしていた（左右が反対になる）
+     //   ・時角を -180〜180 に収めていなかった（373度のまま計算していた）
+     //   ・2つの角を引いていた（正しくは足す）
+     try {
+       var _st348 = window._calcMoonTiltDeg;
+       if (typeof _st348 !== 'function') {
+         ng('ST-348: 月の傾きの計算が見つからない', '');
+       } else {
+         var _tokyo = { lat: 35.69, lng: 139.69 };
+         var _norm = function(x) { while (x > 180) x -= 360; while (x < -180) x += 360; return x; };
+         // 上弦の夕方（南の空）：明るい側はほぼ右＝0度の近く
+         var _t1 = _st348(new Date('2026-09-18T18:00:00+09:00'), _tokyo);
+         (Math.abs(_norm(_t1)) < 45)
+           ? ok('ST-348·①: 上弦の夕方は、明るい側がほぼ右（' + Math.round(_t1) + '度）')
+           : ng('ST-348·①: 上弦の向きが想定と違う', Math.round(_t1) + '度');
+         // 下弦の明け方：明るい側は左寄り＝90度より外
+         var _t2 = _st348(new Date('2026-10-03T06:00:00+09:00'), _tokyo);
+         (Math.abs(_norm(_t2)) > 90)
+           ? ok('ST-348·②: 下弦の明け方は、明るい側が左寄り（' + Math.round(_t2) + '度）')
+           : ng('ST-348·②: 下弦の向きが想定と違う', Math.round(_t2) + '度');
+         // 時刻が進むと向きが回る（同じ日の3時間後）
+         var _t3 = _st348(new Date('2026-09-18T21:00:00+09:00'), _tokyo);
+         (Math.abs(_norm(_t3 - _t1)) > 10)
+           ? ok('ST-348·③: 時刻が進むと、向きが回る')
+           : ng('ST-348·③: 時刻を変えても向きが変わらない', '');
+         // 場所でも変わる（那覇と札幌）
+         var _n = _st348(new Date('2026-09-26T20:00:00+09:00'), { lat: 26.2, lng: 127.7 });
+         var _s = _st348(new Date('2026-09-26T20:00:00+09:00'), { lat: 43.06, lng: 141.35 });
+         (Math.abs(_norm(_n - _s)) > 3)
+           ? ok('ST-348·④: 場所でも向きが変わる（那覇と札幌で' + Math.round(Math.abs(_norm(_n - _s))) + '度）')
+           : ng('ST-348·④: 場所を変えても向きが変わらない', '');
+         // 地域が分からなければ東京として計算する（落ちない）
+         var _t4 = _st348(new Date('2026-09-18T18:00:00+09:00'), null);
+         // 0.1度まで許す。テストで渡す東京の座標は概算（35.69）で、
+         // アプリが持つ値（35.6895）とわずかに違うため、完全一致にはならない。
+         (isFinite(_t4) && Math.abs(_norm(_t4 - _t1)) < 0.1)
+           ? ok('ST-348·⑤: 地域が無いときは東京として計算する')
+           : ng('ST-348·⑤: 地域なしの扱いが違う', String(_t4));
+         // 絵を描く側が傾きを受け取れること
+         (String(window._drawMoonCanvas || '').indexOf('tiltDeg') !== -1)
+           ? ok('ST-348·⑥: 月を描く処理が傾きを受け取る')
+           : ng('ST-348·⑥: 描画が傾きを受け取っていない', '');
+       }
+     } catch(e) {
+       ng('ST-348: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
