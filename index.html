@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.41 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.42 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.41';
+    const APP_VERSION = 'v0.47.42';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7755,6 +7755,10 @@ function _showInviteWelcome() {
            Google・Apple・TimeTreeいずれも「今日」への一手を必ず用意している。
            場所を増やさず、月のタイトル自体を押せるようにして戻す。 -->
       <h2 id="monthlyTitle" onclick="window.goToThisMonth()" title="押すと今月に戻ります" style="cursor:pointer;"></h2>
+      <!-- v0.47.42: 見出しは「今月へ戻る」が先にあるので、置き換えない。
+           年と月を選ぶ入口は、隣の小さな印にする。 -->
+      <button class="monthly-nav-btn" onclick="window.openYearPicker('monthly')" title="年と月を選ぶ"
+        style="padding:2px 6px;">▾</button>
       <button class="monthly-nav-btn" onclick="changeMonth(1)">来月 ▶</button>
       <div id="widthSliderWrap" style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
         <button id="monthlyPrintBtn" onclick="window.printMonthlyCalendar()" title="🖨️ タスク入りA4印刷"
@@ -8256,7 +8260,9 @@ function _showInviteWelcome() {
 <div id="yearlyView" class="yearly-view" style="display: none;">
     <div class="yearly-header">
       <button class="monthly-nav-btn" onclick="changeYear(-1)">◀ 去年</button>
-      <h2 id="yearlyTitle"></h2>
+      <!-- v0.47.42: 年の見出しを押すと、年を選べる。去年を23回押さないと2003年に着かなかった。
+           ここは今まで押せなかったので、他の動きと衝突しない。 -->
+      <h2 id="yearlyTitle" onclick="window.openYearPicker('yearly')" title="押すと年を選べます" style="cursor:pointer;"></h2>
       <button class="monthly-nav-btn" onclick="changeYear(1)">来年 ▶</button>
     </div>
     <div id="yearlyCalendar" class="yearly-calendar">
@@ -22122,6 +22128,160 @@ function reviveBlueprint(id) {
       currentYearDate.setFullYear(currentYearDate.getFullYear() + delta);
       renderYearlyView();
     }
+
+    // ===== 年を選ぶ小窓 v0.47.42 =====
+    // 【権威】2026-09-18、2003年のような遠い年にも予定を入れたい、との要望。
+    // いまは月間で「先月」を約280回、年間でも「去年」を23回押すことになる。
+    //
+    // 年間と月間の両方から使うので、作りは1つにする（第71条④）。
+    // 10年ぶんを並べ、◀▶ で10年ずつ動かす。年を直接打つ欄も置く（2003 と打てば一発）。
+    // 月間から開いたときだけ、下に1〜12月を出す。
+    var YEAR_PICK_MIN = 1900;
+    var YEAR_PICK_MAX = 2100;
+
+    function openYearPicker(mode) {
+      window._yearPickMode = (mode === 'monthly') ? 'monthly' : 'yearly';
+      var base = (window._yearPickMode === 'monthly')
+        ? (currentMonthDate ? currentMonthDate.getFullYear() : new Date().getFullYear())
+        : (currentYearDate ? currentYearDate.getFullYear() : new Date().getFullYear());
+      window._yearPickDecade = Math.floor(base / 10) * 10;
+      var box = document.getElementById('yearPickModal');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'yearPickModal';
+        box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+        box.onclick = function(e) { if (e.target === box) closeYearPicker(); };
+        document.body.appendChild(box);
+      }
+      box.style.display = 'flex';
+      renderYearPicker();
+    }
+    window.openYearPicker = openYearPicker;
+
+    function closeYearPicker() {
+      var box = document.getElementById('yearPickModal');
+      if (box) box.style.display = 'none';
+    }
+    window.closeYearPicker = closeYearPicker;
+
+    function shiftYearDecade(delta) {
+      var next = (window._yearPickDecade || 2020) + delta * 10;
+      if (next < YEAR_PICK_MIN) next = YEAR_PICK_MIN;
+      if (next > YEAR_PICK_MAX - 9) next = YEAR_PICK_MAX - 9;
+      window._yearPickDecade = next;
+      renderYearPicker();
+    }
+    window.shiftYearDecade = shiftYearDecade;
+
+    // 打った年を読む。全角も受ける。範囲の外は受けない（桁の打ち間違いで変な年へ飛ばないため）。
+    function parsePickYear(text) {
+      var s = String(text == null ? '' : text)
+        .replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+        .replace(/[\s年]/g, '');
+      if (!/^\d{1,4}$/.test(s)) return null;
+      var n = parseInt(s, 10);
+      if (!isFinite(n) || n < YEAR_PICK_MIN || n > YEAR_PICK_MAX) return null;
+      return n;
+    }
+    window.parsePickYear = parsePickYear;
+
+    function renderYearPicker() {
+      var box = document.getElementById('yearPickModal');
+      if (!box) return;
+      var dec = window._yearPickDecade || 2020;
+      var isMonthly = (window._yearPickMode === 'monthly');
+      var cur = isMonthly
+        ? (currentMonthDate ? currentMonthDate.getFullYear() : new Date().getFullYear())
+        : (currentYearDate ? currentYearDate.getFullYear() : new Date().getFullYear());
+      var curMonth = (isMonthly && currentMonthDate) ? (currentMonthDate.getMonth() + 1) : 0;
+      var cells = '';
+      for (var i = 0; i < 12; i++) {
+        var y = dec + i;
+        if (y < YEAR_PICK_MIN || y > YEAR_PICK_MAX) continue;
+        var on = (y === cur);
+        cells += '<button onclick="pickYear(' + y + ')" style="padding:10px 0;border:1px solid ' +
+                 (on ? '#2f6fed' : '#e5e7eb') + ';border-radius:8px;background:' + (on ? '#eaf1ff' : '#fff') +
+                 ';font-weight:' + (on ? '700' : '400') + ';cursor:pointer;">' + y + '</button>';
+      }
+      var months = '';
+      if (isMonthly) {
+        for (var m = 1; m <= 12; m++) {
+          var onM = (m === curMonth);
+          months += '<button onclick="pickMonth(' + m + ')" style="padding:9px 0;border:1px solid ' +
+                    (onM ? '#2f6fed' : '#e5e7eb') + ';border-radius:8px;background:' + (onM ? '#eaf1ff' : '#fff') +
+                    ';font-weight:' + (onM ? '700' : '400') + ';cursor:pointer;">' + m + '月</button>';
+        }
+      }
+      box.innerHTML =
+        '<div style="background:#fff;border-radius:14px;padding:18px;max-width:420px;width:100%;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+            '<button onclick="shiftYearDecade(-1)" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">◀</button>' +
+            '<div style="font-weight:700;">' + dec + '年代</div>' +
+            '<button onclick="shiftYearDecade(1)" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">▶</button>' +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">' + cells + '</div>' +
+          (isMonthly ? '<div style="margin-top:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">' + months + '</div>' : '') +
+          '<div style="display:flex;gap:6px;margin-top:14px;">' +
+            '<input id="yearPickInput" type="text" inputmode="numeric" placeholder="年を打つ（例 2003）" ' +
+              'onkeydown="if(event.key===\'Enter\'){pickTypedYear();}" ' +
+              'style="flex:1;min-width:0;padding:9px;border:1px solid #ddd;border-radius:8px;">' +
+            '<button onclick="pickTypedYear()" style="padding:9px 14px;border:none;border-radius:8px;background:#2f6fed;color:#fff;font-weight:700;">移動</button>' +
+          '</div>' +
+          '<div id="yearPickErr" style="display:none;color:#c0392b;font-size:0.85em;margin-top:6px;">' +
+            YEAR_PICK_MIN + '年から' + YEAR_PICK_MAX + '年までの数字を入れてください</div>' +
+          '<div style="display:flex;gap:6px;margin-top:12px;">' +
+            '<button onclick="pickYear(new Date().getFullYear())" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;background:#fff;">今年へ</button>' +
+            '<button onclick="closeYearPicker()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;background:#fff;">閉じる</button>' +
+          '</div>' +
+        '</div>';
+    }
+    window.renderYearPicker = renderYearPicker;
+
+    function pickTypedYear() {
+      var el = document.getElementById('yearPickInput');
+      var y = parsePickYear(el ? el.value : '');
+      var err = document.getElementById('yearPickErr');
+      if (y === null) { if (err) err.style.display = 'block'; return; }
+      pickYear(y);
+    }
+    window.pickTypedYear = pickTypedYear;
+
+    // 年へ移る。月間から開いたときは、月と日はそのままにして年だけ変える。
+    // 日にちを1日へ寄せると、31日の予定を見ていた人が迷う。
+    function pickYear(y) {
+      if (window._yearPickMode === 'monthly') {
+        if (currentMonthDate) {
+          var m = currentMonthDate.getMonth();
+          var day = currentMonthDate.getDate();
+          var last = new Date(y, m + 1, 0).getDate();   // 2月29日 → その年に無ければ末日へ
+          currentMonthDate = new Date(y, m, Math.min(day, last));
+        }
+        window._yearPickDecade = Math.floor(y / 10) * 10;
+        if (typeof renderMonthlyView === 'function') renderMonthlyView();
+        if (typeof updateSeasonalArt === 'function') updateSeasonalArt();   // 月の移動と同じ後始末
+        renderYearPicker();
+      } else {
+        currentYearDate.setFullYear(y);
+        window._yearPickDecade = Math.floor(y / 10) * 10;
+        renderYearlyView();
+        closeYearPicker();
+      }
+    }
+    window.pickYear = pickYear;
+
+    // 月を選ぶ（月間から開いたときだけ）。選んだら閉じる。
+    function pickMonth(m) {
+      if (currentMonthDate) {
+        var y = currentMonthDate.getFullYear();
+        var day = currentMonthDate.getDate();
+        var last = new Date(y, m, 0).getDate();
+        currentMonthDate = new Date(y, m - 1, Math.min(day, last));
+      }
+      if (typeof renderMonthlyView === 'function') renderMonthlyView();
+      if (typeof updateSeasonalArt === 'function') updateSeasonalArt();
+      closeYearPicker();
+    }
+    window.pickMonth = pickMonth;
     // スマホ用：移動モード開始
     function startMoveMode(taskId) {
       movingTaskId = taskId;
@@ -47905,6 +48065,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.42', date: '2026-09-18',
+    items: [
+      { icon:'📅', t:'遠い年へ、すぐ移れます',
+        before:'2003年に行くには「先月」を何百回も押すしかありませんでした',
+        after:'年間の年を押すか、月間の見出し横の「▾」から、年と月を選べます。年を打って移ることもできます' }
+    ]
+  },
+  {
     ver: 'v0.47.40', date: '2026-09-18',
     items: [
       { icon:'🕑', t:'予定を追加するとき、時刻が先に入ります',
@@ -66267,6 +66435,57 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-345: 例外', e.message);
+     }
+
+     // ===== ST-346: 年を選んで遠い年へ移る（v0.47.42〜） =====
+     // 背景：2003年に行くには、月間で「先月」を約280回、年間で「去年」を23回押すしかなかった。
+     // 年の見出しから年を選べるようにした。打ち間違いで変な年へ飛ばないよう、範囲も決めている。
+     // 表示している年月は最後に元へ戻す（第66条）。予定には触れない。
+     try {
+       var _st346parse = window.parsePickYear;
+       var _st346pick  = window.pickYear;
+       if (typeof _st346parse !== 'function' || typeof _st346pick !== 'function') {
+         ng('ST-346: 年を選ぶ処理が見つからない', '');
+       } else {
+         var _st346bad = [];
+         [['2003', 2003], ['２００３', 2003], ['2003年', 2003], [' 2003 ', 2003],
+          ['abc', null], ['12', null], ['9999', null], ['1899', null], ['', null], [null, null]
+         ].forEach(function(c) {
+           var got = _st346parse(c[0]);
+           if (got !== c[1]) _st346bad.push('「' + c[0] + '」→' + got + '（期待 ' + c[1] + '）');
+         });
+         _st346bad.length === 0
+           ? ok('ST-346·①: 全角も年付きも読み、1900〜2100の外は受けない')
+           : ng('ST-346·①: 年の読み取りが想定と違う', _st346bad.join(' / '));
+         // 年間：2003年へ移れる
+         var _st346wasY = (typeof currentYearDate !== 'undefined' && currentYearDate)
+                            ? currentYearDate.getFullYear() : null;
+         var _st346wasM = (typeof currentMonthDate !== 'undefined' && currentMonthDate)
+                            ? new Date(currentMonthDate.getTime()) : null;
+         try {
+           window._yearPickMode = 'yearly';
+           _st346pick(2003);
+           (currentYearDate.getFullYear() === 2003)
+             ? ok('ST-346·②: 年間で、遠い年へ一度に移れる')
+             : ng('ST-346·②: 年が変わらない', String(currentYearDate.getFullYear()));
+           // 月間：月と日はそのまま、年だけ変わる。閏日は末日へ寄せる。
+           window._yearPickMode = 'monthly';
+           currentMonthDate = new Date(2024, 1, 29);   // 2024-02-29
+           _st346pick(2023);
+           (currentMonthDate.getFullYear() === 2023 && currentMonthDate.getMonth() === 1 &&
+            currentMonthDate.getDate() === 28)
+             ? ok('ST-346·③: 2月29日から平年へ移ると、2月28日に寄る')
+             : ng('ST-346·③: 日付の寄せ方が違う', currentMonthDate.toISOString().slice(0, 10));
+         } finally {
+           if (_st346wasY !== null) currentYearDate.setFullYear(_st346wasY);
+           if (_st346wasM) currentMonthDate = _st346wasM;
+           window._yearPickMode = null;
+           if (typeof closeYearPicker === 'function') closeYearPicker();
+           try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e3) {}
+         }
+       }
+     } catch(e) {
+       ng('ST-346: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
