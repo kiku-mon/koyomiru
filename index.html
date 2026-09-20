@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.44 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.46 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.44';
+    const APP_VERSION = 'v0.47.46';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11157,6 +11157,74 @@ function _showInviteWelcome() {
     }
     window._calcMoonTiltDeg = _calcMoonTiltDeg;
 
+    // いまの傾き。呼ぶ側が毎回、位置の有無や失敗の扱いを書かなくて済むようにする。
+    // 計算できなければ0を返す（＝これまでどおり真横で描く。第2条：無くても落ちない）。
+    function _currentMoonTiltDeg(date) {
+      try {
+        var geo = (window._userGeoLocation && typeof window._userGeoLocation.lat === 'number')
+          ? window._userGeoLocation : null;
+        var t = _calcMoonTiltDeg(date || new Date(), geo);
+        return isFinite(t) ? t : 0;
+      } catch (e) { return 0; }
+    }
+    window._currentMoonTiltDeg = _currentMoonTiltDeg;
+
+    // v0.47.46: 月間カレンダーのマスに出す、小さな月。
+    // 【権威】2026-09-18、ほかの月を傾けたのに、ここだけ真横だと統一感が無い、との指摘。
+    // これまでは絵文字（🌒🌓🌔）だった。絵文字は回せない（回すと数字まで斜めになる）。
+    // _drawMoonCanvas は160px固定で星と夜空も描くので、マスには大きすぎる。
+    // 大きさを指定でき、背景を描かない小さい版を置く。
+    // 31個描いても7.5〜25ミリ秒で、目に見える遅れが出ないことを測って確かめた。
+    function _drawMiniMoon(cv, age, tiltDeg, size) {
+      if (!cv) return;
+      var S = size || 24;
+      cv.width = S; cv.height = S;
+      var ctx = cv.getContext('2d');
+      var c = S / 2, R = S / 2 - 1;
+      ctx.clearRect(0, 0, S, S);
+      ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(60,60,90,0.30)'; ctx.fill();   // 暗い側（細い月でも輪郭が分かる）
+      try {
+        var D = (age / 29.530589) * 360;
+        var Dr = D * Math.PI / 180;
+        var M = (age * 12.19075) * Math.PI / 180;
+        var Mm = (age * 13.06440) * Math.PI / 180;
+        var dD = -6.289*Math.sin(Mm)+2.100*Math.sin(M)-1.274*Math.sin(2*Dr-Mm)-0.658*Math.sin(2*Dr)-0.214*Math.sin(2*Mm)-0.110*Math.sin(Dr);
+        var Dc = D + dD;
+        var il = Math.max(0, Math.min(1, (1 - Math.cos(Dc * Math.PI / 180)) / 2));
+        var isWax = (Dc % 360 + 360) % 360 < 180;
+        ctx.save();
+        var t = (typeof tiltDeg === 'number' && isFinite(tiltDeg)) ? tiltDeg : 0;
+        if (t) { ctx.translate(c, c); ctx.rotate(-t * Math.PI / 180); ctx.translate(-c, -c); }
+        ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
+        ctx.fillStyle = '#e8b93f';
+        ctx.beginPath();
+        if (il >= 0.99) {
+          ctx.arc(c, c, R, 0, Math.PI * 2);
+        } else if (il > 0.01) {
+          var ewRaw = R * (2 * il - 1);
+          var ew = Math.min(Math.abs(ewRaw), R);
+          var convex = ewRaw >= 0;
+          if (typeof ctx.ellipse === 'function') {
+            if (isWax) {
+              ctx.arc(c, c, R, -Math.PI/2, Math.PI/2, false);
+              if (ew < 0.5) ctx.lineTo(c, c - R);
+              else ctx.ellipse(c, c, ew, R, 0, Math.PI/2, -Math.PI/2, !convex);
+            } else {
+              ctx.arc(c, c, R, Math.PI/2, -Math.PI/2, false);
+              if (ew < 0.5) ctx.lineTo(c, c + R);
+              else ctx.ellipse(c, c, ew, R, 0, -Math.PI/2, Math.PI/2, !convex);
+            }
+          } else {
+            if (isWax) { ctx.arc(c, c, R, -Math.PI/2, Math.PI/2, false); ctx.lineTo(c, c - R); }
+            else { ctx.arc(c, c, R, Math.PI/2, -Math.PI/2, false); ctx.lineTo(c, c + R); }
+          }
+        }
+        ctx.fill(); ctx.restore();
+      } catch (e) { /* 描けなくても数字は出る */ }
+    }
+    window._drawMiniMoon = _drawMiniMoon;
+
     // 現在地の、東京に対する日の出/日没/薄明の差分(時・小数)を返す。既存テーブル(東京)にこの差分を足す。
     function _calcGeoOffsetHours(geo, date) {
       if (!geo || typeof geo.lat !== 'number' || typeof geo.lng !== 'number') return { rise: 0, set: 0, dawn: 0, dusk: 0 };
@@ -16009,7 +16077,7 @@ function myDeckApply(idx) {
           var moonRow = document.createElement('div');
           moonRow.className = 'monthly-moon-row monthly-moon-age';
           moonRow.dataset.date = dateStr;
-          moonRow.textContent = '🌙…';
+          moonRow.textContent = '';   // v0.47.46: 中身は fillMoonAges が絵と数字で入れる
           head.appendChild(moonRow);
         }
         cell.appendChild(head);
@@ -16700,8 +16768,16 @@ function myDeckApply(idx) {
           d.setHours(12,0,0,0);   // 日付ごとの暦なので正午月齢
           var age = fn(d);
           var ar = Math.round(age*10)/10;
-          var m = ar<1.5?'🌑':ar<7.5?'🌒':ar<11?'🌓':ar<14.5?'🌔':ar<16.5?'🌕':ar<21?'🌖':ar<24.5?'🌗':ar<28?'🌘':'🌑';
-          el.textContent = m+ar;
+          // v0.47.46: 絵文字ではなく、実際の形と傾きで描く。
+          // 傾きはその日の正午の値（マスは日ごとの暦なので、時刻を正午に揃える）。
+          el.textContent = '';
+          var cv = document.createElement('canvas');
+          cv.className = 'monthly-moon-mini';
+          cv.style.cssText = 'width:12px;height:12px;vertical-align:-2px;margin-right:2px;';
+          var tilt = (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg(d) : 0;
+          if (typeof _drawMiniMoon === 'function') _drawMiniMoon(cv, age, tilt, 24);
+          el.appendChild(cv);
+          el.appendChild(document.createTextNode(String(ar)));
         } catch(e) {}
       });
     }
@@ -36483,14 +36559,7 @@ function renderMonthlyMoneyLine() {
         if (typeof _drawMoonCanvas === 'function' && typeof _age !== 'undefined') {
           // v0.47.44: 季節の風だよりの月に、実際の傾きを反映する。
       // 位置情報は使わない。地域が分かっていればそれを、無ければ東京を使う。
-      var _kzTilt = 0;
-      try {
-        if (typeof _calcMoonTiltDeg === 'function') {
-          var _kzGeo = (window._userGeoLocation && typeof window._userGeoLocation.lat === 'number')
-            ? window._userGeoLocation : null;
-          _kzTilt = _calcMoonTiltDeg(new Date(), _kzGeo);
-        }
-      } catch (eTilt) { _kzTilt = 0; }   // 計算できなければ、これまでどおり真横で描く
+      var _kzTilt = (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0;
       _drawMoonCanvas('kazedayoriMoonCanvas', _age, _kzTilt);
         }
         var _card = document.getElementById('kazedayoriCard');
@@ -37518,7 +37587,11 @@ function renderDashboardView() {
       if (_nm) { var _nd=new Date(_nm); _set2('dbLastNewMoon', _nd.getFullYear()+'/'+((_nd.getMonth()+1)<10?'0':'')+((_nd.getMonth()+1))+'/'+(_nd.getDate()<10?'0':'')+_nd.getDate()); }
     }
     // 月C    // 月Canvas
-    if (typeof _drawMoonCanvas === 'function') _drawMoonCanvas('dbMoonCanvas', _age);
+    // v0.47.45: ダッシュボードの月にも実際の傾きを反映する（季節の風だよりと同じ計算を使う）。
+    if (typeof _drawMoonCanvas === 'function') {
+      _drawMoonCanvas('dbMoonCanvas', _age,
+        (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0);
+    }
 // 月齢カード・天象カードをダッシュボード上部に表示
     var _moonCard = document.getElementById('dbMoonCard');
     if (_moonCard) _moonCard.style.display = 'block';
@@ -46040,7 +46113,10 @@ window.gardenPreviewBackToRealtime = gardenPreviewBackToRealtime;
 // 閉じ込められており、庭を開くまで存在しない状態だった。第3条（window公開）も
 // 内側に書いていたため、公開自体が庭を開くまで起きなかった。
 // 中身は canvas を描くだけで外の変数に一切頼っていないので、外へ出す。
-function _gardenDrawMoonSprite(canvasId, age) {
+// v0.47.45: 庭の月にも傾きを足す。渡さなければ、これまでどおり真横のまま描く。
+// 形を描く処理は _drawMoonCanvas とほぼ同じだが、こちらは背景を塗らず透明のまま使う。
+// 一本化はせず、回す処理だけ合わせる（3Dの取り込み方が違うため）。
+function _gardenDrawMoonSprite(canvasId, age, tiltDeg) {
   var _cv = document.getElementById(canvasId);
   if (!_cv) return;
   _cv.width = 160; _cv.height = 160;
@@ -46059,6 +46135,13 @@ function _gardenDrawMoonSprite(canvasId, age) {
     var _il = Math.max(0, Math.min(1, (1 - Math.cos(Dc * Math.PI / 180)) / 2));
     var _isWax = (Dc % 360 + 360) % 360 < 180;
     _ctx.save();
+    // 月の形だけを回す。暈と縁光はこの外（丸いので回しても同じ）。
+    var _gTilt = (typeof tiltDeg === 'number' && isFinite(tiltDeg)) ? tiltDeg : 0;
+    if (_gTilt) {
+      _ctx.translate(_cx, _cy);
+      _ctx.rotate(-_gTilt * Math.PI / 180);   // 画面のy軸は下向きなので符号を反転
+      _ctx.translate(-_cx, -_cy);
+    }
     _ctx.beginPath(); _ctx.arc(_cx, _cy, _R, 0, Math.PI * 2); _ctx.clip();
     var _mg = _ctx.createRadialGradient(_cx-_R*.25, _cy-_R*.25, _R*.05, _cx, _cy, _R);
     _mg.addColorStop(0, 'rgba(255,251,230,.95)'); _mg.addColorStop(.5, 'rgba(244,216,120,.9)'); _mg.addColorStop(1, 'rgba(184,134,11,.85)');
@@ -46479,7 +46562,8 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
   // _gardenRedrawMoon参照）。
 
   function _gardenRedrawMoon(age) {
-    _gardenDrawMoonSprite('gardenMoonCanvas', age);
+    _gardenDrawMoonSprite('gardenMoonCanvas', age,
+    (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0);
   }
   // 初回描画（実際の今の月齢で）
   try {
@@ -48198,6 +48282,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.46', date: '2026-09-18',
+    items: [
+      { icon:'🌜', t:'月間カレンダーの月も、実際の形と傾きで出ます',
+        before:'日付の下の月は絵文字で、8種類の形しかなく、傾きもありませんでした',
+        after:'その日の月の形をそのまま描きます。ほかの画面の月と揃いました' }
+    ]
+  },
+  {
+    ver: 'v0.47.45', date: '2026-09-18',
+    items: [
+      { icon:'🌛', t:'ダッシュボードと庭の月も、実際の傾きで出ます',
+        before:'季節の風だよりだけが実際の傾きで、ほかの月は真横のままでした',
+        after:'「今夜の月」と庭の月も、空を見上げたときと同じ向きに傾きます' }
+    ]
+  },
   {
     ver: 'v0.47.44', date: '2026-09-18',
     items: [
@@ -66739,6 +66839,133 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-348: 例外', e.message);
      }
 
+     // ===== ST-349: 月の傾きが3か所すべてに入る（v0.47.45〜） =====
+     // 背景：季節の風だより（v0.47.44）に続き、ダッシュボードと庭の月にも傾きを入れた。
+     // 「渡し忘れ」は絵を見ないと気づけないので、実際に描いて明るい側の位置を測る。
+     // 傾きを渡さなければ、これまでどおり真横のまま描くことも確かめる。
+     // 画面には足さず、測るための canvas を作って必ず片づける（第66条）。
+     var _st349cv = null;
+     try {
+       if (typeof window._drawMoonCanvas !== 'function' ||
+           typeof window._gardenDrawMoonSprite !== 'function' ||
+           typeof window._currentMoonTiltDeg !== 'function') {
+         ng('ST-349: 月を描く処理が見つからない', '');
+       } else {
+         _st349cv = document.createElement('canvas');
+         _st349cv.id = '_st349canvas';
+         _st349cv.width = 160; _st349cv.height = 160;
+         _st349cv.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+         document.body.appendChild(_st349cv);
+         // 明るい側の重心（中心からのずれ）を測る
+         var _st349grav = function() {
+           var ctx = _st349cv.getContext('2d');
+           var im = ctx.getImageData(0, 0, 160, 160).data;
+           var sx = 0, sy = 0, n = 0;
+           for (var y = 0; y < 160; y += 2) {
+             for (var x = 0; x < 160; x += 2) {
+               var i = (y * 160 + x) * 4;
+               if (im[i] > 150 && im[i + 1] > 120 && im[i + 2] < 120) { sx += x; sy += y; n++; }
+             }
+           }
+           return n ? { x: sx / n - 80, y: sy / n - 80, n: n } : null;
+         };
+         // ① 傾き0なら右が光る
+         window._drawMoonCanvas('_st349canvas', 9.5, 0);
+         var _flat = _st349grav();
+         (_flat && _flat.x > 10 && Math.abs(_flat.y) < 10)
+           ? ok('ST-349·①: 傾き0のときは、これまでどおり右が光る')
+           : ng('ST-349·①: 傾き0の形が違う', JSON.stringify(_flat));
+         // ② 傾き-60なら右下へ回る
+         window._drawMoonCanvas('_st349canvas', 9.5, -60);
+         var _rot = _st349grav();
+         (_rot && _rot.y > 10)
+           ? ok('ST-349·②: 傾きを渡すと、明るい側が下へ回る')
+           : ng('ST-349·②: 回っていない', JSON.stringify(_rot));
+         // ③ 庭の月も同じように回る
+         window._gardenDrawMoonSprite('_st349canvas', 9.5, -60);
+         var _g1 = _st349grav();
+         window._gardenDrawMoonSprite('_st349canvas', 9.5);
+         var _g0 = _st349grav();
+         (_g1 && _g0 && _g1.y > 10 && Math.abs(_g0.y) < 10)
+           ? ok('ST-349·③: 庭の月も回り、渡さなければ真横のまま')
+           : ng('ST-349·③: 庭の月の扱いが違う', JSON.stringify(_g1) + ' / ' + JSON.stringify(_g0));
+         // ④ 呼ぶ側（風だより・ダッシュボード・庭）が、いまの傾きを渡している
+         var _st349src = _stAllSrc();
+         var _st349miss = [];
+         ["_drawMoonCanvas('kazedayoriMoonCanvas', _age, _kzTilt)",
+          "_drawMoonCanvas('dbMoonCanvas', _age,",
+          "_gardenDrawMoonSprite('gardenMoonCanvas', age,"].forEach(function(s) {
+           if (_st349src.indexOf(s) === -1) _st349miss.push(s.slice(0, 34));
+         });
+         _st349miss.length === 0
+           ? ok('ST-349·④: 3か所とも、いまの傾きを渡している')
+           : ng('ST-349·④: 渡し忘れがある', _st349miss.join(' / '));
+       }
+     } catch(e) {
+       ng('ST-349: 例外', e.message);
+     } finally {
+       if (_st349cv && _st349cv.parentNode) _st349cv.parentNode.removeChild(_st349cv);
+     }
+
+     // ===== ST-350: 月間のマスの小さな月（v0.47.46〜） =====
+     // 背景：ほかの月を傾けたのに、マスの月だけ絵文字（🌒）で真横のままだった。
+     // 絵文字は回せない（回すと数字まで斜めになる）ので、小さな絵に変えた。
+     // 日ごとに形が変わること、傾きが入ること、数字が残ることを確かめる。
+     // 画面には足さず、測るための canvas を作って必ず片づける（第66条）。
+     var _st350cv = null;
+     try {
+       if (typeof window._drawMiniMoon !== 'function') {
+         ng('ST-350: 小さな月を描く処理が見つからない', '');
+       } else {
+         _st350cv = document.createElement('canvas');
+         _st350cv.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+         document.body.appendChild(_st350cv);
+         var _st350grav = function() {
+           var ctx = _st350cv.getContext('2d');
+           var im = ctx.getImageData(0, 0, 24, 24).data;
+           var sx = 0, sy = 0, n = 0;
+           for (var y = 0; y < 24; y++) {
+             for (var x = 0; x < 24; x++) {
+               var i = (y * 24 + x) * 4;
+               if (im[i] > 180 && im[i + 1] > 140 && im[i + 2] < 120) { sx += x; sy += y; n++; }
+             }
+           }
+           return n ? { x: sx / n - 12, y: sy / n - 12, n: n } : null;
+         };
+         window._drawMiniMoon(_st350cv, 7.4, 0, 24);
+         var _m0 = _st350grav();
+         (_m0 && _m0.x > 1.5)
+           ? ok('ST-350·①: 傾き0のときは、右が光る')
+           : ng('ST-350·①: 上弦の形が違う', JSON.stringify(_m0));
+         window._drawMiniMoon(_st350cv, 7.4, -60, 24);
+         var _m1 = _st350grav();
+         (_m1 && _m1.y > 1.5)
+           ? ok('ST-350·②: 傾きを渡すと、明るい側が下へ回る')
+           : ng('ST-350·②: 回っていない', JSON.stringify(_m1));
+         // 満月と新月で、光る面積がはっきり違う（日ごとに形が変わる）
+         window._drawMiniMoon(_st350cv, 14.8, 0, 24);
+         var _full = _st350grav();
+         window._drawMiniMoon(_st350cv, 0.2, 0, 24);
+         var _new = _st350grav();
+         (_full && _full.n > 200 && (!_new || _new.n < _full.n / 3))
+           ? ok('ST-350·③: 満月と新月で形が変わる')
+           : ng('ST-350·③: 月齢で形が変わらない', JSON.stringify(_full) + ' / ' + JSON.stringify(_new));
+         // マスの中身：絵と数字が両方あること（数字だけ消えていないか）
+         var _cell = document.querySelector('.monthly-moon-age');
+         if (!_cell) {
+           ok('ST-350·④: 月間のマスは開いていない（この場では確かめない）');
+         } else {
+           (_cell.querySelector('canvas') && /[0-9]/.test(_cell.textContent))
+             ? ok('ST-350·④: マスに、小さな月と月齢の数字が両方出る')
+             : ng('ST-350·④: マスの中身が足りない', _cell.textContent.slice(0, 20));
+         }
+       }
+     } catch(e) {
+       ng('ST-350: 例外', e.message);
+     } finally {
+       if (_st350cv && _st350cv.parentNode) _st350cv.parentNode.removeChild(_st350cv);
+     }
+
      // ===== APAG LAUNCH SEQUENCE =====
      ok('');
      ok('🚀 APAG LAUNCH SEQUENCE — 五ガーディアン起動');
@@ -69656,7 +69883,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-281·④: トグルが見つからない', '');
        // ⑤ ダッシュボード側が共通関数呼び出しに置き換わっている（重複コード削除）確認
        var _st281scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
-       _st281scriptTexts.indexOf("_drawMoonCanvas(\'dbMoonCanvas\', _age)") !== -1
+       // v0.47.45: 引数の数で縛らない。確かめたいのは「共通関数を使っているか」で、
+       // 引数が増えたかどうかではない（傾きを渡すため第3引数が増えた）。
+       _st281scriptTexts.indexOf("_drawMoonCanvas(\'dbMoonCanvas\'") !== -1
          ? ok('ST-281·⑤: ダッシュボードが共通関数を使用（重複コード削除）確認')
          : ng('ST-281·⑤: ダッシュボードがまだ独自描画のまま', '');
        ok('ST-281: 季節の風だより 月Canvas化・文章折りたたみ 確認 完了');
