@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.46 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.47 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.46';
+    const APP_VERSION = 'v0.47.47';
   const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11182,8 +11182,12 @@ function _showInviteWelcome() {
       var ctx = cv.getContext('2d');
       var c = S / 2, R = S / 2 - 1;
       ctx.clearRect(0, 0, S, S);
+      // v0.47.47: 暗い側を濃くした。
+      // 薄い灰色（透明度0.30）だと白い背景に溶け、12pxでは「金色の丸か灰色の丸」に
+      // しか見えず、絵文字より分かりにくくなっていた（実機のスクリーンショットで判明）。
+      // 絵文字と同じく濃紺にして、明暗の境目をはっきりさせる。
       ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(60,60,90,0.30)'; ctx.fill();   // 暗い側（細い月でも輪郭が分かる）
+      ctx.fillStyle = '#2b3a55'; ctx.fill();   // 暗い側（濃紺）
       try {
         var D = (age / 29.530589) * 360;
         var Dr = D * Math.PI / 180;
@@ -11192,6 +11196,14 @@ function _showInviteWelcome() {
         var dD = -6.289*Math.sin(Mm)+2.100*Math.sin(M)-1.274*Math.sin(2*Dr-Mm)-0.658*Math.sin(2*Dr)-0.214*Math.sin(2*Mm)-0.110*Math.sin(Dr);
         var Dc = D + dD;
         var il = Math.max(0, Math.min(1, (1 - Math.cos(Dc * Math.PI / 180)) / 2));
+        // v0.47.47: 小さく描くときだけ、細い月と満月前後を少し誇張する。
+        // 12pxでは、三日月や有明の月は光る部分が1ピクセルに満たず、真っ暗な丸にしか見えない
+        // （実機の月間で、新月の前後が全部同じ黒丸に見えた）。絵文字も同じ理由で誇張している。
+        // 新月・満月そのもの（ほぼ0とほぼ1）は誇張しない。「無い」ものを描かないため。
+        if (S <= 32) {
+          if (il > 0.02 && il < 0.15) il = 0.15;
+          else if (il > 0.85 && il < 0.98) il = 0.85;
+        }
         var isWax = (Dc % 360 + 360) % 360 < 180;
         ctx.save();
         var t = (typeof tiltDeg === 'number' && isFinite(tiltDeg)) ? tiltDeg : 0;
@@ -11222,6 +11234,9 @@ function _showInviteWelcome() {
         }
         ctx.fill(); ctx.restore();
       } catch (e) { /* 描けなくても数字は出る */ }
+      // 縁の線。小さいと丸の輪郭がぼやけるので、細い線で締める。
+      ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(30,40,60,0.55)'; ctx.lineWidth = Math.max(1, S / 24); ctx.stroke();
     }
     window._drawMiniMoon = _drawMiniMoon;
 
@@ -48283,11 +48298,11 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.47.46', date: '2026-09-18',
+    ver: 'v0.47.47', date: '2026-09-18',
     items: [
       { icon:'🌜', t:'月間カレンダーの月も、実際の形と傾きで出ます',
         before:'日付の下の月は絵文字で、8種類の形しかなく、傾きもありませんでした',
-        after:'その日の月の形をそのまま描きます。ほかの画面の月と揃いました' }
+        after:'その日の月の形をそのまま描きます。暗い側を濃い色にし、細い月でも形が分かるようにしました' }
     ]
   },
   {
@@ -66950,6 +66965,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_full && _full.n > 200 && (!_new || _new.n < _full.n / 3))
            ? ok('ST-350·③: 満月と新月で形が変わる')
            : ng('ST-350·③: 月齢で形が変わらない', JSON.stringify(_full) + ' / ' + JSON.stringify(_new));
+         // v0.47.47: 小さいときは、細い月でも光る部分が見える（真っ暗な丸にならない）
+         window._drawMiniMoon(_st350cv, 2.5, 0, 24);
+         var _thin = _st350grav();
+         (_thin && _thin.n >= 6)
+           ? ok('ST-350·⑤: 小さく描いても、細い月の光る部分が見える（' + _thin.n + '画素）')
+           : ng('ST-350·⑤: 細い月が真っ暗な丸になっている', JSON.stringify(_thin));
+         // v0.47.47: 暗い側がはっきり塗られていること。
+         // 以前は薄い灰色（透明度0.3）で、白い背景に溶けて形が読めなかった。
+         // ⑤の画素数だけでは旧版でも通ってしまうので、見やすさの本体である濃さを見る。
+         window._drawMiniMoon(_st350cv, 0.2, 0, 24);   // ほぼ新月＝ほとんどが暗い側
+         var _dk = _st350cv.getContext('2d').getImageData(12, 12, 1, 1).data;
+         (_dk[3] > 200 && (_dk[0] + _dk[1] + _dk[2]) / 3 < 100)
+           ? ok('ST-350·⑥: 暗い側は濃い色で塗られ、白い背景に溶けない')
+           : ng('ST-350·⑥: 暗い側が薄い', 'rgba(' + _dk[0] + ',' + _dk[1] + ',' + _dk[2] + ',' + _dk[3] + ')');
          // マスの中身：絵と数字が両方あること（数字だけ消えていないか）
          var _cell = document.querySelector('.monthly-moon-age');
          if (!_cell) {
