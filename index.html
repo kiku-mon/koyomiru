@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.49 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.50 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.49';
+    const APP_VERSION = 'v0.47.50';
   const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -48379,6 +48379,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.50', date: '2026-09-21',
+    items: [
+      { icon:'⌨️', t:'お知らせの検索で、日本語が打てます',
+        before:'「ナビタブ」と打とうとすると「ななびなびた…」となり、日本語が打てませんでした',
+        after:'ふつうに打てます。変換を確定したときに絞り込みます' }
+    ]
+  },
+  {
     ver: 'v0.47.49', date: '2026-09-21',
     items: [
       { icon:'📚', t:'お知らせが消えずに貯まります',
@@ -49096,6 +49104,37 @@ function saveWeatherSlot(idx, value) {
 }
 window.saveWeatherSlot = saveWeatherSlot;
 
+// v0.47.50: 検索の欄を一度だけ作る。作り直さないので、日本語の変換の途中が消えない。
+// 変換中（compositionstart〜compositionend）は絞り込まず、確定したときに絞り込む。
+// 英数字など変換の無い入力は、打つたびに絞り込む。
+function _ensureNewsSearchBox(box) {
+  if (!box) return;
+  if (document.getElementById('newsSearchInput') && document.getElementById('newsResults')) return;
+  box.innerHTML =
+    '<div style="margin-bottom:12px;">' +
+      '<input id="newsSearchInput" type="search" placeholder="版や言葉で探す（例 v0.47.32・ナビタブ）" ' +
+      'autocomplete="off" ' +
+      'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;">' +
+    '</div>' +
+    '<div id="newsResults"></div>';
+  // font-size を16pxにしたのは、iPhone が16px未満の欄に触れると画面を勝手に拡大するため。
+  var inp = document.getElementById('newsSearchInput');
+  inp.value = window._newsQuery || '';
+  var composing = false;
+  var apply = function() {
+    window._newsQuery = inp.value;
+    window._newsShown = NEWS_SHOW_COUNT;
+    renderOshiraseNews();
+  };
+  inp.addEventListener('compositionstart', function() { composing = true; });
+  inp.addEventListener('compositionend', function() { composing = false; apply(); });
+  inp.addEventListener('input', function(e) {
+    if (composing || (e && e.isComposing)) return;   // 変換中は待つ
+    apply();
+  });
+}
+window._ensureNewsSearchBox = _ensureNewsSearchBox;
+
 function renderOshiraseNews() {
   try {
     var box = document.getElementById('oshirasePane_news');
@@ -49119,16 +49158,15 @@ function renderOshiraseNews() {
     var rest = list.length - shown.length;
     var _esc = (typeof escAttr === 'function') ? escAttr : function(x){ return String(x); };
 
-    // v0.47.49: 版で探す。「v0.47.32で何したっけ」にすぐ答えるため。
-    // 数字だけでも、言葉（例：ナビタブ）でも探せる。
-    var html = '<div style="margin-bottom:12px;">' +
-      '<input id="newsSearchInput" type="search" placeholder="版や言葉で探す（例 v0.47.32・ナビタブ）" ' +
-      'value="' + _esc(window._newsQuery || '') + '" ' +
-      'oninput="window._newsQuery=this.value;window._newsShown=' + NEWS_SHOW_COUNT + ';renderOshiraseNews();' +
-      'setTimeout(function(){var e=document.getElementById(\'newsSearchInput\');if(e){e.focus();var v=e.value;e.value=\'\';e.value=v;}},0);" ' +
-      'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid #dcdcdc;border-radius:10px;font-size:0.9em;">' +
-      (_q ? '<div style="font-size:0.78em;color:#888;margin-top:4px;">' + list.length + '件見つかりました</div>' : '') +
-      '</div>';
+    // v0.47.50: 【権威】2026-09-21、iPhoneで「ナビタブ」と打とうとすると「ななな…」になる、との報告。
+    // v0.47.49 では、打つたびに検索の欄ごと作り直していた。日本語は変換の途中
+    // （な→なび→なびた）を欄が持っているので、作り直すたびにその途中が捨てられ、
+    // 「な」が確定し続けていた（再現：ななびなびたなびたぶナビタブ）。
+    // 検索の欄は一度だけ作り、打つたびに描き直すのは下の一覧（newsResults）だけにする。
+    _ensureNewsSearchBox(box);
+    var results = document.getElementById('newsResults');
+    if (!results) return;
+    var html = (_q ? '<div style="font-size:0.78em;color:#888;margin:-6px 0 10px;">' + list.length + '件見つかりました</div>' : '');
     if (_q && !list.length) {
       html += '<div style="color:#999;font-size:0.85em;padding:10px 0;">見つかりませんでした。' +
         (window._newsArchiveDone ? '' : '古い版はまだ読み込んでいません。下の「前の版を見る」で続きを読み込めます。') + '</div>';
@@ -49202,7 +49240,7 @@ function renderOshiraseNews() {
       }
       html += '</div>';
     }
-    box.innerHTML = html;
+    results.innerHTML = html;
     // v0.47.49: 初めて開いたときは、表から最初のひとまとまりを読み、読めたら描き直す。
     if (!window._newsArchive.length && !window._newsArchiveDone && !window._newsArchiveLoading &&
         typeof _loadNewsArchivePage === 'function') {
@@ -67368,6 +67406,49 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-352: 例外', e.message);
+     }
+
+     // ===== ST-353: お知らせの検索欄で日本語が打てる（v0.47.50〜） =====
+     // 背景：iPhoneで「ナビタブ」と打つと「ななびなびた…」になり、打てなかった。
+     // 打つたびに検索の欄ごと作り直し、日本語の変換の途中を捨てていたため。
+     // 日本語入力と同じ出来事（変換開始→入力→変換確定）を起こして確かめる。
+     // 触った検索語と表示件数は元に戻す（第66条）。
+     var _st353q = window._newsQuery, _st353n = window._newsShown;
+     try {
+       var _pane = document.getElementById('oshirasePane_news');
+       if (!_pane || typeof window._ensureNewsSearchBox !== 'function' || typeof renderOshiraseNews !== 'function') {
+         ng('ST-353: お知らせの欄が見つからない', '');
+       } else {
+         window._newsQuery = '';
+         renderOshiraseNews();
+         var _in1 = document.getElementById('newsSearchInput');
+         if (!_in1) {
+           ng('ST-353: 検索の欄が作られない', '');
+         } else {
+           // 変換中：値は入るが、絞り込みは走らない
+           _in1.dispatchEvent(new CompositionEvent('compositionstart', { data: '' }));
+           _in1.value = 'なび';
+           _in1.dispatchEvent(new InputEvent('input', { data: 'なび', isComposing: true, bubbles: true }));
+           var _in2 = document.getElementById('newsSearchInput');
+           (window._newsQuery === '' && _in2 === _in1)
+             ? ok('ST-353·①: 変換中は絞り込まず、欄も作り直さない')
+             : ng('ST-353·①: 変換中に絞り込みや作り直しが起きた', '検索語=' + window._newsQuery);
+           // 確定：ここで絞り込む。欄は同じまま
+           _in1.value = 'ナビタブ';
+           _in1.dispatchEvent(new CompositionEvent('compositionend', { data: 'ナビタブ' }));
+           var _in3 = document.getElementById('newsSearchInput');
+           (window._newsQuery === 'ナビタブ' && _in3 === _in1 && _in3.value === 'ナビタブ')
+             ? ok('ST-353·②: 確定したら絞り込み、打った文字がそのまま残る')
+             : ng('ST-353·②: 確定後の状態が違う', '検索語=' + window._newsQuery + ' 欄=' + (_in3 && _in3.value));
+           _in1.value = '';
+           _in1.dispatchEvent(new InputEvent('input', { data: null, bubbles: true }));
+         }
+       }
+     } catch(e) {
+       ng('ST-353: 例外', e.message);
+     } finally {
+       window._newsQuery = _st353q; window._newsShown = _st353n;
+       try { renderOshiraseNews(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
