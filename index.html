@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.50 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.51 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.50';
+    const APP_VERSION = 'v0.47.51';
   const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11209,6 +11209,149 @@ function _showInviteWelcome() {
     }
     window._moonViewTime = _moonViewTime;
 
+    // ===== 朔弦望（新月・上弦・満月・下弦）の瞬間 v0.47.51 =====
+    // 【権威】2026-09-21、新月・満月・上弦・下弦が暦に入っていない、入れれば暦アプリとして完成に近づく、との指摘。
+    // これまでは月齢の数字（7〜8を上弦と呼ぶ等）で呼んでいただけで、本当の満月の日とずれることがあった。
+    // 満月は月齢13.9〜15.6のどこかで起こり、「月齢15の日」とは限らない。
+    //
+    // 国立天文台と同じく「太陽と月の黄経の差が 0・90・180・270度になる瞬間」を求め、
+    // その瞬間を含む日（日本時間）に印を付ける。
+    // 計算は Meeus『天文アルゴリズム』49章（月と太陽の揺らぎを数十項まで足す。精度はおよそ1分）。
+    // 国立天文台の2026年暦要項の値と、日付がすべて一致し、時刻のずれが2分以内であることを確かめてある。
+    function _moonPhaseJDE(k, type) {
+      var rad = Math.PI / 180;
+      var T = k / 1236.85, T2 = T * T, T3 = T2 * T, T4 = T3 * T;
+      var jde = 2451550.09766 + 29.530588861 * k + 0.00015437 * T2 - 0.000000150 * T3 + 0.00000000073 * T4;
+      var E = 1 - 0.002516 * T - 0.0000074 * T2;
+      var M  = (2.5534 + 29.10535670 * k - 0.0000014 * T2 - 0.00000011 * T3) * rad;
+      var Mp = (201.5643 + 385.81693528 * k + 0.0107582 * T2 + 0.00001238 * T3 - 0.000000058 * T4) * rad;
+      var F  = (160.7108 + 390.67050284 * k - 0.0016118 * T2 - 0.00000227 * T3 + 0.000000011 * T4) * rad;
+      var Om = (124.7746 - 1.56375588 * k + 0.0020672 * T2 + 0.00000215 * T3) * rad;
+      var s = Math.sin, c = Math.cos, x = 0;
+      if (type === 0 || type === 2) {
+        var nm = (type === 0);
+        x += (nm ? -0.40720 : -0.40614) * s(Mp);
+        x += (nm ?  0.17241 :  0.17302) * E * s(M);
+        x += (nm ?  0.01608 :  0.01614) * s(2 * Mp);
+        x += (nm ?  0.01039 :  0.01043) * s(2 * F);
+        x += (nm ?  0.00739 :  0.00734) * E * s(Mp - M);
+        x += (nm ? -0.00514 : -0.00515) * E * s(Mp + M);
+        x += (nm ?  0.00208 :  0.00209) * E * E * s(2 * M);
+        x += -0.00111 * s(Mp - 2 * F);
+        x += -0.00057 * s(Mp + 2 * F);
+        x +=  0.00056 * E * s(2 * Mp + M);
+        x += -0.00042 * s(3 * Mp);
+        x +=  0.00042 * E * s(M + 2 * F);
+        x +=  0.00038 * E * s(M - 2 * F);
+        x += -0.00024 * E * s(2 * Mp - M);
+        x += -0.00017 * s(Om);
+        x += -0.00007 * s(Mp + 2 * M);
+        x +=  0.00004 * s(2 * Mp - 2 * F);
+        x +=  0.00004 * s(3 * M);
+        x +=  0.00003 * s(Mp + M - 2 * F);
+        x +=  0.00003 * s(2 * Mp + 2 * F);
+        x += -0.00003 * s(Mp + M + 2 * F);
+        x +=  0.00003 * s(Mp - M + 2 * F);
+        x += -0.00002 * s(Mp - M - 2 * F);
+        x += -0.00002 * s(3 * Mp + M);
+        x +=  0.00002 * s(4 * Mp);
+      } else {
+        x += -0.62801 * s(Mp);
+        x +=  0.17172 * E * s(M);
+        x += -0.01183 * E * s(Mp + M);
+        x +=  0.00862 * s(2 * Mp);
+        x +=  0.00804 * s(2 * F);
+        x +=  0.00454 * E * s(Mp - M);
+        x +=  0.00204 * E * E * s(2 * M);
+        x += -0.00180 * s(Mp - 2 * F);
+        x += -0.00070 * s(Mp + 2 * F);
+        x += -0.00040 * s(3 * Mp);
+        x += -0.00034 * E * s(2 * Mp - M);
+        x +=  0.00032 * E * s(M + 2 * F);
+        x +=  0.00032 * E * s(M - 2 * F);
+        x += -0.00028 * E * E * s(Mp + 2 * M);
+        x +=  0.00027 * E * s(2 * Mp + M);
+        x += -0.00017 * s(Om);
+        x += -0.00005 * s(Mp - M - 2 * F);
+        x +=  0.00004 * s(2 * Mp + 2 * F);
+        x += -0.00004 * s(Mp + M + 2 * F);
+        x +=  0.00004 * s(Mp - 2 * M);
+        x +=  0.00003 * s(Mp + M - 2 * F);
+        x +=  0.00003 * s(3 * M);
+        x +=  0.00002 * s(2 * Mp - 2 * F);
+        x +=  0.00002 * s(Mp - M + 2 * F);
+        x += -0.00002 * s(3 * Mp + M);
+        var W = 0.00306 - 0.00038 * E * c(M) + 0.00026 * c(Mp) - 0.00002 * c(Mp - M) +
+                0.00002 * c(Mp + M) + 0.00002 * c(2 * F);
+        x += (type === 1) ? W : -W;
+      }
+      // 惑星による小さな補正
+      var A = [
+        299.77 + 0.107408 * k - 0.009173 * T2, 251.88 + 0.016321 * k, 251.83 + 26.651886 * k,
+        349.42 + 36.412478 * k, 84.66 + 18.206239 * k, 141.74 + 53.303771 * k, 207.14 + 2.453732 * k,
+        154.84 + 7.306860 * k, 34.52 + 27.261239 * k, 207.19 + 0.121824 * k, 291.34 + 1.844379 * k,
+        161.72 + 24.198154 * k, 239.56 + 25.513099 * k, 331.55 + 3.592518 * k
+      ];
+      var Ac = [0.000325, 0.000165, 0.000164, 0.000126, 0.000110, 0.000062, 0.000060,
+                0.000056, 0.000047, 0.000042, 0.000040, 0.000037, 0.000035, 0.000023];
+      for (var i = 0; i < 14; i++) x += Ac[i] * s(A[i] * rad);
+      return jde + x;
+    }
+
+    // ΔT（地球の自転の遅れ。力学時→世界時）。秒。NASA/Espenak の近似式。
+    function _deltaTSeconds(year) {
+      var t;
+      if (year >= 2005 && year < 2050) { t = year - 2000; return 62.92 + 0.32217 * t + 0.005589 * t * t; }
+      if (year >= 1986 && year < 2005) {
+        t = year - 2000;
+        return 63.86 + 0.3345 * t - 0.060374 * t * t + 0.0017275 * t * t * t +
+               0.000651814 * Math.pow(t, 4) + 0.00002373599 * Math.pow(t, 5);
+      }
+      if (year >= 1961 && year < 1986) { t = year - 1975; return 45.45 + 1.067 * t - t * t / 260 - t * t * t / 718; }
+      if (year >= 2050 && year < 2150) { t = (year - 1820) / 100; return -20 + 32 * t * t - 0.5628 * (2150 - year); }
+      t = (year - 1820) / 100; return -20 + 32 * t * t;
+    }
+
+    // その年（日本時間）に起こる朔弦望を返す。年ごとに一度だけ計算して覚える。
+    var MOON_PHASE_NAMES = ['新月', '上弦', '満月', '下弦'];
+    var MOON_PHASE_ICONS = ['🌑', '🌓', '🌕', '🌗'];
+    var _moonPhaseCache = {};
+    function getMoonPhaseEvents(year) {
+      if (_moonPhaseCache[year]) return _moonPhaseCache[year];
+      var out = [];
+      var k0 = Math.floor((year - 2000) * 12.3685) - 2;
+      for (var kk = k0; kk <= k0 + 16; kk++) {
+        for (var type = 0; type < 4; type++) {
+          var jde = _moonPhaseJDE(kk + type * 0.25, type);
+          var utMs = (jde - 2440587.5) * 86400000 - _deltaTSeconds(year) * 1000;
+          // 分は四捨五入する（国立天文台の表と揃える。切り捨てだと1分早く出るものがあった）。
+          var jst = new Date(Math.round((utMs + 9 * 3600000) / 60000) * 60000);   // 日本時間を UTC の値として持つ
+          if (jst.getUTCFullYear() !== year) continue;
+          var p2 = function(v) { return String(v).padStart(2, '0'); };
+          out.push({
+            type: type, name: MOON_PHASE_NAMES[type], icon: MOON_PHASE_ICONS[type],
+            date: jst.getUTCFullYear() + '-' + p2(jst.getUTCMonth() + 1) + '-' + p2(jst.getUTCDate()),
+            time: p2(jst.getUTCHours()) + ':' + p2(jst.getUTCMinutes()),
+            ms: utMs
+          });
+        }
+      }
+      out.sort(function(a, b) { return a.ms - b.ms; });
+      _moonPhaseCache[year] = out;
+      return out;
+    }
+    window.getMoonPhaseEvents = getMoonPhaseEvents;
+
+    // その日（'YYYY-MM-DD'、日本時間）に朔弦望があれば返す。無ければ null。
+    function getMoonPhaseOnDate(ds) {
+      if (!ds || ds.length < 10) return null;
+      var y = Number(ds.slice(0, 4));
+      var list = getMoonPhaseEvents(y);
+      for (var i = 0; i < list.length; i++) if (list[i].date === ds) return list[i];
+      return null;
+    }
+    window.getMoonPhaseOnDate = getMoonPhaseOnDate;
+
     // いまの傾き。呼ぶ側が毎回、位置の有無や失敗の扱いを書かなくて済むようにする。
     // 計算できなければ0を返す（＝これまでどおり真横で描く。第2条：無くても落ちない）。
     // v0.47.48: 月が見えている時刻の向きを返すようにした。
@@ -16868,7 +17011,20 @@ function myDeckApply(idx) {
           var tilt = (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg(d) : null;
           if (typeof _drawMiniMoon === 'function') _drawMiniMoon(cv, age, tilt, 24);
           el.appendChild(cv);
-          el.appendChild(document.createTextNode(String(ar)));
+          // v0.47.51: 新月・上弦・満月・下弦の日は、月齢の数字の代わりに名前を出す。
+          // マスが狭いので両方は並べない。時刻は押したとき（横の欄）と、長押しの表示で見られる。
+          var _ph = (typeof getMoonPhaseOnDate === 'function') ? getMoonPhaseOnDate(ds) : null;
+          if (_ph) {
+            var _pn = document.createElement('span');
+            _pn.className = 'monthly-moon-phase';
+            _pn.textContent = _ph.name;
+            _pn.style.cssText = 'font-weight:700;color:' + (_ph.type === 2 ? '#b8860b' : (_ph.type === 0 ? '#3b4a6b' : '#6b5a2e')) + ';';
+            el.appendChild(_pn);
+            el.title = _ph.name + ' ' + _ph.time + '（月齢' + ar + '）';
+          } else {
+            el.appendChild(document.createTextNode(String(ar)));
+            el.title = '';
+          }
         } catch(e) {}
       });
     }
@@ -23407,6 +23563,16 @@ function openMonthlySidebar(dateStr) {
               var _mi = _ar<1.5?'🌑':_ar<7.5?'🌒':_ar<11?'🌓':_ar<14.5?'🌔':_ar<16.5?'🌕':_ar<21?'🌖':_ar<24.5?'🌗':_ar<28?'🌘':'🌑';
               _rows.push('<div class="msk-line"><span class="msk-key">🌙 月</span>' +
                 '<span class="msk-moon">' + _mi + ' 月齢 ' + _age2.toFixed(1) + '</span></div>');
+              // v0.47.51: 朔弦望の日は、名前と瞬間の時刻を出す（国立天文台と同じ決め方）。
+              try {
+                var _p2 = function(v) { return String(v).padStart(2, '0'); };
+                var _dsKey = _d.getFullYear() + '-' + _p2(_d.getMonth() + 1) + '-' + _p2(_d.getDate());
+                var _ph2 = (typeof getMoonPhaseOnDate === 'function') ? getMoonPhaseOnDate(_dsKey) : null;
+                if (_ph2) {
+                  _rows.push('<div class="msk-line"><span class="msk-key">' + _ph2.icon + ' ' + _ph2.name + '</span>' +
+                    '<span class="msk-moon">' + _ph2.time + '</span></div>');
+                }
+              } catch (ePh) {}
             }
           }
         } catch(e) {}
@@ -48379,6 +48545,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.51', date: '2026-09-21',
+    items: [
+      { icon:'🌕', t:'新月・上弦・満月・下弦が暦に入りました',
+        before:'月齢の数字は出ていましたが、どの日が満月なのかは分かりませんでした',
+        after:'月間カレンダーのその日に「満月」などと出ます。日付を押すと「🌕 満月 1:49」のように、その瞬間の時刻も出ます。国立天文台の暦と同じ決め方です' }
+    ]
+  },
+  {
     ver: 'v0.47.50', date: '2026-09-21',
     items: [
       { icon:'⌨️', t:'お知らせの検索で、日本語が打てます',
@@ -67449,6 +67623,50 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        window._newsQuery = _st353q; window._newsShown = _st353n;
        try { renderOshiraseNews(); } catch (e2) {}
+     }
+
+     // ===== ST-354: 新月・上弦・満月・下弦（v0.47.51〜） =====
+     // 背景：朔弦望が暦に入っていなかった。月齢の数字で呼ぶだけだと、本当の満月の日とずれる。
+     // 国立天文台の暦要項（2026年）と、過去の記録（2011年3月）を正として突き合わせる。
+     // 日付は必ず一致、時刻のずれは2分以内であること。
+     try {
+       if (typeof window.getMoonPhaseEvents !== 'function' || typeof window.getMoonPhaseOnDate !== 'function') {
+         ng('ST-354: 朔弦望の計算が見つからない', '');
+       } else {
+         var _ref = [
+           // 国立天文台 令和8年(2026)暦要項
+           ['2026-01-03', '満月', '19:03'], ['2026-02-17', '新月', '21:01'], ['2026-03-03', '満月', '20:38'],
+           ['2026-06-22', '上弦', '06:55'], ['2026-08-28', '満月', '13:19'], ['2026-09-04', '下弦', '16:51'],
+           ['2026-09-11', '新月', '12:27'], ['2026-09-19', '上弦', '05:44'], ['2026-09-27', '満月', '01:49'],
+           ['2026-10-11', '新月', '00:50'], ['2026-11-02', '下弦', '05:28'],
+           // 2011年3月（東日本大震災の直後、「スーパームーン」として記録が多い）
+           ['2011-03-05', '新月', '05:45'], ['2011-03-20', '満月', '03:10'], ['2011-03-26', '下弦', '21:07']
+         ];
+         var _bad = [], _maxd = 0;
+         _ref.forEach(function(r) {
+           var got = window.getMoonPhaseOnDate(r[0]);
+           if (!got || got.name !== r[1]) { _bad.push(r[0] + ' ' + r[1] + '→' + (got ? got.name : 'なし')); return; }
+           var a1 = got.time.split(':').map(Number), b1 = r[2].split(':').map(Number);
+           var dm = Math.abs((a1[0] * 60 + a1[1]) - (b1[0] * 60 + b1[1]));
+           _maxd = Math.max(_maxd, dm);
+           if (dm > 2) _bad.push(r[0] + ' ' + r[1] + ' ' + got.time + '（正 ' + r[2] + '）');
+         });
+         _bad.length === 0
+           ? ok('ST-354·①: 国立天文台・過去の記録と、日付がすべて一致し、時刻のずれは' + _maxd + '分以内（' + _ref.length + '件）')
+           : ng('ST-354·①: 朔弦望がずれている', _bad.join(' / '));
+         // 1年に49〜51件、4種類が順番に並ぶ（抜けや重なりが無い）
+         var _ev = window.getMoonPhaseEvents(2026);
+         var _order = _ev.every(function(e, i) { return i === 0 || e.type === (_ev[i - 1].type + 1) % 4; });
+         (_ev.length >= 49 && _ev.length <= 51 && _order)
+           ? ok('ST-354·②: 1年ぶん（' + _ev.length + '件）が、新月→上弦→満月→下弦の順に抜けなく並ぶ')
+           : ng('ST-354·②: 件数か順番がおかしい', _ev.length + '件 順番=' + _order);
+         // 朔弦望でない日は null
+         (window.getMoonPhaseOnDate('2026-09-21') === null)
+           ? ok('ST-354·③: 朔弦望でない日には何も付かない')
+           : ng('ST-354·③: 関係ない日に印が付いた', '');
+       }
+     } catch(e) {
+       ng('ST-354: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
