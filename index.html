@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.47 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.48 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,8 +157,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.47';
-  const APP_LAST_UPDATED = '2026-09-18'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.47.48';
+  const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -11157,15 +11157,81 @@ function _showInviteWelcome() {
     }
     window._calcMoonTiltDeg = _calcMoonTiltDeg;
 
+    // v0.47.48: 月と太陽の高度（度）。「月が見えているか」を決めるために使う。
+    // 計算式は _calcMoonTiltDeg と同じ低精度式（誤差およそ1度）。
+    function _moonSunAltDeg(date, geo) {
+      var rad = Math.PI / 180, deg = 180 / Math.PI;
+      var g = (geo && typeof geo.lat === 'number') ? geo : _TOKYO_GEO;
+      var jd = date.getTime() / 86400000 + 2440587.5;
+      var T = (jd - 2451545.0) / 36525;
+      var L0 = 280.46646 + 36000.76983 * T, M = 357.52911 + 35999.05029 * T;
+      var C = (1.914602 - 0.004817 * T) * Math.sin(M * rad) + 0.019993 * Math.sin(2 * M * rad);
+      var sunLon = L0 + C;
+      var Lm = 218.316 + 481267.8813 * T, Mm = 134.963 + 477198.8676 * T, Fm = 93.272 + 483202.0175 * T;
+      var moonLon = Lm + 6.289 * Math.sin(Mm * rad), moonLat = 5.128 * Math.sin(Fm * rad);
+      var e = 23.439 * rad, p = g.lat * rad;
+      var gmst = 280.46061837 + 360.98564736629 * (jd - 2451545.0);
+      var lst = (((gmst + g.lng) % 360) + 360) % 360 * rad;
+      function alt(lon, lat) {
+        var l = lon * rad, b = lat * rad;
+        var ra = Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l));
+        var dec = Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l));
+        var H = lst - ra;
+        return Math.asin(Math.sin(dec) * Math.sin(p) + Math.cos(dec) * Math.cos(H) * Math.cos(p)) * deg;
+      }
+      return { moon: alt(moonLon, moonLat), sun: alt(sunLon, 0) };
+    }
+    window._moonSunAltDeg = _moonSunAltDeg;
+
+    // v0.47.48: 【権威】2026-09-21、昨夜見た月と、画面の月の光る側が違う気がする、との報告。
+    // 調べると、昼の時刻（月が地平線の下や昇る直前）の向きで描いていた。
+    // その時刻の向きは、夜空で実際に見る向きと大きく違う（昨夜19時は-10度、今日14時41分は39度）。
+    //
+    // その日（その夜）に月が見える時刻を返す。
+    //   ① 日の入り後〜翌朝で、空が暗く（太陽-6度以下）月が5度以上ある間の、いちばん高い時刻
+    //   ② ①が無い（新月前後で夜に出ない）ときは、その日の昼の空でいちばん高い時刻
+    // 15分きざみで探す。31日ぶんでも数ミリ秒で終わる。
+    function _moonViewTime(date, geo) {
+      var base = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
+      var best = null, bestAlt = -99;
+      for (var m = 16 * 60; m <= 32 * 60; m += 15) {     // その日16時〜翌朝8時
+        var t = new Date(base.getTime() + m * 60000);
+        var a = _moonSunAltDeg(t, geo);
+        if (a.sun <= -6 && a.moon >= 5 && a.moon > bestAlt) { bestAlt = a.moon; best = t; }
+      }
+      if (best) return best;
+      for (var m2 = 0; m2 < 24 * 60; m2 += 15) {          // 夜に出ないときは、その日の昼
+        var t2 = new Date(base.getTime() + m2 * 60000);
+        var a2 = _moonSunAltDeg(t2, geo);
+        if (a2.moon > bestAlt) { bestAlt = a2.moon; best = t2; }
+      }
+      return best || new Date(base.getTime() + 12 * 3600000);
+    }
+    window._moonViewTime = _moonViewTime;
+
     // いまの傾き。呼ぶ側が毎回、位置の有無や失敗の扱いを書かなくて済むようにする。
     // 計算できなければ0を返す（＝これまでどおり真横で描く。第2条：無くても落ちない）。
+    // v0.47.48: 月が見えている時刻の向きを返すようにした。
+    //   date を渡さない（今の月）：今、月が5度以上あり空が暗ければ今の向き。
+    //                             そうでなければ今夜いちばん高くなる時刻の向き。
+    //   date を渡す（その日の月）：その日の夜に見える時刻の向き（_moonViewTime）。
+    // 計算できなければ null を返す。0 を返すと「右が光る」と言っているのと同じになり、
+    // 欠けていく月を逆向きに描いてしまう。null なら描く側は向きを付けない。
     function _currentMoonTiltDeg(date) {
       try {
         var geo = (window._userGeoLocation && typeof window._userGeoLocation.lat === 'number')
           ? window._userGeoLocation : null;
-        var t = _calcMoonTiltDeg(date || new Date(), geo);
-        return isFinite(t) ? t : 0;
-      } catch (e) { return 0; }
+        var when;
+        if (date) {
+          when = _moonViewTime(date, geo);
+        } else {
+          var now = new Date();
+          var a = _moonSunAltDeg(now, geo);
+          when = (a.moon >= 5 && a.sun <= -6) ? now : _moonViewTime(now, geo);
+        }
+        var t = _calcMoonTiltDeg(when, geo);
+        return isFinite(t) ? t : null;
+      } catch (e) { return null; }
     }
     window._currentMoonTiltDeg = _currentMoonTiltDeg;
 
@@ -11207,6 +11273,11 @@ function _showInviteWelcome() {
         var isWax = (Dc % 360 + 360) % 360 < 180;
         ctx.save();
         var t = (typeof tiltDeg === 'number' && isFinite(tiltDeg)) ? tiltDeg : 0;
+        // v0.47.48: 向きが渡されたときは、満ちる・欠けるに関係なく右を光らせた形で描き、そのあと回す。
+        // 向きの中に「太陽が月のどちら側か（＝満ちる・欠ける）」がすでに入っている。
+        // 欠けていく月をもとから左で描いて、さらに向きぶん回していたため、
+        // 満月を過ぎた月が180度近く逆に描かれていた（実測：-41度を渡して150度に光った）。
+        if (typeof tiltDeg === 'number' && isFinite(tiltDeg)) isWax = true;
         if (t) { ctx.translate(c, c); ctx.rotate(-t * Math.PI / 180); ctx.translate(-c, -c); }
         ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
         ctx.fillStyle = '#e8b93f';
@@ -16709,6 +16780,11 @@ function myDeckApply(idx) {
         // 月の中心を軸に、明るい側の向きぶんだけ回す。
         // ここから _ctx.restore() までが月の形。星・暈・縁光はこの外なので回らない。
         var _tilt = (typeof tiltDeg === 'number' && isFinite(tiltDeg)) ? tiltDeg : 0;
+        // v0.47.48: 向きが渡されたときは、満ちる・欠けるに関係なく右を光らせた形で描き、そのあと回す。
+        // 向きの中に「太陽が月のどちら側か（＝満ちる・欠ける）」がすでに入っている。
+        // 欠けていく月をもとから左で描いて、さらに向きぶん回していたため、
+        // 満月を過ぎた月が180度近く逆に描かれていた（実測：-41度を渡して150度に光った）。
+        if (typeof tiltDeg === 'number' && isFinite(tiltDeg)) _isWax = true;
         if (_tilt) {
           _ctx.translate(_cx, _cy);
           _ctx.rotate(-_tilt * Math.PI / 180);   // 画面のy軸は下向きなので符号を反転
@@ -16789,7 +16865,7 @@ function myDeckApply(idx) {
           var cv = document.createElement('canvas');
           cv.className = 'monthly-moon-mini';
           cv.style.cssText = 'width:12px;height:12px;vertical-align:-2px;margin-right:2px;';
-          var tilt = (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg(d) : 0;
+          var tilt = (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg(d) : null;
           if (typeof _drawMiniMoon === 'function') _drawMiniMoon(cv, age, tilt, 24);
           el.appendChild(cv);
           el.appendChild(document.createTextNode(String(ar)));
@@ -36574,7 +36650,7 @@ function renderMonthlyMoneyLine() {
         if (typeof _drawMoonCanvas === 'function' && typeof _age !== 'undefined') {
           // v0.47.44: 季節の風だよりの月に、実際の傾きを反映する。
       // 位置情報は使わない。地域が分かっていればそれを、無ければ東京を使う。
-      var _kzTilt = (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0;
+      var _kzTilt = (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : null;
       _drawMoonCanvas('kazedayoriMoonCanvas', _age, _kzTilt);
         }
         var _card = document.getElementById('kazedayoriCard');
@@ -37605,7 +37681,7 @@ function renderDashboardView() {
     // v0.47.45: ダッシュボードの月にも実際の傾きを反映する（季節の風だよりと同じ計算を使う）。
     if (typeof _drawMoonCanvas === 'function') {
       _drawMoonCanvas('dbMoonCanvas', _age,
-        (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0);
+        (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : null);
     }
 // 月齢カード・天象カードをダッシュボード上部に表示
     var _moonCard = document.getElementById('dbMoonCard');
@@ -46152,6 +46228,11 @@ function _gardenDrawMoonSprite(canvasId, age, tiltDeg) {
     _ctx.save();
     // 月の形だけを回す。暈と縁光はこの外（丸いので回しても同じ）。
     var _gTilt = (typeof tiltDeg === 'number' && isFinite(tiltDeg)) ? tiltDeg : 0;
+    // v0.47.48: 向きが渡されたときは、満ちる・欠けるに関係なく右を光らせた形で描き、そのあと回す。
+    // 向きの中に「太陽が月のどちら側か（＝満ちる・欠ける）」がすでに入っている。
+    // 欠けていく月をもとから左で描いて、さらに向きぶん回していたため、
+    // 満月を過ぎた月が180度近く逆に描かれていた（実測：-41度を渡して150度に光った）。
+    if (typeof tiltDeg === 'number' && isFinite(tiltDeg)) _isWax = true;
     if (_gTilt) {
       _ctx.translate(_cx, _cy);
       _ctx.rotate(-_gTilt * Math.PI / 180);   // 画面のy軸は下向きなので符号を反転
@@ -46578,7 +46659,7 @@ function _buildGardenScene(THREE_MOD, OrbitControls, SkyAddon, LensflareMod, Wat
 
   function _gardenRedrawMoon(age) {
     _gardenDrawMoonSprite('gardenMoonCanvas', age,
-    (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0);
+    (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : null);
   }
   // 初回描画（実際の今の月齢で）
   try {
@@ -48297,6 +48378,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.48', date: '2026-09-21',
+    items: [
+      { icon:'🌖', t:'満月を過ぎた月の光る側が、逆になっていました',
+        before:'満月から新月までの欠けていく月は、光る側がほぼ反対向きに描かれていました（季節の風だより・今夜の月・庭・月間）',
+        after:'実際の空と同じ側が光ります。申し訳ありませんでした' },
+      { icon:'🌙', t:'月は「見える時刻」の向きで描きます',
+        before:'昼間に開くと、地平線の下にある月の向きで描いていて、夜に見る月と傾きが違っていました',
+        after:'月が出ていれば今の向き、出ていなければ今夜いちばん高く上がる時刻の向きで描きます。月間の各日も、その夜に見える向きです' }
+    ]
+  },
   {
     ver: 'v0.47.47', date: '2026-09-18',
     items: [
@@ -66993,6 +67085,74 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-350: 例外', e.message);
      } finally {
        if (_st350cv && _st350cv.parentNode) _st350cv.parentNode.removeChild(_st350cv);
+     }
+
+     // ===== ST-351: 欠けていく月が逆向きに描かれない・見える時刻の向きを使う（v0.47.48〜） =====
+     // 背景：2026-09-21、昨夜見た月と画面の月の光る側が違う気がする、との報告。調べると2つの誤り。
+     //   ① 満月を過ぎた月を、もとから左で描いてさらに向きぶん回していた（二重回し）。
+     //      -41度を渡して150度に光る、つまりほぼ逆向きに描いていた。
+     //   ② 昼の時刻（月が地平線の下）の向きで描いていた。夜に見える向きと大きく違う。
+     // 3つの描画関数すべてで、渡した向きに光ることを実際に描いて測る。
+     var _st351cv = null;
+     try {
+       if (typeof window._drawMoonCanvas !== 'function' || typeof window._gardenDrawMoonSprite !== 'function' ||
+           typeof window._drawMiniMoon !== 'function' || typeof window._moonViewTime !== 'function') {
+         ng('ST-351: 月の処理が見つからない', '');
+       } else {
+         _st351cv = document.createElement('canvas');
+         _st351cv.id = '_st351canvas'; _st351cv.width = 160; _st351cv.height = 160;
+         _st351cv.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+         document.body.appendChild(_st351cv);
+         var _st351dir = function() {
+           var W = _st351cv.width, Hh = _st351cv.height;
+           var im = _st351cv.getContext('2d').getImageData(0, 0, W, Hh).data;
+           var sx = 0, sy = 0, n = 0;
+           for (var y = 0; y < Hh; y++) for (var x = 0; x < W; x++) {
+             var i = (y * W + x) * 4;
+             if (im[i] > 170 && im[i + 1] > 120 && im[i + 2] < 120) { sx += x; sy += y; n++; }
+           }
+           if (!n) return null;
+           return Math.atan2(-(sy / n - Hh / 2), sx / n - W / 2) * 180 / Math.PI;
+         };
+         var _st351gap = function(a, b) { var x = a - b; while (x > 180) x -= 360; while (x < -180) x += 360; return Math.abs(x); };
+         var _st351bad = [];
+         // 満ちていく月（7.4）と欠けていく月（22.1）を、いくつかの向きで描く
+         [7.4, 22.1].forEach(function(age) {
+           [-41, 45, 136].forEach(function(t) {
+             window._drawMoonCanvas('_st351canvas', age, t);
+             var a1 = _st351dir();
+             window._gardenDrawMoonSprite('_st351canvas', age, t);
+             var a2 = _st351dir();
+             if (a1 === null || _st351gap(a1, t) > 30) _st351bad.push('風だより 月齢' + age + ' 向き' + t + '→' + Math.round(a1));
+             if (a2 === null || _st351gap(a2, t) > 30) _st351bad.push('庭 月齢' + age + ' 向き' + t + '→' + Math.round(a2));
+           });
+         });
+         _st351bad.length === 0
+           ? ok('ST-351·①: 満ちる月も欠ける月も、渡した向きに光る（逆向きにならない）')
+           : ng('ST-351·①: 渡した向きと違う側が光る', _st351bad.join(' / '));
+         // 月間の小さな月も同じ
+         _st351cv.width = 24; _st351cv.height = 24;
+         window._drawMiniMoon(_st351cv, 22.1, -41, 24);
+         var _mm = _st351dir();
+         (_mm !== null && _st351gap(_mm, -41) < 40)
+           ? ok('ST-351·②: 月間の小さな月も、欠けていく月を逆向きに描かない')
+           : ng('ST-351·②: 小さな月が逆向き', String(Math.round(_mm)));
+         // 見える時刻：ふつうの日は、月が地平線より上にある時刻を選ぶ
+         var _vt = window._moonViewTime(new Date(2026, 8, 20, 12), null);
+         var _va = window._moonSunAltDeg(_vt, null);
+         (_va.moon > 0)
+           ? ok('ST-351·③: 描く時刻は、月が地平線より上にある時刻（高度' + Math.round(_va.moon) + '度）')
+           : ng('ST-351·③: 地平線の下の時刻を選んでいる', Math.round(_va.moon) + '度');
+         // 計算できないときは null（0 を返すと欠けていく月が逆になる）
+         var _ct = window._currentMoonTiltDeg();
+         (_ct === null || (typeof _ct === 'number' && isFinite(_ct)))
+           ? ok('ST-351·④: いまの向きは数か null（0 で代用しない）')
+           : ng('ST-351·④: いまの向きの形が違う', String(_ct));
+       }
+     } catch(e) {
+       ng('ST-351: 例外', e.message);
+     } finally {
+       if (_st351cv && _st351cv.parentNode) _st351cv.parentNode.removeChild(_st351cv);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
