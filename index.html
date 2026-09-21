@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.48 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.49 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.48';
+    const APP_VERSION = 'v0.47.49';
   const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -48379,6 +48379,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.49', date: '2026-09-21',
+    items: [
+      { icon:'📚', t:'お知らせが消えずに貯まります',
+        before:'アプリに書いた分しか残らず、書き直すと前の記録が消えていました',
+        after:'どの版のお知らせも残り続けます。「前の版を見る」で、どこまでも古い版に戻れます' },
+      { icon:'🔎', t:'お知らせを版や言葉で探せます',
+        before:'「あの版で何を直したか」を探すには、上から順に読むしかありませんでした',
+        after:'一番上の欄に「v0.47.32」や「ナビタブ」と打つと、合うお知らせだけが出ます' }
+    ]
+  },
+  {
     ver: 'v0.47.48', date: '2026-09-21',
     items: [
       { icon:'🌖', t:'満月を過ぎた月の光る側が、逆になっていました',
@@ -48732,6 +48743,119 @@ window._NEWS_DATA = _NEWS_DATA;
 // 新着を描く。開くたびに呼ぶ。
 // 5件を超えたぶんは畳む。下に積み上がると、上の新しいものまで読まれない。
 var NEWS_SHOW_COUNT = 5;
+
+// ===== お知らせの蓄積（データベース） v0.47.49 =====
+// 【権威】2026-09-21、版で直したことが消えていく、古い版も自由に見たい、との要望。
+// アプリに書いたお知らせだけだと、9月7日のように書き直したとき、それより前が消える。
+// また、アプリに全部を書き続けると、版を重ねるほどファイルが太る。
+//
+// 全部の版は koyomiru_news 表に貯める（読むのは誰でも、書くのは管理者だけ、消す決まりは無い）。
+// 書き足すのはアプリ自身。管理者がログインしたとき、アプリにある版を表へ入れる。
+// 処理は1つだけで、版が増えても増えない（版ごとに移行を足す形にはしない）。
+// 表示は「アプリにある分」と「表にある分」を合わせて、新しい順に出す。
+// 同じ版が両方にあれば、アプリの方を使う（直したばかりの文を優先する）。
+
+// 版の並べ替え用の数。文字のままだと v0.47.9 が v0.47.10 より後に並ぶ。
+// v0.45.2069 のように3つ目が4桁になる版があるので、1万倍ずつ桁をずらす。
+function _newsVerNum(ver) {
+  var m = String(ver || '').match(/v?(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return 0;
+  return Number(m[1]) * 100000000 + Number(m[2]) * 10000 + Number(m[3]);
+}
+window._newsVerNum = _newsVerNum;
+
+// お知らせの文を画面に出せる形にする。太字と改行だけ通し、それ以外のタグは文字として出す。
+// アプリに書いた分は <b> を使っている。表から読んだ分も同じ扱いにする（第68条）。
+function _newsSafe(s) {
+  var t = String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return t.replace(/&lt;(\/?)b&gt;/g, '<$1b>').replace(/&lt;br\s*\/?&gt;/g, '<br>');
+}
+window._newsSafe = _newsSafe;
+
+// 表から読んだお知らせ。開くたびに取り直さないよう、この画面の間だけ覚える。
+window._newsArchive = window._newsArchive || [];
+window._newsArchiveDone = window._newsArchiveDone || false;
+window._newsArchiveLoading = false;
+var NEWS_ARCHIVE_PAGE = 50;   // 一度に取る数。1,000版たまっても、少しずつ取る
+
+async function _loadNewsArchivePage() {
+  if (window._newsArchiveDone || window._newsArchiveLoading) return;
+  if (!window.supabaseClient) { window._newsArchiveDone = true; return; }
+  window._newsArchiveLoading = true;
+  try {
+    var from = window._newsArchive.length;
+    var r = await window.supabaseClient.from('koyomiru_news')
+      .select('ver, date, items, note, ver_num')
+      .order('ver_num', { ascending: false })
+      .range(from, from + NEWS_ARCHIVE_PAGE - 1);
+    if (r.error) throw r.error;
+    var rows = (r.data || []).map(function(x) {
+      return { ver: x.ver, date: x.date, items: Array.isArray(x.items) ? x.items : [], note: x.note || '', _fromDb: true };
+    });
+    window._newsArchive = window._newsArchive.concat(rows);
+    if (rows.length < NEWS_ARCHIVE_PAGE) window._newsArchiveDone = true;
+  } catch (e) {
+    // 通信できないときは、アプリにある分だけで見せる。表が無い古い環境でも落ちない。
+    console.warn('[お知らせ] 表から読めませんでした:', e && e.message);
+    window._newsArchiveDone = true;
+  } finally {
+    window._newsArchiveLoading = false;
+  }
+}
+window._loadNewsArchivePage = _loadNewsArchivePage;
+
+// アプリの分と表の分を合わせる。同じ版はアプリの方を使う。新しい順に並べる。
+function _newsMergedList() {
+  var byVer = {};
+  (window._newsArchive || []).forEach(function(n) { if (n && n.ver) byVer[n.ver] = n; });
+  (_NEWS_DATA || []).forEach(function(n) { if (n && n.ver) byVer[n.ver] = n; });
+  return Object.keys(byVer).map(function(k) { return byVer[k]; })
+    .sort(function(a, b) { return _newsVerNum(b.ver) - _newsVerNum(a.ver); });
+}
+window._newsMergedList = _newsMergedList;
+
+// 管理者がログインしたら、アプリにある版を表へ入れる。
+// まだ無い版は足し、中身が変わった版は書き換える（直したばかりの文を表にも反映する）。
+// アプリに無い古い版には触らない。消すこともしない。
+async function _syncNewsToCloud() {
+  try {
+    if (window._isTesting || window._smokeTestRunning) return { skipped: 'testing' };
+    if (!window.supabaseClient || !window._cloudIsLoggedIn) return { skipped: 'offline' };
+    if (typeof KOYOMIRU_ADMIN_UID === 'undefined' || window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+      return { skipped: 'not-admin' };
+    }
+    if (window._newsSyncedOnce) return { skipped: 'done' };
+    var local = (_NEWS_DATA || []).filter(function(n) { return n && n.ver; });
+    if (!local.length) return { skipped: 'empty' };
+    var vers = local.map(function(n) { return n.ver; });
+    var cur = await window.supabaseClient.from('koyomiru_news')
+      .select('ver, items, note, date').in('ver', vers);
+    if (cur.error) throw cur.error;
+    var have = {};
+    (cur.data || []).forEach(function(x) { have[x.ver] = x; });
+    var rows = [];
+    local.forEach(function(n) {
+      var h = have[n.ver];
+      var same = h && JSON.stringify(h.items) === JSON.stringify(n.items || []) &&
+                 String(h.note || '') === String(n.note || '') && String(h.date) === String(n.date);
+      if (same) return;
+      rows.push({ ver: n.ver, ver_num: _newsVerNum(n.ver), date: n.date,
+                  items: n.items || [], note: n.note || null, updated_at: new Date().toISOString() });
+    });
+    if (rows.length) {
+      var up = await window.supabaseClient.from('koyomiru_news').upsert(rows, { onConflict: 'ver' });
+      if (up.error) throw up.error;
+    }
+    window._newsSyncedOnce = true;
+    return { written: rows.length };
+  } catch (e) {
+    console.warn('[お知らせ] 表へ入れられませんでした:', e && e.message);
+    return { error: e && e.message };
+  }
+}
+window._syncNewsToCloud = _syncNewsToCloud;
 // v0.46.77: 天気へのリンクを描く。設定に入っているものだけ出す。
 // 入れていない人には何も出ない。空の帯を置いても場所を取るだけである。
 function renderMonthlyWeatherLine() {
@@ -48981,14 +49105,36 @@ function renderOshiraseNews() {
     //
     // 前版は「押すと全部出る」形だった。畳み直せず、100版たまれば一度に100件並ぶ。
     // 何件ずつ増やすかを決め、押すたびに増える形にする。畳むボタンも置く。
-    var list = _NEWS_DATA || [];
+    // v0.47.49: アプリの分と表の分を合わせる。版で探しているときは、合うものだけ出す。
+    var list = (typeof _newsMergedList === 'function') ? _newsMergedList() : (_NEWS_DATA || []);
+    var _q = String(window._newsQuery || '').trim().toLowerCase();
+    if (_q) {
+      list = list.filter(function(n) {
+        if (String(n.ver).toLowerCase().indexOf(_q) !== -1) return true;
+        return JSON.stringify(n.items || []).toLowerCase().indexOf(_q) !== -1;
+      });
+    }
     if (!window._newsShown) window._newsShown = NEWS_SHOW_COUNT;
     var shown = list.slice(0, window._newsShown);
     var rest = list.length - shown.length;
     var _esc = (typeof escAttr === 'function') ? escAttr : function(x){ return String(x); };
 
-    var html = shown.map(function(n, i) {
-      var isNew = (i === 0);
+    // v0.47.49: 版で探す。「v0.47.32で何したっけ」にすぐ答えるため。
+    // 数字だけでも、言葉（例：ナビタブ）でも探せる。
+    var html = '<div style="margin-bottom:12px;">' +
+      '<input id="newsSearchInput" type="search" placeholder="版や言葉で探す（例 v0.47.32・ナビタブ）" ' +
+      'value="' + _esc(window._newsQuery || '') + '" ' +
+      'oninput="window._newsQuery=this.value;window._newsShown=' + NEWS_SHOW_COUNT + ';renderOshiraseNews();' +
+      'setTimeout(function(){var e=document.getElementById(\'newsSearchInput\');if(e){e.focus();var v=e.value;e.value=\'\';e.value=v;}},0);" ' +
+      'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid #dcdcdc;border-radius:10px;font-size:0.9em;">' +
+      (_q ? '<div style="font-size:0.78em;color:#888;margin-top:4px;">' + list.length + '件見つかりました</div>' : '') +
+      '</div>';
+    if (_q && !list.length) {
+      html += '<div style="color:#999;font-size:0.85em;padding:10px 0;">見つかりませんでした。' +
+        (window._newsArchiveDone ? '' : '古い版はまだ読み込んでいません。下の「前の版を見る」で続きを読み込めます。') + '</div>';
+    }
+    html += shown.map(function(n, i) {
+      var isNew = (i === 0 && !_q);
       return '<div style="margin-bottom:14px;padding:14px;border-radius:12px;' +
           (isNew ? 'background:#eef7ee;border:1px solid #cfe6cf;' : 'background:#f7faf7;border:1px solid #e0ece0;') + '">' +
         '<div style="font-size:0.72em;font-weight:700;margin-bottom:6px;color:' +
@@ -48999,14 +49145,14 @@ function renderOshiraseNews() {
         // 何が困っていて、何が解けたかを並べて書く。
         '<div style="font-size:0.85em;color:#333;line-height:1.7;">' +
           (n.items || []).map(function(it) {
-            if (typeof it === 'string') return '<div style="margin-bottom:6px;">' + it + '</div>';
+            if (typeof it === 'string') return '<div style="margin-bottom:6px;">' + _newsSafe(it) + '</div>';
             return '<div style="margin-bottom:9px;">' +
               '<div style="font-weight:700;">' + (it.icon || '') + ' ' + _esc(it.t || '') + '</div>' +
               '<div style="padding-left:20px;font-size:0.92em;line-height:1.8;">' +
                 '<span style="color:#9aa6b8;">前：</span>' +
-                '<span style="color:#7a8494;">' + (it.before || '') + '</span><br>' +
+                '<span style="color:#7a8494;">' + _newsSafe(it.before || '') + '</span><br>' +
                 '<span style="color:#2e7d32;font-weight:700;">今：</span>' +
-                '<span style="color:#333;">' + (it.after || '') + '</span>' +
+                '<span style="color:#333;">' + _newsSafe(it.after || '') + '</span>' +
               '</div>' +
             '</div>';
           }).join('') +
@@ -49014,7 +49160,7 @@ function renderOshiraseNews() {
         (n.note
           ? '<div style="font-size:0.76em;color:#5f7a5f;line-height:1.8;margin-top:8px;' +
             'padding-top:8px;border-top:1px solid ' + (isNew ? '#cfe6cf' : '#e0ece0') + ';">' +
-            n.note + '</div>'
+            _newsSafe(n.note) + '</div>'
           : '') +
       '</div>';
     }).join('');
@@ -49038,11 +49184,17 @@ function renderOshiraseNews() {
         'color:#666;font-size:0.8em;cursor:pointer;font-family:inherit;margin:0 4px;">' +
         label + '</button>';
     };
-    if (rest > 0 || window._newsShown > NEWS_SHOW_COUNT) {
+    // v0.47.49: 手元の分を見終わっても、表にまだ古い版があれば続きを取ってくる。
+    var _more = !window._newsArchiveDone;
+    if (rest > 0 || _more || window._newsShown > NEWS_SHOW_COUNT) {
       html += '<div style="text-align:center;margin-top:10px;">';
       if (rest > 0) {
-        html += _btn('▸ 前の版を見る（あと' + rest + '件）',
+        html += _btn('▸ 前の版を見る（あと' + rest + '件' + (_more ? '以上' : '') + '）',
           'window._newsShown=(window._newsShown||' + NEWS_SHOW_COUNT + ')+10;renderOshiraseNews();');
+      } else if (_more) {
+        html += _btn(window._newsArchiveLoading ? '読み込み中…' : '▸ もっと前の版を読み込む',
+          'window._loadNewsArchivePage().then(function(){window._newsShown=(window._newsShown||' +
+          NEWS_SHOW_COUNT + ')+10;renderOshiraseNews();});');
       }
       if (window._newsShown > NEWS_SHOW_COUNT) {
         html += _btn('▴ 畳む',
@@ -49051,6 +49203,13 @@ function renderOshiraseNews() {
       html += '</div>';
     }
     box.innerHTML = html;
+    // v0.47.49: 初めて開いたときは、表から最初のひとまとまりを読み、読めたら描き直す。
+    if (!window._newsArchive.length && !window._newsArchiveDone && !window._newsArchiveLoading &&
+        typeof _loadNewsArchivePage === 'function') {
+      _loadNewsArchivePage().then(function() {
+        if (window._newsArchive.length) renderOshiraseNews();
+      });
+    }
   } catch (e) { console.warn('[お知らせ] 描けませんでした:', e && e.message); }
 }
 window.renderOshiraseNews = renderOshiraseNews;
@@ -53469,6 +53628,13 @@ try {
       // v0.45.1505: 管理者アカウントでのログインを検知したら印を残す（次回起動から除外）
       if (window._cloudUserId === _KOYOMIRU_ADMIN_UID && typeof _markDeveloperVisitor === 'function') _markDeveloperVisitor();
       _cloudSetNavRing(!!session);
+      // v0.47.49: 管理者がログインしたら、アプリにあるお知らせを表へ入れる（蓄積）。
+      // 起動直後の同期と重ならないよう、少し待ってから動かす。1回だけ動く。
+      if (session && window._cloudUserId === _KOYOMIRU_ADMIN_UID && typeof _syncNewsToCloud === 'function') {
+        setTimeout(function() { _syncNewsToCloud().then(function(r) {
+          if (r && typeof r.written === 'number') console.log('[お知らせ] 表へ入れた版の数:', r.written);
+        }); }, 8000);
+      }
       // v0.45.1607: 【権威】2026-08-13、新規の方がパスワードを忘れて何度も失敗し離脱、との報告。
       // 調べたところ、再設定メールは送れるのに、リンクを開いた後の画面が無かった。
       // Supabaseはリンクから戻ると PASSWORD_RECOVERY を発火させるが、
@@ -67153,6 +67319,55 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-351: 例外', e.message);
      } finally {
        if (_st351cv && _st351cv.parentNode) _st351cv.parentNode.removeChild(_st351cv);
+     }
+
+     // ===== ST-352: お知らせの蓄積（v0.47.49〜） =====
+     // 背景：版で直したことが消えていく、古い版も自由に見たい、との要望。
+     // 全部の版を koyomiru_news 表に貯め、アプリと表を合わせて見せる形にした。
+     // データベースには触らず、並べ替え・無害化・合わせ方・書き足しの条件を確かめる。
+     try {
+       if (typeof window._newsVerNum !== 'function' || typeof window._newsSafe !== 'function' ||
+           typeof window._newsMergedList !== 'function' || typeof window._syncNewsToCloud !== 'function') {
+         ng('ST-352: お知らせの蓄積の処理が見つからない', '');
+       } else {
+         // ① 版の並び：文字のままだと v0.47.9 が v0.47.10 より後になる
+         (window._newsVerNum('v0.47.10') > window._newsVerNum('v0.47.9') &&
+          window._newsVerNum('v0.46.0') > window._newsVerNum('v0.45.2069') &&
+          window._newsVerNum('v1.0.0') > window._newsVerNum('v0.47.48'))
+           ? ok('ST-352·①: 版を数として正しく並べる（v0.47.9 < v0.47.10、v0.45.2069 < v0.46.0）')
+           : ng('ST-352·①: 版の並びが違う', '');
+         // ② 無害化：太字と改行だけ通す
+         // 注意：ここに「スクリプトの閉じタグ」をそのまま書くと、HTMLがそこでスクリプトの終わりと
+         // 読み違え、ブロックが割れてアプリ全体が動かなくなる（v0.47.49 で一度起きた）。iframe で確かめる。
+         var _s = window._newsSafe('<b>太</b><br><img src=x onerror=1><iframe src=x></iframe>');
+         (_s.indexOf('<b>') !== -1 && _s.indexOf('<br>') !== -1 && _s.indexOf('<img') === -1 && _s.indexOf('<iframe') === -1)
+           ? ok('ST-352·②: 太字と改行だけ通し、それ以外のタグは文字として出す')
+           : ng('ST-352·②: 無害化が違う', _s.slice(0, 60));
+         // ③ 合わせ方：同じ版はアプリの方を使う。表だけの古い版も出る。新しい順。
+         var _keep = window._newsArchive;
+         try {
+           var _top = (_NEWS_DATA || [])[0];
+           window._newsArchive = [
+             { ver: _top.ver, date: _top.date, items: [{ t: '表の古い文' }], _fromDb: true },
+             { ver: 'v0.1.1', date: '2020-01-01', items: [{ t: '表だけにある版' }], _fromDb: true }
+           ];
+           var _m = window._newsMergedList();
+           var _mTop = _m.filter(function(n) { return n.ver === _top.ver; })[0];
+           (_mTop && !_mTop._fromDb && _m[_m.length - 1].ver === 'v0.1.1' && _m[0].ver === _top.ver)
+             ? ok('ST-352·③: 同じ版はアプリを優先し、表だけの古い版も新しい順の最後に出る')
+             : ng('ST-352·③: 合わせ方が違う', '');
+         } finally {
+           window._newsArchive = _keep;
+         }
+         // ④ 書き足しの条件：テスト中は書かない
+         window._syncNewsToCloud().then(function(r) {
+           (r && r.skipped === 'testing')
+             ? ok('ST-352·④: テスト中は表へ書かない')
+             : ng('ST-352·④: テスト中に書こうとした', JSON.stringify(r));
+         });
+       }
+     } catch(e) {
+       ng('ST-352: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
