@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.51 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.52 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.51';
+    const APP_VERSION = 'v0.47.52';
   const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11352,6 +11352,107 @@ function _showInviteWelcome() {
     }
     window.getMoonPhaseOnDate = getMoonPhaseOnDate;
 
+    // ===== 雑節（ざっせつ） v0.47.52 =====
+    // 【権威】2026-09-21、新月・満月に続き、雑節も暦に入れたい、との要望。選日（一粒万倍日など）は
+    // 占いと間違われるので入れない、との指示。
+    // 決め方は国立天文台の暦要項に合わせる。
+    //   節分＝立春の前日　彼岸＝春分・秋分を中日とする7日間（入りは3日前）
+    //   八十八夜＝立春から数えて88日目　二百十日・二百二十日＝同じく210日目・220日目
+    //   入梅＝太陽黄経80度　半夏生＝100度
+    //   土用の入り＝297・27・117・207度（立春・立夏・立秋・立冬の前日まで）
+    //   土用の丑の日＝土用の間の丑の日　社日＝春分・秋分に最も近い戊（つちのえ）の日
+    // 社日は、前後の戊が同じだけ離れているとき（春分・秋分が癸の日）は前の戊とする。
+    // 二十四節気の計算（calcNijushiSekkiJulianDate）の上に作る。
+
+    // ユリウス通日（その日の正午）。干支を出すのに使う。
+    function _jdnFromYMD(y, m, d) {
+      var a = Math.floor((14 - m) / 12), yy = y + 4800 - a, mm = m + 12 * a - 3;
+      return d + Math.floor((153 * mm + 2) / 5) + 365 * yy + Math.floor(yy / 4) -
+             Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
+    }
+    // その日の干支の番号（0＝甲子 … 59＝癸亥）。2000年1月1日は戊午（54）。
+    function _dayKanshiIndex(y, m, d) { return ((_jdnFromYMD(y, m, d) + 49) % 60 + 60) % 60; }
+    window._dayKanshiIndex = _dayKanshiIndex;
+
+    function _p2z(v) { return String(v).padStart(2, '0'); }
+    function _ymdAdd(ds, days) {
+      var p = ds.split('-').map(Number);
+      var t = new Date(Date.UTC(p[0], p[1] - 1, p[2]) + days * 86400000);
+      return t.getUTCFullYear() + '-' + _p2z(t.getUTCMonth() + 1) + '-' + _p2z(t.getUTCDate());
+    }
+    // その年（日本時間）に太陽黄経が lon になる日。前後の年も探して、その年のものを選ぶ。
+    // 二十四節気の関数は、1〜3月の節気を翌年のものとして返すことがあるため。
+    function _solarTermInYear(year, lon) {
+      if (typeof calcNijushiSekkiJulianDate !== 'function') return null;
+      for (var dy = -1; dy <= 1; dy++) {
+        var jd = calcNijushiSekkiJulianDate(year + dy, lon);
+        if (!jd) continue;
+        var t = new Date(Math.round(((jd - 2440587.5) * 86400000 + 9 * 3600000) / 60000) * 60000);
+        if (t.getUTCFullYear() !== year) continue;
+        return { date: t.getUTCFullYear() + '-' + _p2z(t.getUTCMonth() + 1) + '-' + _p2z(t.getUTCDate()),
+                 time: _p2z(t.getUTCHours()) + ':' + _p2z(t.getUTCMinutes()) };
+      }
+      return null;
+    }
+    window._solarTermInYear = _solarTermInYear;
+
+    var _zassetsuCache = {};
+    function getZassetsuForYear(year) {
+      if (_zassetsuCache[year]) return _zassetsuCache[year];
+      var map = {};
+      var add = function(ds, name) { if (!ds) return; (map[ds] = map[ds] || []).push(name); };
+      try {
+        var risshun = _solarTermInYear(year, 315);
+        var shunbun = _solarTermInYear(year, 0);
+        var shubun  = _solarTermInYear(year, 180);
+        if (risshun) {
+          add(_ymdAdd(risshun.date, -1), '節分');
+          add(_ymdAdd(risshun.date, 87), '八十八夜');
+          add(_ymdAdd(risshun.date, 209), '二百十日');
+          add(_ymdAdd(risshun.date, 219), '二百二十日');
+        }
+        [[shunbun, '春'], [shubun, '秋']].forEach(function(x) {
+          var s = x[0]; if (!s) return;
+          add(_ymdAdd(s.date, -3), x[1] + 'の彼岸入り');
+          add(s.date, x[1] + 'の彼岸の中日');
+          add(_ymdAdd(s.date, 3), x[1] + 'の彼岸明け');
+          // 社日：最も近い戊（stem 4）の日。同じだけ離れていたら前の戊。
+          var p = s.date.split('-').map(Number);
+          var stem = _dayKanshiIndex(p[0], p[1], p[2]) % 10;
+          var back = (stem - 4 + 10) % 10, fwd = (4 - stem + 10) % 10;
+          add(_ymdAdd(s.date, back <= fwd ? -back : fwd), x[1] + '社日');
+        });
+        var nyubai = _solarTermInYear(year, 80);   if (nyubai) add(nyubai.date, '入梅');
+        var hange  = _solarTermInYear(year, 100);  if (hange)  add(hange.date, '半夏生');
+        // 土用：入りから、次の立春・立夏・立秋・立冬の前日まで。その間の丑の日も出す。
+        [[297, 315, '冬'], [27, 45, '春'], [117, 135, '夏'], [207, 225, '秋']].forEach(function(x) {
+          var st = _solarTermInYear(year, x[0]);
+          if (!st) return;
+          add(st.date, x[2] + 'の土用入り');
+          var endTerm = _solarTermInYear(year, x[1]);
+          if (!endTerm || endTerm.date <= st.date) endTerm = _solarTermInYear(year + 1, x[1]);
+          if (!endTerm) return;
+          var cur = st.date, guard = 0;
+          while (cur < endTerm.date && guard++ < 25) {
+            var q = cur.split('-').map(Number);
+            if (_dayKanshiIndex(q[0], q[1], q[2]) % 12 === 1) add(cur, x[2] + 'の土用の丑の日');
+            cur = _ymdAdd(cur, 1);
+          }
+        });
+      } catch (e) { console.warn('[雑節] 計算できませんでした:', e && e.message); }
+      _zassetsuCache[year] = map;
+      return map;
+    }
+    window.getZassetsuForYear = getZassetsuForYear;
+
+    // その日（'YYYY-MM-DD'）の雑節の名前の一覧。無ければ空の配列。
+    function getZassetsuOnDate(ds) {
+      if (!ds || ds.length < 10) return [];
+      var y = Number(ds.slice(0, 4));
+      return (getZassetsuForYear(y)[ds] || []).slice();
+    }
+    window.getZassetsuOnDate = getZassetsuOnDate;
+
     // いまの傾き。呼ぶ側が毎回、位置の有無や失敗の扱いを書かなくて済むようにする。
     // 計算できなければ0を返す（＝これまでどおり真横で描く。第2条：無くても落ちない）。
     // v0.47.48: 月が見えている時刻の向きを返すようにした。
@@ -16299,6 +16400,22 @@ function myDeckApply(idx) {
           holidayDiv.textContent = holiday;
           holidayDiv.title = holiday;
           dayRow.appendChild(holidayDiv);
+        }
+        // v0.47.52: 雑節（土用の丑の日・彼岸入りなど）も、祝日と同じく日付の右に小さく添える。
+        // 年に数回しかない大事な日なので、予定が多いと消える暦の欄（節気・候）には入れない。
+        // 祝日と重なる日は、祝日を先に出す。暦を隠しているときは出さない。
+        if (!isOtherMonth && isKoyomiVisible() && typeof getZassetsuOnDate === 'function') {
+          var _zs = getZassetsuOnDate(dateStr);
+          if (_zs.length) {
+            var _zsDiv = document.createElement('div');
+            _zsDiv.className = 'monthly-holiday-name monthly-zassetsu-name';
+            _zsDiv.style.color = '#7a5a1e';
+            _zsDiv.style.background = 'rgba(184,134,11,0.10)';
+            // 「秋の彼岸入り」は「彼岸入り」と短く出す（季節は月で分かる）。全文は押したときに出る。
+            _zsDiv.textContent = _zs.map(function(n) { return n.replace(/^[春夏秋冬]の?/, ''); }).join('・');
+            _zsDiv.title = _zs.join('・');
+            dayRow.appendChild(_zsDiv);
+          }
         }
         head.appendChild(dayRow);
         // v0.45.1631: 月齢は日付の一行下。日付が2桁でも桁が切れない。
@@ -23573,6 +23690,14 @@ function openMonthlySidebar(dateStr) {
                     '<span class="msk-moon">' + _ph2.time + '</span></div>');
                 }
               } catch (ePh) {}
+              // v0.47.52: 雑節は全文で出す（マスでは「彼岸入り」などと短くしている）。
+              try {
+                var _zsList = (typeof getZassetsuOnDate === 'function') ? getZassetsuOnDate(_dsKey) : [];
+                if (_zsList.length) {
+                  _rows.push('<div class="msk-line"><span class="msk-key">🌾 雑節</span>' +
+                    '<span class="msk-moon">' + _zsList.join('・') + '</span></div>');
+                }
+              } catch (eZs) {}
             }
           }
         } catch(e) {}
@@ -48545,6 +48670,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.52', date: '2026-09-21',
+    items: [
+      { icon:'🌾', t:'雑節が暦に入りました',
+        before:'土用の丑の日やお彼岸がいつなのかは、暦に出ていませんでした',
+        after:'節分・彼岸（入り・中日・明け）・社日・八十八夜・入梅・半夏生・土用（入りと丑の日）・二百十日・二百二十日が、月間カレンダーの日付の横に出ます。国立天文台の暦と同じ決め方です' }
+    ]
+  },
+  {
     ver: 'v0.47.51', date: '2026-09-21',
     items: [
       { icon:'🌕', t:'新月・上弦・満月・下弦が暦に入りました',
@@ -67667,6 +67800,52 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-354: 例外', e.message);
+     }
+
+     // ===== ST-355: 雑節（v0.47.52〜） =====
+     // 背景：雑節が暦に無かった。決め方は国立天文台の暦要項に合わせた。
+     // 国立天文台の2003年・2026年の値と、広く知られた土用の丑の日（2025年夏）で確かめる。
+     try {
+       if (typeof window.getZassetsuForYear !== 'function' || typeof window._dayKanshiIndex !== 'function') {
+         ng('ST-355: 雑節の計算が見つからない', '');
+       } else {
+         var _zRef = {
+           2003: [['冬の土用入り','01-17'],['節分','02-03'],['春の彼岸入り','03-18'],['八十八夜','05-02'],
+                  ['入梅','06-11'],['半夏生','07-02'],['夏の土用入り','07-20'],['二百十日','09-01'],
+                  ['秋の彼岸入り','09-20'],['秋の土用入り','10-21']],
+           2026: [['冬の土用入り','01-17'],['節分','02-03'],['春の彼岸入り','03-17'],['春の土用入り','04-17'],
+                  ['八十八夜','05-02'],['入梅','06-11'],['半夏生','07-02'],['夏の土用入り','07-20'],
+                  ['二百十日','09-01'],['秋の彼岸入り','09-20'],['秋の土用入り','10-20']]
+         };
+         var _zBad = [], _zN = 0;
+         Object.keys(_zRef).forEach(function(y) {
+           var m = window.getZassetsuForYear(Number(y));
+           _zRef[y].forEach(function(r) {
+             _zN++;
+             if (!((m[y + '-' + r[1]] || []).indexOf(r[0]) !== -1)) _zBad.push(y + ' ' + r[0] + '（正 ' + r[1] + '）');
+           });
+         });
+         _zBad.length === 0
+           ? ok('ST-355·①: 国立天文台の雑節と、日付がすべて一致（' + _zN + '件）')
+           : ng('ST-355·①: 雑節がずれている', _zBad.join(' / '));
+         // 土用の丑の日：2025年夏は7月19日と31日（丑の日が2回ある年）
+         var _m25 = window.getZassetsuForYear(2025);
+         var _ushi = Object.keys(_m25).filter(function(k) { return _m25[k].indexOf('夏の土用の丑の日') !== -1; }).sort();
+         (_ushi.join(',') === '2025-07-19,2025-07-31')
+           ? ok('ST-355·②: 土用の丑の日が正しい（2025年夏は7/19と7/31の2回）')
+           : ng('ST-355·②: 土用の丑の日が違う', _ushi.join(','));
+         // 干支：2000年1月1日は戊午（54）
+         (window._dayKanshiIndex(2000, 1, 1) === 54)
+           ? ok('ST-355·③: 日の干支の数え方が正しい（2000/1/1＝戊午）')
+           : ng('ST-355·③: 干支がずれている', String(window._dayKanshiIndex(2000, 1, 1)));
+         // 選日（一粒万倍日など）は入れない決まり（占いと間違われるため）
+         var _zAll = JSON.stringify(window.getZassetsuForYear(2026));
+         (_zAll.indexOf('一粒万倍') === -1 && _zAll.indexOf('天赦') === -1)
+           ? ok('ST-355·④: 選日（一粒万倍日など）は入れていない')
+           : ng('ST-355·④: 選日が混ざっている', '');
+       }
+     } catch(e) {
+       ng('ST-355: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
