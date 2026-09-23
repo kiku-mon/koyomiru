@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.59 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.60 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.59';
+    const APP_VERSION = 'v0.47.60';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12871,12 +12871,39 @@ function _renderMonthlyBands(calendar, bandInfo, rowH, weeks) {
     } catch (err) { console.warn('[月間] 帯の層からの日付特定に失敗:', err && err.message); }
   });
 
-  // v0.47.59: 【権威】2026-09-23、v0.47.57で0pxぴったりに合わせたのに、
-  // 「まだ1mm切れている」との報告が続いた。手元の検証環境（Chromiumベース）では
-  // 0px・めり込みなしと出るが、実機（iPhone・Safari）の端数の丸め方の違いは
-  // ここでは確かめられない。ぴったり0pxという際どい合わせ方をやめ、
-  // 動作環境が変わっても必ず隙間が残るよう、2pxの余裕を足す。
-  var TOP_OFFSET = MONTHLY_CELL_PAD + MONTHLY_HEAD_H + 2;
+  // v0.47.60: 【権威】2026-09-23、v0.47.59で2pxの余裕を足したのに、
+  // 実機（iPhone・Safari）ではまだ食い込んで見える、との報告が続いた。
+  // 手元の検証環境（Chromium）では毎回0px・問題なしと出るため、Safari側の
+  // 端数の丸め方の違いをここで正確に再現できず、数値のあてずっぽうの調整では
+  // いたちごっこになる。
+  //
+  // 根本の作りを変える。「日付の行＋月齢の行はだいたいこの高さのはず」という
+  // 決め打ちの定数（MONTHLY_CELL_PAD・MONTHLY_HEAD_H）を頼るのをやめ、
+  // 実際に描き終わったセルから、その場で本当の高さを測って使う。
+  // 見出し行の高さ（_hdrH）も、同じ考え方で既にoffsetHeightから実測している
+  // （12833行）。それと同じやり方を、日付+月齢の行にも広げる。
+  // これなら、どの端末・どのブラウザで開いても、帯は必ず「実際に描かれた
+  // 月の記号の、その環境での本当の下端」から始まる。数値のズレという
+  // 種類の不具合が、原理からして起こらなくなる。
+  var _measCell = calendar.querySelector('.monthly-day-cell:not(.other-month)') ||
+                  calendar.querySelector('.monthly-day-cell');
+  var _measDay = _measCell ? _measCell.querySelector('.monthly-day-row') : null;
+  var _measMoon = _measCell ? _measCell.querySelector('.monthly-moon-row') : null;
+  var TOP_OFFSET;
+  if (_measCell && _measDay) {
+    var _cellTop = _measCell.getBoundingClientRect().top;
+    var _headBottom = (_measMoon || _measDay).getBoundingClientRect().bottom;
+    // 実測した「セルの上端」から「日付＋月齢の行の下端」までの、その場の本当の距離。
+    // 2px の余白は残す（帯の角丸や影が、ぴったりだと窮屈に見えるため）。
+    TOP_OFFSET = Math.round(_headBottom - _cellTop) + 2;
+    // 実測が明らかにおかしい値（0以下・極端に大きい）のときだけ、
+    // 定数の計算に逃がす（測る対象が無い・非表示のときの保険）。
+    if (!(TOP_OFFSET > MONTHLY_CELL_PAD && TOP_OFFSET < 80)) {
+      TOP_OFFSET = MONTHLY_CELL_PAD + MONTHLY_HEAD_H + 2;
+    }
+  } else {
+    TOP_OFFSET = MONTHLY_CELL_PAD + MONTHLY_HEAD_H + 2;
+  }
 
   segs.forEach(function(seg) {
     var t = seg.task;
@@ -48822,6 +48849,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.60', date: '2026-09-23',
+    items: [
+      { icon:'📏', t:'月間の帯の位置を、数値の決め打ちから実測方式に変えました',
+        before:'帯と月のマークの隙間を、数値で「だいたいこのくらい」と決めていたため、機種による描画の違いに追従できず、直したはずが実機ではまだ欠けて見えることがありました',
+        after:'その場で実際に描かれた高さを測ってから、帯の位置を決めるようにしました。機種による違いがあっても自動で合わせます' }
+    ]
+  },
+  {
     ver: 'v0.47.59', date: '2026-09-23',
     items: [
       { icon:'🌙', t:'月間の帯と月のマークのあいだに、はっきり隙間を空けました',
@@ -68216,15 +68251,21 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e2) {}
      }
 
-     // ===== ST-359: 複数日の帯が月齢の記号を隠さない（v0.47.57〜、v0.47.59で余裕2pxに） =====
-     // 背景：帯が月齢の記号の下側に食い込んで欠けて見える、との報告。
-     // v0.47.57で0pxぴったりに合わせたが、それでも「まだ切れている」との報告が続いた。
-     // 手元の検証環境では0pxで問題ないが、実機（iPhone・Safari）の端数の丸め方の違いは
-     // ここでは確かめられない。際どい0pxをやめ、必ず2px以上の隙間が残るようにした。
-     // 実際に複数日の予定を1件作り、月齢の行の下端と帯の上端を測って確かめる。
-     // 作った予定は必ず消す（第66条）。保存は止める（第37条）。
+     // ===== ST-359: 複数日の帯が月齢の記号を隠さない・実測して追従する（v0.47.57〜、v0.47.60で実測方式に） =====
+     // 背景：帯が月齢の記号の下側に食い込んで欠けて見える、との報告が3版続いた。
+     //   v0.47.57：0pxぴったりに合わせた → まだ切れると報告
+     //   v0.47.59：2pxの余裕を足した → それでも切れると報告
+     // 手元の検証環境（Chromium）ではどちらも問題なしと出るが、実機（iPhone・Safari）の
+     // 端数の丸め方の違いをここでは確かめられず、数値の当てずっぽうがいたちごっこになっていた。
+     // v0.47.60で、決め打ちの定数に頼るのをやめ、実際に描き終わったセルから
+     // その場で本当の高さを測って使う方式に変えた（見出し行の高さを実測している
+     // 12833行の _hdrH と同じ考え方）。どんな環境で描かれても自動で追従するはずである。
+     // ① 普段どおりの高さで、狙いの2pxになること。
+     // ② 月齢の行の高さをわざと13→20pxに変えても、2pxのまま追従すること
+     //    （追従していなければ、定数だけに頼る古いやり方に戻ってしまっている証拠になる）。
      var _st359backup = JSON.parse(JSON.stringify(allTasks));
      var _st359save = window.saveAllTasks;
+     var _st359styleEl = null;
      try {
        if (typeof renderMonthlyView !== 'function' || typeof currentMonthDate === 'undefined') {
          ng('ST-359: 月間の描画が見つからない', '');
@@ -68236,29 +68277,39 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st359t = createTask({ text: 'ST359帯', date: '2026-09-07', endDate: '2026-09-13',
                                      section: 1, displayScope: 'both' });
          renderMonthlyView();
-         var _st359cell = document.querySelector('[data-date="2026-09-07"]');
-         var _st359moon = _st359cell && _st359cell.querySelector('.monthly-moon-row');
-         var _st359band = document.querySelector('#monthlyBandLayer > div');
-         if (!_st359moon || !_st359band) {
+         var _st359measure = function() {
+           var cell = document.querySelector('[data-date="2026-09-07"]');
+           var moon = cell && cell.querySelector('.monthly-moon-row');
+           var band = document.querySelector('#monthlyBandLayer > div');
+           if (!moon || !band) return null;
+           return Math.round((band.getBoundingClientRect().top - moon.getBoundingClientRect().bottom) * 100) / 100;
+         };
+         var _gap = _st359measure();
+         if (_gap === null) {
            ng('ST-359: 月齢の行か帯が見つからない', '');
          } else {
-           var _mb = _st359moon.getBoundingClientRect().bottom;
-           var _bt = _st359band.getBoundingClientRect().top;
-           var _gap = Math.round((_bt - _mb) * 100) / 100;
-           // 2px を狙って足したので、±0.5px（描画の丸め誤差）まで許して確かめる。
            (_gap >= 1.5 && _gap <= 2.5)
              ? ok('ST-359·①: 帯と月齢のあいだに、狙いどおり2pxの余裕がある（' + _gap + 'px）')
              : ng('ST-359·①: 余裕の大きさが狙いと違う', _gap + 'px（狙いは2px）');
-           (_gap < 4)
-             ? ok('ST-359·②: 余裕を持たせすぎて間延びしてもいない（' + _gap + 'px）')
-             : ng('ST-359·②: 帯と月齢のあいだが開きすぎている', _gap + 'px');
          }
+         // v0.47.60: 月齢の行を強制的に13→20pxへ広げ、実測して追従するかを確かめる。
+         _st359styleEl = document.createElement('style');
+         _st359styleEl.textContent = '.monthly-moon-row{ height:20px !important; }';
+         document.head.appendChild(_st359styleEl);
+         renderMonthlyView();
+         var _gap2 = _st359measure();
+         document.head.removeChild(_st359styleEl);
+         _st359styleEl = null;
+         (_gap2 !== null && _gap2 >= 1.5 && _gap2 <= 2.5)
+           ? ok('ST-359·②: 行の高さが変わっても、実測して2pxの余裕に追従する（' + _gap2 + 'px）')
+           : ng('ST-359·②: 決め打ちの定数に戻ってしまっている（追従しない）', _gap2 + 'px');
          allTasks = allTasks.filter(function(t) { return t.id !== _st359t.id; });
          if (_st359was) currentMonthDate = _st359was;
        }
      } catch(e) {
        ng('ST-359: 例外', e.message);
      } finally {
+       if (_st359styleEl && _st359styleEl.parentNode) _st359styleEl.parentNode.removeChild(_st359styleEl);
        allTasks = _st359backup;
        window.saveAllTasks = _st359save;
        try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e2) {}
