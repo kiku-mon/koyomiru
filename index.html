@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.56 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.57 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.56';
+    const APP_VERSION = 'v0.47.57';
   const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12698,9 +12698,14 @@ window.packBandLanes = packBandLanes;
 var MONTHLY_CELL_PAD = 5;    // 升目の上の余白
 // v0.45.1631: 【権威】2026-08-19、月齢を日付の右に置くと桁が増えたとき切れる、
 // 一行下にしてはどうか、との提案。横で取り合うのをやめれば、字を小さくせずに済む。
-// 頭を「日付の行18px＋月齢の行10px」の2行にする。
-var MONTHLY_HEAD_H   = 28;   // 日付の行（日付・祝日名）＋月齢の行
-var MONTHLY_MOON_H   = 10;   // v0.45.2034: そのうち月齢の行のぶん。暦を消したときに引く
+// 頭を「日付の行18px＋月齢の行13px」の2行にする。
+// v0.47.57: 【権威】2026-09-23、複数日の予定の帯が、月齢の記号に0.1mmほど
+// かぶって下側が欠けて見える、との報告。実測すると、月齢の行は v0.45.1849 で
+// 9px→13pxに広げられていたが、ここの数字（28・10）はそのとき直されておらず、
+// 帯は「まだ月齢の行が10pxのつもり」の高さから始まっていた（実測で3px食い込み）。
+// CSS（.monthly-day-row 18px・.monthly-moon-row 13px）と同じ値に合わせる。
+var MONTHLY_HEAD_H   = 31;   // 日付の行（日付・祝日名）＋月齢の行
+var MONTHLY_MOON_H   = 13;   // v0.47.57: そのうち月齢の行のぶん。暦を消したときに引く
 var MONTHLY_BAND_H   = 16;   // 帯1本
 var MONTHLY_LANE_H   = 17;   // 帯1段ぶん（帯16px＋隙間1px）
 var MONTHLY_ITEM_H   = 19;   // 予定カード1件
@@ -16602,10 +16607,10 @@ function myDeckApply(idx) {
         // v0.45.2034: 【権威】2026-09-04、暦を消したのに予定が増えず、
         // 升目が空いたままになる、との報告。12日は「+19件」が「+20件」に増えていた。
         //
-        // MONTHLY_HEAD_H は「日付の行18px＋月齢の行10px」の固定値だった。
-        // 月齢を消しても28のまま数えるので、空いた10pxは誰にも渡らない。
+        // MONTHLY_HEAD_H は「日付の行18px＋月齢の行13px」の固定値（v0.47.57で修正）。
+        // 月齢を消しても31のまま数えるので、空いた13pxは誰にも渡らない。
         // 消したのに狭いままでは、消す意味がない。
-        // 月齢を出していないときは、その10pxを予定に回す。
+        // 月齢を出していないときは、その13pxを予定に回す。
         var _headH = MONTHLY_HEAD_H - ((typeof isKoyomiVisible === 'function' && !isKoyomiVisible()) ? MONTHLY_MOON_H : 0);
         var _usedTop = MONTHLY_CELL_PAD + _headH + (_lanes * MONTHLY_LANE_H);
         var _itemH = MONTHLY_ITEM_H;
@@ -48812,6 +48817,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.57', date: '2026-09-23',
+    items: [
+      { icon:'🌙', t:'月間の帯が、月のマークにわずかに食い込んでいたのを直しました',
+        before:'複数日にまたがる予定の帯が、月齢の記号の下側にほんの少し（3px）かぶり、欠けて見えていました',
+        after:'月齢の行の下ぴったりから帯が始まるようにしました。月の記号が欠けずに見えます' }
+    ]
+  },
+  {
     ver: 'v0.47.56', date: '2026-09-23',
     items: [
       { icon:'📅', t:'ダッシュボードに「今日の暦」を追加しました',
@@ -68179,6 +68192,52 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-358: 例外', e.message);
      } finally {
+       try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e2) {}
+     }
+
+     // ===== ST-359: 複数日の帯が月齢の記号を隠さない（v0.47.57〜） =====
+     // 背景：帯が月齢の記号の下側に0.1mmほど食い込んで欠けて見える、との報告。
+     // 実測すると、月齢の行は v0.45.1849 で9px→13pxに広がっていたが、帯の位置を決める
+     // 定数（MONTHLY_HEAD_H・MONTHLY_MOON_H）はそのとき直っておらず、3px食い込んでいた。
+     // 実際に複数日の予定を1件作り、月齢の行の下端と帯の上端を測って確かめる。
+     // 作った予定は必ず消す（第66条）。保存は止める（第37条）。
+     var _st359backup = JSON.parse(JSON.stringify(allTasks));
+     var _st359save = window.saveAllTasks;
+     try {
+       if (typeof renderMonthlyView !== 'function' || typeof currentMonthDate === 'undefined') {
+         ng('ST-359: 月間の描画が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         var _st359was = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
+         switchView('monthly');
+         currentMonthDate = new Date(2026, 8, 1);
+         var _st359t = createTask({ text: 'ST359帯', date: '2026-09-07', endDate: '2026-09-13',
+                                     section: 1, displayScope: 'both' });
+         renderMonthlyView();
+         var _st359cell = document.querySelector('[data-date="2026-09-07"]');
+         var _st359moon = _st359cell && _st359cell.querySelector('.monthly-moon-row');
+         var _st359band = document.querySelector('#monthlyBandLayer > div');
+         if (!_st359moon || !_st359band) {
+           ng('ST-359: 月齢の行か帯が見つからない', '');
+         } else {
+           var _mb = _st359moon.getBoundingClientRect().bottom;
+           var _bt = _st359band.getBoundingClientRect().top;
+           var _gap = Math.round((_bt - _mb) * 100) / 100;
+           (_gap >= 0)
+             ? ok('ST-359·①: 帯は月齢の記号にかからず、下に隙間なく続く（隙間' + _gap + 'px）')
+             : ng('ST-359·①: 帯が月齢に食い込んでいる', Math.abs(_gap) + 'px 食い込み');
+           (_gap < 3)
+             ? ok('ST-359·②: 隙間が広がりすぎてもいない（詰まって見える・' + _gap + 'px）')
+             : ng('ST-359·②: 帯と月齢のあいだが開きすぎている', _gap + 'px');
+         }
+         allTasks = allTasks.filter(function(t) { return t.id !== _st359t.id; });
+         if (_st359was) currentMonthDate = _st359was;
+       }
+     } catch(e) {
+       ng('ST-359: 例外', e.message);
+     } finally {
+       allTasks = _st359backup;
+       window.saveAllTasks = _st359save;
        try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e2) {}
      }
 
