@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.55 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.56 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.55';
+    const APP_VERSION = 'v0.47.56';
   const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8563,6 +8563,25 @@ function _showInviteWelcome() {
   <div style="max-width:520px;margin:0 auto;padding:16px 14px 48px;">
 
 
+    <!-- v0.47.56: 【権威】2026-09-23、暦の情報がダッシュボードの上のほうに
+         集まっておらず、月齢カードだけが目立つ位置にある、との指摘。
+         「これさえ見れば今日の暦はだいたい分かる」場所を、一番上に作る。
+         下にある既存の月齢・天象・候のカード（詳しく見たい人向け）は動かさず、壊さない。
+         六曜・朔弦望（次の新月/上弦/満月/下弦）・直近の雑節は、これまで
+         ダッシュボードに出ていなかった（六曜と雑節は月間のマスにしかなかった）。 -->
+    <div id="dbKoyomiSummaryCard" style="display:none;margin-bottom:14px;background:#fff;border:1px solid #e8e4dc;border-radius:14px;padding:16px 16px 14px;">
+      <div style="font-size:0.66em;letter-spacing:0.15em;color:#a9a294;margin-bottom:10px;">📅 今日の暦</div>
+      <div id="dbKoySekkiLine" style="font-size:1.0em;font-weight:700;color:#3a352c;margin-bottom:4px;"></div>
+      <div id="dbKoySubLine" style="font-size:0.78em;color:#8b7355;margin-bottom:10px;"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:0.78em;color:#5a5345;border-top:1px solid #f0ece4;padding-top:10px;">
+        <div>🌙 <span id="dbKoyMoonAge">--</span></div>
+        <div>◆ <span id="dbKoyRokuyo">--</span></div>
+        <div id="dbKoyPhaseNextWrap">🌗 <span id="dbKoyPhaseNext">--</span></div>
+        <div id="dbKoyZassetsuWrap" style="display:none;">🌾 <span id="dbKoyZassetsu">--</span></div>
+        <div>🌅 <span id="dbKoySunrise">--</span> ・ 🌇 <span id="dbKoySunset">--</span></div>
+      </div>
+    </div>
+
     <!-- v0.45.1731: 一生の暦。設定でオンにした人にだけ出す。
          既定で出さないのは、体調を崩している人や身近な人を亡くしたばかりの人には
          残酷に映るため。「あと何日」だけでなく「これまで何日」も必ず並べ、
@@ -16431,6 +16450,14 @@ function myDeckApply(idx) {
           if (_zs.length) {
             var _zsDiv = document.createElement('div');
             _zsDiv.className = 'monthly-holiday-name monthly-zassetsu-name';
+            // v0.47.56: 【権威】2026-09-23、月間のマスに載っているはずなのに見えない、との指摘。
+            // 調べると .monthly-holiday-name には、狭い画面でさらに縮む決まり（0.55em）があり、
+            // 雑節もそれを継承して実機で9.6pxまで潰れていた（実測）。祝日と共有していたクラスの
+            // font-size を、ここだけ直接指定して上書きする（インラインはクラスの規則より必ず勝つ）。
+            _zsDiv.style.fontSize = '11px';
+            _zsDiv.style.fontWeight = '700';
+            _zsDiv.style.borderRadius = '3px';
+            _zsDiv.style.padding = '0 2px';
             _zsDiv.style.color = '#7a5a1e';
             _zsDiv.style.background = 'rgba(184,134,11,0.10)';
             // 「秋の彼岸入り」は「彼岸入り」と短く出す（季節は月で分かる）。全文は押したときに出る。
@@ -38054,6 +38081,57 @@ function renderDashboardView() {
         tr.innerHTML = '<td style="padding:3px 4px;color:'+(m===_moDb?'#a78bfa':'#ccc')+'">'+(m===_moDb?'▶ ':'')+n+'</td><td style="padding:3px 4px;text-align:center;">'+_fmt(_d15dawn)+'</td><td style="padding:3px 4px;text-align:center;">'+_fmt(_sd15db.rise)+'</td><td style="padding:3px 4px;text-align:center;">'+_fmt(_sd15db.set)+'</td><td style="padding:3px 4px;text-align:center;">'+_fmt(_sd15db.dusk)+'</td>';
       });
     }
+
+    // v0.47.56: 「今日の暦」の要約。_now・_age・_getSunDataの結果は、この関数の中で
+    // 既に求めてある（すぐ上の天象カードの計算）ので、そのまま使い回す（第4条・二重計算をしない）。
+    try {
+      var _koyCard = document.getElementById('dbKoyomiSummaryCard');
+      if (_koyCard && typeof getCurrentShichijuniKou === 'function') {
+        _koyCard.style.display = 'block';
+        var _koyKou = getCurrentShichijuniKou(_now);
+        var _koyLine = document.getElementById('dbKoySekkiLine');
+        var _koySub  = document.getElementById('dbKoySubLine');
+        if (_koyKou && _koyLine) {
+          _koyLine.textContent = _koyKou.icon + ' ' + _koyKou.sekkiName + '（' + _koyKou.name + '）';
+          if (_koySub) _koySub.textContent = _koyKou.desc || '';
+        }
+        _set2('dbKoyMoonAge', '月齢 ' + _age.toFixed(1));
+        _set2('dbKoyRokuyo', (typeof getRokuyo === 'function' && getRokuyo(_now)) || '--');
+        _set2('dbKoySunrise', _fmt(_rise));
+        _set2('dbKoySunset', _fmt(_set));
+        // 次の朔弦望（今日を含む、これから来るもの）
+        var _koyNextWrap = document.getElementById('dbKoyPhaseNextWrap');
+        if (typeof getMoonPhaseEvents === 'function') {
+          var _koyEv = getMoonPhaseEvents(_now.getFullYear())
+            .concat(getMoonPhaseEvents(_now.getFullYear() + 1))
+            .filter(function(e) { return e.ms >= _now.getTime(); })
+            .sort(function(a, b) { return a.ms - b.ms; })[0];
+          if (_koyEv && _koyNextWrap) {
+            var _koyMd = _koyEv.date.slice(5).replace('-', '/');
+            _set2('dbKoyPhaseNext', _koyEv.icon + _koyEv.name + ' ' + _koyMd);
+          } else if (_koyNextWrap) { _koyNextWrap.style.display = 'none'; }
+        }
+        // 直近14日以内の雑節（次の1件）。無ければ欄ごと隠す（第2条：無ければ描かない）。
+        var _koyZsWrap = document.getElementById('dbKoyZassetsuWrap');
+        if (typeof getZassetsuOnDate === 'function' && _koyZsWrap) {
+          var _koyZs = null;
+          for (var _koyI = 0; _koyI < 14 && !_koyZs; _koyI++) {
+            var _koyD = new Date(_now.getTime() + _koyI * 86400000);
+            var _koyP2 = function(v) { return String(v).padStart(2, '0'); };
+            var _koyDs = _koyD.getFullYear() + '-' + _koyP2(_koyD.getMonth() + 1) + '-' + _koyP2(_koyD.getDate());
+            var _koyList = getZassetsuOnDate(_koyDs);
+            if (_koyList.length) _koyZs = { names: _koyList, ds: _koyDs, isToday: _koyI === 0 };
+          }
+          if (_koyZs) {
+            var _koyMd2 = _koyZs.ds.slice(5).replace('-', '/');
+            _set2('dbKoyZassetsu', _koyZs.names.join('・') + (_koyZs.isToday ? '（今日）' : '（' + _koyMd2 + '）'));
+            _koyZsWrap.style.display = '';
+          } else {
+            _koyZsWrap.style.display = 'none';
+          }
+        }
+      }
+    } catch (eKoy) { console.warn('[今日の暦] 描けませんでした:', eKoy && eKoy.message); }
   })();
   var gouBarEl = document.getElementById('dbGouBar');
   if (gouBarEl) {
@@ -48733,6 +48811,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.56', date: '2026-09-23',
+    items: [
+      { icon:'📅', t:'ダッシュボードに「今日の暦」を追加しました',
+        before:'月齢は目立つ位置にありましたが、六曜・次の朔弦望・雑節はダッシュボードのどこにもありませんでした',
+        after:'一番上に「今日の暦」を置きました。節気・候・月齢・六曜・次の新月/上弦/満月/下弦・直近の雑節・日の出日の入りが、開いてすぐ見えます' },
+      { icon:'🔍', t:'月間カレンダーの雑節が見えづらかったのを直しました',
+        before:'土用の丑の日やお彼岸入りは表示されていましたが、狭い画面では9.6pxまで潰れ、実質見えませんでした',
+        after:'11px・太字に固定しました。押して開けば、これまでどおり全文も見られます' }
+    ]
+  },
   {
     ver: 'v0.47.55', date: '2026-09-23',
     items: [
@@ -68038,6 +68127,59 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _st357backup.forEach(function(c) { calendars.push(c); });
          try { if (typeof loadCalendarSettingsUI === 'function') loadCalendarSettingsUI(); } catch (e2) {}
        }
+     }
+
+     // ===== ST-358: ダッシュボードに「今日の暦」・雑節の視認性（v0.47.56〜） =====
+     // 背景：暦の情報がダッシュボードの上のほうに集まっていない、月間の雑節が
+     // 見えない、との指摘。実測すると雑節はコードには存在したが、狭い画面で
+     // 0.55emまで縮む決まりを共有していたため実機で9.6pxまで潰れていた。
+     // ① ダッシュボードを開くと、一番上の「今日の暦」に六曜・月齢・次の朔弦望・
+     //    日の出日の入りが埋まること。② 雑節の文字が11px・太字に固定されたこと、を確かめる。
+     var _st358backup = null;
+     try {
+       if (typeof switchView !== 'function' || typeof renderDashboardView !== 'function') {
+         ng('ST-358: ダッシュボードの処理が見つからない', '');
+       } else {
+         switchView('dashboard');
+         if (typeof renderDashboardView === 'function') renderDashboardView();
+         var _koyCard = document.getElementById('dbKoyomiSummaryCard');
+         var _g = function(id) { var e = document.getElementById(id); return e ? e.textContent : null; };
+         if (!_koyCard || _koyCard.style.display === 'none') {
+           ng('ST-358·①: 「今日の暦」カードが出ていない', '');
+         } else {
+           var _st358miss = [];
+           [['dbKoySekkiLine', '節気'], ['dbKoyMoonAge', '月齢'], ['dbKoyRokuyo', '六曜'],
+            ['dbKoyPhaseNext', '次の朔弦望'], ['dbKoySunrise', '日の出'], ['dbKoySunset', '日の入り']
+           ].forEach(function(p) {
+             var v = _g(p[0]);
+             if (!v || v === '--' || v === '(なし)') _st358miss.push(p[1]);
+           });
+           _st358miss.length === 0
+             ? ok('ST-358·①: 「今日の暦」に六曜・月齢・次の朔弦望・日の出日の入りが埋まる')
+             : ng('ST-358·①: 埋まっていない項目がある', _st358miss.join('・'));
+         }
+         // ② 月間の雑節の文字サイズ（実際に9/1に描いて測る）
+         _st358backup = calendars ? null : null;   // 触らない（読むだけ）
+         switchView('monthly');
+         var _st358wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
+         currentMonthDate = new Date(2026, 8, 1);
+         if (typeof renderMonthlyView === 'function') renderMonthlyView();
+         var _zsEl = document.querySelector('.monthly-zassetsu-name');
+         if (!_zsEl) {
+           ng('ST-358·②: 月間に雑節の要素が見つからない（9/1=二百十日のはず）', '');
+         } else {
+           var _fs = parseFloat(window.getComputedStyle(_zsEl).fontSize);
+           var _fw = window.getComputedStyle(_zsEl).fontWeight;
+           (_fs >= 10.5 && (_fw === '700' || _fw === 'bold'))
+             ? ok('ST-358·②: 雑節の文字は11px・太字に固定され、狭い画面でも潰れない（' + _fs + 'px）')
+             : ng('ST-358·②: 雑節の文字がまだ小さい', _fs + 'px / ' + _fw);
+         }
+         if (_st358wasMonth) currentMonthDate = _st358wasMonth;
+       }
+     } catch(e) {
+       ng('ST-358: 例外', e.message);
+     } finally {
+       try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
