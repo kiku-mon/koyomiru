@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.53 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.54 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.53';
+    const APP_VERSION = 'v0.47.54';
   const APP_LAST_UPDATED = '2026-09-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -33859,7 +33859,23 @@ async function unshareCalendar(calId) {
 }
 window.unshareCalendar = unshareCalendar;
 
-function loadCalendarSettingsUI() {
+// v0.47.54: カレンダーを1つ上下に動かす。押した回数だけ動く（D&Dの置き換え）。
+    // 後処理は旧D&Dのdropで行っていたものと同じにする（保存→この一覧の描き直し→月間・週間の絞り込みの描き直し）。
+    function moveCalendarRow(idx, dir) {
+      const j = idx + dir;
+      if (j < 0 || j >= calendars.length) return;   // 端では動かさない（ボタンも無効にしてあるが、二重の安全）
+      const moved = calendars.splice(idx, 1)[0];
+      calendars.splice(j, 0, moved);
+      saveCalendars();
+      loadCalendarSettingsUI();
+      if (typeof renderCalendarFilter === 'function') {
+        renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
+        renderCalendarFilter('weeklyCalendarFilter', renderWeeklyView);
+      }
+    }
+    window.moveCalendarRow = moveCalendarRow;
+
+    function loadCalendarSettingsUI() {
       const list = document.getElementById('calendarSettingsList');
       if (!list) return;
       // v0.45.1778: 今この端末が何件のカレンダーを持っているかを、その場で確かめられるようにする。
@@ -33885,7 +33901,6 @@ function loadCalendarSettingsUI() {
         }, 0);
       }
       list.innerHTML = '';
-      let dragSrcIdx = null;
       // メインカレンダーselectを更新
       const mainSel = document.getElementById('mainCalendarSelect');
       if (mainSel) {
@@ -33911,48 +33926,39 @@ function loadCalendarSettingsUI() {
       calendars.forEach(function(cal, idx) {
         const row = document.createElement('div');
         row.dataset.idx = idx;
-        row.draggable = true;
+        // v0.47.54: 【権威】2026-09-21、D&Dが壊れて使えない、矢印での並べ替えに変える、との指示。
+        // v0.46.89 で一度直した「他の一覧を動かした後にD&Dが効かなくなる」不具合が、また起きていた。
+        // カレンダー行だけが常時 row.draggable=true で、掴んだ時だけ有効にする他の一覧
+        // （造営・買い出し・テンプレート等）とやり方が違っていたのが火種だった可能性がある。
+        // 直すより、他で使っている確実な方式（手持ち・ナビタブと同じ、押した回数だけ動く矢印）に揃える。
         // v0.45.1582: 【権威】2026-08-06、設定のカレンダー行が横にはみ出し、
         // 名前が潰れて読めないとの報告。1行に7つの要素を横並びにしていたため、
         // スマホの幅では収まらなかった。名前と操作を上下に分ける。
         // 名前は読めることが最優先。操作は名前の下に置けば、幅を奪わない。
         row.style.cssText = 'display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid #f5f5f5;cursor:default;transition:opacity 0.15s;min-width:0;';
-        // D&Dイベント
-        row.addEventListener('dragstart', function(e) {
-          dragSrcIdx = idx;
-          setTimeout(() => row.style.opacity = '0.4', 0);
-          e.dataTransfer.effectAllowed = 'move';
-        });
-        // v0.46.89: 【権威】2026-09-15、リンクを並べ替えた後、カレンダーのD&Dが効かなくなる、との報告。
-      // 調べると、カレンダー側は dragend で dragSrcIdx を戻していなかった。
-      // 途中でやめたときや、別の一覧を動かしたときに、前の値が残る。
-      // 残った値のまま次に落とすと、意図しない場所へ動くか、何も起きない。
-      // つまみ終わったら必ず戻す。
-      row.addEventListener('dragend', function() {
-        row.style.opacity = '1';
-        dragSrcIdx = null;
-      });
-        row.addEventListener('dragover', function(e) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-          row.style.borderTop = '2px solid #4facfe';
-        });
-        row.addEventListener('dragleave', function() { row.style.borderTop = ''; });
-        row.addEventListener('drop', function(e) {
-          e.preventDefault();
-          row.style.borderTop = '';
-          if (dragSrcIdx === null || dragSrcIdx === idx) return;
-          const moved = calendars.splice(dragSrcIdx, 1)[0];
-          calendars.splice(idx, 0, moved);
-          saveCalendars();
-          loadCalendarSettingsUI();
-          renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView);
-          renderCalendarFilter('weeklyCalendarFilter', renderWeeklyView);
-        });
-        // ハンドル
-        const handle = document.createElement('div');
-        handle.textContent = '⠿';
-        handle.style.cssText = 'color:#ccc;cursor:grab;font-size:1.1em;flex-shrink:0;user-select:none;padding:0 2px;touch-action:none;';
+        // v0.47.54: 矢印での並べ替え。手持ち（moveMoneyPurse）・ナビタブと同じ考え方で、
+        // 押した回数だけ配列の中で入れ替える。先頭の↑・末尾の↓は押せなくする。
+        const moveBox = document.createElement('div');
+        moveBox.style.cssText = 'display:flex;flex-direction:column;gap:2px;flex-shrink:0;';
+        const upBtn = document.createElement('button');
+        upBtn.textContent = '↑';
+        upBtn.disabled = (idx === 0);
+        // v0.47.54: 押せる／押せないが見分けにくかった（どちらも同じ薄い灰色に見えた）。
+        // 押せるものは濃い枠・濃い字にし、押せないものだけを薄くする。
+        upBtn.style.cssText = 'width:26px;height:20px;line-height:18px;padding:0;border-radius:5px;font-size:0.85em;' +
+          (upBtn.disabled ? 'border:1px solid #eee;background:#fafafa;color:#ccc;opacity:0.6;cursor:default;'
+                          : 'border:1px solid #b8c4e0;background:#eef1fb;color:#3949ab;cursor:pointer;font-weight:700;');
+        upBtn.onclick = (function(_idx) { return function() { moveCalendarRow(_idx, -1); }; })(idx);
+        const downBtn = document.createElement('button');
+        downBtn.textContent = '↓';
+        downBtn.disabled = (idx === calendars.length - 1);
+        downBtn.style.cssText = 'width:26px;height:20px;line-height:18px;padding:0;border-radius:5px;font-size:0.85em;' +
+          (downBtn.disabled ? 'border:1px solid #eee;background:#fafafa;color:#ccc;opacity:0.6;cursor:default;'
+                             : 'border:1px solid #b8c4e0;background:#eef1fb;color:#3949ab;cursor:pointer;font-weight:700;');
+        downBtn.onclick = (function(_idx) { return function() { moveCalendarRow(_idx, 1); }; })(idx);
+        moveBox.appendChild(upBtn);
+        moveBox.appendChild(downBtn);
+        const handle = moveBox;
         // 色ピッカー
         const colorInput = document.createElement('input');
         colorInput.type = 'color';
@@ -48732,6 +48738,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.54', date: '2026-09-21',
+    items: [
+      { icon:'↕️', t:'カレンダー管理の並べ替えを、矢印に変えました',
+        before:'指でつまんで動かす並べ替えが壊れて使えなくなっていました',
+        after:'設定の「カレンダーの管理」で、それぞれのカレンダーに↑↓ボタンが付きました。押した数だけ順番が動きます' }
+    ]
+  },
   {
     ver: 'v0.47.53', date: '2026-09-21',
     items: [
@@ -67961,6 +67975,66 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-356: 例外', e.message);
+     }
+
+     // ===== ST-357: カレンダー管理は矢印で並べ替える（D&Dを廃止）（v0.47.54〜） =====
+     // 背景：D&Dが壊れて使えない、矢印方式に変えてほしい、との指示。
+     // 調べると v0.46.89 で一度直した「他の一覧を動かすとD&Dが効かなくなる」不具合が再発していた。
+     // カレンダー行だけ常時 draggable=true にしていたのが、他の一覧（掴んだ時だけdraggable）と
+     // 作り方が違う火種だった可能性がある。直すのではなく、確実な矢印方式へ置き換えた。
+     // 実際に3件を並べ替え、①D&D属性が残っていない ②押した回数だけ動く ③端では動かない、を確かめる。
+     // 触った並びは必ず元へ戻す（第66条）。
+     var _st357backup = null;
+     try {
+       if (typeof calendars === 'undefined' || typeof loadCalendarSettingsUI !== 'function' ||
+           typeof moveCalendarRow !== 'function') {
+         ng('ST-357: カレンダー管理の処理が見つからない', '');
+       } else {
+         _st357backup = calendars.slice();
+         var _st357save = window.saveCalendars;
+         window.saveCalendars = function(){};   // クラウドやlocalStorageへ書かせない（第37条）
+         calendars.length = 0;
+         calendars.push({ id: 'st357-a', name: 'ST357A', color: '#888', visible: true, shareable: false });
+         calendars.push({ id: 'st357-b', name: 'ST357B', color: '#888', visible: true, shareable: false });
+         calendars.push({ id: 'st357-c', name: 'ST357C', color: '#888', visible: true, shareable: false });
+         var _list = document.getElementById('calendarSettingsList');
+         if (!_list) {
+           ng('ST-357: 一覧の入れ物が見つからない', '');
+         } else {
+           loadCalendarSettingsUI();
+           var _dnd = _list.querySelectorAll('[draggable="true"]').length;
+           (_dnd === 0)
+             ? ok('ST-357·①: D&Dの draggable 属性が残っていない')
+             : ng('ST-357·①: D&D属性がまだ残っている', _dnd + '件');
+           // 末尾（idx2）を1つ上げる → a, c, b になるはず
+           moveCalendarRow(2, -1);
+           var _order1 = calendars.map(function(c) { return c.id; }).join(',');
+           (_order1 === 'st357-a,st357-c,st357-b')
+             ? ok('ST-357·②: ↑を押すと1つ上へ動く')
+             : ng('ST-357·②: 並びが想定と違う', _order1);
+           // 先頭（idx0=a）を上げようとしても動かない
+           moveCalendarRow(0, -1);
+           var _order2 = calendars.map(function(c) { return c.id; }).join(',');
+           (_order2 === _order1)
+             ? ok('ST-357·③: 先頭を上げようとしても動かない')
+             : ng('ST-357·③: 端で動いてしまった', _order2);
+           // 末尾（いまはidx2=b）を下げようとしても動かない
+           moveCalendarRow(2, 1);
+           var _order3 = calendars.map(function(c) { return c.id; }).join(',');
+           (_order3 === _order1)
+             ? ok('ST-357·④: 末尾を下げようとしても動かない')
+             : ng('ST-357·④: 端で動いてしまった', _order3);
+         }
+         window.saveCalendars = _st357save;
+       }
+     } catch(e) {
+       ng('ST-357: 例外', e.message);
+     } finally {
+       if (_st357backup) {
+         calendars.length = 0;
+         _st357backup.forEach(function(c) { calendars.push(c); });
+         try { if (typeof loadCalendarSettingsUI === 'function') loadCalendarSettingsUI(); } catch (e2) {}
+       }
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
