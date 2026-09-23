@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.58 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.59 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.58';
+    const APP_VERSION = 'v0.47.59';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12871,7 +12871,12 @@ function _renderMonthlyBands(calendar, bandInfo, rowH, weeks) {
     } catch (err) { console.warn('[月間] 帯の層からの日付特定に失敗:', err && err.message); }
   });
 
-  var TOP_OFFSET = MONTHLY_CELL_PAD + MONTHLY_HEAD_H;
+  // v0.47.59: 【権威】2026-09-23、v0.47.57で0pxぴったりに合わせたのに、
+  // 「まだ1mm切れている」との報告が続いた。手元の検証環境（Chromiumベース）では
+  // 0px・めり込みなしと出るが、実機（iPhone・Safari）の端数の丸め方の違いは
+  // ここでは確かめられない。ぴったり0pxという際どい合わせ方をやめ、
+  // 動作環境が変わっても必ず隙間が残るよう、2pxの余裕を足す。
+  var TOP_OFFSET = MONTHLY_CELL_PAD + MONTHLY_HEAD_H + 2;
 
   segs.forEach(function(seg) {
     var t = seg.task;
@@ -16612,7 +16617,7 @@ function myDeckApply(idx) {
         // 消したのに狭いままでは、消す意味がない。
         // 月齢を出していないときは、その13pxを予定に回す。
         var _headH = MONTHLY_HEAD_H - ((typeof isKoyomiVisible === 'function' && !isKoyomiVisible()) ? MONTHLY_MOON_H : 0);
-        var _usedTop = MONTHLY_CELL_PAD + _headH + (_lanes * MONTHLY_LANE_H);
+        var _usedTop = MONTHLY_CELL_PAD + _headH + 2 + (_lanes * MONTHLY_LANE_H);
         var _itemH = MONTHLY_ITEM_H;
         var _maxItems = Math.floor((_cellH - _usedTop) / _itemH);
         if (_maxItems < dayTasks.length) _maxItems = Math.floor((_cellH - _usedTop - MONTHLY_MORE_H) / _itemH);
@@ -48817,6 +48822,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.59', date: '2026-09-23',
+    items: [
+      { icon:'🌙', t:'月間の帯と月のマークのあいだに、はっきり隙間を空けました',
+        before:'v0.47.57で隙間を0pxぴったりに合わせましたが、それでも一部の環境でわずかに欠けて見えるとの報告がありました',
+        after:'ぴったり0pxという際どい合わせ方をやめ、必ず2px空くようにしました。環境による描画の違いがあっても欠けません' }
+    ]
+  },
+  {
     ver: 'v0.47.58', date: '2026-09-23',
     items: [
       { icon:'🛠️', t:'「最終更新」の日付がずれていたのを直しました',
@@ -68203,10 +68216,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e2) {}
      }
 
-     // ===== ST-359: 複数日の帯が月齢の記号を隠さない（v0.47.57〜） =====
-     // 背景：帯が月齢の記号の下側に0.1mmほど食い込んで欠けて見える、との報告。
-     // 実測すると、月齢の行は v0.45.1849 で9px→13pxに広がっていたが、帯の位置を決める
-     // 定数（MONTHLY_HEAD_H・MONTHLY_MOON_H）はそのとき直っておらず、3px食い込んでいた。
+     // ===== ST-359: 複数日の帯が月齢の記号を隠さない（v0.47.57〜、v0.47.59で余裕2pxに） =====
+     // 背景：帯が月齢の記号の下側に食い込んで欠けて見える、との報告。
+     // v0.47.57で0pxぴったりに合わせたが、それでも「まだ切れている」との報告が続いた。
+     // 手元の検証環境では0pxで問題ないが、実機（iPhone・Safari）の端数の丸め方の違いは
+     // ここでは確かめられない。際どい0pxをやめ、必ず2px以上の隙間が残るようにした。
      // 実際に複数日の予定を1件作り、月齢の行の下端と帯の上端を測って確かめる。
      // 作った予定は必ず消す（第66条）。保存は止める（第37条）。
      var _st359backup = JSON.parse(JSON.stringify(allTasks));
@@ -68231,11 +68245,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            var _mb = _st359moon.getBoundingClientRect().bottom;
            var _bt = _st359band.getBoundingClientRect().top;
            var _gap = Math.round((_bt - _mb) * 100) / 100;
-           (_gap >= 0)
-             ? ok('ST-359·①: 帯は月齢の記号にかからず、下に隙間なく続く（隙間' + _gap + 'px）')
-             : ng('ST-359·①: 帯が月齢に食い込んでいる', Math.abs(_gap) + 'px 食い込み');
-           (_gap < 3)
-             ? ok('ST-359·②: 隙間が広がりすぎてもいない（詰まって見える・' + _gap + 'px）')
+           // 2px を狙って足したので、±0.5px（描画の丸め誤差）まで許して確かめる。
+           (_gap >= 1.5 && _gap <= 2.5)
+             ? ok('ST-359·①: 帯と月齢のあいだに、狙いどおり2pxの余裕がある（' + _gap + 'px）')
+             : ng('ST-359·①: 余裕の大きさが狙いと違う', _gap + 'px（狙いは2px）');
+           (_gap < 4)
+             ? ok('ST-359·②: 余裕を持たせすぎて間延びしてもいない（' + _gap + 'px）')
              : ng('ST-359·②: 帯と月齢のあいだが開きすぎている', _gap + 'px');
          }
          allTasks = allTasks.filter(function(t) { return t.id !== _st359t.id; });
