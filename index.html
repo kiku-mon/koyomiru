@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.63 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.65 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.63';
+    const APP_VERSION = 'v0.47.65';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11510,6 +11510,14 @@ function _showInviteWelcome() {
     //   date を渡す（その日の月）：その日の夜に見える時刻の向き（_moonViewTime）。
     // 計算できなければ null を返す。0 を返すと「右が光る」と言っているのと同じになり、
     // 欠けていく月を逆向きに描いてしまう。null なら描く側は向きを付けない。
+    // v0.47.64: 【権威】2026-09-24、千葉市中央区松ヶ丘の実際の空と、アプリの絵が
+    // 逆向きに見える、との報告。17時45分・実測して確かめると、両方の計算自体は
+    // 合っていた（いま28度＝右が実体・左下が欠け／今夜22時-22度＝右下が実体・左上が欠け）。
+    // ずれていたのは「いまを使うかどうか」の判定。太陽が-6度以下（かなり暗い）でないと
+    // 「いま」を使わず、今夜いちばん高くなる時刻へ飛んでいた。17時45分は太陽-3.2度
+    // （まだ夕方の薄明るさ）で、月はすでに高度18度まで昇って写真にはっきり写っているのに、
+    // 暗さが足りないという理由で「いま」を捨て、5時間近く先の22時の向きを見せていた。
+    // 「いまの向きを使うか」は、空の暗さではなく、月が実際に見えているかだけで決める。
     function _currentMoonTiltDeg(date) {
       try {
         var geo = (window._userGeoLocation && typeof window._userGeoLocation.lat === 'number')
@@ -11520,7 +11528,7 @@ function _showInviteWelcome() {
         } else {
           var now = new Date();
           var a = _moonSunAltDeg(now, geo);
-          when = (a.moon >= 5 && a.sun <= -6) ? now : _moonViewTime(now, geo);
+          when = (a.moon >= 5) ? now : _moonViewTime(now, geo);
         }
         var t = _calcMoonTiltDeg(when, geo);
         return isFinite(t) ? t : null;
@@ -31929,6 +31937,9 @@ window._repairCloudCalendarIds();
       // v0.45.1441: 庭ビューを離れる際、1分ごとの自動更新タイマーを止める
       // （garden分岐に入り直せば、initGardenWorld内で再開される）
       if (window._gardenUpdateInterval) { clearInterval(window._gardenUpdateInterval); window._gardenUpdateInterval = null; }
+      // v0.47.65: ダッシュボードを離れる際も、同じ理由で1分ごとの自動更新を止める。
+      // 止め忘れると、ダッシュボードにいないのに1分ごとにDOMを書き換え続けることになる。
+      if (window._dashboardUpdateInterval) { clearInterval(window._dashboardUpdateInterval); window._dashboardUpdateInterval = null; }
       // v0.45.1828: 開発者の声も共通の非表示対象に含める。
       // 音は止めない。ほかの画面を見ながら聴き続けられるほうが、ながら聴きに合う。
       var _pdvHide = document.getElementById('podcastView');
@@ -32079,6 +32090,18 @@ window._repairCloudCalendarIds();
         // v0.45.666〜：ダッシュボードに動画カード描画
         if (typeof renderDashboardVideos === 'function') {
           try { renderDashboardVideos(); } catch(e) {}
+        }
+        // v0.47.65: 【権威】2026-09-24、「リアルタイム計算」と謳っているのに、
+        // 開いたままだと数字が動かないのは看板に偽りがある、との指摘。
+        // 「1秒ごと」までは要らない、実装が軽いならやってよい、とのこと。
+        // 月齢は小数点1桁（0.1日刻み）なので、1分ごとの更新で取りこぼさない
+        // （0.1日＝約2.4時間ごとにしか値は変わらないので、1分間隔は十分すぎるほど細かい）。
+        // 庭の画面が同じやり方（window._gardenUpdateInterval、1分ごと、離れたら止める）
+        // を既に持っているので、それに倣う。
+        if (typeof renderDashboardView === 'function') {
+          window._dashboardUpdateInterval = setInterval(function() {
+            try { renderDashboardView(); } catch (eDb) { console.warn('[ダッシュボード] 自動更新に失敗:', eDb && eDb.message); }
+          }, 60000);
         }
       } else if (view === 'garden') {
         // v0.45.1414: 【権威】2026-07-30、「季節の庭」3Dビュー。既存のcraftModeEnabled/
@@ -48860,6 +48883,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.65', date: '2026-09-24',
+    items: [
+      { icon:'⏱️', t:'ダッシュボードを開いたままでも、月齢などが動くようになりました',
+        before:'「リアルタイム計算」と謳っていましたが、開いた瞬間の数字のまま、開きっぱなしにしても動きませんでした',
+        after:'1分ごとに数字を計算し直します。月齢は0.1日刻みなので、1分ごとで取りこぼしません。ダッシュボードを見ていないときは動きません' }
+    ]
+  },
+  {
+    ver: 'v0.47.64', date: '2026-09-24',
+    items: [
+      { icon:'🌙', t:'夕方、月がすでに見えているのに、数時間先の向きを見せていました',
+        before:'日が沈みきる前（まだ明るさが残る時間帯）は、月が見えていても「いま」を使わず、今夜いちばん高くなる時刻の向きを見せていました。実際の空と、季節の風だより・ダッシュボードの絵が逆向きに見えることがありました',
+        after:'月が見えているかどうかだけで判断します。夕方でも月が出ていれば、その瞬間の向きを見せます' }
+    ]
+  },
   {
     ver: 'v0.47.63', date: '2026-09-23',
     items: [
@@ -68396,6 +68435,90 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st360backup;
        window.saveAllTasks = _st360save;
        try { if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (e2) {}
+     }
+
+     // ===== ST-361: 月が見えていれば「いま」を使う（暗さでは決めない）（v0.47.64〜） =====
+     // 背景：千葉市中央区松ヶ丘の実際の空（17時45分・右が実体、左下が欠け）と、
+     // アプリの絵（左上が欠け＝22時ごろの向き）が逆に見える、との報告。
+     // 実測すると、両方の計算自体は正しかった（17:45と22:00、それぞれの時刻としては合っていた）。
+     // ずれていたのは「いまを使うか」の判定。太陽が-6度以下の暗さを求めていたため、
+     // 月がすでに高度18度まで昇って写真に写っていても、夕方の薄明るさでは「いま」を
+     // 使わず、5時間近く先の時刻へ飛んでいた。月が見えているかどうかだけで決めるよう直した。
+     try {
+       var _st361f = window._currentMoonTiltDeg;
+       var _st361alt = window._moonSunAltDeg;
+       var _st361calc = window._calcMoonTiltDeg;
+       if (typeof _st361f !== 'function' || typeof _st361alt !== 'function' || typeof _st361calc !== 'function') {
+         ng('ST-361: 月の向きの処理が見つからない', '');
+       } else {
+         // 月は出ているが、太陽が-6度より明るい（夕方の薄明かり）時刻を選ぶ。
+         // 2026年のどこかで、必ずこの状況になる日を探す（15分刻みで1年ぶん）。
+         var _st361found = null;
+         for (var _d = 0; _d < 365 && !_st361found; _d++) {
+           for (var _m = 0; _m < 24 * 60; _m += 30) {
+             var _t = new Date(2026, 0, 1 + _d, 0, 0, 0);
+             _t = new Date(_t.getTime() + _m * 60000);
+             var _a = _st361alt(_t, null);
+             if (_a.moon >= 5 && _a.sun > -6 && _a.sun < 0) { _st361found = _t; break; }
+           }
+         }
+         if (!_st361found) {
+           ng('ST-361: 確かめる時刻（月が出ていて、まだ暗くなりきっていない）が見つからない', '');
+         } else {
+           var _st361right = _st361calc(_st361found, null);   // 本当に「いま」を使ったときの向き
+           var _st361wrongWhen = _st361f.toString().indexOf('_moonViewTime(now, geo)') !== -1;
+           // 実際に呼び出して確かめる（日付を渡さない＝「いま」を尋ねる形）。
+           // Dateを差し替えられないので、同じ判定をここで再現し、_currentMoonTiltDegの中身が
+           // 「暗さ」ではなく「月の高度」だけを見ているかを、ソースの文字列で確かめる。
+           var _st361src = _st361f.toString();
+           var _st361usesSunGate = _st361src.indexOf('a.sun <=') !== -1 || _st361src.indexOf('a.sun<=') !== -1;
+           (!_st361usesSunGate)
+             ? ok('ST-361·①: 「いま」を使うかの判定が、空の暗さを条件にしていない')
+             : ng('ST-361·①: まだ空の暗さ（太陽の高度）を条件にしている', '');
+           var _st361usesMoonGate = _st361src.indexOf('a.moon >= 5') !== -1;
+           (_st361usesMoonGate)
+             ? ok('ST-361·②: 月が出ているかどうかで判定している')
+             : ng('ST-361·②: 月の高度を見ていない', '');
+         }
+       }
+     } catch(e) {
+       ng('ST-361: 例外', e.message);
+     }
+
+     // ===== ST-362: ダッシュボードを開いている間、1分ごとに数字が動く（v0.47.65〜） =====
+     // 背景：「リアルタイム計算」と謳っているのに、開いたままだと月齢などの数字が
+     // 動かないのは看板に偽りがある、との指摘。1秒ごとまでは要らないが、実装が軽いなら、とのこと。
+     // 月齢は0.1日刻み（約2.4時間ごとにしか変わらない）なので、1分ごとの更新で十分。
+     // 庭の画面に既にある同じ形のタイマー（window._gardenUpdateInterval）に倣った。
+     // ① ダッシュボードに入るとタイマーが立つ ② 離れると必ず止まる ③ 他の画面のタイマーと
+     // 取り違えない、を実際に画面を切り替えて確かめる。
+     try {
+       if (typeof switchView !== 'function') {
+         ng('ST-362: switchViewが見つからない', '');
+       } else {
+         var _st362wasDash = window._dashboardUpdateInterval;
+         var _st362wasGarden = window._gardenUpdateInterval;
+         switchView('dashboard');
+         var _st362dashOn = !!window._dashboardUpdateInterval;
+         switchView('monthly');
+         var _st362dashOff = (window._dashboardUpdateInterval === null);
+         switchView('dashboard');
+         var _st362dashOnAgain = !!window._dashboardUpdateInterval;
+         switchView('garden');
+         var _st362dashOffAtGarden = (window._dashboardUpdateInterval === null);
+         var _st362gardenOn = !!window._gardenUpdateInterval;
+         switchView('monthly');
+         (_st362dashOn && _st362dashOff && _st362dashOnAgain)
+           ? ok('ST-362·①: ダッシュボードに入ると立ち、離れると必ず止まる')
+           : ng('ST-362·①: タイマーの開始・停止が想定と違う', JSON.stringify([_st362dashOn, _st362dashOff, _st362dashOnAgain]));
+         (_st362dashOffAtGarden && _st362gardenOn)
+           ? ok('ST-362·②: 庭に移ると、ダッシュボードのタイマーは止まり、庭のタイマーが立つ（取り違えない）')
+           : ng('ST-362·②: 画面ごとのタイマーが混ざっている', JSON.stringify([_st362dashOffAtGarden, _st362gardenOn]));
+         window._dashboardUpdateInterval = _st362wasDash;
+         window._gardenUpdateInterval = _st362wasGarden;
+       }
+     } catch(e) {
+       ng('ST-362: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
