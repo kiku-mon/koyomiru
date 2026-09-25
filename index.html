@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.71 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.72 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.71';
+    const APP_VERSION = 'v0.47.72';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8058,6 +8058,13 @@ function _showInviteWelcome() {
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button type="button" onclick="window._msbAddFromStart(-120)" class="msb-now-btn" title="終了を2時間早める">-2h</button>
             <button type="button" onclick="window._msbAddFromStart(-60)" class="msb-now-btn" title="終了を1時間早める">-1h</button>
+            <!-- v0.47.72: 【権威】2026-09-25、+30分・+15分も（マイナス側も）ほしい、との要望。
+                 _msbAddFromStartは既にどんな分数も受け取れる作りなので、ボタンを増やすだけで足りる。
+                 0に近いものから外側へ、-2h・-1h・-30分・-15分・+15分・+30分・+1h・+2h の順に並べる。 -->
+            <button type="button" onclick="window._msbAddFromStart(-30)" class="msb-now-btn" title="終了を30分早める">-30分</button>
+            <button type="button" onclick="window._msbAddFromStart(-15)" class="msb-now-btn" title="終了を15分早める">-15分</button>
+            <button type="button" onclick="window._msbAddFromStart(15)" class="msb-now-btn" title="終了を15分遅らせる">+15分</button>
+            <button type="button" onclick="window._msbAddFromStart(30)" class="msb-now-btn" title="終了を30分遅らせる">+30分</button>
             <button type="button" onclick="window._msbAddFromStart(60)" class="msb-now-btn" title="終了を1時間遅らせる">+1h</button>
             <button type="button" onclick="window._msbAddFromStart(120)" class="msb-now-btn" title="終了を2時間遅らせる">+2h</button>
           </div>
@@ -49008,6 +49015,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.72', date: '2026-09-25',
+    items: [
+      { icon:'⏱️', t:'終了時刻に、+15分・+30分・-15分・-30分も付きました',
+        before:'1時間単位（±1h・±2h）でしか動かせず、細かい調整は手で打ち直す必要がありました',
+        after:'15分・30分単位でも動かせます。深夜をまたぐ前進・後退も、日付ごと正しく動きます' }
+    ]
+  },
+  {
     ver: 'v0.47.71', date: '2026-09-25',
     items: [
       { icon:'⏱️', t:'終了時刻に、-1h・-2hボタンも付きました',
@@ -68864,15 +68879,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-366: 例外', e.message);
      }
 
-     // ===== ST-367: 終了時刻の±1h・±2hボタンが、前進も後退も正しく動く（v0.47.71〜） =====
+     // ===== ST-367: 終了時刻の±時間ボタンが、前進も後退も正しく動く（v0.47.71〜、v0.47.72で±15分/30分を追加） =====
      // 背景：+1h・+2hしか無かったので、-1h・-2hもほしい、UIも整えてほしい、との要望。
+     // さらにv0.47.72で+30分・+15分・マイナス側もほしい、との追加要望。
      // 元の_msbAddFromStartは「時刻だけを見て、開始より前になったら終了日+1」という
      // 前進方向にしか対応しておらず、マイナスで戻したときに終了日が戻らない穴があった
      // （v0.47.67で開始側に直したのと同じ種類）。日付＋時刻の本当の日時で計算し直す
      // ことで、前進・後退のどちらも同じ式で正しくなることを確かめる。
      // ①+1hを2回押すと累積して2時間後になる ②-1hで1時間戻る
      // ③深夜をまたぐ+2hで翌日になる ④そこから-1h×2で、日付も元へ戻る
-     // ⑤ボタンは終了行の外（下の行）に移り、入力欄の中にはもう無い
+     // ⑤ボタンは終了行の外（下の行）に、-2h〜+2hの8個が0に近い順で並んでいる
+     // ⑥15分・30分刻みも同じ式で正しく動く（深夜またぎ込み）
      var _st367backup = JSON.parse(JSON.stringify(allTasks));
      var _st367save = window.saveAllTasks;
      try {
@@ -68908,14 +68925,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            (_st367et.value === '23:00' && _st367ed.value === '2026-09-25')
              ? ok('ST-367·④: -1hを重ねると、終了日も元の日へ戻る')
              : ng('ST-367·④: 日付が戻らない', _st367et.value + '/' + _st367ed.value);
+           // ⑥ 15分・30分刻み（深夜またぎの前進・後退込み）
+           _st367st.value = '23:45'; _st367et.value = ''; _st367st.dataset.prevValue = '23:45';
+           _msbAddFromStart(30);
+           var _st367ok6a = (_st367et.value === '00:15' && _st367ed.value === '2026-09-26');
+           _msbAddFromStart(-15);
+           var _st367ok6b = (_st367et.value === '00:00' && _st367ed.value === '2026-09-26');
+           (_st367ok6a && _st367ok6b)
+             ? ok('ST-367·⑥: 15分・30分刻みも、深夜またぎの前進・後退とも正しく動く')
+             : ng('ST-367·⑥: 15分・30分刻みがおかしい', _st367et.value + '/' + _st367ed.value);
          }
          var _st367row = document.getElementById('msbEditEndTimeRow');
          var _st367inPair = _st367row ? _st367row.querySelectorAll('.msb-dt-pair button').length : -1;
          var _st367below = _st367row && _st367row.nextElementSibling
            ? [].map.call(_st367row.nextElementSibling.querySelectorAll('button'), function(b) { return b.textContent; })
            : [];
-         (_st367inPair === 0 && _st367below.join(',') === '-2h,-1h,+1h,+2h')
-           ? ok('ST-367·⑤: ボタンは終了行の外に移り、-2h→-1h→+1h→+2hの順で並んでいる')
+         (_st367inPair === 0 && _st367below.join(',') === '-2h,-1h,-30分,-15分,+15分,+30分,+1h,+2h')
+           ? ok('ST-367·⑤: ボタンは終了行の外に、0に近い順で8個並んでいる')
            : ng('ST-367·⑤: ボタンの位置・並びが想定と違う', 'in=' + _st367inPair + ' below=' + _st367below.join(','));
        }
      } catch(e) {
