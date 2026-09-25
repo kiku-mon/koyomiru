@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.73 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.74 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.73';
+    const APP_VERSION = 'v0.47.74';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45017,6 +45017,19 @@ async function openViewLinkModal(cloudCalendarId, calName) {
     ov.id = 'viewLinkOverlay';
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.45);' +
       'display:flex;align-items:center;justify-content:center;padding:20px;';
+    // v0.47.74: 【権威】2026-09-25、見るだけリンクに期限が無く、何年も前のリンクが
+    // そのまま有効だった重大事故を受け、招待リンクと同じ「使える長さを選ぶ」欄を足す。
+    // 既定は招待と同じ24時間、最大も同じ168時間（7日）にする（きくモンさんの指示）。
+    // idは常に1つしか開かないモーダルなので、招待のような升目ごとの安全な名前は不要。
+    var _validSelectHtml =
+      '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">使える長さ</div>' +
+      '<select id="viewLinkValidSelect" ' +
+        'style="width:100%;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;margin-bottom:9px;">' +
+        '<option value="1">1時間</option>' +
+        '<option value="24" selected>24時間</option>' +
+        '<option value="72">3日</option>' +
+        '<option value="168">7日</option>' +
+      '</select>';
     ov.innerHTML =
       '<div style="background:#fff;border-radius:16px;padding:22px 20px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.25);">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
@@ -45031,11 +45044,13 @@ async function openViewLinkModal(cloudCalendarId, calName) {
           ? '<div style="background:#f6f7f9;border-radius:9px;padding:11px;font-size:12px;color:#555;word-break:break-all;margin-bottom:10px;">' + _esc(url) + '</div>' +
             '<button onclick="_copyViewLink(\'' + _esc(url) + '\')" ' +
               'style="width:100%;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">リンクをコピー</button>' +
+            _validSelectHtml +
             '<button onclick="_reissueViewLink(\'' + cloudCalendarId + '\',\'' + _esc(calName || '') + '\')" ' +
               'style="width:100%;padding:11px;border:1px solid #dcdcdc;border-radius:10px;background:#fff;color:#666;font-size:0.85em;cursor:pointer;font-family:inherit;margin-bottom:8px;">リンクを作り直す（前のリンクは使えなくなります）</button>' +
             '<button onclick="_stopViewLink(\'' + cloudCalendarId + '\')" ' +
               'style="width:100%;padding:11px;border:none;border-radius:10px;background:none;color:#b3261e;font-size:0.85em;cursor:pointer;font-family:inherit;">共有をやめる</button>'
-          : '<button onclick="_reissueViewLink(\'' + cloudCalendarId + '\',\'' + _esc(calName || '') + '\')" ' +
+          : _validSelectHtml +
+            '<button onclick="_reissueViewLink(\'' + cloudCalendarId + '\',\'' + _esc(calName || '') + '\')" ' +
               'style="width:100%;padding:13px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;">リンクを作る</button>') +
       '</div>';
     document.body.appendChild(ov);
@@ -45081,7 +45096,13 @@ window._fallbackCopy = _fallbackCopy;
 window._copyViewLink = _copyViewLink;
 
 async function _reissueViewLink(ccid, name) {
-  var r = await issueViewLink(ccid);
+  // v0.47.74: 【権威】2026-09-25、見るだけリンクにも招待と同じ「使える長さ」を
+  // 持たせる。選択欄が無い（見つからない）ときは、招待と同じ既定の24時間にする。
+  var _vSel = document.getElementById('viewLinkValidSelect');
+  var _hours = _vSel ? parseInt(_vSel.value, 10) : 24;
+  if (!isFinite(_hours) || _hours < 1) _hours = 24;
+  if (_hours > 168) _hours = 168;
+  var r = await issueViewLink(ccid, _hours);
   if (!r || r.error) {
     if (typeof showToast === 'function') showToast('作れませんでした', {type:'error'});
     return;
@@ -45344,9 +45365,17 @@ function _showViewLinkError() {
 }
 window.openViewOnlyMode = openViewOnlyMode;
 
-async function issueViewLink(cloudCalendarId) {
+// v0.47.74: 【権威】2026-09-25、見るだけリンクを開いたまま放置し、期限なく
+// 何年も前のリンクがそのまま有効だった事故を受け、招待と同じ「使える長さ」を持たせる。
+// hoursを渡さないときは、招待と同じ既定の24時間にする（呼び出し元が旧いままでも安全）。
+async function issueViewLink(cloudCalendarId, hours) {
   if (window._isTesting || window._smokeTestRunning) return null;
   if (!window.supabaseClient || !cloudCalendarId) return null;
+  var _h = (typeof hours === 'number' && isFinite(hours)) ? hours : 24;
+  if (_h < 1) _h = 1;
+  if (_h > 168) _h = 168;
+  var _issuedAt = new Date();
+  var _expiresAt = new Date(_issuedAt.getTime() + _h * 60 * 60 * 1000);
   // 推測できない長さの鍵を作る（32文字）
   var _chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   var _token = '';
@@ -45358,7 +45387,11 @@ async function issueViewLink(cloudCalendarId) {
     for (var j = 0; j < 32; j++) _token += _chars[Math.floor(Math.random() * _chars.length)];
   }
   var r = await window.supabaseClient.from('koyomiru_shared_calendars')
-    .update({ view_token: _token })
+    .update({
+      view_token: _token,
+      view_token_issued_at: _issuedAt.toISOString(),
+      view_token_expires_at: _expiresAt.toISOString()
+    })
     .eq('id', cloudCalendarId)
     .select('id, view_token')
     .single();
@@ -49030,6 +49063,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.74', date: '2026-09-25',
+    items: [
+      { icon:'⏳', t:'見るだけリンクにも、招待リンクと同じ「使える長さ」を付けました',
+        before:'見るだけリンクには期限が無く、何年も前に送ったリンクがそのまま有効でした',
+        after:'発行するときに1時間・24時間（既定）・3日・7日から選べます。今まで発行していたリンクは、この変更にあわせてすべて無効になりました。もう一度お送りになりたい場合は、リンクを作り直してください' }
+    ]
+  },
   {
     ver: 'v0.47.73', date: '2026-09-25',
     items: [
@@ -69086,6 +69127,89 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window._viewOnlyBackup = null; window._viewOnlyPending = false;
        if (window._settingsAutoSaveTimer) { clearTimeout(window._settingsAutoSaveTimer); window._settingsAutoSaveTimer = null; }
        window._isTesting = true; window._smokeTestRunning = true;
+     }
+
+     // ===== ST-369: 見るだけリンクにも期限が付き、招待と同じ形で選べる（v0.47.74〜） =====
+     // 背景：【緊急・重大】見るだけリンクに期限が無く、何年も前に送ったリンクが
+     // そのまま有効だった。招待リンクと同じ「使える長さを選ぶ」仕組みを持たせ、
+     // 既定は招待と同じ24時間、最大も同じ168時間（7日）にする（きくモンさんの指示）。
+     // SQL側（koyomiru_view_by_token関数・view_token_expires_at列）は既に直し済みで、
+     // ここではアプリ側（発行時に選んだ長さを、実際にその列へ書き込むか）を確かめる。
+     // ①発行画面に、招待と同じ4つの選択肢がある ②選んだ長さがそのまま書き込まれる
+     // ③省略時は24時間 ④上限168時間を超えて指定しても抑えられる
+     var _st369save = window.saveAllTasks;
+     var _st369realClient = window.supabaseClient;
+     var _st369cleanup = function() {
+       window.saveAllTasks = _st369save;
+       window.supabaseClient = _st369realClient;
+       var _ov = document.getElementById('viewLinkOverlay');
+       if (_ov) _ov.remove();
+       window._isTesting = true; window._smokeTestRunning = true;
+     };
+     try {
+       if (typeof issueViewLink !== 'function' || typeof openViewLinkModal !== 'function') {
+         ng('ST-369: 見るだけリンクの発行処理が見つからない', '');
+       } else {
+         // v0.47.74: この枠はasync/awaitに対応していないため、.then()の連鎖で書く。
+         window.saveAllTasks = function(){};
+         var _st369payload = null;
+         window.supabaseClient = {
+           from: function(table) {
+             return {
+               update: function(payload) {
+                 _st369payload = payload;
+                 return {
+                   eq: function() { return this; },
+                   select: function() { return this; },
+                   single: function() { return Promise.resolve({ data: { id: 'st369c', view_token: payload.view_token }, error: null }); }
+                 };
+               }
+             };
+           }
+         };
+         window._isTesting = false; window._smokeTestRunning = false;
+         openViewLinkModal('st369c', 'ST369テスト').then(function() {
+           var _st369sel = document.getElementById('viewLinkValidSelect');
+           var _st369opts = _st369sel ? [].map.call(_st369sel.options, function(o) { return o.value; }).join(',') : '';
+           (_st369opts === '1,24,72,168')
+             ? ok('ST-369·①: 発行画面に、招待と同じ4つの選択肢（1・24・72・168時間）がある')
+             : ng('ST-369·①: 選択肢が想定と違う', _st369opts);
+           if (_st369sel) _st369sel.value = '72';
+           return _reissueViewLink('st369c', 'ST369テスト');
+         }).then(function() {
+           var _st369diffH = _st369payload
+             ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
+             : null;
+           (_st369diffH === 72)
+             ? ok('ST-369·②: 選んだ長さ（3日）が、そのままview_token_expires_atに書き込まれる')
+             : ng('ST-369·②: 書き込まれた期限が選んだ長さと違う', _st369diffH + '時間（期待72）');
+           _st369payload = null;
+           return issueViewLink('st369c2');
+         }).then(function() {
+           var _st369defH = _st369payload
+             ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
+             : null;
+           (_st369defH === 24)
+             ? ok('ST-369·③: 長さを省略すると、招待と同じ既定の24時間になる')
+             : ng('ST-369·③: 既定の時間が24時間でない', _st369defH);
+           _st369payload = null;
+           return issueViewLink('st369c3', 300);
+         }).then(function() {
+           var _st369capH = _st369payload
+             ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
+             : null;
+           (_st369capH === 168)
+             ? ok('ST-369·④: 上限（168時間）を超えて指定しても、168時間に抑えられる')
+             : ng('ST-369·④: 上限が効いていない', _st369capH);
+           _st369cleanup();
+         }).catch(function(e) {
+           ng('ST-369: 例外', e && e.message);
+           _st369cleanup();
+         });
+       }
+     } catch(e) {
+       ng('ST-369: 例外', e.message);
+       _st369cleanup();
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
