@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.70 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.71 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.70';
+    const APP_VERSION = 'v0.47.71';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -3228,7 +3228,10 @@ function _showInviteWelcome() {
        原因は2つ。①日付欄が max-width:62%、時刻欄が max-width:130px で基準が混ざっていた。
        ②開始行はボタン1つ（今）、終了行は2つ（+1h・+2h）で、ボタンのぶん入力欄の幅が変わる。
        日付と時刻の幅を固定にし、ボタンは右端へ寄せる。
-       上下の行で、日付の左端も時刻の左端も揃う。 */
+       上下の行で、日付の左端も時刻の左端も揃う。
+       v0.47.71: 終了行の+1h・+2h・-1h・-2hは、下の行（開始行の「30分後」等と同じ場所）へ
+       移した。今は終了行にボタンが無いので、②の食い違いの種そのものが無くなっている。
+       固定幅は残していても害はないため、そのままにする。 */
     .msb-dt-pair > .msb-input-sm { flex: 0 0 auto; max-width: none; }
     .msb-dt-pair > input[type="date"] { width: 150px; }
     .msb-dt-pair > input[type="time"] { width: 114px; }
@@ -8040,13 +8043,24 @@ function _showInviteWelcome() {
           <div class="msb-dt-pair">
             <input id="msbEditEndDate" type="date" class="msb-input-sm" onchange="window._msbOnEndDateChange()">
             <input id="msbEditEndTime" type="time" class="msb-input-sm msb-dt-time" placeholder="終了時刻" title="終了時刻">
-            <button type="button" onclick="window._msbAddFromStart(60)" class="msb-now-btn" title="開始から1時間後">+1h</button>
-            <button type="button" onclick="window._msbAddFromStart(120)" class="msb-now-btn" title="開始から2時間後">+2h</button>
           </div>
           <!-- v0.45.1764: 【権威】2026-08-26、「空のままで構いません」と書くのは対症であり
                根を直していない、との指摘。そのとおり。
                入れにくいものを「入れなくていい」と言い訳するより、入れやすくするのが筋。
-               時刻を押しやすくする道を、欄の隣に置く。 -->
+               時刻を押しやすくする道を、欄の隣に置く。
+               v0.47.71: 【権威】2026-09-25、-1h・-2hもほしい、UIも整えて、との要望。
+               これまでは+1h・+2hの2つだけを入力欄の右に押し込んでいた。
+               開始行の「30分後・明日9:00・時刻なし」と同じく、下の行にまとめる形に揃える。
+               マイナス側を先（左）に置き、0に近い側から遠い側へ並べる。 -->
+        </div>
+        <div class="msb-edit-row" style="margin-top:-4px;">
+          <label class="msb-label"></label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" onclick="window._msbAddFromStart(-120)" class="msb-now-btn" title="終了を2時間早める">-2h</button>
+            <button type="button" onclick="window._msbAddFromStart(-60)" class="msb-now-btn" title="終了を1時間早める">-1h</button>
+            <button type="button" onclick="window._msbAddFromStart(60)" class="msb-now-btn" title="終了を1時間遅らせる">+1h</button>
+            <button type="button" onclick="window._msbAddFromStart(120)" class="msb-now-btn" title="終了を2時間遅らせる">+2h</button>
+          </div>
         </div>
         <div class="msb-edit-row" style="margin-top:-6px;">
           <label class="msb-label"></label>
@@ -24637,36 +24651,38 @@ function _msbClearTimes() {
 }
 window._msbClearTimes = _msbClearTimes;
 
+// v0.47.71: 【権威】2026-09-25、-1h・-2hもほしい、との要望。
+// 元の作りは「時刻だけを見て、開始より前になったら終了日を+1日」という
+// 前進方向にしか対応しておらず、マイナスで時刻を戻したときに、
+// 進んだ終了日をちゃんと元へ戻す道が無かった（v0.47.67と同じ種類の抜け）。
+// 日付＋時刻を合わせた「本当の日時」に分・時間を足し引きし、そこから
+// 日付と時刻を作り直す方式に変える。前進も後退も、同じ計算で自然に正しくなる。
 function _msbAddFromStart(minutes) {
   try {
     var st = document.getElementById('msbEditTime');
     var et = document.getElementById('msbEditEndTime');
+    var sd = document.getElementById('msbEditDate');
+    var ed = document.getElementById('msbEditEndDate');
     if (!st || !et) return;
     if (!st.value) _msbFillTime('msbEditTime');
     if (!st.value) return;
     var p = function(v) { return String(v).padStart(2, '0'); };
-    var base = new Date();
-    // すでに終了時刻があるなら、そこに足す。無ければ開始時刻から。
-    var from = et.value || st.value;
-    var parts = String(from).split(':');
-    base.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
-    base.setMinutes(base.getMinutes() + minutes);
-    et.value = p(base.getHours()) + ':' + p(base.getMinutes());
-    // 終了日が空なら、開始日を入れる。
-    // 空のままだと「開始した日のその時刻だけの予定」になり、
-    // 終了時刻を入れた意味が消える。
-    var ed = document.getElementById('msbEditEndDate');
-    var sd = document.getElementById('msbEditDate');
-    if (ed && sd && !ed.value && sd.value) {
-      ed.value = sd.value;
-      ed.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    // 日をまたいだら、終了日を1日進める。
-    if (ed && ed.value && et.value < st.value) {
-      var d = new Date(ed.value + 'T00:00:00');
-      d.setDate(d.getDate() + 1);
-      ed.value = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-      ed.dispatchEvent(new Event('change', { bubbles: true }));
+    var baseDate = (sd && sd.value) ? sd.value : (new Date()).toISOString().slice(0, 10);
+    // すでに終了の日時があるなら、そこを起点に足し引きする。無ければ開始の日時から。
+    var fromDate = (et.value && ed && ed.value) ? ed.value : baseDate;
+    var fromTime = et.value || st.value;
+    var toMs = function(ds, hhmm) {
+      var t = hhmm.split(':').map(Number);
+      return new Date(ds + 'T00:00:00').getTime() + (t[0] * 60 + t[1]) * 60000;
+    };
+    var nd = new Date(toMs(fromDate, fromTime) + minutes * 60000);
+    et.value = p(nd.getHours()) + ':' + p(nd.getMinutes());
+    if (ed) {
+      var newEndDate = nd.getFullYear() + '-' + p(nd.getMonth() + 1) + '-' + p(nd.getDate());
+      if (ed.value !== newEndDate) {
+        ed.value = newEndDate;
+        ed.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     }
     et.dispatchEvent(new Event('change', { bubbles: true }));
   } catch (e) {}
@@ -48992,6 +49008,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.71', date: '2026-09-25',
+    items: [
+      { icon:'⏱️', t:'終了時刻に、-1h・-2hボタンも付きました',
+        before:'終了時刻を遅らせるボタン（+1h・+2h）しかなく、短くしたいときは手で打ち直す必要がありました',
+        after:'-1h・-2hも押せます。深夜をまたいだ状態から早めても、日付が正しく戻ります。ボタンは入力欄の下にまとめ、見やすくしました' }
+    ]
+  },
+  {
     ver: 'v0.47.70', date: '2026-09-25',
     items: [
       { icon:'📈', t:'SEOの土台をさらに整えました',
@@ -68838,6 +68862,68 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-366·③: canonicalが無い', '');
      } catch(e) {
        ng('ST-366: 例外', e.message);
+     }
+
+     // ===== ST-367: 終了時刻の±1h・±2hボタンが、前進も後退も正しく動く（v0.47.71〜） =====
+     // 背景：+1h・+2hしか無かったので、-1h・-2hもほしい、UIも整えてほしい、との要望。
+     // 元の_msbAddFromStartは「時刻だけを見て、開始より前になったら終了日+1」という
+     // 前進方向にしか対応しておらず、マイナスで戻したときに終了日が戻らない穴があった
+     // （v0.47.67で開始側に直したのと同じ種類）。日付＋時刻の本当の日時で計算し直す
+     // ことで、前進・後退のどちらも同じ式で正しくなることを確かめる。
+     // ①+1hを2回押すと累積して2時間後になる ②-1hで1時間戻る
+     // ③深夜をまたぐ+2hで翌日になる ④そこから-1h×2で、日付も元へ戻る
+     // ⑤ボタンは終了行の外（下の行）に移り、入力欄の中にはもう無い
+     var _st367backup = JSON.parse(JSON.stringify(allTasks));
+     var _st367save = window.saveAllTasks;
+     try {
+       if (typeof _msbAddFromStart !== 'function' || typeof openSidebarNewForm !== 'function') {
+         ng('ST-367: 終了時刻の調整処理が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         switchView('monthly');
+         openSidebarNewForm('2026-09-25');
+         var _st367st = document.getElementById('msbEditTime');
+         var _st367et = document.getElementById('msbEditEndTime');
+         var _st367sd = document.getElementById('msbEditDate');
+         var _st367ed = document.getElementById('msbEditEndDate');
+         if (!_st367st || !_st367et || !_st367sd || !_st367ed) {
+           ng('ST-367: 開始・終了の欄が見つからない', '');
+         } else {
+           _st367sd.value = '2026-09-25'; _st367ed.value = '';
+           _st367st.value = '09:00'; _st367et.value = ''; _st367st.dataset.prevValue = '09:00';
+           _msbAddFromStart(60); _msbAddFromStart(60);
+           (_st367et.value === '11:00')
+             ? ok('ST-367·①: +1hを2回押すと累積して2時間後になる')
+             : ng('ST-367·①: 累積しない', _st367et.value + '（期待11:00）');
+           _msbAddFromStart(-60);
+           (_st367et.value === '10:00')
+             ? ok('ST-367·②: -1hで1時間戻る')
+             : ng('ST-367·②: 戻らない', _st367et.value + '（期待10:00）');
+           _st367st.value = '23:00'; _st367et.value = ''; _st367st.dataset.prevValue = '23:00';
+           _msbAddFromStart(120);
+           (_st367et.value === '01:00' && _st367ed.value === '2026-09-26')
+             ? ok('ST-367·③: 深夜をまたぐ+2hで、終了日も翌日になる')
+             : ng('ST-367·③: 深夜またぎが正しくない', _st367et.value + '/' + _st367ed.value);
+           _msbAddFromStart(-60); _msbAddFromStart(-60);
+           (_st367et.value === '23:00' && _st367ed.value === '2026-09-25')
+             ? ok('ST-367·④: -1hを重ねると、終了日も元の日へ戻る')
+             : ng('ST-367·④: 日付が戻らない', _st367et.value + '/' + _st367ed.value);
+         }
+         var _st367row = document.getElementById('msbEditEndTimeRow');
+         var _st367inPair = _st367row ? _st367row.querySelectorAll('.msb-dt-pair button').length : -1;
+         var _st367below = _st367row && _st367row.nextElementSibling
+           ? [].map.call(_st367row.nextElementSibling.querySelectorAll('button'), function(b) { return b.textContent; })
+           : [];
+         (_st367inPair === 0 && _st367below.join(',') === '-2h,-1h,+1h,+2h')
+           ? ok('ST-367·⑤: ボタンは終了行の外に移り、-2h→-1h→+1h→+2hの順で並んでいる')
+           : ng('ST-367·⑤: ボタンの位置・並びが想定と違う', 'in=' + _st367inPair + ' below=' + _st367below.join(','));
+       }
+     } catch(e) {
+       ng('ST-367: 例外', e.message);
+     } finally {
+       allTasks = _st367backup;
+       window.saveAllTasks = _st367save;
+       try { if (typeof closeMsbEdit === 'function') closeMsbEdit(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
