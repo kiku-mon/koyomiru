@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.65 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.66 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.65';
+    const APP_VERSION = 'v0.47.66';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7920,7 +7920,12 @@ function _showInviteWelcome() {
         </div>
         <div class="msb-edit-row msb-row-title">
           <label class="msb-label">タイトル</label>
-          <input id="msbEditText" type="text" placeholder="ここに予定を入力…（例：打ち合わせ、有給）" name="koyomiru-msbEditText" autocomplete="off" data-lpignore="true" data-1p-ignore>
+          <input id="msbEditText" type="text" placeholder="ここに予定を入力…（例：打ち合わせ、有給）" name="koyomiru-msbEditText" autocomplete="off" data-lpignore="true" data-1p-ignore
+            onkeydown="if(event.key==='Enter' && !event.isComposing && event.keyCode!==229) saveMsbEdit();">
+          <!-- v0.47.66: 【権威】2026-09-25、エンターキーで保存したい、との要望。
+               週間の編集（editTaskText）に既にある書き方に合わせた。
+               event.isComposing と keyCode 229 の両方で確かめているのは、日本語入力の
+               変換確定のエンターまで拾って保存してしまわないため（v0.47.50で学んだ教訓と同じ）。 -->
         </div>
         <!-- v0.45.1647: 【権威】2026-08-19、時刻欄が空欄で、何を入れられるのか分からないとの指摘。
              type="time" は placeholder が効かないため、欄の外に例を添える。 -->
@@ -7947,6 +7952,7 @@ function _showInviteWelcome() {
           <div class="msb-dt-pair">
             <input id="msbEditDate" type="date" class="msb-input-sm">
             <input id="msbEditTime" type="time" class="msb-input-sm msb-dt-time" placeholder="開始時刻" title="開始時刻"
+              onfocus="this.dataset.prevValue=this.value;"
               onchange="window._msbOnStartTimeChange()">
             <button type="button" onclick="window._msbFillTime('msbEditTime')" class="msb-now-btn" title="いまの時刻を入れる">今</button>
           </div>
@@ -24462,16 +24468,35 @@ function _msbInsertMoney() {
 window._msbInsertMoney = _msbInsertMoney;
 
 // v0.47.40: 開始を入れたら、終了が空のときだけ1時間後を入れる。
-// すでに終了が入っているものは触らない（打った値を勝手に動かさないため）。
-// 外れても害は小さく、直すのも一度で済む。
+// v0.47.66: 【権威】2026-09-25、開始を打ち直したとき、終了もその起点で
+// 動いてほしい、との要望。これまでは「終了が空のときだけ」しか動かしておらず、
+// 終了が既に入っている予定の開始を直すと、終了だけ取り残されていた（開始9:03→18:03に
+// 直しても、終了は10:03のままで、開始より前になることもあった）。
+// 直す前の開始（onfocusで欄に控えておいた値）との差分を測り、いままでの長さ
+// （例：1時間）を保ったまま、新しい開始にくっつけて終了も動かす。
+// 直す前の値が無い（初めての入力・プログラムから値を入れた直後など）ときは、
+// 今までどおり「空なら1時間後」にとどめる（長さを保とうにも、もとの長さが分からないため）。
 function _msbOnStartTimeChange() {
   try {
     var st = document.getElementById('msbEditTime');
     var et = document.getElementById('msbEditEndTime');
     if (!st || !et) return;
     if (!st.value) return;      // 消したときは、終了も触らない
-    if (et.value) return;       // すでに入っているものは動かさない
+    if (et.value) {
+      var prev = st.dataset.prevValue;
+      if (prev && prev !== st.value) {
+        var toMin = function(hhmm) { var p = hhmm.split(':').map(Number); return p[0] * 60 + p[1]; };
+        var duration = toMin(et.value) - toMin(prev);
+        if (duration <= 0) duration += 24 * 60;   // 深夜をまたぐ長さも、そのまま保つ
+        var newEndMin = ((toMin(st.value) + duration) % (24 * 60) + 24 * 60) % (24 * 60);
+        var pad = function(n) { return String(n).padStart(2, '0'); };
+        et.value = pad(Math.floor(newEndMin / 60)) + ':' + pad(newEndMin % 60);
+      }
+      st.dataset.prevValue = st.value;
+      return;
+    }
     _msbAddFromStart(60);
+    st.dataset.prevValue = st.value;
   } catch (e) {}
 }
 window._msbOnStartTimeChange = _msbOnStartTimeChange;
@@ -48884,6 +48909,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.66', date: '2026-09-25',
+    items: [
+      { icon:'⏎', t:'月間の予定追加、エンターキーで保存できます',
+        before:'タイトルを打った後、保存ボタンを押す必要がありました',
+        after:'タイトル欄でエンターキーを押すと保存されます。日本語入力の変換中は反応しません' },
+      { icon:'🔗', t:'開始時刻を直すと、終了時刻もついてきます',
+        before:'開始時刻を打ち直しても、終了時刻はそのまま残り、開始より前になってしまうことがありました',
+        after:'それまでの長さ（例：1時間）を保ったまま、終了時刻も一緒に動きます' }
+    ]
+  },
+  {
     ver: 'v0.47.65', date: '2026-09-24',
     items: [
       { icon:'⏱️', t:'ダッシュボードを開いたままでも、月齢などが動くようになりました',
@@ -68519,6 +68555,68 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-362: 例外', e.message);
+     }
+
+     // ===== ST-363: 月間の追加窓で、エンター保存と開始連動が働く（v0.47.66〜） =====
+     // 背景：①タイトル欄でエンターキーを押すと保存したい ②開始時刻を打ち直したとき、
+     // 終了時刻もそれまでの長さを保ったまま連動してほしい、との要望。
+     // ①は週間の編集（saveWeeklyEdit）に既にある書き方を、月間の追加窓にも広げた。
+     // ②はこれまで「終了が空のときだけ」動かしていたのを、「終了が既にあるときは
+     // 長さを保って連動」に変えた。深夜をまたぐ長さも保つことを確かめる。
+     var _st363backup = JSON.parse(JSON.stringify(allTasks));
+     var _st363save = window.saveAllTasks;
+     try {
+       if (typeof openSidebarNewForm !== 'function' || typeof _msbOnStartTimeChange !== 'function') {
+         ng('ST-363: 月間の追加窓の処理が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         switchView('monthly');
+         openSidebarNewForm('2026-09-25');
+         var _st363st = document.getElementById('msbEditTime');
+         var _st363et = document.getElementById('msbEditEndTime');
+         if (!_st363st || !_st363et) {
+           ng('ST-363: 開始・終了の欄が見つからない', '');
+         } else {
+           // ① 長さを保って連動する（09:03・10:03 → 開始を18:00へ → 終了19:00になるはず）
+           _st363st.dataset.prevValue = '09:03';
+           _st363st.value = '09:03'; _st363et.value = '10:03';
+           _st363st.value = '18:00'; window._msbOnStartTimeChange();
+           (_st363et.value === '19:00')
+             ? ok('ST-363·①: 開始を打ち直すと、終了もそれまでの長さ（1時間）を保って動く')
+             : ng('ST-363·①: 終了が連動しない', '開始18:00 → 終了' + _st363et.value + '（期待19:00）');
+           // ② 深夜をまたぐ長さも保つ
+           _st363st.dataset.prevValue = '18:00';
+           _st363st.value = '23:30'; window._msbOnStartTimeChange();
+           (_st363et.value === '00:30')
+             ? ok('ST-363·②: 深夜をまたぐ長さも保ったまま連動する')
+             : ng('ST-363·②: 深夜またぎで崩れる', _st363et.value + '（期待00:30）');
+           // ③ 終了が空のときは、これまでどおり開始+1時間
+           _st363et.value = ''; _st363st.dataset.prevValue = '';
+           _st363st.value = '13:00'; window._msbOnStartTimeChange();
+           (_st363et.value === '14:00')
+             ? ok('ST-363·③: 終了が空のときは、これまでどおり開始の1時間後が入る')
+             : ng('ST-363·③: 終了が空のときの既定値が変わってしまった', _st363et.value);
+         }
+         // ④ タイトル欄でエンター → 保存される
+         var _st363txt = document.getElementById('msbEditText');
+         if (_st363txt) {
+           var _st363before = allTasks.length;
+           _st363txt.value = 'ST363エンター保存';
+           _st363txt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+           var _st363saved = allTasks.some(function(t) { return t.text === 'ST363エンター保存'; });
+           (_st363saved && allTasks.length === _st363before + 1)
+             ? ok('ST-363·④: タイトル欄でエンターキーを押すと保存される')
+             : ng('ST-363·④: エンターキーで保存されない', '');
+         } else {
+           ng('ST-363·④: タイトルの欄が見つからない', '');
+         }
+       }
+     } catch(e) {
+       ng('ST-363: 例外', e.message);
+     } finally {
+       allTasks = _st363backup;
+       window.saveAllTasks = _st363save;
+       try { if (typeof closeMsbEdit === 'function') closeMsbEdit(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
