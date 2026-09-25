@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.74 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.75 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.74';
+    const APP_VERSION = 'v0.47.75';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -352,6 +352,11 @@
       var _vt = _vp.get('view');
       if (!_vt) return;
       window.history.replaceState({}, '', window.location.pathname);
+      // v0.47.75: 【権威】2026-09-25、見るだけリンクからの訪問だと、あとで分かる
+      // ようにしたい、との要望。?view= はこの直後に消してしまう（下のreplaceState）
+      // ため、計測処理（_recordVisit、ずっと後で動く）が動くころにはURLから
+      // 消えており、そのままでは判定できない。分かった今この場で、印を立てておく。
+      window._entryWasViewOnlyLink = true;
       // v0.46.34: 【権威】2026-09-07、見るだけリンクなのに他のカレンダーが映る、との報告。
       // v0.46.33 で loadAllTasks に見張りを入れたが、効いていなかった。
       //
@@ -43876,6 +43881,11 @@ var _KOYOMIRU_FIRST_KEY   = 'koyomiru_first_visit_done';
 // 流入元の判定：?from=note のようなクエリを読む。無ければ 'direct'。
 function _getVisitSource() {
   try {
+    // v0.47.75: 【権威】2026-09-25、見るだけリンクから来た訪問だと分かるようにしたい、
+    // との要望。?view= はこの関数が動くころには既にURLから消えているため、
+    // 起動最初期に立てた印（window._entryWasViewOnlyLink）を見る。
+    // 一番確実な判定なので、standalone判定より先に見る。
+    if (window._entryWasViewOnlyLink) return 'viewonly';
     // v0.45.1502: 【権威】2026-08-04、ホーム画面に追加した人の起動を独立して数える。
     // これを最優先で判定しないと、?from=mailmagazine 付きのリンクから追加した人は
     // 毎回の起動が mailmagazine として記録され、新規の流入と常連の起動が混ざる。
@@ -45006,12 +45016,24 @@ async function openViewLinkModal(cloudCalendarId, calName) {
     var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
     // いまのリンクを調べる
     var cur = null;
+    var _curMax = null, _curUsed = null;
     try {
       var q = await window.supabaseClient.from('koyomiru_shared_calendars')
-        .select('view_token').eq('id', cloudCalendarId).single();
-      if (q && !q.error && q.data) cur = q.data.view_token;
+        .select('view_token, view_token_max_uses, view_token_used_count').eq('id', cloudCalendarId).single();
+      if (q && !q.error && q.data) {
+        cur = q.data.view_token;
+        _curMax = q.data.view_token_max_uses;
+        _curUsed = q.data.view_token_used_count;
+      }
     } catch(e) {}
     var url = cur ? (location.origin + location.pathname + '?view=' + cur) : '';
+    // v0.47.75: 残り回数を出す（招待の「残りN人」表示と同じ考え方）。
+    var _remainHtml = '';
+    if (cur && typeof _curMax === 'number') {
+      var _left = Math.max(0, _curMax - (_curUsed || 0));
+      _remainHtml = '<div style="font-size:0.78em;color:' + (_left <= 3 ? '#b3261e' : '#666') + ';margin-bottom:10px;">' +
+        '残り ' + _left + ' 回（' + _curMax + '回中）</div>';
+    }
 
     var ov = document.createElement('div');
     ov.id = 'viewLinkOverlay';
@@ -45029,7 +45051,15 @@ async function openViewLinkModal(cloudCalendarId, calName) {
         '<option value="24" selected>24時間</option>' +
         '<option value="72">3日</option>' +
         '<option value="168">7日</option>' +
-      '</select>';
+      '</select>' +
+      // v0.47.75: 【権威】2026-09-25、見るだけリンクにも回数の上限を持たせる。
+      // 招待は「無制限／1人だけ／人数を決める」の3択だが、見るだけは
+      // 「無制限は絶対にやめろ」との明確な指示があったため、無制限の選択肢自体を
+      // 作らない。常に数字を1つ入れる、招待より単純な作りにする。
+      // 既定20・上限100（きくモンさんと相談のうえ決めた数）。
+      '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">開ける回数（上限100）</div>' +
+      '<input id="viewLinkMaxUses" type="number" min="1" max="100" value="20" ' +
+        'style="width:100%;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">';
     ov.innerHTML =
       '<div style="background:#fff;border-radius:16px;padding:22px 20px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.25);">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
@@ -45042,6 +45072,7 @@ async function openViewLinkModal(cloudCalendarId, calName) {
           '相手は登録もログインも要りません。書き換えもできません。</div>' +
         (url
           ? '<div style="background:#f6f7f9;border-radius:9px;padding:11px;font-size:12px;color:#555;word-break:break-all;margin-bottom:10px;">' + _esc(url) + '</div>' +
+            _remainHtml +
             '<button onclick="_copyViewLink(\'' + _esc(url) + '\')" ' +
               'style="width:100%;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">リンクをコピー</button>' +
             _validSelectHtml +
@@ -45102,7 +45133,12 @@ async function _reissueViewLink(ccid, name) {
   var _hours = _vSel ? parseInt(_vSel.value, 10) : 24;
   if (!isFinite(_hours) || _hours < 1) _hours = 24;
   if (_hours > 168) _hours = 168;
-  var r = await issueViewLink(ccid, _hours);
+  // v0.47.75: 回数も同様。無制限は選ばせないので、欄が無いときも既定の20にする。
+  var _uInp = document.getElementById('viewLinkMaxUses');
+  var _maxUses = _uInp ? parseInt(_uInp.value, 10) : 20;
+  if (!isFinite(_maxUses) || _maxUses < 1) _maxUses = 20;
+  if (_maxUses > 100) _maxUses = 100;
+  var r = await issueViewLink(ccid, _hours, _maxUses);
   if (!r || r.error) {
     if (typeof showToast === 'function') showToast('作れませんでした', {type:'error'});
     return;
@@ -45368,12 +45404,17 @@ window.openViewOnlyMode = openViewOnlyMode;
 // v0.47.74: 【権威】2026-09-25、見るだけリンクを開いたまま放置し、期限なく
 // 何年も前のリンクがそのまま有効だった事故を受け、招待と同じ「使える長さ」を持たせる。
 // hoursを渡さないときは、招待と同じ既定の24時間にする（呼び出し元が旧いままでも安全）。
-async function issueViewLink(cloudCalendarId, hours) {
+// v0.47.75: 回数の上限も同様に持たせる。無制限は選ばせない方針のため、
+// maxUsesを渡さないときも0や無制限ではなく、既定の20にする。
+async function issueViewLink(cloudCalendarId, hours, maxUses) {
   if (window._isTesting || window._smokeTestRunning) return null;
   if (!window.supabaseClient || !cloudCalendarId) return null;
   var _h = (typeof hours === 'number' && isFinite(hours)) ? hours : 24;
   if (_h < 1) _h = 1;
   if (_h > 168) _h = 168;
+  var _m = (typeof maxUses === 'number' && isFinite(maxUses)) ? maxUses : 20;
+  if (_m < 1) _m = 1;
+  if (_m > 100) _m = 100;
   var _issuedAt = new Date();
   var _expiresAt = new Date(_issuedAt.getTime() + _h * 60 * 60 * 1000);
   // 推測できない長さの鍵を作る（32文字）
@@ -45390,7 +45431,9 @@ async function issueViewLink(cloudCalendarId, hours) {
     .update({
       view_token: _token,
       view_token_issued_at: _issuedAt.toISOString(),
-      view_token_expires_at: _expiresAt.toISOString()
+      view_token_expires_at: _expiresAt.toISOString(),
+      view_token_max_uses: _m,
+      view_token_used_count: 0
     })
     .eq('id', cloudCalendarId)
     .select('id, view_token')
@@ -49063,6 +49106,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.47.75', date: '2026-09-25',
+    items: [
+      { icon:'🔢', t:'見るだけリンクに、開ける回数の上限も付けました',
+        before:'期限だけで、何回でも開けました',
+        after:'発行するときに回数（既定20回・上限100回）も決めます。無制限にはできません。残り回数は発行画面で確認できます' },
+      { icon:'📊', t:'見るだけリンクからの訪問だと分かるようにしました',
+        before:'見るだけリンクを踏んだ訪問も、他の訪問と同じ扱いで記録していました',
+        after:'見るだけリンクからの訪問だと、記録から分かるようにしました' }
+    ]
+  },
   {
     ver: 'v0.47.74', date: '2026-09-25',
     items: [
@@ -69210,6 +69264,85 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-369: 例外', e.message);
        _st369cleanup();
+     }
+
+     // ===== ST-370: 見るだけリンクの回数上限（無制限なし）と、訪問元の判定（v0.47.75〜） =====
+     // 背景：見るだけリンクは仕方なく使っている機能であり、無制限は絶対にやめてほしい、
+     // 招待と同じ考え方で回数上限を付けてほしい、との要望。あわせて、見るだけリンク
+     // から来た訪問だと後で分かるようにしたい、との要望。
+     // SQL側（koyomiru_view_by_token関数・view_token_max_uses/used_count列）は
+     // 既に直し済みで、ここではアプリ側を確かめる。
+     // ①発行欄の既定回数は20・②選んだ回数が書き込まれる・③上限100を超えられない
+     // ④?view=で開くと、訪問元がviewonlyと判定される⑤通常時は影響しない
+     var _st370save = window.saveAllTasks;
+     var _st370realClient = window.supabaseClient;
+     var _st370cleanup = function() {
+       window.saveAllTasks = _st370save;
+       window.supabaseClient = _st370realClient;
+       var _ov = document.getElementById('viewLinkOverlay');
+       if (_ov) _ov.remove();
+       window._isTesting = true; window._smokeTestRunning = true;
+     };
+     try {
+       if (typeof issueViewLink !== 'function' || typeof _getVisitSource !== 'function') {
+         ng('ST-370: 関連する処理が見つからない', '');
+       } else {
+         // ④⑤ 訪問元の判定（同期で確かめられる）
+         var _st370wasFlag = window._entryWasViewOnlyLink;
+         window._entryWasViewOnlyLink = true;
+         (_getVisitSource() === 'viewonly')
+           ? ok('ST-370·④: ?view=で開いた印があると、訪問元がviewonlyと判定される')
+           : ng('ST-370·④: viewonlyと判定されない', _getVisitSource());
+         window._entryWasViewOnlyLink = false;
+         (_getVisitSource() !== 'viewonly')
+           ? ok('ST-370·⑤: 印が無ければ、通常どおりの判定に戻る（誤判定しない）')
+           : ng('ST-370·⑤: 印が無いのにviewonlyと判定されてしまう', '');
+         window._entryWasViewOnlyLink = _st370wasFlag;
+
+         // ①②③ 回数上限（.then連鎖で確かめる。この枠はasync/awaitに対応していない）
+         window.saveAllTasks = function(){};
+         var _st370payload = null;
+         window.supabaseClient = {
+           from: function(table) {
+             return {
+               select: function() { return this; },
+               eq: function() { return this; },
+               single: function() { return Promise.resolve({ data: null, error: null }); },
+               update: function(p) {
+                 _st370payload = p;
+                 return { eq: function() { return this; }, select: function() { return this; },
+                   single: function() { return Promise.resolve({ data: { id: 'st370c', view_token: p.view_token }, error: null }); } };
+               }
+             };
+           }
+         };
+         window._isTesting = false; window._smokeTestRunning = false;
+         openViewLinkModal('st370c', 'ST370テスト').then(function() {
+           var _inp = document.getElementById('viewLinkMaxUses');
+           (_inp && _inp.value === '20')
+             ? ok('ST-370·①: 発行欄の既定回数は20（無制限の選択肢自体が無い）')
+             : ng('ST-370·①: 既定回数が20でない、または欄が無い', _inp ? _inp.value : 'なし');
+           if (_inp) _inp.value = '35';
+           return _reissueViewLink('st370c', 'ST370テスト');
+         }).then(function() {
+           (_st370payload && _st370payload.view_token_max_uses === 35 && _st370payload.view_token_used_count === 0)
+             ? ok('ST-370·②: 選んだ回数が書き込まれ、used_countは0で始まる')
+             : ng('ST-370·②: 回数が正しく書き込まれない', JSON.stringify(_st370payload && { max: _st370payload.view_token_max_uses, used: _st370payload.view_token_used_count }));
+           _st370payload = null;
+           return issueViewLink('st370c2', 24, 150);
+         }).then(function() {
+           (_st370payload && _st370payload.view_token_max_uses === 100)
+             ? ok('ST-370·③: 上限（100回）を超えて指定しても、100回に抑えられる')
+             : ng('ST-370·③: 上限が効いていない', _st370payload && _st370payload.view_token_max_uses);
+           _st370cleanup();
+         }).catch(function(e) {
+           ng('ST-370: 例外', e && e.message);
+           _st370cleanup();
+         });
+       }
+     } catch(e) {
+       ng('ST-370: 例外', e.message);
+       _st370cleanup();
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
