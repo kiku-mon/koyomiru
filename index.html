@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.66 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.67 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.66';
+    const APP_VERSION = 'v0.47.67';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -24469,13 +24469,14 @@ window._msbInsertMoney = _msbInsertMoney;
 
 // v0.47.40: 開始を入れたら、終了が空のときだけ1時間後を入れる。
 // v0.47.66: 【権威】2026-09-25、開始を打ち直したとき、終了もその起点で
-// 動いてほしい、との要望。これまでは「終了が空のときだけ」しか動かしておらず、
-// 終了が既に入っている予定の開始を直すと、終了だけ取り残されていた（開始9:03→18:03に
-// 直しても、終了は10:03のままで、開始より前になることもあった）。
-// 直す前の開始（onfocusで欄に控えておいた値）との差分を測り、いままでの長さ
-// （例：1時間）を保ったまま、新しい開始にくっつけて終了も動かす。
-// 直す前の値が無い（初めての入力・プログラムから値を入れた直後など）ときは、
-// 今までどおり「空なら1時間後」にとどめる（長さを保とうにも、もとの長さが分からないため）。
+// 動いてほしい、との要望。直す前の開始（onfocusで欄に控えておいた値）との差分を測り、
+// いままでの長さ（例：1時間）を保ったまま、新しい開始にくっつけて終了も動かす。
+// v0.47.67: 【権威】2026-09-25、「日をまたぐときの終了日はちゃんと動くか」との指摘。
+// 時刻だけを24時間の輪で計算していたため、終了の"日付"（msbEditEndDate）を
+// 動かし忘れていた（既存の「+1h」ボタン＝_msbAddFromStartは日付も進めているのに、
+// こちらの連動だけ抜けていた）。時刻だけでなく日付も合わせた「本当の日時」で
+// 計算し直す。開始を早める方向に戻したときは、進めていた終了日を1日戻すことも含む
+// （23:30始まり→翌0:30になっていた状態から、開始を10:00に戻せば、終了は同日11:00に戻る）。
 function _msbOnStartTimeChange() {
   try {
     var st = document.getElementById('msbEditTime');
@@ -24485,12 +24486,30 @@ function _msbOnStartTimeChange() {
     if (et.value) {
       var prev = st.dataset.prevValue;
       if (prev && prev !== st.value) {
-        var toMin = function(hhmm) { var p = hhmm.split(':').map(Number); return p[0] * 60 + p[1]; };
-        var duration = toMin(et.value) - toMin(prev);
-        if (duration <= 0) duration += 24 * 60;   // 深夜をまたぐ長さも、そのまま保つ
-        var newEndMin = ((toMin(st.value) + duration) % (24 * 60) + 24 * 60) % (24 * 60);
+        var sd = document.getElementById('msbEditDate');
+        var ed = document.getElementById('msbEditEndDate');
+        var baseDate = (sd && sd.value) ? sd.value : (new Date()).toISOString().slice(0, 10);
+        var endDate = (ed && ed.value) ? ed.value : baseDate;
+        var toDt = function(ds, hhmm) {
+          var p = hhmm.split(':').map(Number);
+          return new Date(ds + 'T00:00:00').getTime() + (p[0] * 60 + p[1]) * 60000;
+        };
+        var oldStartMs = toDt(baseDate, prev);
+        var oldEndMs = toDt(endDate, et.value);
+        var duration = oldEndMs - oldStartMs;
+        if (duration <= 0) duration += 24 * 60 * 60000;   // 終了が開始より前の値だった場合の保険
+        var newStartMs = toDt(baseDate, st.value);
+        var newEndMs = newStartMs + duration;
+        var nd = new Date(newEndMs);
         var pad = function(n) { return String(n).padStart(2, '0'); };
-        et.value = pad(Math.floor(newEndMin / 60)) + ':' + pad(newEndMin % 60);
+        et.value = pad(nd.getHours()) + ':' + pad(nd.getMinutes());
+        if (ed) {
+          var newEndDate = nd.getFullYear() + '-' + pad(nd.getMonth() + 1) + '-' + pad(nd.getDate());
+          if (ed.value !== newEndDate) {
+            ed.value = newEndDate;
+            ed.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
       }
       st.dataset.prevValue = st.value;
       return;
@@ -48909,6 +48928,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.67', date: '2026-09-25',
+    items: [
+      { icon:'📅', t:'開始時刻の連動で、終了の「日付」も一緒に動くようにしました',
+        before:'開始を打ち直して深夜をまたぐと、終了の時刻だけ動き、終了の日付は元のままでした',
+        after:'終了の日付も一緒に進みます。またいだ状態から早い時刻へ戻せば、日付も元に戻ります' }
+    ]
+  },
+  {
     ver: 'v0.47.66', date: '2026-09-25',
     items: [
       { icon:'⏎', t:'月間の予定追加、エンターキーで保存できます',
@@ -68557,12 +68584,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-362: 例外', e.message);
      }
 
-     // ===== ST-363: 月間の追加窓で、エンター保存と開始連動が働く（v0.47.66〜） =====
+     // ===== ST-363: 月間の追加窓で、エンター保存と開始連動が働く（v0.47.66〜、v0.47.67で終了日も連動） =====
      // 背景：①タイトル欄でエンターキーを押すと保存したい ②開始時刻を打ち直したとき、
      // 終了時刻もそれまでの長さを保ったまま連動してほしい、との要望。
      // ①は週間の編集（saveWeeklyEdit）に既にある書き方を、月間の追加窓にも広げた。
      // ②はこれまで「終了が空のときだけ」動かしていたのを、「終了が既にあるときは
-     // 長さを保って連動」に変えた。深夜をまたぐ長さも保つことを確かめる。
+     // 長さを保って連動」に変えた。v0.47.66では時刻だけをモジュロ計算しており、
+     // 終了日（msbEditEndDate）を動かし忘れていた（「同日だよね？」との指摘で発覚）。
+     // v0.47.67で日付＋時刻をまとめた本当の日時で計算し直し、深夜をまたぐ長さも、
+     // またいだ状態から早い時刻へ戻したときの日付の巻き戻しも、両方確かめる。
      var _st363backup = JSON.parse(JSON.stringify(allTasks));
      var _st363save = window.saveAllTasks;
      try {
@@ -68574,22 +68604,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          openSidebarNewForm('2026-09-25');
          var _st363st = document.getElementById('msbEditTime');
          var _st363et = document.getElementById('msbEditEndTime');
-         if (!_st363st || !_st363et) {
+         var _st363sd = document.getElementById('msbEditDate');
+         var _st363ed = document.getElementById('msbEditEndDate');
+         if (!_st363st || !_st363et || !_st363sd || !_st363ed) {
            ng('ST-363: 開始・終了の欄が見つからない', '');
          } else {
+           _st363sd.value = '2026-09-25'; _st363ed.value = '2026-09-25';
            // ① 長さを保って連動する（09:03・10:03 → 開始を18:00へ → 終了19:00になるはず）
            _st363st.dataset.prevValue = '09:03';
            _st363st.value = '09:03'; _st363et.value = '10:03';
            _st363st.value = '18:00'; window._msbOnStartTimeChange();
-           (_st363et.value === '19:00')
+           (_st363et.value === '19:00' && _st363ed.value === '2026-09-25')
              ? ok('ST-363·①: 開始を打ち直すと、終了もそれまでの長さ（1時間）を保って動く')
-             : ng('ST-363·①: 終了が連動しない', '開始18:00 → 終了' + _st363et.value + '（期待19:00）');
-           // ② 深夜をまたぐ長さも保つ
+             : ng('ST-363·①: 終了が連動しない', '開始18:00 → 終了' + _st363et.value + '/' + _st363ed.value + '（期待19:00/09-25）');
+           // ② 深夜をまたぐ長さも保ち、終了日も翌日へ進む
            _st363st.dataset.prevValue = '18:00';
            _st363st.value = '23:30'; window._msbOnStartTimeChange();
-           (_st363et.value === '00:30')
-             ? ok('ST-363·②: 深夜をまたぐ長さも保ったまま連動する')
-             : ng('ST-363·②: 深夜またぎで崩れる', _st363et.value + '（期待00:30）');
+           (_st363et.value === '00:30' && _st363ed.value === '2026-09-26')
+             ? ok('ST-363·②: 深夜をまたぐ長さも保ち、終了日も翌日へ進む')
+             : ng('ST-363·②: 深夜またぎで崩れる', _st363et.value + '/' + _st363ed.value + '（期待00:30/09-26）');
+           // ②' 早い時刻へ戻すと、進めていた終了日も同日に戻る
+           _st363st.dataset.prevValue = '23:30';
+           _st363st.value = '10:00'; window._msbOnStartTimeChange();
+           (_st363et.value === '11:00' && _st363ed.value === '2026-09-25')
+             ? ok('ST-363·②\u2019: 早い時刻へ戻すと、進めていた終了日も同日に戻る')
+             : ng('ST-363·②\u2019: 終了日が戻らない', _st363et.value + '/' + _st363ed.value + '（期待11:00/09-25）');
            // ③ 終了が空のときは、これまでどおり開始+1時間
            _st363et.value = ''; _st363st.dataset.prevValue = '';
            _st363st.value = '13:00'; window._msbOnStartTimeChange();
