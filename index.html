@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.75 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.75';
+    const APP_VERSION = 'v0.48.0';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -49107,6 +49107,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.0', date: '2026-09-25',
+    items: [
+      { icon:'🚨', t:'重大な更新は「あとで」を選べないようにしました',
+        before:'新しい版があっても「あとで」で見送れたため、今回のような重大な直し（見るだけリンクのデータ破壊事故）が、古い版のまま気づかれないことがありました',
+        after:'これからは、メジャー・マイナー版が上がる更新（今回のような0.47→0.48）は「今すぐ読み込む」しか選べません。細かい直し（パッチ）は、これまでどおり「あとで」も選べます' }
+    ]
+  },
+  {
     ver: 'v0.47.75', date: '2026-09-25',
     items: [
       { icon:'🔢', t:'見るだけリンクに、開ける回数の上限も付けました',
@@ -50403,21 +50411,35 @@ function _checkForNewVersion(byHand) {
         if (!html) return;
         var m = html.match(/APP_VERSION = '(v[0-9.]+)'/);
         if (!m || !m[1]) return;
-        if (m[1] === APP_VERSION) {
+        // v0.48.0: 【権威】2026-09-25、文字列としての大小比較（<）をやめる。
+        // "v0.47.9" と "v0.47.10" のように、桁数の違う数字を含む版どうしを
+        // 文字だけで比べると、'1' < '9' の1文字目だけで負けて取り違える。
+        // 数字として1つずつ比べる。
+        var _cmp = _compareVersions(m[1], APP_VERSION);
+        if (_cmp === 0) {
           if (byHand && typeof showToast === 'function') {
             showToast('✅ 最新版です（' + APP_VERSION + '）');
           }
           return;
         }
-        // 手元より古い版が返ることもある（キャッシュの残り）。新しいときだけ知らせる。
-        if (m[1] < APP_VERSION) {
+        if (_cmp < 0) {
           // 手元のほうが新しい。配信が追いついていないだけなので、そう伝える。
           if (byHand && typeof showToast === 'function') {
             showToast('✅ 最新版です（' + APP_VERSION + '）');
           }
           return;
         }
-        _showNewVersionBar(m[1]);
+        // v0.48.0: 【権威】2026-09-25、重大な直し（見るだけリンクのデータ破壊事故）
+        // を機に、「あとで」を選ばせたくない更新を作りたい、との要望。
+        // 業界（Microsoft等）を調べると、実際は番号の大小そのものではなく
+        // 「重大かどうか」という別の印で強制/任意を分けている（例：Equifax事件は
+        // 重大な直しが単なる「update」と呼ばれたために後回しにされた教訓がある）。
+        // ただし、きくモンさんの「マイナー・メジャーが上がったら強制」という単純な
+        // ルールの方が、こよみるの今の運用には馴染むとの判断で、そちらを採用する。
+        // 第一・第二の数字（メジャー・マイナー）のどちらかが上がっていれば強制、
+        // 第三の数字（パッチ）だけの違いなら、これまでどおり「あとで」を出す。
+        var _forced = _isForcedVersionJump(APP_VERSION, m[1]);
+        _showNewVersionBar(m[1], _forced);
       })
       .catch(function(e) {
         console.warn('[版] 確認できませんでした:', e && e.message);
@@ -50429,14 +50451,48 @@ function _checkForNewVersion(byHand) {
 }
 window._checkForNewVersion = _checkForNewVersion;
 
-function _showNewVersionBar(newVer) {
+// v0.48.0: 版番号を「v0.47.75」→[0,47,75]のように、数字の配列にする。
+// 崩れた形（数字でない・桁が無い）は0として扱い、比較不能で落ちないようにする。
+function _parseVersionParts(v) {
+  var parts = String(v || '').replace(/^v/, '').split('.').map(function(s) {
+    var n = parseInt(s, 10);
+    return isFinite(n) ? n : 0;
+  });
+  while (parts.length < 3) parts.push(0);
+  return parts;
+}
+window._parseVersionParts = _parseVersionParts;
+
+// aがbより新しければ正、古ければ負、同じなら0。文字の大小ではなく、桁ごとの数字で比べる。
+function _compareVersions(a, b) {
+  var pa = _parseVersionParts(a), pb = _parseVersionParts(b);
+  for (var i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+window._compareVersions = _compareVersions;
+
+// v0.48.0: 【権威】2026-09-25、メジャー（第一の数字）かマイナー（第二の数字）が
+// 上がっているときだけ強制（＝「あとで」を出さない）。パッチ（第三の数字）だけの
+// 違いは、これまでどおり見送れる。
+function _isForcedVersionJump(fromVer, toVer) {
+  var pf = _parseVersionParts(fromVer), pt = _parseVersionParts(toVer);
+  return (pt[0] > pf[0]) || (pt[0] === pf[0] && pt[1] > pf[1]);
+}
+window._isForcedVersionJump = _isForcedVersionJump;
+
+function _showNewVersionBar(newVer, forced) {
   try {
     if (document.getElementById('koyomiruNewVerBar')) return;
-    if (window._verDismissed === newVer) return;   // この版は「あとで」を押された
+    // v0.48.0: 【権威】2026-09-25、重大な更新（メジャー・マイナーが上がったもの）は
+    // 「あとで」を選べないようにしたい、との要望。「あとで」を押した記録
+    // （_verDismissed）自体を、強制のときは意味を持たせない＝毎回また出す。
+    if (!forced && window._verDismissed === newVer) return;   // この版は「あとで」を押された
     var bar = document.createElement('div');
     bar.id = 'koyomiruNewVerBar';
     bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99995;' +
-      'background:#1f2a37;color:#fff;padding:12px 14px;display:flex;gap:10px;align-items:center;' +
+      'background:' + (forced ? '#5c2a2a' : '#1f2a37') + ';color:#fff;padding:12px 14px;display:flex;gap:10px;align-items:center;' +
       'box-shadow:0 -2px 12px rgba(0,0,0,0.25);font-size:0.86em;' +
       'padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px));';
     // v0.47.3: 【権威】2026-09-15、古い版のまま使っている人がいる、との指摘。
@@ -50453,10 +50509,11 @@ function _showNewVersionBar(newVer) {
       }
     } catch (e) {}
     bar.innerHTML =
-      '<span style="flex:1;min-width:0;line-height:1.6;">🔄 新しい版があります（' +
+      '<span style="flex:1;min-width:0;line-height:1.6;">' + (forced ? '🚨 重要な更新があります（' : '🔄 新しい版があります（') +
         String(newVer).replace(/[<>&"]/g, '') + '）<br>' +
         '<span style="font-size:0.86em;color:#a9b4c2;">' +
-        (_what || '読み込み直すと最新になります') + '</span></span>';
+        (_what || '読み込み直すと最新になります') +
+        (forced ? '　安全のため、読み込み直しが必要です' : '') + '</span></span>';
     var yes = document.createElement('button');
     yes.textContent = '今すぐ読み込む';
     yes.style.cssText = 'flex:0 0 auto;padding:9px 14px;border:none;border-radius:8px;' +
@@ -50468,12 +50525,17 @@ function _showNewVersionBar(newVer) {
       try { localStorage.setItem('koyomiruShowWhatsNew', String(newVer)); } catch (e) {}
       try { location.reload(); } catch (e) {}
     };
-    var no = document.createElement('button');
-    no.textContent = 'あとで';
-    no.style.cssText = 'flex:0 0 auto;padding:9px 12px;border:1px solid #3d4a5c;border-radius:8px;' +
-      'background:transparent;color:#a9b4c2;font-size:0.9em;cursor:pointer;font-family:inherit;';
-    no.onclick = function() { window._verDismissed = newVer; bar.remove(); };
-    bar.appendChild(yes); bar.appendChild(no);
+    bar.appendChild(yes);
+    // v0.48.0: 強制のときは「あとで」自体を作らない。ボタンが存在しなければ、
+    // 押しようがない。
+    if (!forced) {
+      var no = document.createElement('button');
+      no.textContent = 'あとで';
+      no.style.cssText = 'flex:0 0 auto;padding:9px 12px;border:1px solid #3d4a5c;border-radius:8px;' +
+        'background:transparent;color:#a9b4c2;font-size:0.9em;cursor:pointer;font-family:inherit;';
+      no.onclick = function() { window._verDismissed = newVer; bar.remove(); };
+      bar.appendChild(no);
+    }
     document.body.appendChild(bar);
   } catch (e) { console.warn('[版] 知らせを出せませんでした:', e && e.message); }
 }
@@ -69192,7 +69254,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ①発行画面に、招待と同じ4つの選択肢がある ②選んだ長さがそのまま書き込まれる
      // ③省略時は24時間 ④上限168時間を超えて指定しても抑えられる
      var _st369save = window.saveAllTasks;
-     var _st369realClient = window.supabaseClient;
+     // v0.48.0: 【権威】2026-09-25、ST-369とST-370を一緒に走らせると、
+     // お互いのsupabaseClientの退避・復元が競合することが判明。この枠は全体が
+     // 1つの同期スクリプトとして先に最後まで実行され、.then()の中身（非同期）は
+     // 全部が終わってから動く。そのため「本物」を捕まえる時点で、まだ相手の
+     // ダミーに差し替わったままのことがあり、片方が相手のダミーを「本物」だと
+     // 誤って覚えてしまっていた。個別ではなく、共有の1箇所（最初に捕まえた
+     // ものだけを使う）に統一し、どちらが先に動いても同じ本物を指すようにする。
+     if (!('__stRealSupabaseClient' in window)) window.__stRealSupabaseClient = window.supabaseClient;
+     var _st369realClient = window.__stRealSupabaseClient;
      var _st369cleanup = function() {
        window.saveAllTasks = _st369save;
        window.supabaseClient = _st369realClient;
@@ -69203,11 +69273,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        if (typeof issueViewLink !== 'function' || typeof openViewLinkModal !== 'function') {
          ng('ST-369: 見るだけリンクの発行処理が見つからない', '');
+         _st370Run();
        } else {
          // v0.47.74: この枠はasync/awaitに対応していないため、.then()の連鎖で書く。
          window.saveAllTasks = function(){};
          var _st369payload = null;
-         window.supabaseClient = {
+         // v0.48.0: ST-370と並走したとき、途中でwindow.supabaseClientが相手の
+         // ダミーに差し替わっていることがあるため、各ステップの頭で毎回、
+         // 自分のダミーに立て直す。
+         var _st369mock = {
            from: function(table) {
              return {
                update: function(payload) {
@@ -69221,9 +69295,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
              };
            }
          };
+         window.supabaseClient = _st369mock;
          window._isTesting = false; window._smokeTestRunning = false;
+         // v0.48.0: ST-370も同じid="viewLinkOverlay"の画面を開くため、後から開いた
+         // 方が先の画面を置き換えてしまう。グローバルなgetElementByIdではなく、
+         // 開いた直後に捕まえた「自分の画面」の中だけを、以後ずっと見る。
+         var _st369ovEl = null;
          openViewLinkModal('st369c', 'ST369テスト').then(function() {
-           var _st369sel = document.getElementById('viewLinkValidSelect');
+           window.supabaseClient = _st369mock;
+           _st369ovEl = document.getElementById('viewLinkOverlay');
+           var _st369sel = _st369ovEl ? _st369ovEl.querySelector('#viewLinkValidSelect') : null;
            var _st369opts = _st369sel ? [].map.call(_st369sel.options, function(o) { return o.value; }).join(',') : '';
            (_st369opts === '1,24,72,168')
              ? ok('ST-369·①: 発行画面に、招待と同じ4つの選択肢（1・24・72・168時間）がある')
@@ -69231,6 +69312,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            if (_st369sel) _st369sel.value = '72';
            return _reissueViewLink('st369c', 'ST369テスト');
          }).then(function() {
+           window.supabaseClient = _st369mock;
            var _st369diffH = _st369payload
              ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
              : null;
@@ -69240,6 +69322,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            _st369payload = null;
            return issueViewLink('st369c2');
          }).then(function() {
+           window.supabaseClient = _st369mock;
            var _st369defH = _st369payload
              ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
              : null;
@@ -69249,6 +69332,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            _st369payload = null;
            return issueViewLink('st369c3', 300);
          }).then(function() {
+           window.supabaseClient = _st369mock;
            var _st369capH = _st369payload
              ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
              : null;
@@ -69256,17 +69340,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
              ? ok('ST-369·④: 上限（168時間）を超えて指定しても、168時間に抑えられる')
              : ng('ST-369·④: 上限が効いていない', _st369capH);
            _st369cleanup();
+           _st370Run();
          }).catch(function(e) {
            ng('ST-369: 例外', e && e.message);
            _st369cleanup();
+           _st370Run();
          });
        }
      } catch(e) {
        ng('ST-369: 例外', e.message);
        _st369cleanup();
+       _st370Run();
      }
 
      // ===== ST-370: 見るだけリンクの回数上限（無制限なし）と、訪問元の判定（v0.47.75〜） =====
+     // v0.48.0: 【権威】2026-09-25、ST-369と同じid="viewLinkOverlay"の画面を取り合い、
+     // 互いのsupabaseClientダミーも競合することが判明。独立した並びの枠のままでは
+     // 直しきれないため、ST-369が完全に終わった（cleanup済みの）あとにだけ
+     // 呼ばれる関数として定義し、ST-369の末尾から呼ぶ形に変える。
      // 背景：見るだけリンクは仕方なく使っている機能であり、無制限は絶対にやめてほしい、
      // 招待と同じ考え方で回数上限を付けてほしい、との要望。あわせて、見るだけリンク
      // から来た訪問だと後で分かるようにしたい、との要望。
@@ -69274,8 +69365,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 既に直し済みで、ここではアプリ側を確かめる。
      // ①発行欄の既定回数は20・②選んだ回数が書き込まれる・③上限100を超えられない
      // ④?view=で開くと、訪問元がviewonlyと判定される⑤通常時は影響しない
+     function _st370Run() {
      var _st370save = window.saveAllTasks;
-     var _st370realClient = window.supabaseClient;
+     // v0.48.0: ST-369と同じ理由。共有の1箇所から「本物」を読む。
+     if (!('__stRealSupabaseClient' in window)) window.__stRealSupabaseClient = window.supabaseClient;
+     var _st370realClient = window.__stRealSupabaseClient;
      var _st370cleanup = function() {
        window.saveAllTasks = _st370save;
        window.supabaseClient = _st370realClient;
@@ -69302,7 +69396,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          // ①②③ 回数上限（.then連鎖で確かめる。この枠はasync/awaitに対応していない）
          window.saveAllTasks = function(){};
          var _st370payload = null;
-         window.supabaseClient = {
+         // v0.48.0: ST-369と同じ理由。各ステップの頭で毎回、自分のダミーに立て直す。
+         var _st370mock = {
            from: function(table) {
              return {
                select: function() { return this; },
@@ -69316,8 +69411,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
              };
            }
          };
+         window.supabaseClient = _st370mock;
          window._isTesting = false; window._smokeTestRunning = false;
          openViewLinkModal('st370c', 'ST370テスト').then(function() {
+           window.supabaseClient = _st370mock;
            var _inp = document.getElementById('viewLinkMaxUses');
            (_inp && _inp.value === '20')
              ? ok('ST-370·①: 発行欄の既定回数は20（無制限の選択肢自体が無い）')
@@ -69325,12 +69422,14 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            if (_inp) _inp.value = '35';
            return _reissueViewLink('st370c', 'ST370テスト');
          }).then(function() {
+           window.supabaseClient = _st370mock;
            (_st370payload && _st370payload.view_token_max_uses === 35 && _st370payload.view_token_used_count === 0)
              ? ok('ST-370·②: 選んだ回数が書き込まれ、used_countは0で始まる')
              : ng('ST-370·②: 回数が正しく書き込まれない', JSON.stringify(_st370payload && { max: _st370payload.view_token_max_uses, used: _st370payload.view_token_used_count }));
            _st370payload = null;
            return issueViewLink('st370c2', 24, 150);
          }).then(function() {
+           window.supabaseClient = _st370mock;
            (_st370payload && _st370payload.view_token_max_uses === 100)
              ? ok('ST-370·③: 上限（100回）を超えて指定しても、100回に抑えられる')
              : ng('ST-370·③: 上限が効いていない', _st370payload && _st370payload.view_token_max_uses);
@@ -69343,6 +69442,54 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-370: 例外', e.message);
        _st370cleanup();
+     }
+     }
+     window._st370Run = _st370Run;
+
+     // ===== ST-371: 重大な更新（メジャー・マイナー）は「あとで」を選べない（v0.48.0〜） =====
+     // 背景：今日の重大な直し（見るだけリンクのデータ破壊事故）を機に、
+     // 「あとで」を選ばせたくない更新を作りたい、との要望。業界（Microsoft等）を
+     // 調べると、実際は番号の大小ではなく「重大かどうか」という別の印で強制/任意を
+     // 分けているが、きくモンさんの「マイナー・メジャーが上がったら強制」という
+     // 単純なルールの方が、こよみるには馴染むとの判断でそちらを採用した。
+     // ①版の比較が、文字ではなく数字として正しい（v0.47.9とv0.47.10の桁違い）
+     // ②パッチだけの違いは強制でない ③マイナー・メジャーの違いは強制
+     // ④強制の帯には「あとで」ボタンが無い ⑤通常の帯には両方ある
+     try {
+       if (typeof _compareVersions !== 'function' || typeof _isForcedVersionJump !== 'function' ||
+           typeof _showNewVersionBar !== 'function') {
+         ng('ST-371: 版の比較・強制更新の処理が見つからない', '');
+       } else {
+         (_compareVersions('v0.47.10', 'v0.47.9') > 0)
+           ? ok('ST-371·①: v0.47.10とv0.47.9を、文字ではなく数字として正しく比べられる')
+           : ng('ST-371·①: 桁違いの比較を取り違えている', _compareVersions('v0.47.10', 'v0.47.9'));
+         (!_isForcedVersionJump('v0.47.75', 'v0.47.76'))
+           ? ok('ST-371·②: パッチだけの違い（0.47.75→0.47.76）は強制にならない')
+           : ng('ST-371·②: パッチだけの違いなのに強制になっている', '');
+         (_isForcedVersionJump('v0.47.75', 'v0.48.0') && _isForcedVersionJump('v0.48.0', 'v1.0.0'))
+           ? ok('ST-371·③: マイナー・メジャーが上がる更新は強制になる')
+           : ng('ST-371·③: マイナー・メジャーの違いが強制と判定されない', '');
+         var _st371old = document.getElementById('koyomiruNewVerBar');
+         if (_st371old) _st371old.remove();
+         var _st371wasDismissed = window._verDismissed;
+         _showNewVersionBar('ST371dummy', true);
+         var _st371bar1 = document.getElementById('koyomiruNewVerBar');
+         var _st371btns1 = _st371bar1 ? [].map.call(_st371bar1.querySelectorAll('button'), function(b) { return b.textContent; }) : [];
+         (_st371btns1.indexOf('あとで') === -1 && _st371btns1.indexOf('今すぐ読み込む') !== -1)
+           ? ok('ST-371·④: 強制の帯には「あとで」が無く、「今すぐ読み込む」だけがある')
+           : ng('ST-371·④: 強制の帯にあとでが残っている、または読み込むが無い', _st371btns1.join(','));
+         if (_st371bar1) _st371bar1.remove();
+         _showNewVersionBar('ST371dummy2', false);
+         var _st371bar2 = document.getElementById('koyomiruNewVerBar');
+         var _st371btns2 = _st371bar2 ? [].map.call(_st371bar2.querySelectorAll('button'), function(b) { return b.textContent; }) : [];
+         (_st371btns2.indexOf('あとで') !== -1 && _st371btns2.indexOf('今すぐ読み込む') !== -1)
+           ? ok('ST-371·⑤: 通常の帯には、これまでどおり両方のボタンがある')
+           : ng('ST-371·⑤: 通常の帯のボタンが揃っていない', _st371btns2.join(','));
+         if (_st371bar2) _st371bar2.remove();
+         window._verDismissed = _st371wasDismissed;
+       }
+     } catch(e) {
+       ng('ST-371: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
