@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.67 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.68 ★ -->
 
 <html lang="ja">
 <head>
@@ -157,7 +157,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.67';
+    const APP_VERSION = 'v0.47.68';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -1160,6 +1160,21 @@ function _showInviteWelcome() {
     }
     document.addEventListener('DOMContentLoaded', function() {
       document.title = 'こよみる - ' + APP_VERSION;
+      // v0.47.68: 【権威】2026-09-25、第4象限（自由帳のマトリクス）に、
+      // ブラウザの自動入力でメールアドレスが勝手に入る症状が再発した、との報告。
+      // 4つの欄は autocomplete="off" を既に付けていたが、Chromeは「off」を、
+      // その欄の name 属性ごとに覚えている過去の入力値の再提示までは止めない
+      // ことがある（一度でも打たれた値が、同じ name のかぎり出続ける）。
+      // name を毎回の読み込みでランダムに変え、Chromeが過去の記憶と
+      // 照合できないようにする（表示や保存の中身には一切影響しない、
+      // ブラウザ向けの識別名だけの話）。
+      try {
+        var _suf = '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        ['input1', 'input2', 'input3', 'input4'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.name = 'koyomiru-task-' + id + _suf;
+        });
+      } catch (eAuto) {}
       // iOSセーフエリア適用（レンダリング完了後）
       setTimeout(applyNavSafeArea, 0);
       setTimeout(applyNavSafeArea, 300);
@@ -48928,6 +48943,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.68', date: '2026-09-25',
+    items: [
+      { icon:'🚫', t:'自由帳のマトリクスに、メールアドレス等が勝手に入る症状を直しました',
+        before:'ブラウザの自動入力で、過去に一度でも打った値（メールアドレスなど）が、その欄にずっと出続けることがありました',
+        after:'読み込むたびに、その欄の内部の識別名を変えるようにしました。表示や保存の中身は変わりません' }
+    ]
+  },
+  {
     ver: 'v0.47.67', date: '2026-09-25',
     items: [
       { icon:'📅', t:'開始時刻の連動で、終了の「日付」も一緒に動くようにしました',
@@ -68656,6 +68679,40 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st363backup;
        window.saveAllTasks = _st363save;
        try { if (typeof closeMsbEdit === 'function') closeMsbEdit(); } catch (e2) {}
+     }
+
+     // ===== ST-364: 自由帳の4象限の入力欄が、毎回ちがうnameになる（v0.47.68〜） =====
+     // 背景：ブラウザの自動入力でメールアドレスが勝手に入る症状が再発した、との報告。
+     // autocomplete="off" は既に付いていたが、Chromeはnameごとに覚えている過去の
+     // 入力値の再提示までは止めないことがある。読み込むたびにnameをランダムに変え、
+     // 過去の記憶と照合できないようにした。
+     // ①4つとも「koyomiru-task-inputN-」に続くランダムな文字列のnameになっている
+     //   （旧版は "koyomiru-task-input-N" の固定名だったので、この形では落ちる）
+     // ②タスクの入力・保存という本来の動きは壊れていない
+     try {
+       var _st364ids = ['input1', 'input2', 'input3', 'input4'];
+       var _st364els = _st364ids.map(function(id) { return document.getElementById(id); });
+       if (_st364els.some(function(e) { return !e; })) {
+         ng('ST-364: 象限の入力欄が見つからない', '');
+       } else {
+         var _st364names1 = _st364els.map(function(e) { return e.name; });
+         var _st364ok1 = _st364names1.every(function(n, i) { return new RegExp('^koyomiru-task-input' + (i + 1) + '-.+').test(n); });
+         _st364ok1
+           ? ok('ST-364·①: 4つとも、読み込みごとに作るランダムな名前になっている（固定名ではない）')
+           : ng('ST-364·①: 固定名のまま（過去の記憶と照合されうる）', _st364names1.join(','));
+         // タスクの入力・保存・欄クリアという本来の動きが壊れていないか
+         var _st364el4 = document.getElementById('input4');
+         _st364el4.value = 'ST364テスト';
+         _st364el4.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+         var _st364saved = allTasks.some(function(t) { return t.text === 'ST364テスト'; });
+         (_st364saved && _st364el4.value === '')
+           ? ok('ST-364·②: タスクの入力・保存・欄クリアという本来の動きは壊れていない')
+           : ng('ST-364·②: タスクの入力機能が壊れている', '保存=' + _st364saved + ' 欄の中身=' + _st364el4.value);
+         allTasks = allTasks.filter(function(t) { return t.text !== 'ST364テスト'; });
+         saveAllTasks();
+       }
+     } catch(e) {
+       ng('ST-364: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
