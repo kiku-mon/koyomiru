@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.47.72 ★ -->
+<!-- ★ CURRENT VERSION: v0.47.73 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.47.72';
+    const APP_VERSION = 'v0.47.73';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12574,6 +12574,13 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
       // allSettings.calendar.listに一本化（Phase B）
       allSettings.calendar.list = calendars;
       saveAllSettings();
+      // v0.47.73: 【権威】2026-09-25、unifiedPushSettingsのガード漏れと合わせて
+      // 見つかった。saveAllSettings()自身は見るだけ中に何もしないが、この直後の
+      // 旧キー書き込みにはガードが無く、見るだけモードでも実行されていた。
+      // 実害の有無に関わらず（loadCalendarsはallSettings.calendar.listを優先する
+      // ため通常は読まれない）、見るだけ中に本物の一覧を消すような値をどこにも
+      // 書かないほうが安全である。
+      if (window._viewOnlyBackup || window._viewOnlyPending) return;
       // 後方互換：旧キーにも書いておく（古い環境のテスター保護）
       // ※ migrateOldKeysToAllSettings完了後はremoveItemされる
       localStorage.setItem('calendars', JSON.stringify(calendars));
@@ -45116,6 +45123,15 @@ async function openViewOnlyMode(token) {
   // 通信を待つ前に印を立てる。印がある間、手元の予定は読み込ませない。
   // 待ってから立てるのでは遅い。競争に負ける。
   window._viewOnlyPending = true;
+  // v0.47.73: 【権威】2026-09-25、既に仕掛けられていた「1.2秒後に設定を送る」
+  // タイマーが、見るだけモードに入った直後に発火し、見せる用の1個で
+  // クラウドの本物のカレンダー一覧を上書きした事故があった。
+  // unifiedPushSettings側にもガードを足した（根本の直し）が、ここでも
+  // 仕掛かり中のタイマーをその場で止めておく（3重の備え）。
+  if (window._settingsAutoSaveTimer) {
+    clearTimeout(window._settingsAutoSaveTimer);
+    window._settingsAutoSaveTimer = null;
+  }
   try {
     var r = await fetchByViewToken(token);
     var rows = (r && !r.error && r.data) ? r.data : null;
@@ -49015,6 +49031,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.47.73', date: '2026-09-25',
+    items: [
+      { icon:'🚨', t:'【重大】見るだけリンクを開いたまま放置すると、本物のカレンダー一覧がクラウド上で消えることがある不具合を直しました',
+        before:'設定をクラウドへ送るタイマーが仕掛かった直後に見るだけリンクを開くと、タイマーが「見るだけ用の1個」の状態のままクラウドへ送信され、本物のカレンダー一覧を上書きしてしまうことがありました',
+        after:'見るだけリンクを開いている間は、設定をクラウドへ送らないようにしました。仕掛かっていたタイマーも、見るだけモードに入った瞬間に止めます' }
+    ]
+  },
+  {
     ver: 'v0.47.72', date: '2026-09-25',
     items: [
       { icon:'⏱️', t:'終了時刻に、+15分・+30分・-15分・-30分も付きました',
@@ -50962,6 +50986,24 @@ function _buildSyncableSettings() {
 window._buildSyncableSettings = _buildSyncableSettings;
 // プッシュ：ローカルの同期対象設定を、実際に変更があった場合のみクラウドへupsert
 async function unifiedPushSettings() {
+  // v0.47.73: 【権威】2026-09-25、見るだけリンクを開いたまま放置していたら、
+  // 15個あったカレンダーのうち14個がクラウド上から消えた、との緊急報告。
+  //
+  // 原因はここだった。saveAllSettings()は見るだけ中の呼び出しを止めているが、
+  // 「1.2秒後にまとめて送る」というタイマーを既に仕掛けたあとに見るだけモードへ
+  // 入ると、タイマーはガードを再確認せずここを直接呼ぶ。見るだけモードは
+  // allSettings.calendar.list を「見せる用の1個」に差し替えているため、
+  // その1個だけの状態がそのままクラウドへ送られ、本物の全カレンダーを
+  // 上書きしてしまっていた。
+  //
+  // すぐ下のunifiedPullSettings（クラウドから取り込む側）には、v0.46.37で
+  // 同じ理由のガードが既に付いていた。「取り込む側は止めたのに、送る側を
+  // 止めていなかった」という、saveAllTasks/saveAllSettingsのときと同じ
+  // 片手落ち（第79条）が、プル/プッシュの間でも繰り返されていたことになる。
+  if (window._viewOnlyBackup || window._viewOnlyPending) {
+    console.warn('[見るだけ] 閲覧中の設定送信を止めました（クラウドの設定は守られています）');
+    return null;
+  }
   if (window._isTesting || window._smokeTestRunning) return null; // v0.45.1372: _isTesting単独ではST-75等の一時解除で漏れる教訓（v0.45.1348）を設定同期にも適用
   if (!window.supabaseClient || !window._cloudUserId) return null;
   if (window._isTesting || window._smokeTestRunning) return null; // 二段階チェック（v0.45.1353の教訓）
@@ -68950,6 +68992,100 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st367backup;
        window.saveAllTasks = _st367save;
        try { if (typeof closeMsbEdit === 'function') closeMsbEdit(); } catch (e2) {}
+     }
+
+     // ===== ST-368: 見るだけリンクを開いている間、設定をクラウドへ送らない（v0.47.73〜） =====
+     // 背景：【緊急・重大】見るだけリンクを開いたまま放置していたら、クラウド上の
+     // 15個のカレンダーのうち14個が消えた、との報告。
+     //
+     // 原因：unifiedPushSettings（設定をクラウドへ送る関数）だけに見るだけモードの
+     // ガードが無かった。saveAllSettingsは「1.2秒後にまとめて送る」タイマーを
+     // 仕掛ける作りで、そのタイマーが仕掛かった直後に見るだけリンクを開くと、
+     // タイマーはガードを再確認せずunifiedPushSettingsを直接呼ぶ。見るだけモードは
+     // allSettings.calendar.list を「見せる用の1個」に差し替えているため、
+     // その1個だけの状態がそのままクラウドへ送られ、本物の全カレンダーを上書きした。
+     //
+     // ①仕掛かっていたタイマーが、見るだけモードに入った瞬間に消える
+     // ②万一発火しても、unifiedPushSettings自身が送信を止める
+     // ③見るだけを終えれば、通常どおり送信できる（守りすぎて壊していないか）
+     var _st368backup = JSON.parse(JSON.stringify(allTasks));
+     var _st368calBackup = JSON.parse(JSON.stringify(calendars || []));
+     var _st368settingsBackup = JSON.parse(JSON.stringify(allSettings));
+     var _st368save = window.saveAllTasks;
+     var _st368realClient = window.supabaseClient;
+     var _st368realUid = window._cloudUserId;
+     var _st368realLoggedIn = window._cloudIsLoggedIn;
+     try {
+       if (typeof openViewOnlyMode !== 'function' || typeof unifiedPushSettings !== 'function') {
+         ng('ST-368: 見るだけ・設定送信の処理が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         var _st368pushCalled = false, _st368pushedLen = null;
+         window.supabaseClient = {
+           from: function(table) {
+             return { upsert: function(payload) {
+               if (table === 'koyomiru_user_settings') {
+                 _st368pushCalled = true;
+                 try { _st368pushedLen = (payload.data.calendar && payload.data.calendar.list || []).length; } catch (e2) {}
+               }
+               return Promise.resolve({ error: null });
+             } };
+           }
+         };
+         window._cloudUserId = 'st368-user';
+         window._cloudIsLoggedIn = true;
+         calendars = Array.from({ length: 15 }, function(_, i) { return { id: 'cal' + i, name: 'カレンダー' + i, color: '#888', visible: true }; });
+         allSettings.calendar = allSettings.calendar || {};
+         allSettings.calendar.list = calendars;
+         window._isTesting = false; window._smokeTestRunning = false;
+         saveAllSettings();
+         var _st368timerScheduled = !!window._settingsAutoSaveTimer;
+         window.fetchByViewToken = function() {
+           return Promise.resolve({ data: [{ calendar_id: 'shared1', calendar_name: '共有カレンダー',
+             data: { id: 'st368t1', text: '相手の予定', date: '2026-09-25' } }] });
+         };
+         window._isTesting = true;
+         // v0.47.73: この枠はasync/awaitに対応していないため、JSの仕様
+         // （asyncな関数の中身は、最初のawaitの手前まで同期的に実行される）を使う。
+         // openViewOnlyModeはtokenを取りに行くawaitの「前」にタイマーを止めるので、
+         // 呼び出し文が返った直後（同期）の時点で、既にタイマーは消えているはずである。
+         openViewOnlyMode('st368-dummy-token').catch(function(){});
+         var _st368timerGone = !window._settingsAutoSaveTimer;
+         (_st368timerScheduled && _st368timerGone)
+           ? ok('ST-368·①: 仕掛かっていたタイマーが、見るだけモードに入った瞬間に消える')
+           : ng('ST-368·①: タイマーが残っている（見るだけに入っても消えない）', '仕掛かった=' + _st368timerScheduled + ' 消えた=' + _st368timerGone);
+         // v0.47.73: unifiedPushSettingsのガードも、最初のawait（upsert呼び出し）の
+         // 手前にある同期のif文なので、呼び出し直後の同期チェックで判定できる。
+         // openViewOnlyModeのfetch待ちがまだ終わっていない可能性があるため、
+         // _viewOnlyBackupをここで直接立てて、見るだけ中の状態を確実に作る。
+         window._viewOnlyBackup = { tasks: [], calendars: [], active: null, view: 'daily' };
+         window._isTesting = false; window._smokeTestRunning = false;
+         window.unifiedPushSettings().catch(function(){});
+         (!_st368pushCalled)
+           ? ok('ST-368·②: 見るだけ中は、unifiedPushSettingsを直接呼んでも送信を止める')
+           : ng('ST-368·②: 見るだけ中にクラウドへ送信されてしまう（本物の一覧が上書きされる）', '送られた件数=' + _st368pushedLen);
+         window._isTesting = true;
+         // ③ 見るだけを終えれば、通常どおり送信できるか（守りすぎていないか）
+         window._viewOnlyBackup = null; window._viewOnlyPending = false;
+         window._isTesting = false; window._smokeTestRunning = false;
+         window.unifiedPushSettings().catch(function(){});
+         (_st368pushCalled)
+           ? ok('ST-368·③: 見るだけを終えれば、通常どおりクラウドへ送信できる')
+           : ng('ST-368·③: 見るだけを終えたのに、送信できなくなっている（守りすぎ）', '');
+       }
+     } catch(e) {
+       ng('ST-368: 例外', e.message);
+     } finally {
+       allTasks = _st368backup;
+       calendars = _st368calBackup;
+       allSettings = _st368settingsBackup;
+       window.saveAllTasks = _st368save;
+       window.supabaseClient = _st368realClient;
+       window._cloudUserId = _st368realUid;
+       window._cloudIsLoggedIn = _st368realLoggedIn;
+       window._viewOnlyBackup = null; window._viewOnlyPending = false;
+       if (window._settingsAutoSaveTimer) { clearTimeout(window._settingsAutoSaveTimer); window._settingsAutoSaveTimer = null; }
+       window._isTesting = true; window._smokeTestRunning = true;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
