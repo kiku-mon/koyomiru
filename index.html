@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.0';
+    const APP_VERSION = 'v0.48.3';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10102,6 +10102,35 @@ function _showInviteWelcome() {
           </label>
           <p style="margin:6px 0 0 24px;font-size:0.78em;color:#888;">スクロールせずに月全体が見えます。OFFにすると行の高さをスライダーで決められます。</p>
         </div>
+        <!-- v0.48.1: 【権威】2026-09-25、西暦だけでなく和暦（元号）も添えたい、
+             皇紀も選べるようにしたい、との要望。月間・年間の見出しに添える。 -->
+        <div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #f0f0f0;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="eraWarekiCheck" checked onchange="setEraDisplay('wareki', this.checked)" style="width:16px;height:16px;">
+            <span style="font-size:0.85em;font-weight:700;color:#333;">和暦（令和など）を添える</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px;">
+            <input type="checkbox" id="eraKokiCheck" onchange="setEraDisplay('koki', this.checked)" style="width:16px;height:16px;">
+            <span style="font-size:0.85em;font-weight:700;color:#333;">皇紀（神武天皇即位紀元）も添える</span>
+          </label>
+          <!-- v0.48.2: 【権威】2026-09-25、「あなたの判断で」と任されたぶんの続き。
+               単純な年数の足し引きで正確に変換できるものを追加。 -->
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px;">
+            <input type="checkbox" id="eraButsuCheck" onchange="setEraDisplay('butsureki', this.checked)" style="width:16px;height:16px;">
+            <span style="font-size:0.85em;font-weight:700;color:#333;">仏暦（タイ・ラオス・カンボジア）も添える</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px;">
+            <input type="checkbox" id="eraMinkokuCheck" onchange="setEraDisplay('minkoku', this.checked)" style="width:16px;height:16px;">
+            <span style="font-size:0.85em;font-weight:700;color:#333;">民国紀元（台湾）も添える</span>
+          </label>
+          <!-- v0.48.3: 【権威】2026-09-25、ヒジュラ暦は太陰暦なので、他の暦と違って
+               クウェート式（表定式）というきちんとした計算方式で求めている。 -->
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px;">
+            <input type="checkbox" id="eraHijriCheck" onchange="setEraDisplay('hijri', this.checked)" style="width:16px;height:16px;">
+            <span style="font-size:0.85em;font-weight:700;color:#333;">ヒジュラ暦（イスラーム暦）も添える</span>
+          </label>
+          <p style="margin:6px 0 0 24px;font-size:0.78em;color:#888;">月間・年間の見出しに「（令和8年）」のように添えます。</p>
+        </div>
         </div>
         <!-- v0.47.7: 【権威】2026-09-15、起動時のビューは一番上がよい、との指示。
              毎回いちばん最初に目に入る画面を決めるものなので、並びの先頭に置く。 -->
@@ -16499,7 +16528,8 @@ function myDeckApply(idx) {
         _mCwSlider.style.background = 'linear-gradient(to right,#60a5fa ' + _cwPct + '%,#e5e7eb ' + _cwPct + '%)';
       }
       // タイトル更新（year・monthはこの関数の先頭で宣言済み）
-      document.getElementById('monthlyTitle').textContent = `${year}年${month + 1}月`;
+      document.getElementById('monthlyTitle').textContent = `${year}年${month + 1}月` +
+        (typeof _eraSuffix === 'function' ? _eraSuffix(year, month + 1, 1) : '');
       // 王国暦ラベル更新（第2条：nullチェック必須）
       var monthlyEraLabelEl = document.getElementById('monthlyEraLabel');
       if (monthlyEraLabelEl && typeof getKingdomEraLabel === 'function') {
@@ -19493,6 +19523,24 @@ function setMonthlyFitToScreen(v) {
   } catch(e) {}
 }
 window.setMonthlyFitToScreen = setMonthlyFitToScreen;
+
+// v0.48.1: 【権威】2026-09-25、西暦に和暦・皇紀を添えるかどうかの切り替え。
+// key は 'wareki' か 'koki'。月間・年間の見出しを、その場で描き直す。
+function setEraDisplay(key, v) {
+  try {
+    allSettings.ui.eraDisplay = allSettings.ui.eraDisplay || {};
+    allSettings.ui.eraDisplay[key] = !!v;
+    saveAllSettings();
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+    if (typeof renderYearlyView === 'function') renderYearlyView();
+    if (typeof showToast === 'function') {
+      var _labels = { wareki: '和暦', koki: '皇紀', butsureki: '仏暦', minkoku: '民国紀元', hijri: 'ヒジュラ暦' };
+      var _label = _labels[key] || key;
+      showToast(v ? _label + 'を添えます' : _label + 'を消しました');
+    }
+  } catch(e) {}
+}
+window.setEraDisplay = setEraDisplay;
 
 // v0.45.1594: 画面の大きさが変わったら高さを取り直す。
 // PCで窓を変える、スマホを横向きにする、といった場面で収まりが崩れないようにする。
@@ -22790,7 +22838,7 @@ function reviveBlueprint(id) {
       const year = currentYearDate.getFullYear();
       const calendar = document.getElementById('yearlyCalendar');
       const title = document.getElementById('yearlyTitle');
-      title.textContent = `${year}年`;
+      title.textContent = `${year}年` + (typeof _eraSuffixForYear === 'function' ? _eraSuffixForYear(year) : '');
       // 王国暦ラベル更新（第2条：nullチェック必須）
       var yearlyEraLabelEl = document.getElementById('yearlyEraLabel');
       if (yearlyEraLabelEl && typeof getKingdomEraLabel === 'function') {
@@ -33772,6 +33820,20 @@ function loadSettingsUI() {
         var _mfEl = document.getElementById('monthlyFitCheck');
         if (_mfEl) _mfEl.checked = (allSettings.ui && allSettings.ui.monthlyFitToScreen !== false);
       } catch(eMf) {}
+      // v0.48.1: 和暦・皇紀の表示設定を反映
+      try {
+        var _erW = document.getElementById('eraWarekiCheck');
+        var _erK = document.getElementById('eraKokiCheck');
+        var _erB = document.getElementById('eraButsuCheck');
+        var _erM = document.getElementById('eraMinkokuCheck');
+        var _erH = document.getElementById('eraHijriCheck');
+        var _erCfg = (allSettings.ui && allSettings.ui.eraDisplay) || {};
+        if (_erW) _erW.checked = (_erCfg.wareki !== false);
+        if (_erK) _erK.checked = !!_erCfg.koki;
+        if (_erB) _erB.checked = !!_erCfg.butsureki;
+        if (_erM) _erM.checked = !!_erCfg.minkoku;
+        if (_erH) _erH.checked = !!_erCfg.hijri;
+      } catch(eEr) {}
       // v0.45.1577: ？ボタンの設定を反映
       try {
         var _hfEl = document.getElementById('showHelpFabCheck');
@@ -41299,6 +41361,162 @@ function _rkSunLon(jd) {
   return ((L + C) % 360 + 360) % 360;
 }
 // 日付（Date か 'YYYY-MM-DD'）から六曜を返す。求まらなければ null。
+// v0.48.1: 【権威】2026-09-25、西暦だけでなく和暦（元号）も添えたい、
+// あわせて皇紀も選べるようにしたい、との要望。設定で表示・非表示を選べる。
+// 元号の切り替え日は、国立国会図書館・複数の一次資料で照合した正確な日付
+// （明治1868/1/25・大正1912/7/30・昭和1926/12/25・平成1989/1/8・令和2019/5/1）。
+// 新しい元号が来たら、配列の先頭に1行足すだけで対応できる作りにする。
+var _WAREKI_ERAS = [
+  { name: '令和', y: 2019, m: 5, d: 1 },
+  { name: '平成', y: 1989, m: 1, d: 8 },
+  { name: '昭和', y: 1926, m: 12, d: 25 },
+  { name: '大正', y: 1912, m: 7, d: 30 },
+  { name: '明治', y: 1868, m: 1, d: 25 }
+];
+// y・m・dは西暦・月（1〜12）・日。明治より前（該当なし）はnullを返す。
+function _toWareki(y, m, d) {
+  for (var i = 0; i < _WAREKI_ERAS.length; i++) {
+    var e = _WAREKI_ERAS[i];
+    if (y > e.y || (y === e.y && (m > e.m || (m === e.m && d >= e.d)))) {
+      var ey = y - e.y + 1;
+      return e.name + (ey === 1 ? '元' : ey) + '年';
+    }
+  }
+  return null;
+}
+window._toWareki = _toWareki;
+
+// 皇紀＝西暦+660（神武天皇即位を紀元元年とする紀年法。単純な足し算）。
+function _toKoki(y) {
+  return '皇紀' + (y + 660) + '年';
+}
+window._toKoki = _toKoki;
+
+// v0.48.2: 【権威】2026-09-25、「あなたの判断で」と任されたぶんの続き。
+// 仏暦＝西暦+543（タイ・ラオス・カンボジアの公式暦。年始はグレゴリオ暦と同じ1/1、
+// 単純な足し算で正しい。複数の一次情報で543で一致を確認）。
+function _toButsureki(y) {
+  return '仏暦' + (y + 543) + '年';
+}
+window._toButsureki = _toButsureki;
+
+// 民国紀元＝西暦-1911（台湾の公式併用暦。中華民国成立の1912年を元年とする）。
+// 1912年より前は「民前」表記になり、単純な引き算では表せないためnull。
+function _toMinkoku(y) {
+  if (y < 1912) return null;
+  return '民国' + (y - 1911) + '年';
+}
+window._toMinkoku = _toMinkoku;
+
+// v0.48.3: 【権威】2026-09-25、「ちゃんと計算をやろう」との指示。ヒジュラ暦
+// （イスラーム暦）は太陰暦で、単純な年数のずらしでは表せない。Microsoftも
+// 採用している「クウェート式」（表定式イスラーム暦、30年周期に11回の閏年を
+// 挟む方式）で、ユリウス通日を介して正しく計算する。
+//
+// 起点の取り方には「天文学的起点」と「民用起点」の2種類が資料によって
+// 混在しており、最初は取り違えて1日ずれた。信頼できる複数の情報源
+// （Wikipedia・複数のヒジュラ暦専門サイト）が一致して示す実際の日付
+// （1447年新年＝2025年6月26日、アーシューラー＝2025年7月5日、
+// 1448年新年＝2026年6月16日）の3点と完全に一致することを確かめたうえで、
+// 天文学的起点（グレゴリオ暦換算で西暦622年7月18日）を採用した。
+//
+// グレゴリオ暦 → ユリウス通日（Richardsの式。2000-01-01=2451545で検証済み）。
+function _gregorianToJDN(y, m, d) {
+  var a = Math.floor((14 - m) / 12);
+  var y2 = y + 4800 - a;
+  var m2 = m + 12 * a - 3;
+  return d + Math.floor((153 * m2 + 2) / 5) + 365 * y2 + Math.floor(y2 / 4) - Math.floor(y2 / 100) + Math.floor(y2 / 400) - 32045;
+}
+window._gregorianToJDN = _gregorianToJDN;
+
+var _HIJRI_EPOCH_JDN = _gregorianToJDN(622, 7, 18);
+var _HIJRI_LEAP_SET = { 2: 1, 5: 1, 7: 1, 10: 1, 13: 1, 16: 1, 18: 1, 21: 1, 24: 1, 26: 1, 29: 1 };
+var _HIJRI_MONTHS = ['ムハッラム', 'サファル', 'ラビー・ウル・アウワル', 'ラビー・ウッ・サーニー',
+  'ジュマーダ・ル・ウーラー', 'ジュマーダ・ッ・サーニヤ', 'ラジャブ', 'シャアバーン',
+  'ラマダーン', 'シャウワール', 'ズー・ルカイダ', 'ズー・ルヒッジャ'];
+function _hijriIsLeap(y) {
+  var pos = ((y - 1) % 30 + 30) % 30 + 1;
+  return !!_HIJRI_LEAP_SET[pos];
+}
+function _hijriYearStartJDN(y) {
+  return (y - 1) * 354 + Math.floor((3 + 11 * y) / 30) + _HIJRI_EPOCH_JDN;
+}
+// グレゴリオ暦 y/m/d に対応するヒジュラ暦を {y, m, d, monthName} で返す。
+function _toHijri(y, m, d) {
+  try {
+    var jdn = _gregorianToJDN(y, m, d);
+    var yEst = Math.floor((jdn - _HIJRI_EPOCH_JDN) / 354.36666667) + 1;
+    while (_hijriYearStartJDN(yEst) > jdn) yEst--;
+    while (_hijriYearStartJDN(yEst + 1) <= jdn) yEst++;
+    var dayOfYear = jdn - _hijriYearStartJDN(yEst) + 1;
+    var leap = _hijriIsLeap(yEst);
+    var hm = 1;
+    while (true) {
+      var len = (hm === 12) ? (leap ? 30 : 29) : ((hm % 2 === 1) ? 30 : 29);
+      if (dayOfYear <= len) break;
+      dayOfYear -= len;
+      hm++;
+    }
+    return { y: yEst, m: hm, d: dayOfYear, monthName: _HIJRI_MONTHS[hm - 1] };
+  } catch (e) { return null; }
+}
+window._toHijri = _toHijri;
+function _toHijriLabel(y, m, d) {
+  var h = _toHijri(y, m, d);
+  if (!h) return null;
+  return 'ヒジュラ暦' + h.y + '年';
+}
+window._toHijriLabel = _toHijriLabel;
+
+// 設定に応じて「（令和8年）」のような添え文字を作る。両方offなら空文字。
+function _eraSuffix(y, m, d) {
+  try {
+    var cfg = (allSettings.ui && allSettings.ui.eraDisplay) || {};
+    var wareki = (cfg.wareki !== false);   // 既定オン
+    var koki = !!cfg.koki;                 // 既定オフ
+    var butsu = !!cfg.butsureki;           // 既定オフ
+    var minkoku = !!cfg.minkoku;           // 既定オフ
+    var hijri = !!cfg.hijri;               // 既定オフ
+    var parts = [];
+    if (wareki) { var w = _toWareki(y, m, d); if (w) parts.push(w); }
+    if (koki) parts.push(_toKoki(y));
+    if (butsu) parts.push(_toButsureki(y));
+    if (minkoku) { var mk = _toMinkoku(y); if (mk) parts.push(mk); }
+    if (hijri) { var hj = _toHijriLabel(y, m, d); if (hj) parts.push(hj); }
+    return parts.length ? '（' + parts.join('・') + '）' : '';
+  } catch (e) { return ''; }
+}
+window._eraSuffix = _eraSuffix;
+
+// 年間ビュー用：1年の途中で元号が変わる年（2019年など）は、両方の元号を出す。
+// 1/1時点と12/31時点の和暦が違えば「平成31年→令和元年」のようにつなぐ。
+function _eraSuffixForYear(y) {
+  try {
+    var cfg = (allSettings.ui && allSettings.ui.eraDisplay) || {};
+    var wareki = (cfg.wareki !== false);
+    var koki = !!cfg.koki;
+    var butsu = !!cfg.butsureki;
+    var minkoku = !!cfg.minkoku;
+    var hijri = !!cfg.hijri;
+    var parts = [];
+    if (wareki) {
+      var w1 = _toWareki(y, 1, 1);
+      var w2 = _toWareki(y, 12, 31);
+      if (w1 && w2 && w1 !== w2) parts.push(w1 + '→' + w2);
+      else if (w1 || w2) parts.push(w1 || w2);
+    }
+    if (koki) parts.push(_toKoki(y));
+    if (butsu) parts.push(_toButsureki(y));
+    if (minkoku) { var mk = _toMinkoku(y); if (mk) parts.push(mk); }
+    // v0.48.3: ヒジュラ暦は約11日ずつ前倒しになるため、1つの西暦年に複数の
+    // ヒジュラ暦年が重なることが多い。年間ビューでは1/1時点の値だけを出す
+    // （他の暦と同じ「代表値」の考え方に揃える。複雑にしすぎない）。
+    if (hijri) { var hj1 = _toHijriLabel(y, 1, 1); if (hj1) parts.push(hj1); }
+    return parts.length ? '（' + parts.join('・') + '）' : '';
+  } catch (e) { return ''; }
+}
+window._eraSuffixForYear = _eraSuffixForYear;
+
 function getRokuyo(dateOrStr) {
   try {
     var dt;
@@ -49106,6 +49324,30 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.48.3', date: '2026-09-25',
+    items: [
+      { icon:'🌙', t:'ヒジュラ暦（イスラーム暦）も添えられるようになりました',
+        before:'太陰暦は含まれていませんでした',
+        after:'設定の「画面の見え方」から選べます。Microsoftも採用する「クウェート式」で、独立した複数の情報源と実際の日付が一致することを確かめたうえで計算しています。ユダヤ暦は、さらに複雑なため引き続き作業中です' }
+    ]
+  },
+  {
+    ver: 'v0.48.2', date: '2026-09-25',
+    items: [
+      { icon:'🌏', t:'仏暦・民国紀元も添えられるようになりました',
+        before:'和暦・皇紀だけでした',
+        after:'設定の「画面の見え方」から、仏暦（タイ・ラオス・カンボジア）と民国紀元（台湾）も選べます' }
+    ]
+  },
+  {
+    ver: 'v0.48.1', date: '2026-09-25',
+    items: [
+      { icon:'🎌', t:'月間・年間の見出しに、和暦・皇紀を添えられるようになりました',
+        before:'西暦だけの表示でした',
+        after:'設定の「画面の見え方」から、和暦（令和など・既定でオン）と皇紀（既定でオフ）を選べます。元号がまたぐ年（2019年など）は両方の元号を表示します' }
+    ]
+  },
   {
     ver: 'v0.48.0', date: '2026-09-25',
     items: [
@@ -69490,6 +69732,150 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-371: 例外', e.message);
+     }
+
+     // ===== ST-372: 和暦・皇紀を月間・年間の見出しに添えられる（v0.48.1〜） =====
+     // 背景：西暦だけでなく和暦（元号）も添えたい、皇紀も選べるようにしたい、
+     // との要望。設定で表示・非表示を選べる。元号の切り替え日は複数の一次資料で
+     // 照合した正確な日付を使う。
+     // ①②元号の切り替え日（境界日）が前後どちらも正しい ③皇紀は西暦+660
+     // ④元号がまたぐ年（2019年）は両方出す ⑤月間の見出しに反映される
+     // ⑥設定のオンオフで、実際に見出しから消える
+     try {
+       if (typeof _toWareki !== 'function' || typeof _toKoki !== 'function' ||
+           typeof _eraSuffix !== 'function' || typeof renderMonthlyView !== 'function') {
+         ng('ST-372: 和暦・皇紀の処理が見つからない', '');
+       } else {
+         var _st372cases = [
+           ['2019-04-30は平成31年', _toWareki(2019, 4, 30), '平成31年'],
+           ['2019-05-01は令和元年', _toWareki(2019, 5, 1), '令和元年'],
+           ['1926-12-24は大正15年', _toWareki(1926, 12, 24), '大正15年'],
+           ['1926-12-25は昭和元年', _toWareki(1926, 12, 25), '昭和元年'],
+           ['1868-01-24は明治より前でnull', _toWareki(1868, 1, 24), null]
+         ];
+         var _st372allOk = _st372cases.every(function(c) { return c[1] === c[2]; });
+         _st372allOk
+           ? ok('ST-372·①②: 元号の切り替え日が、前後どちらも正しい（5パターン確認）')
+           : ng('ST-372·①②: 切り替え日がどこかで違う', JSON.stringify(_st372cases.filter(function(c) { return c[1] !== c[2]; })));
+         (_toKoki(2026) === '皇紀2686年')
+           ? ok('ST-372·③: 皇紀は西暦+660になっている')
+           : ng('ST-372·③: 皇紀の計算が違う', _toKoki(2026));
+         var _st372yearBoth = (typeof _eraSuffixForYear === 'function') ? _eraSuffixForYear(2019) : '';
+         (_st372yearBoth === '（平成31年→令和元年）')
+           ? ok('ST-372·④: 元号がまたぐ年（2019年）は、両方の元号を出す')
+           : ng('ST-372·④: またぐ年の表示が想定と違う', _st372yearBoth);
+         var _st372backupCfg = JSON.parse(JSON.stringify((allSettings.ui && allSettings.ui.eraDisplay) || {}));
+         var _st372wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
+         var _st372save = window.saveAllTasks;
+         window.saveAllTasks = function(){};
+         setEraDisplay('wareki', true);
+         switchView('monthly');
+         currentMonthDate = new Date(2026, 8, 1);
+         renderMonthlyView();
+         var _st372title1 = document.getElementById('monthlyTitle').textContent;
+         (_st372title1 === '2026年9月（令和8年）')
+           ? ok('ST-372·⑤: 月間の見出しに、正しく和暦が添えられる')
+           : ng('ST-372·⑤: 月間の見出しに反映されない', _st372title1);
+         setEraDisplay('wareki', false);
+         setEraDisplay('koki', false);
+         renderMonthlyView();
+         var _st372title2 = document.getElementById('monthlyTitle').textContent;
+         (_st372title2 === '2026年9月')
+           ? ok('ST-372·⑥: 設定をオフにすると、見出しから実際に消える')
+           : ng('ST-372·⑥: オフにしても消えない', _st372title2);
+         allSettings.ui.eraDisplay = _st372backupCfg;
+         if (_st372wasMonth) currentMonthDate = _st372wasMonth;
+         renderMonthlyView();
+         window.saveAllTasks = _st372save;
+       }
+     } catch(e) {
+       ng('ST-372: 例外', e.message);
+     }
+
+     // ===== ST-373: 仏暦・民国紀元も月間・年間の見出しに添えられる（v0.48.2〜） =====
+     // 背景：「あなたの判断で」と任された和暦・皇紀以外の暦のうち、単純な年数の
+     // 足し引きで正確に変換できるものを追加した。仏暦（西暦+543・タイ等）、
+     // 民国紀元（西暦-1911・台湾、1912年より前は該当なし）。
+     try {
+       if (typeof _toButsureki !== 'function' || typeof _toMinkoku !== 'function') {
+         ng('ST-373: 仏暦・民国紀元の処理が見つからない', '');
+       } else {
+         (_toButsureki(2026) === '仏暦2569年')
+           ? ok('ST-373·①: 仏暦は西暦+543になっている')
+           : ng('ST-373·①: 仏暦の計算が違う', _toButsureki(2026));
+         (_toMinkoku(2026) === '民国115年')
+           ? ok('ST-373·②: 民国紀元は西暦-1911になっている')
+           : ng('ST-373·②: 民国紀元の計算が違う', _toMinkoku(2026));
+         (_toMinkoku(1912) === '民国1年' && _toMinkoku(1911) === null)
+           ? ok('ST-373·③: 民国紀元は1912年が元年で、それより前はnullになる')
+           : ng('ST-373·③: 1912年前後の扱いが違う', _toMinkoku(1912) + ' / ' + _toMinkoku(1911));
+         var _st373backupCfg = JSON.parse(JSON.stringify((allSettings.ui && allSettings.ui.eraDisplay) || {}));
+         var _st373save = window.saveAllTasks;
+         window.saveAllTasks = function(){};
+         setEraDisplay('wareki', false);
+         setEraDisplay('butsureki', true);
+         setEraDisplay('minkoku', true);
+         switchView('monthly');
+         var _st373wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
+         currentMonthDate = new Date(2026, 8, 1);
+         renderMonthlyView();
+         var _st373title = document.getElementById('monthlyTitle').textContent;
+         (_st373title === '2026年9月（仏暦2569年・民国115年）')
+           ? ok('ST-373·④: 月間の見出しに、仏暦・民国紀元がまとめて添えられる')
+           : ng('ST-373·④: 見出しへの反映が違う', _st373title);
+         allSettings.ui.eraDisplay = _st373backupCfg;
+         if (_st373wasMonth) currentMonthDate = _st373wasMonth;
+         renderMonthlyView();
+         window.saveAllTasks = _st373save;
+       }
+     } catch(e) {
+       ng('ST-373: 例外', e.message);
+     }
+
+     // ===== ST-374: ヒジュラ暦（イスラーム暦）が正確に計算できる（v0.48.3〜） =====
+     // 背景：「ちゃんと計算をやろう」との指示。太陰暦なので年数のずらしでは表せず、
+     // Microsoftも採用する「クウェート式」（表定式、30年周期に11回の閏年）で、
+     // ユリウス通日を介して計算する。起点の取り方（天文学的／民用）で最初1日ずれ、
+     // 複数の独立した情報源（Wikipedia等）が一致して示す実際の日付3点と完全一致する
+     // まで検証してから確定させた起点を使う。
+     try {
+       if (typeof _toHijri !== 'function' || typeof _gregorianToJDN !== 'function') {
+         ng('ST-374: ヒジュラ暦の処理が見つからない', '');
+       } else {
+         (_gregorianToJDN(2000, 1, 1) === 2451545)
+           ? ok('ST-374·①: グレゴリオ暦→ユリウス通日が、既知の正解（2000-01-01=2451545）と一致する')
+           : ng('ST-374·①: ユリウス通日の計算が違う', _gregorianToJDN(2000, 1, 1));
+         var _st374cases = [
+           ['2025-06-26は1447年新年', _toHijri(2025, 6, 26), { y: 1447, m: 1, d: 1 }],
+           ['2025-07-05はアーシューラー（1447/1/10）', _toHijri(2025, 7, 5), { y: 1447, m: 1, d: 10 }],
+           ['2026-06-16は1448年新年', _toHijri(2026, 6, 16), { y: 1448, m: 1, d: 1 }]
+         ];
+         var _st374allOk = _st374cases.every(function(c) {
+           return c[1] && c[1].y === c[2].y && c[1].m === c[2].m && c[1].d === c[2].d;
+         });
+         _st374allOk
+           ? ok('ST-374·②: 独立した3つの基準日（新年・アーシューラー・翌年の新年）すべてと一致する')
+           : ng('ST-374·②: どこかで基準日と違う', JSON.stringify(_st374cases.map(function(c) { return [c[0], c[1]]; })));
+         var _st374backupCfg = JSON.parse(JSON.stringify((allSettings.ui && allSettings.ui.eraDisplay) || {}));
+         var _st374save = window.saveAllTasks;
+         window.saveAllTasks = function(){};
+         setEraDisplay('wareki', false);
+         setEraDisplay('hijri', true);
+         switchView('monthly');
+         var _st374wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
+         currentMonthDate = new Date(2025, 5, 1);   // 2025年6月
+         renderMonthlyView();
+         var _st374title = document.getElementById('monthlyTitle').textContent;
+         (_st374title.indexOf('ヒジュラ暦1447年') !== -1 || _st374title.indexOf('ヒジュラ暦1446年') !== -1)
+           ? ok('ST-374·③: 月間の見出しに、ヒジュラ暦が正しく添えられる')
+           : ng('ST-374·③: 見出しへの反映が違う', _st374title);
+         allSettings.ui.eraDisplay = _st374backupCfg;
+         if (_st374wasMonth) currentMonthDate = _st374wasMonth;
+         renderMonthlyView();
+         window.saveAllTasks = _st374save;
+       }
+     } catch(e) {
+       ng('ST-374: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
