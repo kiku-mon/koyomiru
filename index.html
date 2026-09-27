@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.10 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.8';
+    const APP_VERSION = 'v0.48.10';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14074,10 +14074,14 @@ function renderTodoList() {
       // 前回の絞り込みは持ち越さない。探すたびに範囲が違うのが普通なので、
       // 覚えていると「なぜ出ないのか」で悩ませる。
       window._searchCalFilter = null;
-      // v0.45.1949: 【権威】2026-09-02、既定は「今月」ではなく「今日から先」。
-      // 検索を開くのは、これから何があるかを確かめたいときが多い。
-      // 過ぎた予定を先に見せても、探しているものに近づかない。
-      window._searchRange = 'future';
+      // v0.45.1949: 【権威】2026-09-02、既定は「今月」ではなく「今日から先」にした。
+      // 検索を開くのは、これから何があるかを確かめたいときが多い、との判断だった。
+      // v0.48.10: 【権威】2026-09-25、過去の予定（2003年のオペラの記録など）を
+      // 振り返ることも多い、との指摘を受けて見直した。「今日から先」だと、
+      // 過去の予定を探したときに0件になり、壊れているように見えてしまっていた
+      // （v0.48.9で0件時の案内は足したが、根本はやはり既定を変えるのが筋）。
+      // 既定を「過去もふくめて全部」に変える。
+      window._searchRange = 'all';
       if (typeof renderSearchCalFilter === 'function') renderSearchCalFilter();
       if (typeof renderSearchRangeFilter === 'function') renderSearchRangeFilter();
       // v0.46.53: お金の絞り込みも、開くたびに元に戻す。
@@ -14145,7 +14149,7 @@ function renderTodoList() {
     function renderSearchRangeFilter() {
       var box = document.getElementById('searchRangeFilter');
       if (!box) return;
-      var _cur = window._searchRange || 'future';
+      var _cur = window._searchRange || 'all';
       var _b = function(key, label) {
         var _on = (_cur === key);
         return '<button onclick="setSearchRange(\'' + key + '\')" ' +
@@ -14157,6 +14161,13 @@ function renderTodoList() {
       box.innerHTML = _b('week','今週') + _b('month','今月') + _b('future','今日から先') + _b('all','過去もふくめて全部');
     }
     window.renderSearchRangeFilter = renderSearchRangeFilter;
+
+    // v0.48.9: 検索の「0件でした」の案内文で、今の期間を日本語で言うために使う。
+    function _searchRangeLabel(range) {
+      var _map = { week: '今週', month: '今月', future: '今日から先', all: '過去もふくめて全部' };
+      return _map[range || 'all'] || '過去もふくめて全部';
+    }
+    window._searchRangeLabel = _searchRangeLabel;
 
     // v0.46.53: 【権威】2026-09-09、出る・入るが増えるとどれがどれか分からない、
     // 検索で絞れるようにしてほしい、との要望。
@@ -14291,8 +14302,9 @@ function renderTodoList() {
       ).filter(t => {
         // v0.45.1942: カレンダーで絞り込む。未選択なら全部。
         if (window._searchCalFilter && t.calendarId !== window._searchCalFilter) return false;
-        // v0.45.1946: 期間で絞り込む。既定は今月。
-        var _r = window._searchRange || 'future';
+        // v0.45.1946: 期間で絞り込む。
+        // v0.48.10: 既定を「今日から先」から「過去もふくめて全部」に変えた。
+        var _r = window._searchRange || 'all';
         if (_r === 'all') return true;
         var _d = t.date || '';
         if (!_d) return _r === 'all';
@@ -14323,7 +14335,42 @@ function renderTodoList() {
       document.getElementById('searchCount').textContent = total + '件';
       container.innerHTML = '';
       if (total === 0) {
-        container.innerHTML = '<div style="text-align:center;color:#bbb;padding:32px 0;font-size:0.9em;">見つかりませんでした</div>';
+        // v0.48.9: 【権威】2026-09-25、2003年の予定が検索に出てこない、との報告。
+        // 実際には「今日から先」が既定になっており、過去の予定は最初から
+        // 対象外だった（壊れていたのではなく、範囲が絞られていた）。
+        // 0件のときに「範囲を広げれば見つかるかもしれない」と、その場で
+        // 気づけるようにする。文言の絞り込み（言葉・お金・カレンダー）は
+        // そのまま保ち、期間の条件だけを「全部」にして確かめる。
+        var _wouldMatch = 0;
+        if (q && window._searchRange !== 'all') {
+          try {
+            _wouldMatch = allTasks.filter(function(t) {
+              if (t.kind === 'note' || t.kind === 'deckHistory' || t.kind === 'myDeck' || t.kind === 'guildLicense') return false;
+              if (!_matchesMoneyFilter(t)) return false;
+              if (window._searchCalFilter && t.calendarId !== window._searchCalFilter) return false;
+              return _isMoneyQuery
+                ? (function() {
+                    if (typeof window._parseMoneyLine !== 'function') return false;
+                    var _r2 = window._parseMoneyLine((t.text || '') + ' ' + (t.title || ''));
+                    return _r2.out > 0 || _r2['in'] > 0 || _r2.unreadable > 0;
+                  })()
+                : ((t.text || '').toLowerCase().includes(q) ||
+                   (t.title || '').toLowerCase().includes(q) ||
+                   (t.memo || '').toLowerCase().includes(q) ||
+                   (t.memo2 || '').toLowerCase().includes(q));
+            }).length;
+          } catch (eWm) {}
+        }
+        if (_wouldMatch > 0) {
+          container.innerHTML = '<div style="text-align:center;color:#bbb;padding:24px 0 8px;font-size:0.9em;">見つかりませんでした</div>' +
+            '<div style="text-align:center;padding:0 0 24px;">' +
+              '<div style="font-size:0.8em;color:#999;margin-bottom:8px;">「' + _escapeHtml(q) + '」に一致する予定が、今の期間（' +
+                _searchRangeLabel(window._searchRange) + '）の外に' + _wouldMatch + '件あります。</div>' +
+              '<button onclick="setSearchRange(\'all\')" style="padding:8px 16px;border:1px solid #2f6fed;border-radius:16px;background:#eaf1ff;color:#2f6fed;font-size:0.82em;font-weight:700;cursor:pointer;">過去もふくめて全部で探す</button>' +
+            '</div>';
+        } else {
+          container.innerHTML = '<div style="text-align:center;color:#bbb;padding:32px 0;font-size:0.9em;">見つかりませんでした</div>';
+        }
         return;
       }
       // 自由帳ヒット
@@ -49652,6 +49699,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.10', date: '2026-09-25',
+    items: [
+      { icon:'🔍', t:'検索の既定を「過去もふくめて全部」に変えました',
+        before:'既定が「今日から先」で、過去の予定を探すには毎回切り替えが必要でした',
+        after:'検索を開くと、最初から過去もふくめて全部を対象にします。絞りたいときは「今週」「今月」「今日から先」を選べます' }
+    ]
+  },
+  {
+    ver: 'v0.48.9', date: '2026-09-25',
+    items: [
+      { icon:'🔍', t:'検索が0件のとき、見つかる可能性を案内するようにしました',
+        before:'検索の既定の期間が「今日から先」になっており、過去の予定を探しても0件になることがありました（壊れているように見えていました）',
+        after:'今の期間の外に一致する予定があるときは、件数とあわせて「過去もふくめて全部で探す」ボタンを案内します' }
+    ]
+  },
+  {
     ver: 'v0.48.8', date: '2026-09-25',
     items: [
       { icon:'📖', t:'自由帳を全面的に見直しました',
@@ -70585,6 +70648,94 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-379: 例外', e.message);
+     }
+
+     // ===== ST-380: 検索が0件のとき、期間を広げれば見つかることに気づける（v0.48.9〜） =====
+     // 背景：2003年の予定（オペラのトラビアータ）が検索に出てこない、との報告。
+     // 実際には検索の既定の期間が「今日から先」になっており、過去は最初から
+     // 対象外だった（壊れていたのではなく、範囲が絞られていた）。0件のときに
+     // 「範囲を広げれば見つかるかもしれない」と、その場で気づけるようにする。
+     var _st380backup = JSON.parse(JSON.stringify(allTasks));
+     var _st380save = window.saveAllTasks;
+     try {
+       if (typeof renderSearchResults !== 'function' || typeof setSearchRange !== 'function') {
+         ng('ST-380: 検索の処理が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         allTasks.push({
+           id: 'st380-test-2003', kind: 'task',
+           title: 'オペラ 元禄のトラビアータ', text: 'オペラ 元禄のトラビアータ',
+           date: '2003-08-15', calendarId: 'main'
+         });
+         switchView('search');
+         setSearchRange('future');
+         var _st380inp = document.getElementById('searchInput');
+         if (_st380inp) {
+           _st380inp.value = 'トラビアータ';
+           _st380inp.dispatchEvent(new Event('input', { bubbles: true }));
+         }
+         var _st380resultsText = document.getElementById('searchResults').textContent;
+         (_st380resultsText.indexOf('過去もふくめて全部で探す') !== -1 && _st380resultsText.indexOf('1件あります') !== -1)
+           ? ok('ST-380·①: 期間の外に一致がある旨と、件数が案内される')
+           : ng('ST-380·①: 案内文が出ていない', _st380resultsText.trim());
+         var _st380btn = document.querySelector('button[onclick*="setSearchRange(\'all\'"]');
+         (_st380btn) ? ok('ST-380·②: 「過去もふくめて全部で探す」ボタンがある') : ng('ST-380·②: ボタンが無い', '');
+         if (_st380btn) _st380btn.click();
+         (document.getElementById('searchCount').textContent === '1件' &&
+          document.getElementById('searchResults').textContent.indexOf('トラビアータ') !== -1)
+           ? ok('ST-380·③: ボタンを押すと、実際に2003年の予定が見つかる')
+           : ng('ST-380·③: ボタンを押しても見つからない', document.getElementById('searchCount').textContent);
+         setSearchRange('future');
+         _st380inp.value = '絶対に一致しない文字列ZZZ999';
+         _st380inp.dispatchEvent(new Event('input', { bubbles: true }));
+         var _st380noneText = document.getElementById('searchResults').textContent.trim();
+         (_st380noneText === '見つかりませんでした')
+           ? ok('ST-380·④: 本当にどこにも無いときは、余計な案内を出さない')
+           : ng('ST-380·④: 無いはずなのに案内が出ている', _st380noneText);
+       }
+     } catch(e) {
+       ng('ST-380: 例外', e.message);
+     } finally {
+       allTasks = _st380backup;
+       window.saveAllTasks = _st380save;
+     }
+
+     // ===== ST-381: 検索の既定が「過去もふくめて全部」になった（v0.48.10〜） =====
+     // 背景：2003年の予定（オペラのトラビアータ）を振り返ることも多い、との指摘。
+     // 既定が「今日から先」だと、探すたびに切り替えを意識する必要があり、
+     // 0件になって「壊れている」と誤解させていた（v0.48.9の案内で気づけるようには
+     // したが、根本は既定を変えるのが筋、との判断）。
+     var _st381backup = JSON.parse(JSON.stringify(allTasks));
+     var _st381save = window.saveAllTasks;
+     try {
+       if (typeof openSearchModal !== 'function') {
+         ng('ST-381: 検索を開く処理が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         allTasks.push({
+           id: 'st381-test-2003', kind: 'task',
+           title: 'オペラ 元禄のトラビアータ', text: 'オペラ 元禄のトラビアータ',
+           date: '2003-08-15', calendarId: 'main'
+         });
+         openSearchModal();
+         (window._searchRange === 'all')
+           ? ok('ST-381·①: 検索を開いた直後の既定が「過去もふくめて全部」になっている')
+           : ng('ST-381·①: 既定がallになっていない', window._searchRange);
+         var _st381inp = document.getElementById('searchInput');
+         if (_st381inp) {
+           _st381inp.value = 'トラビアータ';
+           _st381inp.dispatchEvent(new Event('input', { bubbles: true }));
+         }
+         (document.getElementById('searchCount').textContent === '1件' &&
+          document.getElementById('searchResults').textContent.indexOf('トラビアータ') !== -1)
+           ? ok('ST-381·②: 何も切り替えなくても、2003年の予定が最初から見つかる')
+           : ng('ST-381·②: 既定のままでは見つからない', document.getElementById('searchCount').textContent);
+       }
+     } catch(e) {
+       ng('ST-381: 例外', e.message);
+     } finally {
+       allTasks = _st381backup;
+       window.saveAllTasks = _st381save;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
