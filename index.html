@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.18 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.19 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,8 +190,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.18';
-  const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.48.19';
+  const APP_LAST_UPDATED = '2026-09-29'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -15407,8 +15407,16 @@ function myDeckApply(idx) {
     function migrateToUUIDv7() {
       if (localStorage.getItem('mig_ids_to_uuid_v7')) return;
       // 1. allTasks全IDのマッピングテーブル作成
+      // v0.48.19: 【権威】2026-09-29、最高峰会議③。この移行は「古い形式のIDを新しい形式
+      // （UUIDv7）に揃える」ためのものなのに、既に新しい形式のIDまで1つ残らず作り直していた。
+      // そのため自由帳のプリセット（019e3a10-…など、もともと新しい形式の固定ID）も付け替わり、
+      // IDを頼りに中身を直す移行が、新規の方の環境で相手を見失っていた（v0.48.8で発覚）。
+      // 既に新しい形式のIDには触らない。古い形式のものだけを付け替える。
+      const _isUuidV7 = function(id) {
+        return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+      };
       const idMap = {};
-      allTasks.forEach(t => { idMap[t.id] = generateTaskId(); });
+      allTasks.forEach(t => { if (t && !_isUuidV7(t.id)) idMap[t.id] = generateTaskId(); });
       // 2. allTasks全件書き換え
       allTasks = allTasks.map(t => {
         const n = Object.assign({}, t);
@@ -26048,7 +26056,11 @@ function saveMsbEdit() {
         window.supabaseClient.from('koyomiru_shared_tasks')
           .update({ deleted_at: new Date().toISOString() })
           .eq('id', taskId)
-          .then(function(r){ if (r && r.error) console.warn('[Unified] 削除の伝播エラー:', r.error.message); })
+          .select('id')
+          // v0.48.19: 最高峰会議②。0件だと他の端末で予定が復活しうる。まだクラウドに
+          // 送っていない予定なら0件が正常なので、画面には出さず記録にだけ残す。
+          .then(function(r){ if (r && r.error) console.warn('[Unified] 削除の伝播エラー:', r.error.message);
+            else if (r && (!r.data || r.data.length === 0)) console.warn('[Unified] 削除の伝播が0件でした（未送信の予定か、権限が無い可能性）:', taskId); })
           .catch(function(e){ console.warn('[Unified] 削除の伝播エラー:', e); });
       }
       // v0.45.1389: 共有カレンダー通知（フェーズA）。削除でDOMから消える前に情報を保持しておく。
@@ -40353,7 +40365,9 @@ function renderDashboardView() {
             window.supabaseClient.from('koyomiru_shared_tasks')
               .update({ deleted_at: new Date().toISOString() })
               .eq('id', stampId)
-              .then(function(r){ if (r && r.error) console.warn('[removeStampById] 削除の伝播エラー:', r.error.message); });
+              .select('id')
+              .then(function(r){ if (r && r.error) console.warn('[removeStampById] 削除の伝播エラー:', r.error.message);
+                else if (r && (!r.data || r.data.length === 0)) console.warn('[removeStampById] 削除の伝播が0件でした:', stampId); });
           } catch(e) {}
         }
         saveAllTasks();
@@ -44532,6 +44546,62 @@ function _ycGoSlide(n) {
 
 <script>
 
+    // ===== v0.48.19: クラウド書き込みの関所 =====
+    // 【権威】2026-09-29、最高峰会議①。見るだけリンクの事故（v0.47.73）は、書き込む関数
+    // ごとに見張りを付ける作りで、設定の送信（unifiedPushSettings）だけ付け忘れていた
+    // ことが原因だった。書き込み口は13表・約30か所に散らばっており、増えるたびに同じ
+    // 付け忘れが起きうる（第71条④・第79条②：判定は1か所に置き、全部がそこを通る）。
+    // 接続そのものの from() に関所をかぶせ、insert/update/upsert/delete を必ず通す。
+    // 止めたときは成功のふりをせず、エラーとして返す（呼び出し側のエラー処理に乗る）。
+    // 各関数に既にある見張りは消さない（多層の守り：第63条）。
+window._installCloudWriteGate = function _installCloudWriteGate(client) {
+      if (!client || typeof client.from !== 'function' || client.__writeGateInstalled) return;
+      // 見るだけ中でも通すもの：相手のデータではなく、統計のための記録。
+      var _VIEWONLY_WRITE_OK = { koyomiru_visits: 1, koyomiru_events: 1 };
+      var _WRITE_OPS = ['insert', 'update', 'upsert', 'delete'];
+      function _cloudWriteBlockedReason(table) {
+        if (window._isTesting || window._smokeTestRunning) return 'テスト中';
+        if ((window._viewOnlyBackup || window._viewOnlyPending) && !_VIEWONLY_WRITE_OK[table]) return '見るだけモード中';
+        return null;
+      }
+      window._cloudWriteBlockedReason = _cloudWriteBlockedReason;
+      // 止めた結果：どんなメソッドをつないでも自分を返し、最後はエラーで終わる。
+      function _blockedQuery(reason, table, op) {
+        var res = { data: null, count: null, status: 0, statusText: 'blocked',
+          error: { code: 'KOYOMIRU_GATE', message: reason + 'のため、クラウドへの書き込みを止めました（' + table + '.' + op + '）' } };
+        var p = Promise.resolve(res);
+        var proxy = new Proxy(function(){}, {
+          get: function(_t, key) {
+            if (key === 'then') return p.then.bind(p);
+            if (key === 'catch') return p.catch.bind(p);
+            if (key === 'finally') return p.finally.bind(p);
+            return function() { return proxy; };
+          },
+          apply: function() { return proxy; }
+        });
+        return proxy;
+      }
+      var _origFrom = client.from.bind(client);
+      client.from = function(table) {
+        var q = _origFrom(table);
+        _WRITE_OPS.forEach(function(op) {
+          var orig = q && q[op];
+          if (typeof orig !== 'function') return;
+          q[op] = function() {
+            var reason = _cloudWriteBlockedReason(table);
+            if (reason) {
+              console.warn('[関所] ' + reason + 'のため書き込みを止めました: ' + table + '.' + op);
+              return _blockedQuery(reason, table, op);
+            }
+            return orig.apply(q, arguments);
+          };
+        });
+        return q;
+      };
+      client.__writeGateInstalled = true;
+};
+    // ===== END v0.48.19 クラウド書き込みの関所 =====
+
 // ===== v0.45.1231: Supabase接続 ステップ② クライアント初期化 =====
 // Publishable key はRLS前提の公開可能キー（Secret keyは絶対にここに書かない）
 try {
@@ -44541,6 +44611,7 @@ try {
       'sb_publishable_dW2N9PS9rcVlMBgsfh20pw_uBEA0QAv'
     );
     window.supabaseClient = supabaseClient; // 第3条: window公開
+    if (typeof window._installCloudWriteGate === 'function') window._installCloudWriteGate(supabaseClient); // v0.48.19: 関所
   } else {
     console.warn('[Supabase] ライブラリ未読込のため初期化スキップ（オフライン等）');
   }
@@ -46163,6 +46234,11 @@ async function revokeViewLink(cloudCalendarId) {
     .update({ view_token: null })
     .eq('id', cloudCalendarId)
     .select('id');
+  // v0.48.19: 【権威】2026-09-29、最高峰会議②。権限（RLS）で弾かれた更新・削除は、エラーにならず0件で終わる。
+  // 止まっていないのに「共有をやめました」と見えるのは安全上いちばん危ないので、0件はエラーとして返す。
+  if (!r.error && (!r.data || r.data.length === 0)) {
+    r = { data: null, error: { message: '0件でした（権限が無いか、既に削除済みの可能性があります）' } };
+  }
   if (r.error) console.error('[見るだけ] 停止失敗:', r.error.message);
   return r;
 }
@@ -46757,15 +46833,19 @@ async function forceDeleteSharedCalendar(calendarId) {
 
     // ② コメントを消す（予定にぶら下がっているので先に）
     if (_ids.length > 0) {
-      var _c = await _sb.from('koyomiru_task_comments').delete().in('task_id', _ids);
+      var _c = await _sb.from('koyomiru_task_comments').delete().in('task_id', _ids).select('id');
+      // v0.48.19: 【権威】2026-09-29、最高峰会議②。権限（RLS）で弾かれた更新・削除は、エラーにならず0件で終わる。
+      // 「消しました」ではなく、実際に消えた件数を書く。
       if (_c.error) _log('コメント削除の警告: ' + _c.error.message);
-      else _log('コメントを消しました');
+      else _log('コメントを' + ((_c.data || []).length) + '件消しました');
     }
 
     // ③ 予定を消す
-    var _t = await _sb.from('koyomiru_shared_tasks').delete().eq('calendar_id', calendarId);
+    var _t = await _sb.from('koyomiru_shared_tasks').delete().eq('calendar_id', calendarId).select('id');
     if (_t.error) return { error: { message: '予定を消せませんでした: ' + _t.error.message } };
-    _log('予定を消しました');
+    var _tn = (_t.data || []).length;
+    if (_tn < _ids.length) _log('⚠️ 予定は' + _ids.length + '件ありましたが、消えたのは' + _tn + '件でした（削除の権限が無い可能性があります）');
+    else _log('予定を' + _tn + '件消しました');
 
     // ④ 参加者を外す
     var _m = await _sb.from('koyomiru_shared_calendar_members').delete().eq('calendar_id', calendarId);
@@ -48973,7 +49053,10 @@ async function disablePushNotifications() {
         var endpoint = sub.endpoint;
         await sub.unsubscribe();
         if (window.supabaseClient && window._cloudUserId) {
-          await window.supabaseClient.from('koyomiru_push_subscriptions').delete().eq('user_id', window._cloudUserId).eq('endpoint', endpoint);
+          var _pd = await window.supabaseClient.from('koyomiru_push_subscriptions').delete().eq('user_id', window._cloudUserId).eq('endpoint', endpoint).select('id');
+          // v0.48.19: 最高峰会議②。端末側の購読は既に外れているので画面はそのままでよいが、
+          // サーバー側に残った記録は送信の空振りを生むので、0件なら記録に残す。
+          if (_pd && !_pd.error && (!_pd.data || _pd.data.length === 0)) console.warn('[Push] サーバー側の購読記録が消えませんでした（0件）');
         }
       }
     }
@@ -49818,6 +49901,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.48.19', date: '2026-09-29',
+    items: [
+      { icon:'🛡️', t:'見るだけリンクを止めたときの表示を、正確にしました',
+        before:'権限などの理由で実際には止まっていなくても、「共有をやめました」と出ることがありました',
+        after:'本当に止まったときだけ「共有をやめました」と出し、止まらなかったときは「止められませんでした」と正直に伝えます' }
+    ]
+  },
   {
     ver: 'v0.48.18', date: '2026-09-29',
     items: [
@@ -53274,7 +53365,10 @@ async function deletePodcastComment(commentId) {
     var r = await window.supabaseClient
       .from('koyomiru_podcast_comments')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', commentId);
+      .eq('id', commentId)
+      .select('id');
+    // v0.48.19: 【権威】2026-09-29、最高峰会議②。権限（RLS）で弾かれた更新・削除は、エラーにならず0件で終わる。
+    if (!r.error && (!r.data || r.data.length === 0)) r = { error: { message: '0件（権限が無いか、既に削除済み）' } };
     if (r.error) { console.warn('[Comment] 削除に失敗:', r.error.message); showToast('⚠️ 消せませんでした', {type:'warn'}); return false; }
     showToast('コメントを削除しました', {type:'ok'});
     return true;
@@ -71214,6 +71308,124 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        allTasks = _st387backup;
        window.saveAllTasks = _st387save;
+     }
+
+     // ===== ST-388: クラウド書き込みの関所（v0.48.19〜） =====
+     // 背景：最高峰会議①。書き込む関数ごとの見張りでは付け忘れが起きる（見るだけリンク事故）。
+     // 接続の from() に関所をかぶせ、全ての書き込みを1か所で判定する。
+     var _st388saved = { t: window._isTesting, s: window._smokeTestRunning, b: window._viewOnlyBackup, p: window._viewOnlyPending };
+     try {
+       if (typeof window._installCloudWriteGate !== 'function') {
+         ng('ST-388: 関所が見つからない', '');
+       } else {
+         var _st388sent = [];
+         var _st388mk = function() { return { from: function(t) { var b = {
+             select: function() { return this; }, eq: function() { return this; } };
+           ['insert', 'update', 'upsert', 'delete'].forEach(function(op) { b[op] = function() { _st388sent.push(t + '.' + op); return b; }; });
+           return b; } }; };
+         var _st388c = _st388mk(); window._installCloudWriteGate(_st388c);
+         window._isTesting = false; window._smokeTestRunning = false; window._viewOnlyBackup = null; window._viewOnlyPending = false;
+         _st388c.from('koyomiru_shared_tasks').update({}).eq('id', 1);
+         (_st388sent.indexOf('koyomiru_shared_tasks.update') !== -1)
+           ? ok('ST-388·①: ふだんの書き込みは関所を通る')
+           : ng('ST-388·①: ふだんの書き込みが止まっている', '');
+         _st388sent.length = 0; window._viewOnlyPending = true;
+         var _st388q = _st388c.from('koyomiru_user_settings').upsert({}).select();
+         (_st388sent.length === 0 && typeof _st388q.then === 'function')
+           ? ok('ST-388·②: 見るだけ中は、設定などの書き込みが止まる')
+           : ng('ST-388·②: 見るだけ中に書き込みが通ってしまう', _st388sent.join(','));
+         _st388c.from('koyomiru_visits').insert({});
+         (_st388sent.indexOf('koyomiru_visits.insert') !== -1)
+           ? ok('ST-388·③: 見るだけ中でも、訪問の記録は通る')
+           : ng('ST-388·③: 訪問の記録まで止まっている', '');
+         _st388sent.length = 0; window._viewOnlyPending = false; window._smokeTestRunning = true;
+         _st388c.from('koyomiru_task_comments').delete().eq('id', 1);
+         (_st388sent.length === 0)
+           ? ok('ST-388·④: テスト中は、本物のクラウドへの書き込みが止まる')
+           : ng('ST-388·④: テスト中に書き込みが通ってしまう', _st388sent.join(','));
+         _st388q.then(function(res) {
+           (res && res.error && res.error.code === 'KOYOMIRU_GATE')
+             ? ok('ST-388·⑤: 止めたときは成功のふりをせず、エラーとして返す')
+             : ng('ST-388·⑤: 止めたのにエラーが返らない', JSON.stringify(res));
+         });
+       }
+     } catch(e) {
+       ng('ST-388: 例外', e.message);
+     } finally {
+       window._isTesting = _st388saved.t; window._smokeTestRunning = _st388saved.s;
+       window._viewOnlyBackup = _st388saved.b; window._viewOnlyPending = _st388saved.p;
+     }
+
+     // ===== ST-389: 権限で弾かれた更新・削除を、成功のふりにしない（v0.48.19〜） =====
+     // 背景：最高峰会議②。RLSで弾かれた更新・削除はエラーにならず0件で終わる。
+     // 見るだけリンクの停止が0件でも「共有をやめました」と見えるのは安全上最も危ない。
+     var _st389client = window.supabaseClient, _st389toast = window.showToast;
+     var _st389flags = { t: window._isTesting, s: window._smokeTestRunning };
+     var _st389cleanup = function() {
+       window.supabaseClient = _st389client; window.showToast = _st389toast;
+       window._isTesting = _st389flags.t; window._smokeTestRunning = _st389flags.s;
+     };
+     try {
+       if (typeof _stopViewLink !== 'function' || typeof deletePodcastComment !== 'function') {
+         ng('ST-389: 対象の処理が見つからない', '');
+       } else {
+         var _st389rows = [];
+         var _st389mock = { from: function() { var b = { update: function() { return b; }, eq: function() { return b; },
+           select: function() { return Promise.resolve({ data: _st389rows, error: null }); } }; return b; } };
+         var _st389t = [];
+         var _st389set = function() {
+           window.supabaseClient = _st389mock; window.showToast = function(m) { _st389t.push(m); };
+           window._isTesting = false; window._smokeTestRunning = false;
+         };
+         // 他のテストの通知（リンクを作りました等）が混ざりうるので、「最後の通知」ではなく
+         // 「目当ての通知が出たか・出てはいけない通知が出ていないか」で判定する。
+         _st389set(); _st389rows = []; _st389t.length = 0;
+         _stopViewLink('st389').then(function() {
+           (_st389t.indexOf('止められませんでした') !== -1 && _st389t.indexOf('共有をやめました') === -1)
+             ? ok('ST-389·①: 見るだけリンクの停止が0件なら「止められませんでした」と伝える')
+             : ng('ST-389·①: 0件なのに止めたように見える', _st389t[_st389t.length - 1]);
+           _st389set(); _st389rows = [{ id: 'st389' }]; _st389t.length = 0;
+           return _stopViewLink('st389');
+         }).then(function() {
+           (_st389t.indexOf('共有をやめました') !== -1)
+             ? ok('ST-389·②: 本当に止まったときは「共有をやめました」')
+             : ng('ST-389·②: 止まったのに表示が違う', _st389t[_st389t.length - 1]);
+           _st389set(); _st389rows = [];
+           return deletePodcastComment('st389');
+         }).then(function(ret) {
+           (ret === false)
+             ? ok('ST-389·③: 開発者の声のコメント削除が0件なら、削除したことにしない')
+             : ng('ST-389·③: 0件なのに削除したことになっている', ret);
+           _st389cleanup();
+         }).catch(function(e) { ng('ST-389: 例外', e && e.message); _st389cleanup(); });
+       }
+     } catch(e) {
+       ng('ST-389: 例外', e.message);
+       _st389cleanup();
+     }
+
+     // ===== ST-390: 新規インストールでも、自由帳のプリセットのIDが保たれる（v0.48.19〜） =====
+     // 背景：最高峰会議③。migrateToUUIDv7が新しい形式のIDまで作り直し、新規の方の環境で
+     // プリセットの固定IDが付け替わっていた（旧版で19ページ中10ページ）。IDを頼りに中身を
+     // 直す移行が相手を見失う原因だった。既に新しい形式のIDには触らないよう直した。
+     try {
+       if (typeof nbPages !== 'function') {
+         ng('ST-390: 自由帳の処理が見つからない', '');
+       } else {
+         var _st390ids = nbPages().map(function(p) { return p.id; });
+         var _st390want = [
+           '019e3a10-1000-7000-9000-000000000002',  // アカウント連携
+           '019e3a10-1000-7000-9000-000000000001',  // スタンプの使い方
+           '019d38c0-43f5-711c-ae9d-7be962b35ce5',  // 禅モードとは
+           '019d1d49-e5fd-7b72-bcbe-1e57b0df3bf4'   // 業と徳の定義
+         ];
+         var _st390miss = _st390want.filter(function(id) { return _st390ids.indexOf(id) === -1; });
+         (_st390miss.length === 0)
+           ? ok('ST-390·①: プリセットの自由帳が、固定のIDのまま残っている')
+           : ng('ST-390·①: プリセットのIDが付け替わっている', _st390miss.join(','));
+       }
+     } catch(e) {
+       ng('ST-390: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
