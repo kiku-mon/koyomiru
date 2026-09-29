@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.15 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.16 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.15';
+    const APP_VERSION = 'v0.48.16';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14126,22 +14126,26 @@ function renderTodoList() {
     function renderSearchCalFilter() {
       var box = document.getElementById('searchCalFilter');
       if (!box) return;
-      var _cals = (calendars || []).filter(function(c){ return c && c.visible !== false; });
+      // v0.48.16: 【権威】2026-09-29、月間で非表示にしたカレンダーも検索では選べるようにする。
+      // 隠したカレンダーの中身を確かめたいときこそ、検索の出番だから。
+      // 非表示のものは点線の枠にして、月間では隠していることが分かるようにする。
+      var _cals = (calendars || []).filter(function(c){ return !!c; });
       // v0.45.1945: カレンダーが1つのときも出す。
       // 「1つなら絞る意味がない」と隠していたが、画面の作りが状況で変わるほうが
       // 分かりにくい。月間の絞り込みは常に出ているので、そちらと揃える。
       box.style.display = 'flex';
       var _cur = window._searchCalFilter || null;
-      var _btn = function(id, label, color) {
+      var _btn = function(id, label, color, hidden) {
         var _on = (_cur === id);
         return '<button onclick="setSearchCalFilter(' + (id ? "'" + id + "'" : 'null') + ')" ' +
-          'style="padding:5px 12px;border:1.5px solid ' + (_on ? (color || '#0b6bcb') : '#e0e0e0') + ';' +
+          (hidden ? 'title="月間では非表示にしています" ' : '') +
+          'style="padding:5px 12px;border:1.5px ' + (hidden ? 'dashed' : 'solid') + ' ' + (_on ? (color || '#0b6bcb') : (hidden ? '#bbb' : '#e0e0e0')) + ';' +
           'border-radius:16px;background:' + (_on ? (color || '#0b6bcb') : '#fff') + ';' +
           'color:' + (_on ? '#fff' : '#666') + ';font-size:0.75em;font-weight:600;cursor:pointer;' +
           'white-space:nowrap;flex-shrink:0;font-family:inherit;">' + escAttr(label) + '</button>';
       };
       box.innerHTML = _btn(null, 'すべて') +
-        _cals.map(function(c){ return _btn(c.id, c.name || '(無題)', c.color); }).join('');
+        _cals.map(function(c){ return _btn(c.id, c.name || '(無題)', c.color, c.visible === false); }).join('');
     }
     window.renderSearchCalFilter = renderSearchCalFilter;
 
@@ -14326,7 +14330,10 @@ function renderTodoList() {
       // v0.45.1947: 言葉が空のときは自由帳を出さない。
       // 一覧として眺めたいのは予定であって、自由帳の全ページではない。
       // 言葉を入れれば、これまでどおり自由帳も探す。
-      const noteHits = !q ? [] : nbPages().filter(p =>
+      // v0.48.16: 【権威】2026-09-29、カレンダーごとに中身を見たい、との要望。
+      // 自由帳のページにはカレンダーの区別が無いので、カレンダーを選んでいるときに
+      // 混ぜると「このカレンダーの中身」にならない。選んでいるときは出さない。
+      const noteHits = (!q || window._searchCalFilter) ? [] : nbPages().filter(p =>
         (p.title || '').toLowerCase().includes(q) ||
         (p.textL || '').toLowerCase().includes(q) ||
         (p.textR || '').toLowerCase().includes(q)
@@ -14334,6 +14341,30 @@ function renderTodoList() {
       const total = taskHits.length + noteHits.length;
       document.getElementById('searchCount').textContent = total + '件';
       container.innerHTML = '';
+      // v0.48.16: 【権威】2026-09-29、カレンダーを選んで何も打っていないとき、
+      // 「検索」ではなく「そのカレンダーの一覧」を見ていると分かるよう、見出しを出す。
+      // 検索欄が目立つので、言葉を打つ場所にしか見えず、カレンダーごとに眺められる
+      // ことに気づけなかった。
+      var _calHead = '';
+      if (window._searchCalFilter) {
+        var _hc = (calendars || []).filter(function(c) { return c && c.id === window._searchCalFilter; })[0];
+        var _hn = _hc ? (_hc.name || '(無題)') : 'このカレンダー';
+        var _hcol = (_hc && _hc.color) || '#0b6bcb';
+        var _hr = (typeof _searchRangeLabel === 'function') ? _searchRangeLabel(window._searchRange) : '';
+        _calHead = '<div style="display:flex;align-items:center;gap:8px;padding:8px 6px 10px;border-bottom:1px solid #f0f0f0;margin-bottom:4px;">' +
+          '<span style="width:10px;height:10px;border-radius:50%;background:' + escAttr(_hcol) + ';flex-shrink:0;"></span>' +
+          '<span style="font-size:0.85em;font-weight:700;color:#333;">' + _escapeHtml(_hn) +
+            (q ? 'の中から「' + _escapeHtml(q) + '」' : 'の予定') + '：' + taskHits.length + '件</span>' +
+          '<span style="font-size:0.72em;color:#999;">（' + _escapeHtml(_hr) + '）</span>' +
+        '</div>';
+      }
+      if (total === 0 && !q && window._searchCalFilter) {
+        container.innerHTML = _calHead +
+          '<div style="text-align:center;color:#bbb;padding:28px 0;font-size:0.9em;">' +
+          (window._searchRange === 'all' ? 'このカレンダーには、まだ予定がありません' : 'この期間には、予定がありません') + '</div>';
+        return;
+      }
+      if (total > 0 && _calHead) container.innerHTML = _calHead;
       if (total === 0) {
         // v0.48.9: 【権威】2026-09-25、2003年の予定が検索に出てこない、との報告。
         // 実際には「今日から先」が既定になっており、過去の予定は最初から
@@ -49767,6 +49798,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.16', date: '2026-09-29',
+    items: [
+      { icon:'📅', t:'検索で、カレンダーごとの中身を眺められるようにしました',
+        before:'カレンダーで絞り込めましたが、言葉を探す画面にしか見えず、月間で非表示にしたカレンダーは選べませんでした',
+        after:'カレンダーを選ぶと「◯◯の予定：N件」と見出しが出て、中身が新しい順に並びます。月間で非表示のカレンダーも（点線の枠で）選べます' }
+    ]
+  },
+  {
     ver: 'v0.48.15', date: '2026-09-29',
     items: [
       { icon:'📖', t:'自由帳の説明を見直しました',
@@ -71060,6 +71099,48 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-385: 例外', e.message);
+     }
+
+     // ===== ST-386: 検索でカレンダーごとに中身を眺められる（v0.48.16〜） =====
+     // 背景：このカレンダーに何が入っているかを検索で見たい、との要望。仕組み自体は
+     // 既にあったが、言葉を打つ場所にしか見えず気づけなかった。①見出しを出す
+     // ②月間で非表示のカレンダーも選べる ③カレンダー選択中は自由帳を混ぜない。
+     var _st386backup = JSON.parse(JSON.stringify(allTasks));
+     var _st386calBackup = JSON.parse(JSON.stringify(calendars || []));
+     var _st386save = window.saveAllTasks;
+     try {
+       if (typeof openSearchModal !== 'function' || typeof setSearchCalFilter !== 'function') {
+         ng('ST-386: 検索の処理が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         calendars.push({ id: 'st386hid', name: 'ST386隠し', color: '#8e44ad', visible: false });
+         allTasks.push({ id: 'st386a', kind: 'task', title: 'ST386古い予定', text: 'ST386古い予定', date: '2003-08-15', calendarId: 'st386hid' });
+         openSearchModal();
+         var _st386chip = [].filter.call(document.querySelectorAll('#searchCalFilter button'), function(b) { return b.textContent === 'ST386隠し'; })[0];
+         (_st386chip && _st386chip.style.border.indexOf('dashed') !== -1)
+           ? ok('ST-386·①: 月間で非表示のカレンダーも、検索のボタンに点線で出る')
+           : ng('ST-386·①: 非表示のカレンダーが選べない', '');
+         setSearchCalFilter('st386hid');
+         var _st386res = document.getElementById('searchResults');
+         var _st386head = _st386res.firstChild ? _st386res.firstChild.textContent : '';
+         (_st386head.indexOf('ST386隠しの予定：1件') === 0 && _st386res.textContent.indexOf('ST386古い予定') !== -1)
+           ? ok('ST-386·②: 何も打たずに選ぶと「◯◯の予定：N件」の見出しと中身が出る')
+           : ng('ST-386·②: 見出しか中身が想定と違う', _st386head);
+         var _st386inp = document.getElementById('searchInput');
+         _st386inp.value = 'アカウント';
+         _st386inp.dispatchEvent(new Event('input', { bubbles: true }));
+         (_st386res.textContent.indexOf('自由帳') === -1)
+           ? ok('ST-386·③: カレンダーを選んでいるときは、自由帳のページが混ざらない')
+           : ng('ST-386·③: カレンダー選択中に自由帳が混ざっている', '');
+         _st386inp.value = '';
+         setSearchCalFilter(null);
+       }
+     } catch(e) {
+       ng('ST-386: 例外', e.message);
+     } finally {
+       allTasks = _st386backup;
+       calendars.length = 0; _st386calBackup.forEach(function(c) { calendars.push(c); });
+       window.saveAllTasks = _st386save;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
