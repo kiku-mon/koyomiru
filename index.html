@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.16 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.17 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.16';
+    const APP_VERSION = 'v0.48.17';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14273,6 +14273,25 @@ function renderTodoList() {
     }
     window.setSearchCalFilter = setSearchCalFilter;
 
+    // v0.48.17: 【権威】2026-09-29、検索結果に題名の無い行がダブって出る、との報告。
+    // 原因は写真館の写真だった。写真は題名が無く、日付を「2026/09/11」と「/」区切りで
+    // 持つため、空っぽの行として混ざり、並び順でも一番上に来ていた。同じ日に2枚撮ると
+    // 同じ日付の空行が2つ並び、ダブって見えた。検索に出すのは「予定」だけにし、
+    // 写真・音声・動画・スタンプの型紙・日ごとの状態記録などの裏方は除く。
+    // 本体の検索と、0件のときの「期間の外にN件」の数え方を、この1つに揃える。
+    var _SEARCH_EXCLUDE_KINDS = {
+      note: 1, deckHistory: 1, myDeck: 1, guildLicense: 1,
+      photo: 1, audio: 1, video: 1, stamp: 1, dailyStatus: 1, deck: 1
+    };
+    function _isSearchableTask(t) {
+      if (!t) return false;
+      if (t.kind && _SEARCH_EXCLUDE_KINDS[t.kind]) return false;
+      // 題名も本文もメモも空のものは、並べても何か分からないので出さない
+      if (!String(t.text || '').trim() && !String(t.title || '').trim() &&
+          !String(t.memo || '').trim() && !String(t.memo2 || '').trim()) return false;
+      return true;
+    }
+    window._isSearchableTask = _isSearchableTask;
     function renderSearchResults() {
       const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
       const container = document.getElementById('searchResults');
@@ -14290,7 +14309,7 @@ function renderTodoList() {
         var _allMarks = (window.MONEY_OUT_MARKS || '▲') + (window.MONEY_IN_MARKS || '▽');
         _isMoneyQuery = q.length > 0 && q.split('').every(function(c){ return _allMarks.indexOf(c) !== -1; });
       } catch (eMq) {}
-      const taskHits = allTasks.filter(t => t.kind !== 'note' && t.kind !== 'deckHistory' && t.kind !== 'myDeck' && t.kind !== 'guildLicense' &&
+      const taskHits = allTasks.filter(t => _isSearchableTask(t) &&
         // v0.46.53: お金の種類で絞る。言葉の検索と組み合わせて効く。
         (typeof _matchesMoneyFilter === 'function' ? _matchesMoneyFilter(t) : true) &&
         (_isMoneyQuery
@@ -14376,7 +14395,7 @@ function renderTodoList() {
         if (q && window._searchRange !== 'all') {
           try {
             _wouldMatch = allTasks.filter(function(t) {
-              if (t.kind === 'note' || t.kind === 'deckHistory' || t.kind === 'myDeck' || t.kind === 'guildLicense') return false;
+              if (!_isSearchableTask(t)) return false;
               if (!_matchesMoneyFilter(t)) return false;
               if (window._searchCalFilter && t.calendarId !== window._searchCalFilter) return false;
               return _isMoneyQuery
@@ -14458,7 +14477,7 @@ function renderTodoList() {
           info.style.cssText = 'flex:1;min-width:0;';
           const textEl = document.createElement('div');
           textEl.style.cssText = `font-size:0.9em;font-weight:500;color:${t.completed?'#bbb':'#333'};text-decoration:${t.completed?'line-through':''};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
-          textEl.innerHTML = highlightSafe(t.text || '', q);
+          textEl.innerHTML = highlightSafe(t.text || t.title || '', q);
           const meta = document.createElement('div');
           meta.style.cssText = 'font-size:0.75em;color:#aaa;margin-top:2px;';
           meta.textContent = (t.date||'') + (t.time?' '+t.time:'') + '　' + (cal?.name||'');
@@ -49798,6 +49817,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.17', date: '2026-09-29',
+    items: [
+      { icon:'🔍', t:'検索結果に、題名の無い行が並ぶことがある不具合を直しました',
+        before:'写真館の写真が検索に混ざり、題名の無い行として出ていました（同じ日の写真が複数あると、ダブって見えました）',
+        after:'検索には予定だけを出し、写真などは出さないようにしました' }
+    ]
+  },
+  {
     ver: 'v0.48.16', date: '2026-09-29',
     items: [
       { icon:'📅', t:'検索で、カレンダーごとの中身を眺められるようにしました',
@@ -71141,6 +71168,42 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st386backup;
        calendars.length = 0; _st386calBackup.forEach(function(c) { calendars.push(c); });
        window.saveAllTasks = _st386save;
+     }
+
+     // ===== ST-387: 検索に写真などの裏方データが混ざらない（v0.48.17〜） =====
+     // 背景：検索結果に題名の無い行がダブって出る、との報告。写真館の写真
+     // （題名なし・日付が「/」区切り）が混ざり、同じ日に2枚あると空行が2つ並んでいた。
+     var _st387backup = JSON.parse(JSON.stringify(allTasks));
+     var _st387save = window.saveAllTasks;
+     try {
+       if (typeof _isSearchableTask !== 'function' || typeof openSearchModal !== 'function') {
+         ng('ST-387: 検索対象の判定が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){};
+         (!_isSearchableTask({ kind: 'photo', date: '2026/08/20' }) &&
+          !_isSearchableTask({ kind: 'audio', date: '2026-08-20', text: '録音' }) &&
+          !_isSearchableTask({ kind: 'stamp', text: '日勤' }))
+           ? ok('ST-387·①: 写真・音声・スタンプの型紙は検索対象にならない')
+           : ng('ST-387·①: 裏方のデータが検索対象になっている', '');
+         (_isSearchableTask({ kind: 'task', text: '予定' }) &&
+          _isSearchableTask({ text: 'kindの無い古い予定' }) &&
+          _isSearchableTask({ kind: 'travel', title: '草津ゴルフ' }))
+           ? ok('ST-387·②: ふつうの予定・種類の印が無い古い予定・旅行は検索対象のまま')
+           : ng('ST-387·②: 出るべき予定が弾かれている', '');
+         (!_isSearchableTask({ kind: 'task', text: '', title: '' }))
+           ? ok('ST-387·③: 題名も本文も空のものは出さない')
+           : ng('ST-387·③: 空の行が出てしまう', '');
+         allTasks.push({ id: 'st387p', kind: 'photo', date: '2026/08/20', calendarId: 'main' });
+         openSearchModal();
+         (document.getElementById('searchResults').textContent.indexOf('2026/08/20') === -1)
+           ? ok('ST-387·④: 実際の検索画面に、写真の空行が出ない')
+           : ng('ST-387·④: 検索画面に写真の空行が出ている', '');
+       }
+     } catch(e) {
+       ng('ST-387: 例外', e.message);
+     } finally {
+       allTasks = _st387backup;
+       window.saveAllTasks = _st387save;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
