@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.10 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.11 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.10';
+    const APP_VERSION = 'v0.48.11';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45425,11 +45425,24 @@ async function editTaskCommentFromUI(commentId, taskId) {
         //   Could not find the 'updated_at' column
         // この表に updated_at は無いのに、私が確かめずに書き込もうとしていた。
         // 本文だけを書き換える。
+        // v0.48.11: 【権威】2026-09-25、直したはずなのに、また「編集したのに
+        // 反映されない」という報告。今度は別の原因だった。.select()を付けずに
+        // 呼んでいたため、RLS（行レベルセキュリティ）に静かに弾かれて実際には
+        // 0件しか書き換わらなかった場合でも、Supabaseはエラーを返さない
+        // （「成功したのに中身が空」という、よくある落とし穴）。そのため、
+        // 古い文面のまま「更新できました」という顔で再表示していた。
+        // .select()を付け、本当に書き換わった行が返ってきたかを確かめる。
         var up = await window.supabaseClient.from('koyomiru_task_comments')
           .update({ body: newBody })
-          .eq('id', commentId);
+          .eq('id', commentId)
+          .select();
         if (up.error) {
           if (window.showToast) showToast('直せませんでした: ' + up.error.message, {type:'error'});
+          return;
+        }
+        if (!up.data || up.data.length === 0) {
+          // エラーは無いのに、書き換わった行が0件＝権限などで静かに弾かれている。
+          if (window.showToast) showToast('直せませんでした（権限が無いか、既に削除された可能性があります）', {type:'error'});
           return;
         }
         if (typeof renderTaskComments === 'function') renderTaskComments(taskId);
@@ -49698,6 +49711,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.48.11', date: '2026-09-25',
+    items: [
+      { icon:'💬', t:'コメントを編集しても反映されないことがある不具合を直しました',
+        before:'コメントを編集して保存しても、権限などの理由で実際には書き換わっておらず、それでも「成功した」という顔で古い文面のまま表示されることがありました',
+        after:'本当に書き換わったかを確かめ、書き換わっていなければ正直にエラーを出すようにしました' }
+    ]
+  },
   {
     ver: 'v0.48.10', date: '2026-09-25',
     items: [
@@ -70736,6 +70757,94 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        allTasks = _st381backup;
        window.saveAllTasks = _st381save;
+     }
+
+     // ===== ST-382: コメント編集が、RLSに静かに弾かれても「反映されない」で終わらない（v0.48.11〜） =====
+     // 背景：コメントを編集しても反映されない、との報告。.select()を付けずに
+     // update()していたため、RLS（行レベルセキュリティ）に静かに弾かれて実際には
+     // 0件しか書き換わらなかった場合でも、Supabaseはエラーを返さない
+     // （「成功したのに中身が空」という、よくある落とし穴）。そのため、古い
+     // 文面のまま「更新できました」という顔で再表示していた。
+     // ①本当に書き換わったとき：普通に再描画される
+     // ②静かに弾かれたとき（error無し・data空）：正直にエラーを出し、古い文面を
+     //   さも直ったかのように見せない
+     var _st382realClient = window.supabaseClient;
+     var _st382realToast = window.showToast;
+     var _st382realModal = window.showTextInputModal;
+     try {
+       if (typeof editTaskCommentFromUI !== 'function' || typeof listTaskComments !== 'function') {
+         ng('ST-382: コメント編集の処理が見つからない', '');
+       } else {
+         window._isTesting = false; window._smokeTestRunning = false;
+         window._cloudUserId = 'st382-user';
+         var _st382capturedSubmit = null;
+         window.showTextInputModal = function(opts) { _st382capturedSubmit = opts.onSubmit; };
+         // ① 本当に書き換わるケース（.select()が更新後の行を返す）
+         window.supabaseClient = {
+           from: function(table) {
+             return {
+               select: function() { return this; },
+               eq: function() { return this; },
+               order: function() { return Promise.resolve({ data: [{ id: 'c1', task_id: 't1', user_id: 'st382-user', body: '元の文面' }], error: null }); },
+               update: function(payload) {
+                 return { eq: function() { return this; },
+                   select: function() { return Promise.resolve({ data: [{ id: 'c1', body: payload.body }], error: null }); } };
+               }
+             };
+           }
+         };
+         var _st382renderCalled1 = false;
+         var _st382realRender = window.renderTaskComments;
+         window.renderTaskComments = function() { _st382renderCalled1 = true; };
+         editTaskCommentFromUI('c1', 't1').then(function() {
+           if (!_st382capturedSubmit) { ng('ST-382·①: モーダルが呼ばれなかった', ''); return Promise.resolve(); }
+           return _st382capturedSubmit('新しい文面').then(function() {
+             _st382renderCalled1
+               ? ok('ST-382·①: 本当に書き換わったときは、普通に再描画される')
+               : ng('ST-382·①: 再描画されない', '');
+             // ② 静かに弾かれるケース（error無し・data空配列）
+             window.supabaseClient = {
+               from: function(table) {
+                 return {
+                   select: function() { return this; },
+                   eq: function() { return this; },
+                   order: function() { return Promise.resolve({ data: [{ id: 'c2', task_id: 't1', user_id: 'st382-user', body: '元の文面2' }], error: null }); },
+                   update: function(payload) {
+                     return { eq: function() { return this; },
+                       select: function() { return Promise.resolve({ data: [], error: null }); } };
+                   }
+                 };
+               }
+             };
+             var _st382toastMsg = null;
+             window.showToast = function(msg) { _st382toastMsg = msg; };
+             var _st382renderCalled2 = false;
+             window.renderTaskComments = function() { _st382renderCalled2 = true; };
+             _st382capturedSubmit = null;
+             return editTaskCommentFromUI('c2', 't1').then(function() {
+               if (!_st382capturedSubmit) { ng('ST-382·②: モーダルが呼ばれなかった', ''); return; }
+               return _st382capturedSubmit('新しい文面2').then(function() {
+                 (!_st382renderCalled2 && _st382toastMsg && _st382toastMsg.indexOf('直せませんでした') !== -1)
+                   ? ok('ST-382·②: 静かに弾かれたときは、正直にエラーを出し、古い文面を成功したように見せない')
+                   : ng('ST-382·②: 弾かれたのに気づかず進んでいる', '再描画=' + _st382renderCalled2 + ' toast=' + _st382toastMsg);
+               });
+             });
+           });
+         }).catch(function(e) {
+           ng('ST-382: 例外', e && e.message);
+         }).then(function() {
+           window.renderTaskComments = _st382realRender;
+           window.supabaseClient = _st382realClient;
+           window.showToast = _st382realToast;
+           window.showTextInputModal = _st382realModal;
+           window._isTesting = true; window._smokeTestRunning = true;
+         });
+       }
+     } catch(e) {
+       ng('ST-382: 例外', e.message);
+       window.supabaseClient = _st382realClient;
+       window.showToast = _st382realToast;
+       window.showTextInputModal = _st382realModal;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
