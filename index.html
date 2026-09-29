@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.11 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.12 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.11';
+    const APP_VERSION = 'v0.48.12';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -49712,6 +49712,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.12', date: '2026-09-25',
+    items: [
+      { icon:'🔒', t:'お知らせの検索欄に、他人のメールアドレスが勝手に入ることがある不具合を直しました',
+        before:'最新版に更新した直後など、お知らせの検索欄にログイン中のメールアドレスがChromeによって勝手に入ってしまうことがありました',
+        after:'欄の名前を毎回ランダムにし、Chromeが過去の入力を勝手に補わないようにしました' }
+    ]
+  },
+  {
     ver: 'v0.48.11', date: '2026-09-25',
     items: [
       { icon:'💬', t:'コメントを編集しても反映されないことがある不具合を直しました',
@@ -50748,9 +50756,16 @@ window.saveWeatherSlot = saveWeatherSlot;
 function _ensureNewsSearchBox(box) {
   if (!box) return;
   if (document.getElementById('newsSearchInput') && document.getElementById('newsResults')) return;
+  // v0.48.12: 【権威】2026-09-25、最新版へ更新した直後、お知らせの検索欄に
+  // 自分のメールアドレスが勝手に入っていた、との報告。この欄には name が
+  // 無く、autocomplete="off" だけを付けていたが、v0.47.68で見つけたとおり
+  // Chromeは autocomplete="off" を無視し、name を手がかりに過去の入力
+  // （ログイン画面のメール欄など）を勝手に補おうとする。name を毎回ランダムに
+  // 変え、Chromeが「前に見た欄」だと認識できないようにする。
+  var _suf = '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   box.innerHTML =
     '<div style="margin-bottom:12px;">' +
-      '<input id="newsSearchInput" type="search" placeholder="版や言葉で探す（例 v0.47.32・ナビタブ）" ' +
+      '<input id="newsSearchInput" type="search" name="koyomiru-news-q' + _suf + '" placeholder="版や言葉で探す（例 v0.47.32・ナビタブ）" ' +
       'autocomplete="off" ' +
       'style="width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid #dcdcdc;border-radius:10px;font-size:16px;">' +
     '</div>' +
@@ -70525,6 +70540,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        if (typeof cloudLoginWithLine !== 'function' || typeof linkLoginMethod !== 'function') {
          ng('ST-377: LINEログイン関連の処理が見つからない', '');
+         _st382Run();
        } else {
          window.saveAllTasks = function(){};
          (!!document.getElementById('cloudLoginLineBtn'))
@@ -70571,14 +70587,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
              ? ok('ST-377·④: 連携エラーの文言が正しく「LINE」になり、「Discord」に化けない')
              : ng('ST-377·④: エラー文言が想定と違う（化けている可能性）', _st377msg);
            _st377cleanup();
+           _st382Run();
          }).catch(function(e) {
            ng('ST-377: 例外', e && e.message);
            _st377cleanup();
+           _st382Run();
          });
        }
      } catch(e) {
        ng('ST-377: 例外', e.message);
        _st377cleanup();
+       _st382Run();
      }
 
      // ===== ST-378: 年ピッカーの各年ボタンにも、和暦が小さく添えられる（v0.48.7〜） =====
@@ -70768,9 +70787,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ①本当に書き換わったとき：普通に再描画される
      // ②静かに弾かれたとき（error無し・data空）：正直にエラーを出し、古い文面を
      //   さも直ったかのように見せない
-     var _st382realClient = window.supabaseClient;
-     var _st382realToast = window.showToast;
-     var _st382realModal = window.showTextInputModal;
+     // v0.48.12: 【権威】他の非同期テストと並走すると、window.supabaseClient等の
+     // 共有グローバルを取り合う。ST-369/370と同じ教訓に加え、ST-377と組み合わせると
+     // 再現する具体的な競合も見つかったため、ST-377が完全に終わった（cleanup済みの）
+     // あとにだけ呼ばれる関数として定義し、ST-377の末尾から呼ぶ形にする。
+     function _st382Run() {
+     if (!('__stRealSupabaseClient' in window)) window.__stRealSupabaseClient = window.supabaseClient;
+     var _st382realClient = window.__stRealSupabaseClient;
+     if (!('__stRealShowToast' in window)) window.__stRealShowToast = window.showToast;
+     var _st382realToast = window.__stRealShowToast;
+     if (!('__stRealShowTextInputModal' in window)) window.__stRealShowTextInputModal = window.showTextInputModal;
+     var _st382realModal = window.__stRealShowTextInputModal;
+     var _st382realRender = window.renderTaskComments;
+     var _st382cleanup = function() {
+       window.renderTaskComments = _st382realRender;
+       window.supabaseClient = _st382realClient;
+       window.showToast = _st382realToast;
+       window.showTextInputModal = _st382realModal;
+       window._isTesting = true; window._smokeTestRunning = true;
+     };
      try {
        if (typeof editTaskCommentFromUI !== 'function' || typeof listTaskComments !== 'function') {
          ng('ST-382: コメント編集の処理が見つからない', '');
@@ -70778,10 +70813,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          window._isTesting = false; window._smokeTestRunning = false;
          window._cloudUserId = 'st382-user';
          var _st382capturedSubmit = null;
-         window.showTextInputModal = function(opts) { _st382capturedSubmit = opts.onSubmit; };
-         // ① 本当に書き換わるケース（.select()が更新後の行を返す）
-         window.supabaseClient = {
-           from: function(table) {
+         var _st382mock1 = { from: function(table) {
              return {
                select: function() { return this; },
                eq: function() { return this; },
@@ -70793,35 +70825,42 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
              };
            }
          };
+         var _st382mock2 = { from: function(table) {
+             return {
+               select: function() { return this; },
+               eq: function() { return this; },
+               order: function() { return Promise.resolve({ data: [{ id: 'c2', task_id: 't1', user_id: 'st382-user', body: '元の文面2' }], error: null }); },
+               update: function(payload) {
+                 return { eq: function() { return this; },
+                   select: function() { return Promise.resolve({ data: [], error: null }); } };
+               }
+             };
+           }
+         };
+         window.showTextInputModal = function(opts) { _st382capturedSubmit = opts.onSubmit; };
+         window.supabaseClient = _st382mock1;
          var _st382renderCalled1 = false;
-         var _st382realRender = window.renderTaskComments;
          window.renderTaskComments = function() { _st382renderCalled1 = true; };
          editTaskCommentFromUI('c1', 't1').then(function() {
+           window.supabaseClient = _st382mock1;
+           window._isTesting = false; window._smokeTestRunning = false;
            if (!_st382capturedSubmit) { ng('ST-382·①: モーダルが呼ばれなかった', ''); return Promise.resolve(); }
            return _st382capturedSubmit('新しい文面').then(function() {
              _st382renderCalled1
                ? ok('ST-382·①: 本当に書き換わったときは、普通に再描画される')
                : ng('ST-382·①: 再描画されない', '');
-             // ② 静かに弾かれるケース（error無し・data空配列）
-             window.supabaseClient = {
-               from: function(table) {
-                 return {
-                   select: function() { return this; },
-                   eq: function() { return this; },
-                   order: function() { return Promise.resolve({ data: [{ id: 'c2', task_id: 't1', user_id: 'st382-user', body: '元の文面2' }], error: null }); },
-                   update: function(payload) {
-                     return { eq: function() { return this; },
-                       select: function() { return Promise.resolve({ data: [], error: null }); } };
-                   }
-                 };
-               }
-             };
+             window.supabaseClient = _st382mock2;
              var _st382toastMsg = null;
              window.showToast = function(msg) { _st382toastMsg = msg; };
              var _st382renderCalled2 = false;
              window.renderTaskComments = function() { _st382renderCalled2 = true; };
              _st382capturedSubmit = null;
+             window._isTesting = false; window._smokeTestRunning = false;
              return editTaskCommentFromUI('c2', 't1').then(function() {
+               window.supabaseClient = _st382mock2;
+               window.showToast = function(msg) { _st382toastMsg = msg; };
+               window._cloudUserId = 'st382-user';
+               window._isTesting = false; window._smokeTestRunning = false;
                if (!_st382capturedSubmit) { ng('ST-382·②: モーダルが呼ばれなかった', ''); return; }
                return _st382capturedSubmit('新しい文面2').then(function() {
                  (!_st382renderCalled2 && _st382toastMsg && _st382toastMsg.indexOf('直せませんでした') !== -1)
@@ -70833,18 +70872,46 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          }).catch(function(e) {
            ng('ST-382: 例外', e && e.message);
          }).then(function() {
-           window.renderTaskComments = _st382realRender;
-           window.supabaseClient = _st382realClient;
-           window.showToast = _st382realToast;
-           window.showTextInputModal = _st382realModal;
-           window._isTesting = true; window._smokeTestRunning = true;
+           _st382cleanup();
          });
        }
      } catch(e) {
        ng('ST-382: 例外', e.message);
-       window.supabaseClient = _st382realClient;
-       window.showToast = _st382realToast;
-       window.showTextInputModal = _st382realModal;
+       _st382cleanup();
+     }
+     }
+     window._st382Run = _st382Run;
+
+     // ===== ST-383: お知らせの検索欄が、Chromeの勝手な自動入力を受けない（v0.48.12〜） =====
+     // 背景：最新版へ更新した直後、お知らせの検索欄に自分のメールアドレスが
+     // 勝手に入っていた、との報告。name が無いままだったため、v0.47.68（自由帳
+     // マトリクス）で見つけたのと同じ理由で、Chromeがautocomplete="off"を無視し、
+     // ログイン画面のメール欄などから値を補おうとしていた。
+     try {
+       if (typeof _ensureNewsSearchBox !== 'function') {
+         ng('ST-383: お知らせ検索欄の処理が見つからない', '');
+       } else {
+         var _st383box1 = document.createElement('div'); document.body.appendChild(_st383box1);
+         _ensureNewsSearchBox(_st383box1);
+         var _st383name1 = document.getElementById('newsSearchInput') ? document.getElementById('newsSearchInput').name : null;
+         var _st383val1 = document.getElementById('newsSearchInput') ? document.getElementById('newsSearchInput').value : null;
+         _st383box1.remove();
+         var _st383box2 = document.createElement('div'); document.body.appendChild(_st383box2);
+         _ensureNewsSearchBox(_st383box2);
+         var _st383name2 = document.getElementById('newsSearchInput') ? document.getElementById('newsSearchInput').name : null;
+         (_st383name1 && _st383name1 !== 'newsSearchInput' && _st383name1.indexOf('koyomiru-news-q') === 0)
+           ? ok('ST-383·①: 読み込みごとに作るランダムな名前になっている（固定名ではない）')
+           : ng('ST-383·①: 名前が固定・想定外', _st383name1);
+         (_st383name1 !== _st383name2)
+           ? ok('ST-383·②: 2回読み込むと、毎回違う名前になる')
+           : ng('ST-383·②: 2回とも同じ名前になっている', _st383name1);
+         (_st383val1 === '')
+           ? ok('ST-383·③: 開いた直後、欄の中身は空になっている')
+           : ng('ST-383·③: 開いた直後から何か入っている', _st383val1);
+         _st383box2.remove();
+       }
+     } catch(e) {
+       ng('ST-383: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
