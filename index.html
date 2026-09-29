@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.12 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.13 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.12';
+    const APP_VERSION = 'v0.48.13';
   const APP_LAST_UPDATED = '2026-09-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45472,12 +45472,28 @@ async function postTaskCommentFromUI() {
 window.postTaskCommentFromUI = postTaskCommentFromUI;
 
 async function removeTaskCommentFromUI(commentId) {
-  var r = await deleteTaskComment(commentId);
-  if (!r || r.error) {
-    if (typeof showToast === 'function') showToast((r && r.error && r.error.message) || '削除できませんでした', {type:'error'});
-    return;
+  // v0.48.13: 【権威】2026-09-25、「本当に削除しますか」を挟んでほしい、との要望。
+  // 他の削除（禅の記録・デッキ等）と同じ、showChoiceModalの形に揃える。
+  var _doDelete = async function() {
+    var r = await deleteTaskComment(commentId);
+    if (!r || r.error) {
+      if (typeof showToast === 'function') showToast((r && r.error && r.error.message) || '削除できませんでした', {type:'error'});
+      return;
+    }
+    if (window._openCommentTaskId) renderTaskComments(window._openCommentTaskId);
+  };
+  if (typeof showChoiceModal === 'function') {
+    showChoiceModal({
+      title: 'コメントを削除',
+      desc: 'このコメントを削除しますか？元に戻せません。',
+      buttons: [
+        { label: '削除する', style: 'danger', dangerConfirm: false, onClick: _doDelete },
+        { label: 'やめる', style: 'cancel' }
+      ]
+    });
+  } else {
+    await _doDelete();
   }
-  if (window._openCommentTaskId) renderTaskComments(window._openCommentTaskId);
 }
 window.removeTaskCommentFromUI = removeTaskCommentFromUI;
 
@@ -49711,6 +49727,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.48.13', date: '2026-09-25',
+    items: [
+      { icon:'🗑️', t:'コメントの削除に、確認をはさむようにしました',
+        before:'✕を押すとすぐに削除され、誤って消してしまうことがありました',
+        after:'「このコメントを削除しますか？元に戻せません。」と確認してから削除します' }
+    ]
+  },
   {
     ver: 'v0.48.12', date: '2026-09-25',
     items: [
@@ -70912,6 +70936,55 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-383: 例外', e.message);
+     }
+
+     // ===== ST-384: コメント削除に「本当に削除しますか」の確認が入る（v0.48.13〜） =====
+     // 背景：メモのコメント削除に確認を入れてほしい、との要望。他の削除
+     // （禅の記録・デッキ等）と同じ showChoiceModal の形に揃えた。
+     // danger スタイルは自動で二重確認を挟む仕組みがあり、既にこちらで
+     // 用意した確認と二重に重なってしまうため、dangerConfirm:false で防いでいる。
+     try {
+       if (typeof removeTaskCommentFromUI !== 'function' || typeof showChoiceModal !== 'function') {
+         ng('ST-384: コメント削除・確認モーダルの処理が見つからない', '');
+       } else {
+         window._isTesting = false; window._smokeTestRunning = false;
+         var _st384realDelete = window.deleteTaskComment;
+         var _st384deleteCalled = false;
+         window.deleteTaskComment = function(id) { _st384deleteCalled = true; return Promise.resolve({ data: [{ id: id }], error: null }); };
+         window._openCommentTaskId = 't1';
+         var _st384realRender = window.renderTaskComments;
+         window.renderTaskComments = function(){};
+
+         removeTaskCommentFromUI('st384-c1');
+         (!_st384deleteCalled)
+           ? ok('ST-384·①: 呼んだ直後は、まだ削除が実行されない（確認をはさむ）')
+           : ng('ST-384·①: 確認をはさまず、いきなり削除されてしまう', '');
+         var _st384modalText = document.body.textContent;
+         (_st384modalText.indexOf('このコメントを削除しますか') !== -1)
+           ? ok('ST-384·②: 確認の文言が表示される')
+           : ng('ST-384·②: 確認の文言が見当たらない', '');
+         var _st384cancelBtn = [].filter.call(document.querySelectorAll('button'), function(b) { return b.textContent.trim() === 'やめる'; })[0];
+         if (_st384cancelBtn) _st384cancelBtn.click();
+         (!_st384deleteCalled)
+           ? ok('ST-384·③: 「やめる」を押すと、削除されない')
+           : ng('ST-384·③: 「やめる」を押したのに削除されてしまった', '');
+
+         removeTaskCommentFromUI('st384-c2');
+         var _st384delBtns = [].filter.call(document.querySelectorAll('button'), function(b) { return b.textContent.trim() === '削除する'; });
+         (_st384delBtns.length === 1)
+           ? ok('ST-384·④: 「削除する」ボタンが1つだけ（二重確認になっていない）')
+           : ng('ST-384·④: 「削除する」ボタンが想定と違う数ある（二重確認の疑い）', _st384delBtns.length);
+         if (_st384delBtns[0]) _st384delBtns[0].click();
+         (_st384deleteCalled)
+           ? ok('ST-384·⑤: 「削除する」を押すと、1回のクリックで実際に削除が実行される')
+           : ng('ST-384·⑤: 「削除する」を押しても削除が実行されない', '');
+
+         window.deleteTaskComment = _st384realDelete;
+         window.renderTaskComments = _st384realRender;
+         window._isTesting = true; window._smokeTestRunning = true;
+       }
+     } catch(e) {
+       ng('ST-384: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
