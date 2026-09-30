@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.24 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.25 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.24';
+    const APP_VERSION = 'v0.48.25';
   const APP_LAST_UPDATED = '2026-09-30'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -49652,8 +49652,26 @@ async function unifiedPushTasks() {
   try {
     if (toPush.length > 0 && window.supabaseClient) {
       var _ids = toPush.map(function(x){ return x.id; });
-      var _cur = await window.supabaseClient.from('koyomiru_shared_tasks')
-        .select('id, updated_at').in('id', _ids);
+      // v0.48.25: 【権威】2026-09-30、送るものが1,000件を超えると、Supabaseの「一度に返す件数の
+      // 上限」（1,000件）で時刻が一部しか返らず、返らなかったものを「クラウドに無い」と見なして
+      // 古い内容で新しい内容を上書きしえた。IDを並べた問い合わせが長すぎて失敗することもあった。
+      // 200件ずつ区切って問い合わせる（1回の返事は上限を超えない）。
+      var _CHECK_CHUNK = 200;
+      var _curRows = [];
+      var _curError = null;
+      for (var _ci = 0; _ci < _ids.length; _ci += _CHECK_CHUNK) {
+        var _chunk = await window.supabaseClient.from('koyomiru_shared_tasks')
+          .select('id, updated_at').in('id', _ids.slice(_ci, _ci + _CHECK_CHUNK));
+        if (_chunk.error) { _curError = _chunk.error; break; }
+        _curRows = _curRows.concat(_chunk.data || []);
+      }
+      // 確かめられなかった回は送らない。巻き戻しは、送れないことより害が大きい。
+      // 送る列はそのまま残るので、次の機会に確かめ直して送る。
+      if (_curError) {
+        console.warn('[Unified] 新しさを確かめられなかったので、今回は送りません（次の機会に送ります）:', _curError.message);
+        return { data: [], error: _curError };
+      }
+      var _cur = { data: _curRows, error: null };
       if (!_cur.error && _cur.data) {
         var _cloudAt = {};
         _cur.data.forEach(function(row){ _cloudAt[row.id] = row.updated_at || ''; });
@@ -50042,6 +50060,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.48.25', date: '2026-09-30',
+    items: [
+      { icon:'🔄', t:'予定が1,000件を超えると、古い予定が他の端末に届かないことがある不具合を直しました',
+        before:'クラウドから一度に取り込めるのが1,000件までで、それより古い予定が新しい端末に届かないことがありました。件数が多いときに、新しい内容を古い内容で上書きしてしまうおそれもありました',
+        after:'1,000件ずつ区切って、最後まで取り込むようにしました。送る前の確認も区切って行い、確かめられなかったときは送らずに次の機会に回します' }
+    ]
+  },
   {
     ver: 'v0.48.24', date: '2026-09-30',
     items: [
@@ -52046,11 +52072,31 @@ async function unifiedPullTasks() {
   // 上限を置き、超えたら警告する。無言で切り捨てると
   // 「予定が消えた」と誤解されるため、必ず気づける形にする。
   var _PULL_LIMIT = 20000;
-  var r = await window.supabaseClient.from('koyomiru_shared_tasks')
-    .select('id, calendar_id, data, updated_at, deleted_at')
-    .in('calendar_id', window._myCalendarIds)
-    .order('updated_at', { ascending: false })
-    .limit(_PULL_LIMIT);
+  // v0.48.25: 【権威】2026-09-30、クラウドに2,712件あるのに、取り込みがちょうど1,000件で
+  // 切れていた。こよみるは .limit(20000) と頼んでいたが、Supabaseの「一度に返す件数の上限」
+  // （初期値1,000件）がそれより優先され、黙って切られていた。上の警告も「20,000件に達したら」
+  // だったので、1,000件で切られても何も出なかった。新しい端末では古い予定が届かず、
+  // 昔の「消した印」も届かないので、古い端末で消したはずの予定が残ることがあった。
+  // 上限の設定を広げるのではなく、定石どおり区切って最後まで取りに行く（ページ送り）。
+  // 返ってきた件数だけ進め、0件が返るまで続ける（サーバーの上限が1,000でなくても正しく動く）。
+  // 並び順にIDも足し、区切りの境目で重複・取りこぼしが起きにくいようにする。
+  var _PULL_PAGE_SIZE = 1000;
+  var _pulledRows = [];
+  var _pullError = null;
+  for (var _pullFrom = 0; _pullFrom < _PULL_LIMIT; ) {
+    var _page = await window.supabaseClient.from('koyomiru_shared_tasks')
+      .select('id, calendar_id, data, updated_at, deleted_at')
+      .in('calendar_id', window._myCalendarIds)
+      .order('updated_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(_pullFrom, _pullFrom + _PULL_PAGE_SIZE - 1);
+    if (_page.error) { _pullError = _page.error; break; }
+    var _pageRows = _page.data || [];
+    if (_pageRows.length === 0) break;
+    _pulledRows = _pulledRows.concat(_pageRows);
+    _pullFrom += _pageRows.length;
+  }
+  var r = { data: _pulledRows, error: _pullError };
   if (r.error) {
     console.error('[Unified] プル失敗:', r.error.message);
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] プル失敗: ' + r.error.message);
@@ -71555,6 +71601,77 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          window._koyomiruAuthArrival = arrivalBefore; window._cloudAuthInitialChecked = checkedBefore;
          history.replaceState(history.state, '', addressBarBefore);
        });
+     });
+
+     // ===== ST-393: 1,000件を超える予定を、取りこぼさず・巻き戻さない（v0.48.25〜） =====
+     // 背景：クラウドに2,712件あるのに、取り込みがちょうど1,000件で切れていた（Supabaseの
+     // 「一度に返す件数の上限」）。送信前の新しさの確認も同じ上限で一部しか返らず、クラウドの方が
+     // 新しい予定を古い内容で上書きしえた（旧版では1,500件すべて上書きした）。
+     // 偽のサーバーも本物と同じく「1回1,000件まで」しか返さない形にして確かめる。
+     enqueueSmokeAsyncTest('ST-393', function() {
+       if (typeof unifiedPullTasks !== 'function' || typeof unifiedPushTasks !== 'function') {
+         ng('ST-393: 同期の処理が見つからない', ''); return;
+       }
+       var tasksBefore = allTasks.slice();
+       var saved = { load: window._pushQueueLoad, remove: window.pushQueueRemove, cleanup: window.pushQueueCleanup, personal: window._personalCalendarId,
+         calIds: window._myCalendarIds, calIdsAt: window._myCalIdsAt };
+       var restore = function() {
+         allTasks = tasksBefore;
+         window._pushQueueLoad = saved.load; window.pushQueueRemove = saved.remove; window.pushQueueCleanup = saved.cleanup;
+         window._personalCalendarId = saved.personal; window._myCalendarIds = saved.calIds; window._myCalIdsAt = saved.calIdsAt;
+       };
+       var cloudRows = [];
+       for (var i = 0; i < 2712; i++) cloudRows.push({ id: 'st393-' + i, calendar_id: 'st393-cal',
+         data: { id: 'st393-' + i, kind: 'task', text: '予定' + i, date: '2020-01-01' },
+         updated_at: new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString(), deleted_at: null });
+       cloudRows.sort(function(a, b) { return b.updated_at.localeCompare(a.updated_at); });
+       var upserted = 0;
+       window.supabaseClient = { from: function() {
+         var q = { from: 0, to: 999999, ids: null,
+           select: function() { return q; }, eq: function() { return q; }, order: function() { return q; },
+           in: function(col, ids) { if (col === 'id') q.ids = ids; return q; },
+           limit: function(n) { q.to = n - 1; return q; },
+           range: function(a, b) { q.from = a; q.to = b; return q; },
+           upsert: function(rows) { upserted += rows.length; return Promise.resolve({ data: rows, error: null }); },
+           then: function(res) {
+             var list = q.ids
+               ? cloudRows.filter(function(r) { return q.ids.indexOf(r.id) !== -1; }).map(function(r) { return { id: r.id, updated_at: '2026-06-01T00:00:00.000Z' }; })
+               : cloudRows.slice(q.from, q.to + 1);
+             return Promise.resolve({ data: list.slice(0, 1000), error: null }).then(res);   // 上限1,000件
+           } };
+         return q; } };
+       // 前提をテスト自身で整える：見るだけモードではない（前のテストが印を残していることがある）。
+       // 元の値は、キューが終わったあとに戻す。
+       window._viewOnlyBackup = null; window._viewOnlyPending = false;
+       window._myCalendarIds = ['st393-cal']; window._myCalIdsAt = Date.now();
+       window._cloudIsLoggedIn = true; window._cloudUserId = 'st393-user';
+       window.saveAllTasks = function(){};
+       window._isTesting = false; window._smokeTestRunning = false;
+       return unifiedPullTasks().then(function() {
+         var got = allTasks.filter(function(t) { return String(t.id).indexOf('st393-') === 0; }).length;
+         (got === 2712)
+           ? ok('ST-393·①: 1,000件を超える予定も、最後まで取り込む（2,712件）')
+           : ng('ST-393·①: 取りこぼしている', got + '件');
+         // ② 取り込んだ1,500件を「古い内容で」送ろうとしても、クラウドの方が新しければ送らない
+         var queued = {};
+         allTasks.forEach(function(t) {
+           if (String(t.id).indexOf('st393-') === 0 && Number(String(t.id).slice(6)) < 1500) {
+             t.cloudCalendarId = 'st393-cal'; t.updatedAt = '2026-01-01T00:00:00.000Z'; queued[t.id] = true;
+           }
+         });
+         window._pushQueueLoad = function() { return queued; };
+         window.pushQueueRemove = function(){};
+         // 送信の途中の「列の掃除」は、本物の保存場所に印を書くので、見送ったことにする（第7条）
+         window.pushQueueCleanup = function() { return { skipped: true }; };
+         window._personalCalendarId = 'st393-cal';
+         window._isTesting = false; window._smokeTestRunning = false;
+         return unifiedPushTasks();
+       }).then(function() {
+         (upserted === 0)
+           ? ok('ST-393·②: クラウドの方が新しい予定は、1,000件を超えても古い内容で上書きしない')
+           : ng('ST-393·②: 古い内容で上書きした（巻き戻し）', upserted + '件');
+         restore();
+       }, function(e) { restore(); throw e; });
      });
 
      // ===== APAG LAUNCH SEQUENCE =====
