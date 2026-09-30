@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.22 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.23 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,8 +190,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.22';
-  const APP_LAST_UPDATED = '2026-09-29'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.48.23';
+  const APP_LAST_UPDATED = '2026-09-30'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -44546,7 +44546,83 @@ function _ycGoSlide(n) {
 
 <script>
 
-    // ===== v0.48.19: クラウド書き込みの関所 =====
+    // ===== v0.48.23: 後から結果が返るテストのキュー（順番待ちの列） =====
+// 【権威】2026-09-29、最高峰会議①。全体テスト（開発者パネル）は上から一気に走り、最後に
+// 結果を表示するが、その表示が待ち合わせをしていなかった。後から結果が返るテスト（7本）は、
+// ①同時に走って偽のクラウド接続などを奪い合い（今日3回個別に応急処置）、②表示の後に
+// 結果が届くため、落ちても画面にも件数にも出ていなかった。
+// キューに並べ、1本ずつ順番に走らせ、全部終わってから点検と表示に進む。
+// 1本走らせる前に、テストが差し替えがちなものを控え、終わったら必ず戻す（第66条）。
+// 時間切れで途中のまま終わったテストの後片づけも、これで漏れない。
+// 本体の開発者パネルと手元の確認道具の両方が同じものを使うため、window に公開する（第3条）。
+window.createSmokeAsyncTestRunner = function createSmokeAsyncTestRunner(options) {
+  var runnerOptions = options || {};
+  var timeoutMs = runnerOptions.timeoutMs || 8000;
+  var reportFailure = typeof runnerOptions.onFail === 'function' ? runnerOptions.onFail : function() {};
+  var waitingTests = [];
+  // テストが差し替えがちなもの。控えて、終わったら戻す。
+  var RESTORED_AFTER_EACH_TEST = [
+    'supabaseClient', 'showToast', 'saveAllTasks', 'showTextInputModal', 'renderTaskComments',
+    'deleteTaskComment', 'fetchByViewToken', 'rpcWithTimeout',
+    '_isTesting', '_smokeTestRunning', '_viewOnlyBackup', '_viewOnlyPending', '_cloudUserId', '_cloudIsLoggedIn'
+  ];
+  function rememberGlobalsBeforeTest() {
+    var remembered = {};
+    RESTORED_AFTER_EACH_TEST.forEach(function(key) { remembered[key] = { existed: (key in window), value: window[key] }; });
+    return remembered;
+  }
+  function restoreGlobalsAfterTest(remembered) {
+    Object.keys(remembered).forEach(function(key) {
+      if (remembered[key].existed) window[key] = remembered[key].value;
+      else { try { delete window[key]; } catch (e) { window[key] = undefined; } }
+    });
+  }
+  function enqueueSmokeAsyncTest(testName, runTestReturningPromise) {
+    waitingTests.push({ name: testName, run: runTestReturningPromise });
+  }
+  function runOneQueuedTest(queuedTest) {
+    var remembered = rememberGlobalsBeforeTest();
+    return new Promise(function(resolveWhenDone) {
+      var finished = false;
+      var finishOnce = function() {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeoutTimer);
+        restoreGlobalsAfterTest(remembered);
+        resolveWhenDone();
+      };
+      var timeoutTimer = setTimeout(function() {
+        if (finished) return;
+        reportFailure(queuedTest.name + ': 時間切れ', timeoutMs + 'ミリ秒たっても終わりませんでした');
+        finishOnce();
+      }, timeoutMs);
+      var running;
+      try { running = Promise.resolve(queuedTest.run()); } catch (e) { running = Promise.reject(e); }
+      running.then(finishOnce, function(e) {
+        if (!finished) reportFailure(queuedTest.name + ': 例外', (e && e.message) || String(e));
+        finishOnce();
+      });
+    });
+  }
+  function runSmokeAsyncTestQueueInOrder(onAllFinished) {
+    var testsToRun = waitingTests.splice(0);
+    var chain = Promise.resolve();
+    testsToRun.forEach(function(queuedTest) {
+      chain = chain.then(function() { return runOneQueuedTest(queuedTest); });
+    });
+    return chain.then(function() {
+      if (typeof onAllFinished === 'function') onAllFinished();
+    });
+  }
+  return {
+    enqueue: enqueueSmokeAsyncTest,
+    runInOrder: runSmokeAsyncTestQueueInOrder,
+    waitingCount: function() { return waitingTests.length; }
+  };
+};
+// ===== END v0.48.23 後から結果が返るテストのキュー =====
+
+// ===== v0.48.19: クラウド書き込みの関所 =====
     // 【権威】2026-09-29、最高峰会議①。見るだけリンクの事故（v0.47.73）は、書き込む関数
     // ごとに見張りを付ける作りで、設定の送信（unifiedPushSettings）だけ付け忘れていた
     // ことが原因だった。書き込み口は13表・約30か所に散らばっており、増えるたびに同じ
@@ -49904,6 +49980,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.48.23', date: '2026-09-30',
+    items: [
+      { icon:'🧪', t:'品質を確かめる仕組みを直しました（見えないところの改善です）',
+        before:'一部の確認が同時に走って互いに邪魔をしたり、失敗しても結果に出なかったりすることがありました',
+        after:'確認を1つずつ順番に走らせ、失敗は必ず結果に出るようにしました。見落としていた不具合を早く見つけられます' }
+    ]
+  },
   {
     ver: 'v0.48.21', date: '2026-09-29',
     items: [
@@ -57257,6 +57341,10 @@ function showDebugLog(_initOnly) {
      }
      function ok(name)            { _trackTaskCount(name); results.push('✅ ' + name); pass++; }
      function ng(name, reason)    { _trackTaskCount(name); results.push('❌ ' + name + (reason ? ': ' + reason : '')); fail++; }
+     // v0.48.23: 後から結果が返るテストのキュー。失敗（時間切れ・例外）は ng で記録する。
+     var smokeAsyncTestRunner = window.createSmokeAsyncTestRunner({ timeoutMs: 8000, onFail: ng });
+     var enqueueSmokeAsyncTest = smokeAsyncTestRunner.enqueue;
+     var runSmokeAsyncTestQueueInOrder = smokeAsyncTestRunner.runInOrder;
      window._isTesting = true;
      // v0.45.1348: ST-75等がvalidateCalendarIds()の実挙動確認のため一時的に
      // _isTestingをfalseに戻すが、その隙にsaveAllTasks等のlastActivityAtガードも
@@ -69404,10 +69492,14 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            window._newsArchive = _keep;
          }
          // ④ 書き足しの条件：テスト中は書かない
-         window._syncNewsToCloud().then(function(r) {
-           (r && r.skipped === 'testing')
-             ? ok('ST-352·④: テスト中は表へ書かない')
-             : ng('ST-352·④: テスト中に書こうとした', JSON.stringify(r));
+         // v0.48.23: 後から結果が返るので、キューに並べて順番に確かめる。
+         enqueueSmokeAsyncTest('ST-352·④', function() {
+           window._isTesting = true; window._smokeTestRunning = true;
+           return window._syncNewsToCloud().then(function(r) {
+             (r && r.skipped === 'testing')
+               ? ok('ST-352·④: テスト中は表へ書かない')
+               : ng('ST-352·④: テスト中に書こうとした', JSON.stringify(r));
+           });
          });
        }
      } catch(e) {
@@ -70235,147 +70327,78 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      }
 
      // ===== ST-369: 見るだけリンクにも期限が付き、招待と同じ形で選べる（v0.47.74〜） =====
-     // 背景：【緊急・重大】見るだけリンクに期限が無く、何年も前に送ったリンクが
-     // そのまま有効だった。招待リンクと同じ「使える長さを選ぶ」仕組みを持たせ、
-     // 既定は招待と同じ24時間、最大も同じ168時間（7日）にする（きくモンさんの指示）。
-     // SQL側（koyomiru_view_by_token関数・view_token_expires_at列）は既に直し済みで、
-     // ここではアプリ側（発行時に選んだ長さを、実際にその列へ書き込むか）を確かめる。
-     // ①発行画面に、招待と同じ4つの選択肢がある ②選んだ長さがそのまま書き込まれる
-     // ③省略時は24時間 ④上限168時間を超えて指定しても抑えられる
-     var _st369save = window.saveAllTasks;
-     // v0.48.0: 【権威】2026-09-25、ST-369とST-370を一緒に走らせると、
-     // お互いのsupabaseClientの退避・復元が競合することが判明。この枠は全体が
-     // 1つの同期スクリプトとして先に最後まで実行され、.then()の中身（非同期）は
-     // 全部が終わってから動く。そのため「本物」を捕まえる時点で、まだ相手の
-     // ダミーに差し替わったままのことがあり、片方が相手のダミーを「本物」だと
-     // 誤って覚えてしまっていた。個別ではなく、共有の1箇所（最初に捕まえた
-     // ものだけを使う）に統一し、どちらが先に動いても同じ本物を指すようにする。
-     if (!('__stRealSupabaseClient' in window)) window.__stRealSupabaseClient = window.supabaseClient;
-     var _st369realClient = window.__stRealSupabaseClient;
-     var _st369cleanup = function() {
-       window.saveAllTasks = _st369save;
-       window.supabaseClient = _st369realClient;
-       var _ov = document.getElementById('viewLinkOverlay');
-       if (_ov) _ov.remove();
-       window._isTesting = true; window._smokeTestRunning = true;
-     };
-     try {
-       if (typeof issueViewLink !== 'function' || typeof openViewLinkModal !== 'function') {
-         ng('ST-369: 見るだけリンクの発行処理が見つからない', '');
-         _st370Run();
-       } else {
-         // v0.47.74: この枠はasync/awaitに対応していないため、.then()の連鎖で書く。
-         window.saveAllTasks = function(){};
-         var _st369payload = null;
-         // v0.48.0: ST-370と並走したとき、途中でwindow.supabaseClientが相手の
-         // ダミーに差し替わっていることがあるため、各ステップの頭で毎回、
-         // 自分のダミーに立て直す。
-         var _st369mock = {
-           from: function(table) {
-             return {
-               update: function(payload) {
-                 _st369payload = payload;
-                 return {
-                   eq: function() { return this; },
-                   select: function() { return this; },
-                   single: function() { return Promise.resolve({ data: { id: 'st369c', view_token: payload.view_token }, error: null }); }
-                 };
-               }
-             };
+     // 背景：【緊急・重大】見るだけリンクに期限が無く、何年も前に送ったリンクがそのまま有効だった。
+     // 招待リンクと同じ「使える長さを選ぶ」仕組み。既定は24時間、最大は168時間（7日）。
+     // ①発行画面に4つの選択肢 ②選んだ長さが書き込まれる ③省略時は24時間 ④上限168時間で抑える
+     // v0.48.23: キューで1本ずつ走るので、ST-370と取り合わない（v0.48.0のつなぎは外した）。
+     // 差し替えたもの（クラウド接続・保存・テスト中の印）は、キューが控えて戻す（第66条）。
+     var makeViewLinkFakeClient = function(onUpdate) {
+       return { from: function() {
+         var q = {
+           select: function() { return q; },
+           eq: function() { return q; },
+           single: function() { return Promise.resolve({ data: null, error: null }); },
+           update: function(payload) {
+             onUpdate(payload);
+             return { eq: function() { return this; }, select: function() { return this; },
+               single: function() { return Promise.resolve({ data: { id: 'st-view', view_token: payload.view_token }, error: null }); } };
            }
          };
-         window.supabaseClient = _st369mock;
-         window._isTesting = false; window._smokeTestRunning = false;
-         // v0.48.0: ST-370も同じid="viewLinkOverlay"の画面を開くため、後から開いた
-         // 方が先の画面を置き換えてしまう。グローバルなgetElementByIdではなく、
-         // 開いた直後に捕まえた「自分の画面」の中だけを、以後ずっと見る。
-         var _st369ovEl = null;
-         openViewLinkModal('st369c', 'ST369テスト').then(function() {
-           window.supabaseClient = _st369mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           _st369ovEl = document.getElementById('viewLinkOverlay');
-           var _st369sel = _st369ovEl ? _st369ovEl.querySelector('#viewLinkValidSelect') : null;
-           var _st369opts = _st369sel ? [].map.call(_st369sel.options, function(o) { return o.value; }).join(',') : '';
-           (_st369opts === '1,24,72,168')
-             ? ok('ST-369·①: 発行画面に、招待と同じ4つの選択肢（1・24・72・168時間）がある')
-             : ng('ST-369·①: 選択肢が想定と違う', _st369opts);
-           if (_st369sel) _st369sel.value = '72';
-           return _reissueViewLink('st369c', 'ST369テスト');
-         }).then(function() {
-           window.supabaseClient = _st369mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           var _st369diffH = _st369payload
-             ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
-             : null;
-           (_st369diffH === 72)
-             ? ok('ST-369·②: 選んだ長さ（3日）が、そのままview_token_expires_atに書き込まれる')
-             : ng('ST-369·②: 書き込まれた期限が選んだ長さと違う', _st369diffH + '時間（期待72）');
-           _st369payload = null;
-           return issueViewLink('st369c2');
-         }).then(function() {
-           window.supabaseClient = _st369mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           var _st369defH = _st369payload
-             ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
-             : null;
-           (_st369defH === 24)
-             ? ok('ST-369·③: 長さを省略すると、招待と同じ既定の24時間になる')
-             : ng('ST-369·③: 既定の時間が24時間でない', _st369defH);
-           _st369payload = null;
-           return issueViewLink('st369c3', 300);
-         }).then(function() {
-           window.supabaseClient = _st369mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           var _st369capH = _st369payload
-             ? Math.round((new Date(_st369payload.view_token_expires_at) - new Date(_st369payload.view_token_issued_at)) / 3600000)
-             : null;
-           (_st369capH === 168)
-             ? ok('ST-369·④: 上限（168時間）を超えて指定しても、168時間に抑えられる')
-             : ng('ST-369·④: 上限が効いていない', _st369capH);
-           _st369cleanup();
-           _st370Run();
-         }).catch(function(e) {
-           ng('ST-369: 例外', e && e.message);
-           _st369cleanup();
-           _st370Run();
-         });
+         return q;
+       } };
+     };
+     var hoursBetween = function(payload) {
+       return payload ? Math.round((new Date(payload.view_token_expires_at) - new Date(payload.view_token_issued_at)) / 3600000) : null;
+     };
+     var closeViewLinkModal = function() { var ov = document.getElementById('viewLinkOverlay'); if (ov) ov.remove(); };
+     enqueueSmokeAsyncTest('ST-369', function() {
+       if (typeof issueViewLink !== 'function' || typeof openViewLinkModal !== 'function') {
+         ng('ST-369: 見るだけリンクの発行処理が見つからない', '');
+         return;
        }
-     } catch(e) {
-       ng('ST-369: 例外', e.message);
-       _st369cleanup();
-       _st370Run();
-     }
+       var lastUpdate = null;
+       window.supabaseClient = makeViewLinkFakeClient(function(p) { lastUpdate = p; });
+       window.saveAllTasks = function(){};
+       window._isTesting = false; window._smokeTestRunning = false;
+       return openViewLinkModal('st369c', 'ST369テスト').then(function() {
+         var validSelect = document.getElementById('viewLinkValidSelect');
+         var optionValues = validSelect ? [].map.call(validSelect.options, function(o) { return o.value; }).join(',') : '';
+         (optionValues === '1,24,72,168')
+           ? ok('ST-369·①: 発行画面に、招待と同じ4つの選択肢（1・24・72・168時間）がある')
+           : ng('ST-369·①: 選択肢が想定と違う', optionValues);
+         if (validSelect) validSelect.value = '72';
+         return _reissueViewLink('st369c', 'ST369テスト');
+       }).then(function() {
+         (hoursBetween(lastUpdate) === 72)
+           ? ok('ST-369·②: 選んだ長さ（3日）が、そのままview_token_expires_atに書き込まれる')
+           : ng('ST-369·②: 書き込まれた期限が選んだ長さと違う', hoursBetween(lastUpdate) + '時間（期待72）');
+         lastUpdate = null;
+         return issueViewLink('st369c2');
+       }).then(function() {
+         (hoursBetween(lastUpdate) === 24)
+           ? ok('ST-369·③: 長さを省略すると、招待と同じ既定の24時間になる')
+           : ng('ST-369·③: 既定の時間が24時間でない', hoursBetween(lastUpdate));
+         lastUpdate = null;
+         return issueViewLink('st369c3', 300);
+       }).then(function() {
+         (hoursBetween(lastUpdate) === 168)
+           ? ok('ST-369·④: 上限（168時間）を超えて指定しても、168時間に抑えられる')
+           : ng('ST-369·④: 上限が効いていない', hoursBetween(lastUpdate));
+         closeViewLinkModal();
+       });
+     });
 
      // ===== ST-370: 見るだけリンクの回数上限（無制限なし）と、訪問元の判定（v0.47.75〜） =====
-     // v0.48.0: 【権威】2026-09-25、ST-369と同じid="viewLinkOverlay"の画面を取り合い、
-     // 互いのsupabaseClientダミーも競合することが判明。独立した並びの枠のままでは
-     // 直しきれないため、ST-369が完全に終わった（cleanup済みの）あとにだけ
-     // 呼ばれる関数として定義し、ST-369の末尾から呼ぶ形に変える。
-     // 背景：見るだけリンクは仕方なく使っている機能であり、無制限は絶対にやめてほしい、
-     // 招待と同じ考え方で回数上限を付けてほしい、との要望。あわせて、見るだけリンク
-     // から来た訪問だと後で分かるようにしたい、との要望。
-     // SQL側（koyomiru_view_by_token関数・view_token_max_uses/used_count列）は
-     // 既に直し済みで、ここではアプリ側を確かめる。
-     // ①発行欄の既定回数は20・②選んだ回数が書き込まれる・③上限100を超えられない
-     // ④?view=で開くと、訪問元がviewonlyと判定される⑤通常時は影響しない
-     function _st370Run() {
-     var _st370save = window.saveAllTasks;
-     // v0.48.0: ST-369と同じ理由。共有の1箇所から「本物」を読む。
-     if (!('__stRealSupabaseClient' in window)) window.__stRealSupabaseClient = window.supabaseClient;
-     var _st370realClient = window.__stRealSupabaseClient;
-     var _st370cleanup = function() {
-       window.saveAllTasks = _st370save;
-       window.supabaseClient = _st370realClient;
-       var _ov = document.getElementById('viewLinkOverlay');
-       if (_ov) _ov.remove();
-       window._isTesting = true; window._smokeTestRunning = true;
-     };
+     // 背景：見るだけリンクは仕方なく使っている機能で、無制限は絶対にやめてほしい、との要望。
+     // あわせて、見るだけリンクから来た訪問だと後で分かるようにしたい、との要望。
+     // ①発行欄の既定回数は20 ②選んだ回数が書き込まれる ③上限100を超えられない
+     // ④?view=で開くと訪問元がviewonly ⑤通常時は影響しない
+     // v0.48.23: キューで1本ずつ走るので、ST-369と取り合わない（v0.48.0のつなぎは外した）。
      try {
-       if (typeof issueViewLink !== 'function' || typeof _getVisitSource !== 'function') {
-         ng('ST-370: 関連する処理が見つからない', '');
+       if (typeof _getVisitSource !== 'function') {
+         ng('ST-370: 訪問元の判定が見つからない', '');
        } else {
-         // ④⑤ 訪問元の判定（同期で確かめられる）
-         var _st370wasFlag = window._entryWasViewOnlyLink;
+         var entryFlagBefore = window._entryWasViewOnlyLink;
          window._entryWasViewOnlyLink = true;
          (_getVisitSource() === 'viewonly')
            ? ok('ST-370·④: ?view=で開いた印があると、訪問元がviewonlyと判定される')
@@ -70384,65 +70407,53 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_getVisitSource() !== 'viewonly')
            ? ok('ST-370·⑤: 印が無ければ、通常どおりの判定に戻る（誤判定しない）')
            : ng('ST-370·⑤: 印が無いのにviewonlyと判定されてしまう', '');
-         window._entryWasViewOnlyLink = _st370wasFlag;
-
-         // ①②③ 回数上限（.then連鎖で確かめる。この枠はasync/awaitに対応していない）
-         window.saveAllTasks = function(){};
-         var _st370payload = null;
-         // v0.48.0: ST-369と同じ理由。各ステップの頭で毎回、自分のダミーに立て直す。
-         var _st370mock = {
-           from: function(table) {
-             return {
-               select: function() { return this; },
-               eq: function() { return this; },
-               single: function() { return Promise.resolve({ data: null, error: null }); },
-               update: function(p) {
-                 _st370payload = p;
-                 return { eq: function() { return this; }, select: function() { return this; },
-                   single: function() { return Promise.resolve({ data: { id: 'st370c', view_token: p.view_token }, error: null }); } };
-               }
-             };
-           }
-         };
-         window.supabaseClient = _st370mock;
-         window._isTesting = false; window._smokeTestRunning = false;
-         openViewLinkModal('st370c', 'ST370テスト').then(function() {
-           window.supabaseClient = _st370mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           var _inp = document.getElementById('viewLinkMaxUses');
-           (_inp && _inp.value === '20')
-             ? ok('ST-370·①: 発行欄の既定回数は20（無制限の選択肢自体が無い）')
-             : ng('ST-370·①: 既定回数が20でない、または欄が無い', _inp ? _inp.value : 'なし');
-           if (_inp) _inp.value = '35';
-           return _reissueViewLink('st370c', 'ST370テスト');
-         }).then(function() {
-           window.supabaseClient = _st370mock;
-           // v0.48.7: 【権威】他の非同期テストの後始末が、ちょうどこの瞬間に
-           // window._isTesting を true へ戻すことがあり、issueViewLinkが
-           // 「テスト中だから」と何もせず抜けてしまう（_st370payloadがnullのまま）
-           // ことが分かった。呼ぶ直前で、このフラグも毎回立て直す。
-           window._isTesting = false; window._smokeTestRunning = false;
-           (_st370payload && _st370payload.view_token_max_uses === 35 && _st370payload.view_token_used_count === 0)
-             ? ok('ST-370·②: 選んだ回数が書き込まれ、used_countは0で始まる')
-             : ng('ST-370·②: 回数が正しく書き込まれない', JSON.stringify(_st370payload && { max: _st370payload.view_token_max_uses, used: _st370payload.view_token_used_count }));
-           _st370payload = null;
-           return issueViewLink('st370c2', 24, 150);
-         }).then(function() {
-           window.supabaseClient = _st370mock;
-           (_st370payload && _st370payload.view_token_max_uses === 100)
-             ? ok('ST-370·③: 上限（100回）を超えて指定しても、100回に抑えられる')
-             : ng('ST-370·③: 上限が効いていない', _st370payload && _st370payload.view_token_max_uses);
-           _st370cleanup();
-         }).catch(function(e) {
-           ng('ST-370: 例外', e && e.message);
-           _st370cleanup();
-         });
+         window._entryWasViewOnlyLink = entryFlagBefore;
        }
      } catch(e) {
        ng('ST-370: 例外', e.message);
-       _st370cleanup();
      }
-     }
+     enqueueSmokeAsyncTest('ST-370', function() {
+       if (typeof issueViewLink !== 'function' || typeof openViewLinkModal !== 'function') {
+         ng('ST-370: 見るだけリンクの発行処理が見つからない', '');
+         return;
+       }
+       // ST-369の下ごしらえを借りず、単独でも走れるよう自前で持つ。
+       var lastUpdate = null;
+       window.supabaseClient = { from: function() {
+         var q = {
+           select: function() { return q; },
+           eq: function() { return q; },
+           single: function() { return Promise.resolve({ data: null, error: null }); },
+           update: function(payload) {
+             lastUpdate = payload;
+             return { eq: function() { return this; }, select: function() { return this; },
+               single: function() { return Promise.resolve({ data: { id: 'st370c', view_token: payload.view_token }, error: null }); } };
+           }
+         };
+         return q;
+       } };
+       window.saveAllTasks = function(){};
+       window._isTesting = false; window._smokeTestRunning = false;
+       return openViewLinkModal('st370c', 'ST370テスト').then(function() {
+         var maxUsesInput = document.getElementById('viewLinkMaxUses');
+         (maxUsesInput && maxUsesInput.value === '20')
+           ? ok('ST-370·①: 発行欄の既定回数は20（無制限の選択肢自体が無い）')
+           : ng('ST-370·①: 既定回数が20でない、または欄が無い', maxUsesInput ? maxUsesInput.value : 'なし');
+         if (maxUsesInput) maxUsesInput.value = '35';
+         return _reissueViewLink('st370c', 'ST370テスト');
+       }).then(function() {
+         (lastUpdate && lastUpdate.view_token_max_uses === 35 && lastUpdate.view_token_used_count === 0)
+           ? ok('ST-370·②: 選んだ回数が書き込まれ、used_countは0で始まる')
+           : ng('ST-370·②: 回数が正しく書き込まれない', JSON.stringify(lastUpdate && { max: lastUpdate.view_token_max_uses, used: lastUpdate.view_token_used_count }));
+         lastUpdate = null;
+         return issueViewLink('st370c2', 24, 150);
+       }).then(function() {
+         (lastUpdate && lastUpdate.view_token_max_uses === 100)
+           ? ok('ST-370·③: 上限（100回）を超えて指定しても、100回に抑えられる')
+           : ng('ST-370·③: 上限が効いていない', lastUpdate && lastUpdate.view_token_max_uses);
+         var overlay = document.getElementById('viewLinkOverlay'); if (overlay) overlay.remove();
+       });
+     });
 
      // ===== ST-371: 重大な更新（メジャー・マイナー）は「あとで」を選べない（v0.48.0〜） =====
      // 背景：今日の重大な直し（見るだけリンクのデータ破壊事故）を機に、
@@ -70524,6 +70535,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st372wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
          var _st372save = window.saveAllTasks;
          window.saveAllTasks = function(){};
+         // v0.48.23: 設定の保存も止める（setEraDisplayが本物の保存まで動かしていた。第7条）
+         var _stEraSettingsSaveOriginal = window.saveAllSettings; window.saveAllSettings = function(){};
          switchView('monthly');
          currentMonthDate = new Date(2026, 8, 1);
          renderMonthlyView();
@@ -70544,9 +70557,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          if (_st372wasMonth) currentMonthDate = _st372wasMonth;
          renderMonthlyView();
          window.saveAllTasks = _st372save;
+         window.saveAllSettings = _stEraSettingsSaveOriginal;
        }
      } catch(e) {
        ng('ST-372: 例外', e.message);
+       if (typeof _stEraSettingsSaveOriginal === 'function') window.saveAllSettings = _stEraSettingsSaveOriginal;
      }
 
      // ===== ST-373: 仏暦・民国紀元も月間・年間の見出しに添えられる（v0.48.2〜） =====
@@ -70569,6 +70584,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st373backupCfg = JSON.parse(JSON.stringify((allSettings.ui && allSettings.ui.eraDisplay) || {}));
          var _st373save = window.saveAllTasks;
          window.saveAllTasks = function(){};
+         // v0.48.23: 設定の保存も止める（setEraDisplayが本物の保存まで動かしていた。第7条）
+         var _stEraSettingsSaveOriginal = window.saveAllSettings; window.saveAllSettings = function(){};
          setEraDisplay('butsureki', true);
          setEraDisplay('minkoku', true);
          switchView('monthly');
@@ -70585,9 +70602,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          if (_st373wasMonth) currentMonthDate = _st373wasMonth;
          renderMonthlyView();
          window.saveAllTasks = _st373save;
+         window.saveAllSettings = _stEraSettingsSaveOriginal;
        }
      } catch(e) {
        ng('ST-373: 例外', e.message);
+       if (typeof _stEraSettingsSaveOriginal === 'function') window.saveAllSettings = _stEraSettingsSaveOriginal;
      }
 
      // ===== ST-374: ヒジュラ暦（イスラーム暦）が正確に計算できる（v0.48.3〜） =====
@@ -70617,6 +70636,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st374backupCfg = JSON.parse(JSON.stringify((allSettings.ui && allSettings.ui.eraDisplay) || {}));
          var _st374save = window.saveAllTasks;
          window.saveAllTasks = function(){};
+         // v0.48.23: 設定の保存も止める（setEraDisplayが本物の保存まで動かしていた。第7条）
+         var _stEraSettingsSaveOriginal = window.saveAllSettings; window.saveAllSettings = function(){};
          setEraDisplay('hijri', true);
          switchView('monthly');
          var _st374wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
@@ -70631,9 +70652,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          if (_st374wasMonth) currentMonthDate = _st374wasMonth;
          renderMonthlyView();
          window.saveAllTasks = _st374save;
+         window.saveAllSettings = _stEraSettingsSaveOriginal;
        }
      } catch(e) {
        ng('ST-374: 例外', e.message);
+       if (typeof _stEraSettingsSaveOriginal === 'function') window.saveAllSettings = _stEraSettingsSaveOriginal;
      }
 
      // ===== ST-375: 西暦＋和暦は常時、他の暦は見出しを崩さない折りたたみに分かれる（v0.48.4〜） =====
@@ -70652,6 +70675,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st375wasOpen = JSON.parse(JSON.stringify(window._extraEraOpen || { monthly: false, yearly: false }));
          var _st375save = window.saveAllTasks;
          window.saveAllTasks = function(){};
+         // v0.48.23: 設定の保存も止める（setEraDisplayが本物の保存まで動かしていた。第7条）
+         var _stEraSettingsSaveOriginal = window.saveAllSettings; window.saveAllSettings = function(){};
          window._extraEraOpen = { monthly: false, yearly: false };
          setEraDisplay('koki', false);
          setEraDisplay('butsureki', false);
@@ -70694,9 +70719,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          if (_st375wasMonth) currentMonthDate = _st375wasMonth;
          renderMonthlyView();
          window.saveAllTasks = _st375save;
+         window.saveAllSettings = _stEraSettingsSaveOriginal;
        }
      } catch(e) {
        ng('ST-375: 例外', e.message);
+       if (typeof _stEraSettingsSaveOriginal === 'function') window.saveAllSettings = _stEraSettingsSaveOriginal;
      }
 
      // ===== ST-376: ユダヤ暦が正確に計算できる（v0.48.5〜） =====
@@ -70746,6 +70773,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st376backupCfg = JSON.parse(JSON.stringify((allSettings.ui && allSettings.ui.eraDisplay) || {}));
          var _st376save = window.saveAllTasks;
          window.saveAllTasks = function(){};
+         // v0.48.23: 設定の保存も止める（setEraDisplayが本物の保存まで動かしていた。第7条）
+         var _stEraSettingsSaveOriginal = window.saveAllSettings; window.saveAllSettings = function(){};
          setEraDisplay('hebrew', true);
          switchView('monthly');
          var _st376wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
@@ -70760,96 +70789,58 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          if (_st376wasMonth) currentMonthDate = _st376wasMonth;
          renderMonthlyView();
          window.saveAllTasks = _st376save;
+         window.saveAllSettings = _stEraSettingsSaveOriginal;
        }
      } catch(e) {
        ng('ST-376: 例外', e.message);
+       if (typeof _stEraSettingsSaveOriginal === 'function') window.saveAllSettings = _stEraSettingsSaveOriginal;
      }
 
      // ===== ST-377: LINEログイン（定石通り・Google/Discordと同じ形）（v0.48.6〜） =====
      // 背景：Googleは身構える人もいるが、LINEはよく使うので入りやすい、との要望。
-     // 調査の結果、GoogleもDiscordも既に本物のOAuthとして実装済みで、連携の仕組み
-     // （linkLoginMethod）は最初から複数provider対応だったため、LINEは「3本目の枠に
-     // 差し込む」形で追加した。SupabaseのLINEネイティブ対応（汎用OIDCではなく）を使う。
-     var _st377backup = JSON.parse(JSON.stringify(allTasks));
-     var _st377save = window.saveAllTasks;
-     // v0.48.7: 【権威】発見済みの教訓（ST-369/370）と同じ理由。多くの非同期テストが
-     // 並走すると、window.supabaseClient等の共有グローバルを取り合ってしまう。
-     // 共有の1箇所から「本物」を読み、各ステップの頭で自分のダミーに立て直す。
-     if (!('__stRealSupabaseClient' in window)) window.__stRealSupabaseClient = window.supabaseClient;
-     var _st377realClient = window.__stRealSupabaseClient;
-     var _st377realLoggedIn = window._cloudIsLoggedIn;
-     if (!('__stRealShowToast' in window)) window.__stRealShowToast = window.showToast;
-     var _st377realToast = window.__stRealShowToast;
-     var _st377cleanup = function() {
-       allTasks = _st377backup;
-       window.saveAllTasks = _st377save;
-       window.supabaseClient = _st377realClient;
-       window._cloudIsLoggedIn = _st377realLoggedIn;
-       window.showToast = _st377realToast;
-       window._isTesting = true; window._smokeTestRunning = true;
-     };
-     try {
+     // GoogleもDiscordも既に本物のOAuthとして実装済みで、連携の仕組み（linkLoginMethod）は
+     // 最初から複数provider対応だったため、LINEは「3本目の枠に差し込む」形で追加した。
+     // v0.48.23: キューで1本ずつ走るので、他のテストと取り合わない。
+     // 差し替えたもの（クラウド接続・通知・ログイン中の印など）は、キューが控えて戻す（第66条）。
+     (!!document.getElementById('cloudLoginLineBtn'))
+       ? ok('ST-377·①: ログイン画面にLINEボタンがある')
+       : ng('ST-377·①: LINEボタンが見つからない', '');
+     enqueueSmokeAsyncTest('ST-377', function() {
        if (typeof cloudLoginWithLine !== 'function' || typeof linkLoginMethod !== 'function') {
          ng('ST-377: LINEログイン関連の処理が見つからない', '');
-         _st382Run();
-       } else {
-         window.saveAllTasks = function(){};
-         (!!document.getElementById('cloudLoginLineBtn'))
-           ? ok('ST-377·①: ログイン画面にLINEボタンがある')
-           : ng('ST-377·①: LINEボタンが見つからない', '');
-         var _st377calledWith = null;
-         var _st377mock = { auth: {
-           signInWithOAuth: function(opts) { _st377calledWith = opts; return Promise.resolve({ error: null }); },
-           linkIdentity: function(opts) { _st377calledWith = opts; return Promise.resolve({ error: { message: 'already exists' } }); },
-           getUserIdentities: function() { return Promise.resolve({ data: { identities: [] } }); }
-         }};
-         window.supabaseClient = _st377mock;
-         window._isTesting = false; window._smokeTestRunning = false;
-         window.cloudLoginWithLine().then(function() {
-           window.supabaseClient = _st377mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           (_st377calledWith && _st377calledWith.provider === 'line')
-             ? ok('ST-377·②: ログイン時、正しくprovider:\'line\'で呼ばれる')
-             : ng('ST-377·②: 呼び出し引数が違う', JSON.stringify(_st377calledWith));
-           window._cloudIsLoggedIn = true;
-           return window.openLinkMethodModal();
-         }).then(function() {
-           window.supabaseClient = _st377mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           var _st377ov = document.getElementById('linkMethodOverlay');
-           var _st377hasLine = _st377ov ? _st377ov.textContent.indexOf('LINE') !== -1 : false;
-           _st377hasLine
-             ? ok('ST-377·③: 連携画面の一覧に、LINEの行がある')
-             : ng('ST-377·③: 連携画面にLINEが出ていない', '');
-           if (_st377ov) _st377ov.remove();
-           var _st377toastMsg = null;
-           window.showToast = function(msg) { _st377toastMsg = msg; };
-           return window.linkLoginMethod('line');
-         }).then(function() {
-           window.supabaseClient = _st377mock;
-           window._isTesting = false; window._smokeTestRunning = false;
-           // v0.48.6: 直す前は2択の三項演算子だったため、LINEでも必ず「Discord」に
-           // 化けていた（3つ目以降のproviderで、常に最後の選択肢に丸められるバグ）。
-           var _st377toastMsg2 = null;
-           window.showToast = function(msg) { _st377toastMsg2 = msg; };
-           return window.linkLoginMethod('line').then(function() { return _st377toastMsg2; });
-         }).then(function(_st377msg) {
-           (_st377msg && _st377msg.indexOf('LINE') !== -1 && _st377msg.indexOf('Discord') === -1)
-             ? ok('ST-377·④: 連携エラーの文言が正しく「LINE」になり、「Discord」に化けない')
-             : ng('ST-377·④: エラー文言が想定と違う（化けている可能性）', _st377msg);
-           _st377cleanup();
-           _st382Run();
-         }).catch(function(e) {
-           ng('ST-377: 例外', e && e.message);
-           _st377cleanup();
-           _st382Run();
-         });
+         return;
        }
-     } catch(e) {
-       ng('ST-377: 例外', e.message);
-       _st377cleanup();
-       _st382Run();
-     }
+       var lastCallOptions = null;
+       var lastToastMessage = null;
+       window.supabaseClient = { auth: {
+         signInWithOAuth: function(opts) { lastCallOptions = opts; return Promise.resolve({ error: null }); },
+         linkIdentity: function(opts) { lastCallOptions = opts; return Promise.resolve({ error: { message: 'already exists' } }); },
+         getUserIdentities: function() { return Promise.resolve({ data: { identities: [] } }); }
+       }};
+       window.showToast = function(message) { lastToastMessage = message; };
+       window._isTesting = false; window._smokeTestRunning = false;
+       return window.cloudLoginWithLine().then(function() {
+         (lastCallOptions && lastCallOptions.provider === 'line')
+           ? ok('ST-377·②: ログイン時、正しくprovider:\'line\'で呼ばれる')
+           : ng('ST-377·②: 呼び出し引数が違う', JSON.stringify(lastCallOptions));
+         window._cloudIsLoggedIn = true;
+         return window.openLinkMethodModal();
+       }).then(function() {
+         var overlay = document.getElementById('linkMethodOverlay');
+         (overlay && overlay.textContent.indexOf('LINE') !== -1)
+           ? ok('ST-377·③: 連携画面の一覧に、LINEの行がある')
+           : ng('ST-377·③: 連携画面にLINEが出ていない', '');
+         if (overlay) overlay.remove();
+         lastToastMessage = null;
+         // v0.48.6: 直す前は2択の三項演算子だったため、LINEでも必ず「Discord」に
+         // 化けていた（3つ目以降のproviderで、常に最後の選択肢に丸められるバグ）。
+         return window.linkLoginMethod('line');
+       }).then(function() {
+         (lastToastMessage && lastToastMessage.indexOf('LINE') !== -1 && lastToastMessage.indexOf('Discord') === -1)
+           ? ok('ST-377·④: 連携エラーの文言が正しく「LINE」になり、「Discord」に化けない')
+           : ng('ST-377·④: エラー文言が想定と違う（化けている可能性）', lastToastMessage);
+       });
+     });
 
      // ===== ST-378: 年ピッカーの各年ボタンにも、和暦が小さく添えられる（v0.48.7〜） =====
      // 背景：見出しだけでなく、年ピッカー自体（年を選ぶ一覧）にも和暦を出してほしい、
@@ -70987,6 +70978,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-380: 例外', e.message);
      } finally {
+       // v0.48.23: 開いた検索画面を閉じる（開いたまま入力欄が選ばれていると、後のテストが「入力中」と誤解する。第66条）
+       if (typeof closeSearchModal === 'function') closeSearchModal();
        allTasks = _st380backup;
        window.saveAllTasks = _st380save;
      }
@@ -71025,112 +71018,71 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-381: 例外', e.message);
      } finally {
+       // v0.48.23: 開いた検索画面を閉じる（開いたまま入力欄が選ばれていると、後のテストが「入力中」と誤解する。第66条）
+       if (typeof closeSearchModal === 'function') closeSearchModal();
        allTasks = _st381backup;
        window.saveAllTasks = _st381save;
      }
 
      // ===== ST-382: コメント編集が、RLSに静かに弾かれても「反映されない」で終わらない（v0.48.11〜） =====
-     // 背景：コメントを編集しても反映されない、との報告。.select()を付けずに
-     // update()していたため、RLS（行レベルセキュリティ）に静かに弾かれて実際には
-     // 0件しか書き換わらなかった場合でも、Supabaseはエラーを返さない
-     // （「成功したのに中身が空」という、よくある落とし穴）。そのため、古い
-     // 文面のまま「更新できました」という顔で再表示していた。
+     // 背景：コメントを編集しても反映されない、との報告。.select()を付けずに update() していたため、
+     // RLS（行レベルセキュリティ）に静かに弾かれて0件しか書き換わらなくても、エラーにならなかった。
      // ①本当に書き換わったとき：普通に再描画される
-     // ②静かに弾かれたとき（error無し・data空）：正直にエラーを出し、古い文面を
-     //   さも直ったかのように見せない
-     // v0.48.12: 【権威】他の非同期テストと並走すると、window.supabaseClient等の
-     // 共有グローバルを取り合う。ST-369/370と同じ教訓に加え、ST-377と組み合わせると
-     // 再現する具体的な競合も見つかったため、ST-377が完全に終わった（cleanup済みの）
-     // あとにだけ呼ばれる関数として定義し、ST-377の末尾から呼ぶ形にする。
-     function _st382Run() {
-     if (!('__stRealSupabaseClient' in window)) window.__stRealSupabaseClient = window.supabaseClient;
-     var _st382realClient = window.__stRealSupabaseClient;
-     if (!('__stRealShowToast' in window)) window.__stRealShowToast = window.showToast;
-     var _st382realToast = window.__stRealShowToast;
-     if (!('__stRealShowTextInputModal' in window)) window.__stRealShowTextInputModal = window.showTextInputModal;
-     var _st382realModal = window.__stRealShowTextInputModal;
-     var _st382realRender = window.renderTaskComments;
-     var _st382cleanup = function() {
-       window.renderTaskComments = _st382realRender;
-       window.supabaseClient = _st382realClient;
-       window.showToast = _st382realToast;
-       window.showTextInputModal = _st382realModal;
-       window._isTesting = true; window._smokeTestRunning = true;
-     };
-     try {
+     // ②静かに弾かれたとき（error無し・data空）：正直にエラーを出し、古い文面を直ったように見せない
+     // v0.48.23: キューで1本ずつ走るので、他のテストと取り合わない（v0.48.12のST-377とのつなぎは外した）。
+     // 差し替えたもの（クラウド接続・通知・入力欄・再描画・ログイン中の人）は、キューが控えて戻す（第66条）。
+     enqueueSmokeAsyncTest('ST-382', function() {
        if (typeof editTaskCommentFromUI !== 'function' || typeof listTaskComments !== 'function') {
          ng('ST-382: コメント編集の処理が見つからない', '');
-       } else {
-         window._isTesting = false; window._smokeTestRunning = false;
-         window._cloudUserId = 'st382-user';
-         var _st382capturedSubmit = null;
-         var _st382mock1 = { from: function(table) {
-             return {
-               select: function() { return this; },
-               eq: function() { return this; },
-               order: function() { return Promise.resolve({ data: [{ id: 'c1', task_id: 't1', user_id: 'st382-user', body: '元の文面' }], error: null }); },
-               update: function(payload) {
-                 return { eq: function() { return this; },
-                   select: function() { return Promise.resolve({ data: [{ id: 'c1', body: payload.body }], error: null }); } };
-               }
-             };
-           }
-         };
-         var _st382mock2 = { from: function(table) {
-             return {
-               select: function() { return this; },
-               eq: function() { return this; },
-               order: function() { return Promise.resolve({ data: [{ id: 'c2', task_id: 't1', user_id: 'st382-user', body: '元の文面2' }], error: null }); },
-               update: function(payload) {
-                 return { eq: function() { return this; },
-                   select: function() { return Promise.resolve({ data: [], error: null }); } };
-               }
-             };
-           }
-         };
-         window.showTextInputModal = function(opts) { _st382capturedSubmit = opts.onSubmit; };
-         window.supabaseClient = _st382mock1;
-         var _st382renderCalled1 = false;
-         window.renderTaskComments = function() { _st382renderCalled1 = true; };
-         editTaskCommentFromUI('c1', 't1').then(function() {
-           window.supabaseClient = _st382mock1;
-           window._isTesting = false; window._smokeTestRunning = false;
-           if (!_st382capturedSubmit) { ng('ST-382·①: モーダルが呼ばれなかった', ''); return Promise.resolve(); }
-           return _st382capturedSubmit('新しい文面').then(function() {
-             _st382renderCalled1
-               ? ok('ST-382·①: 本当に書き換わったときは、普通に再描画される')
-               : ng('ST-382·①: 再描画されない', '');
-             window.supabaseClient = _st382mock2;
-             var _st382toastMsg = null;
-             window.showToast = function(msg) { _st382toastMsg = msg; };
-             var _st382renderCalled2 = false;
-             window.renderTaskComments = function() { _st382renderCalled2 = true; };
-             _st382capturedSubmit = null;
-             window._isTesting = false; window._smokeTestRunning = false;
-             return editTaskCommentFromUI('c2', 't1').then(function() {
-               window.supabaseClient = _st382mock2;
-               window.showToast = function(msg) { _st382toastMsg = msg; };
-               window._cloudUserId = 'st382-user';
-               window._isTesting = false; window._smokeTestRunning = false;
-               if (!_st382capturedSubmit) { ng('ST-382·②: モーダルが呼ばれなかった', ''); return; }
-               return _st382capturedSubmit('新しい文面2').then(function() {
-                 (!_st382renderCalled2 && _st382toastMsg && _st382toastMsg.indexOf('直せませんでした') !== -1)
-                   ? ok('ST-382·②: 静かに弾かれたときは、正直にエラーを出し、古い文面を成功したように見せない')
-                   : ng('ST-382·②: 弾かれたのに気づかず進んでいる', '再描画=' + _st382renderCalled2 + ' toast=' + _st382toastMsg);
-               });
-             });
-           });
-         }).catch(function(e) {
-           ng('ST-382: 例外', e && e.message);
-         }).then(function() {
-           _st382cleanup();
-         });
+         return;
        }
-     } catch(e) {
-       ng('ST-382: 例外', e.message);
-       _st382cleanup();
-     }
-     }
+       var fakeUpdatedRows = [];
+       var submitEditedText = null;
+       var redrawn = false;
+       var lastToastMessage = null;
+       var makeFakeClient = function(originalBody) {
+         return { from: function() {
+           var q = {
+             select: function() { return q; },
+             eq: function() { return q; },
+             order: function() { return Promise.resolve({ data: [{ id: 'c1', task_id: 't1', user_id: 'st382-user', body: originalBody }], error: null }); },
+             update: function() {
+               return { eq: function() { return this; },
+                 select: function() { return Promise.resolve({ data: fakeUpdatedRows, error: null }); } };
+             }
+           };
+           return q;
+         } };
+       };
+       window._cloudUserId = 'st382-user';
+       window._isTesting = false; window._smokeTestRunning = false;
+       window.showTextInputModal = function(opts) { submitEditedText = opts.onSubmit; };
+       window.renderTaskComments = function() { redrawn = true; };
+       window.showToast = function(message) { lastToastMessage = message; };
+       // ① 本当に書き換わる
+       window.supabaseClient = makeFakeClient('元の文面');
+       fakeUpdatedRows = [{ id: 'c1', body: '新しい文面' }];
+       return editTaskCommentFromUI('c1', 't1').then(function() {
+         if (!submitEditedText) { ng('ST-382·①: 入力欄が開かなかった', ''); return; }
+         return submitEditedText('新しい文面').then(function() {
+           redrawn
+             ? ok('ST-382·①: 本当に書き換わったときは、普通に再描画される')
+             : ng('ST-382·①: 再描画されない', '');
+           // ② 静かに弾かれる（エラー無し・0件）
+           window.supabaseClient = makeFakeClient('元の文面2');
+           fakeUpdatedRows = [];
+           submitEditedText = null; redrawn = false; lastToastMessage = null;
+           return editTaskCommentFromUI('c1', 't1');
+         }).then(function() {
+           if (!submitEditedText) { ng('ST-382·②: 入力欄が開かなかった', ''); return; }
+           return submitEditedText('新しい文面2').then(function() {
+             (!redrawn && lastToastMessage && lastToastMessage.indexOf('直せませんでした') !== -1)
+               ? ok('ST-382·②: 静かに弾かれたときは、正直にエラーを出し、古い文面を成功したように見せない')
+               : ng('ST-382·②: 弾かれたのに気づかず進んでいる', '再描画=' + redrawn + ' 通知=' + lastToastMessage);
+           });
+         });
+       });
+     });
 
      // ===== ST-383: お知らせの検索欄が、Chromeの勝手な自動入力を受けない（v0.48.12〜） =====
      // 背景：最新版へ更新した直後、お知らせの検索欄に自分のメールアドレスが
@@ -71280,6 +71232,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-386: 例外', e.message);
      } finally {
+       // v0.48.23: 開いた検索画面を閉じる（開いたまま入力欄が選ばれていると、後のテストが「入力中」と誤解する。第66条）
+       if (typeof closeSearchModal === 'function') closeSearchModal();
        allTasks = _st386backup;
        calendars.length = 0; _st386calBackup.forEach(function(c) { calendars.push(c); });
        window.saveAllTasks = _st386save;
@@ -71317,6 +71271,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-387: 例外', e.message);
      } finally {
+       // v0.48.23: 開いた検索画面を閉じる（開いたまま入力欄が選ばれていると、後のテストが「入力中」と誤解する。第66条）
+       if (typeof closeSearchModal === 'function') closeSearchModal();
        allTasks = _st387backup;
        window.saveAllTasks = _st387save;
      }
@@ -71354,10 +71310,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st388sent.length === 0)
            ? ok('ST-388·④: テスト中は、本物のクラウドへの書き込みが止まる')
            : ng('ST-388·④: テスト中に書き込みが通ってしまう', _st388sent.join(','));
-         _st388q.then(function(res) {
-           (res && res.error && res.error.code === 'KOYOMIRU_GATE')
-             ? ok('ST-388·⑤: 止めたときは成功のふりをせず、エラーとして返す')
-             : ng('ST-388·⑤: 止めたのにエラーが返らない', JSON.stringify(res));
+         // v0.48.23: 後から結果が返るので、キューに並べて順番に確かめる。
+         enqueueSmokeAsyncTest('ST-388·⑤', function() {
+           return _st388q.then(function(res) {
+             (res && res.error && res.error.code === 'KOYOMIRU_GATE')
+               ? ok('ST-388·⑤: 止めたときは成功のふりをせず、エラーとして返す')
+               : ng('ST-388·⑤: 止めたのにエラーが返らない', JSON.stringify(res));
+           });
          });
        }
      } catch(e) {
@@ -71370,50 +71329,38 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-389: 権限で弾かれた更新・削除を、成功のふりにしない（v0.48.19〜） =====
      // 背景：最高峰会議②。RLSで弾かれた更新・削除はエラーにならず0件で終わる。
      // 見るだけリンクの停止が0件でも「共有をやめました」と見えるのは安全上最も危ない。
-     var _st389client = window.supabaseClient, _st389toast = window.showToast;
-     var _st389flags = { t: window._isTesting, s: window._smokeTestRunning };
-     var _st389cleanup = function() {
-       window.supabaseClient = _st389client; window.showToast = _st389toast;
-       window._isTesting = _st389flags.t; window._smokeTestRunning = _st389flags.s;
-     };
-     try {
+     // v0.48.23: キューで1本ずつ走るので、他のテストと取り合わない。
+     // 差し替えたもの（クラウド接続・通知・テスト中の印）は、キューが控えて戻す（第66条）。
+     enqueueSmokeAsyncTest('ST-389', function() {
        if (typeof _stopViewLink !== 'function' || typeof deletePodcastComment !== 'function') {
          ng('ST-389: 対象の処理が見つからない', '');
-       } else {
-         var _st389rows = [];
-         var _st389mock = { from: function() { var b = { update: function() { return b; }, eq: function() { return b; },
-           select: function() { return Promise.resolve({ data: _st389rows, error: null }); } }; return b; } };
-         var _st389t = [];
-         var _st389set = function() {
-           window.supabaseClient = _st389mock; window.showToast = function(m) { _st389t.push(m); };
-           window._isTesting = false; window._smokeTestRunning = false;
-         };
-         // 他のテストの通知（リンクを作りました等）が混ざりうるので、「最後の通知」ではなく
-         // 「目当ての通知が出たか・出てはいけない通知が出ていないか」で判定する。
-         _st389set(); _st389rows = []; _st389t.length = 0;
-         _stopViewLink('st389').then(function() {
-           (_st389t.indexOf('止められませんでした') !== -1 && _st389t.indexOf('共有をやめました') === -1)
-             ? ok('ST-389·①: 見るだけリンクの停止が0件なら「止められませんでした」と伝える')
-             : ng('ST-389·①: 0件なのに止めたように見える', _st389t[_st389t.length - 1]);
-           _st389set(); _st389rows = [{ id: 'st389' }]; _st389t.length = 0;
-           return _stopViewLink('st389');
-         }).then(function() {
-           (_st389t.indexOf('共有をやめました') !== -1)
-             ? ok('ST-389·②: 本当に止まったときは「共有をやめました」')
-             : ng('ST-389·②: 止まったのに表示が違う', _st389t[_st389t.length - 1]);
-           _st389set(); _st389rows = [];
-           return deletePodcastComment('st389');
-         }).then(function(ret) {
-           (ret === false)
-             ? ok('ST-389·③: 開発者の声のコメント削除が0件なら、削除したことにしない')
-             : ng('ST-389·③: 0件なのに削除したことになっている', ret);
-           _st389cleanup();
-         }).catch(function(e) { ng('ST-389: 例外', e && e.message); _st389cleanup(); });
+         return;
        }
-     } catch(e) {
-       ng('ST-389: 例外', e.message);
-       _st389cleanup();
-     }
+       var fakeRows = [];
+       var shownToasts = [];
+       window.supabaseClient = { from: function() { var q = { update: function() { return q; }, eq: function() { return q; },
+         select: function() { return Promise.resolve({ data: fakeRows, error: null }); } }; return q; } };
+       window.showToast = function(message) { shownToasts.push(message); };
+       window._isTesting = false; window._smokeTestRunning = false;
+       fakeRows = [];
+       return _stopViewLink('st389').then(function() {
+         (shownToasts.indexOf('止められませんでした') !== -1 && shownToasts.indexOf('共有をやめました') === -1)
+           ? ok('ST-389·①: 見るだけリンクの停止が0件なら「止められませんでした」と伝える')
+           : ng('ST-389·①: 0件なのに止めたように見える', shownToasts.join(' / '));
+         fakeRows = [{ id: 'st389' }]; shownToasts.length = 0;
+         return _stopViewLink('st389');
+       }).then(function() {
+         (shownToasts.indexOf('共有をやめました') !== -1)
+           ? ok('ST-389·②: 本当に止まったときは「共有をやめました」')
+           : ng('ST-389·②: 止まったのに表示が違う', shownToasts.join(' / '));
+         fakeRows = [];
+         return deletePodcastComment('st389');
+       }).then(function(returned) {
+         (returned === false)
+           ? ok('ST-389·③: 開発者の声のコメント削除が0件なら、削除したことにしない')
+           : ng('ST-389·③: 0件なのに削除したことになっている', returned);
+       });
+     });
 
      // ===== ST-390: 新規インストールでも、自由帳のプリセットのIDが保たれる（v0.48.19〜） =====
      // 背景：最高峰会議③。migrateToUUIDv7が新しい形式のIDまで作り直し、新規の方の環境で
@@ -71439,7 +71386,62 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-390: 例外', e.message);
      }
 
+     // ===== ST-391: 後から結果が返るテストのキュー（v0.48.23〜） =====
+     // 背景：最高峰会議①。全体テストは結果の表示が待ち合わせをせず、後から返る7本の結果は
+     // 落ちても画面にも件数にも出ていなかった。さらに7本が同時に走って取り合っていた。
+     // キューそのものを、テスト用に別に作った小さなキュー（時間切れ50ミリ秒）で確かめる。
+     // ①結果が「全部終わった」合図より前にそろう ②同時に走らない ③時間切れは失敗として記録し先へ進む
+     // ④例外（その場で投げる・後から失敗する）は失敗として記録し、次のテストは走る ⑤差し替えたものを控えて戻す
+     enqueueSmokeAsyncTest('ST-391', function() {
+       if (typeof window.createSmokeAsyncTestRunner !== 'function') {
+         ng('ST-391: キューが見つからない', '');
+         return;
+       }
+       var recordedFailures = [];
+       var timeline = [];
+       var toastBefore = window.showToast;
+       var probeRunner = window.createSmokeAsyncTestRunner({
+         timeoutMs: 50,
+         onFail: function(name, reason) { recordedFailures.push(name + '｜' + reason); }
+       });
+       var waitMs = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+       probeRunner.enqueue('A', function() {
+         timeline.push('A始'); window.showToast = function() {};   // ⑤ わざと差し替える
+         return waitMs(20).then(function() { timeline.push('A終'); });
+       });
+       probeRunner.enqueue('B', function() { timeline.push('B始'); return waitMs(5).then(function() { timeline.push('B終'); }); });
+       probeRunner.enqueue('固まる', function() { timeline.push('固始'); return new Promise(function() {}); });
+       probeRunner.enqueue('投げる', function() { throw new Error('わざと'); });
+       probeRunner.enqueue('後から失敗', function() { return Promise.reject(new Error('わざと後から')); });
+       probeRunner.enqueue('C', function() { timeline.push('C'); });
+       var finishedSignalAt = null;
+       return probeRunner.runInOrder(function() { finishedSignalAt = timeline.length; }).then(function() {
+         (finishedSignalAt === timeline.length && timeline.indexOf('C') !== -1)
+           ? ok('ST-391·①: 並んだテストが全部終わってから「全部終わった」合図が来る')
+           : ng('ST-391·①: 合図が早い、または最後まで走っていない', timeline.join(','));
+         (timeline.slice(0, 4).join(',') === 'A始,A終,B始,B終')
+           ? ok('ST-391·②: 同時に走らず、1本ずつ順番に走る')
+           : ng('ST-391·②: 同時に走っている', timeline.join(','));
+         (recordedFailures.some(function(f) { return f.indexOf('固まる: 時間切れ') === 0; }) && timeline.indexOf('C') !== -1)
+           ? ok('ST-391·③: 固まったテストは時間切れで失敗として記録し、先へ進む')
+           : ng('ST-391·③: 時間切れが記録されない、または止まった', recordedFailures.join(' / '));
+         (recordedFailures.some(function(f) { return f.indexOf('投げる: 例外') === 0; }) &&
+          recordedFailures.some(function(f) { return f.indexOf('後から失敗: 例外') === 0; }))
+           ? ok('ST-391·④: その場で投げた例外も、後から失敗したものも、失敗として記録する')
+           : ng('ST-391·④: 例外の記録が漏れている', recordedFailures.join(' / '));
+         (window.showToast === toastBefore)
+           ? ok('ST-391·⑤: テストが差し替えたものは、終わったあと元に戻る')
+           : ng('ST-391·⑤: 差し替えたものが戻っていない', '');
+       });
+     });
+
      // ===== APAG LAUNCH SEQUENCE =====
+     // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
+     // 後から結果が返るテストはキューに並んでいるので、1本ずつ順番に走らせ、
+     // 全部終わってから点検（APAG・LPAG）と結果の表示に進む。
+     // 以前はここで待たずに表示していたため、後から返る結果は画面にも件数にも出ていなかった。
+     runSmokeAsyncTestQueueInOrder(finishSmokeTestAfterAsyncQueue);
+     function finishSmokeTestAfterAsyncQueue() {
      ok('');
      ok('🚀 APAG LAUNCH SEQUENCE — 五ガーディアン起動');
      ok('');
@@ -73238,6 +73240,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-327·fn: ' + fn + ' が未公開', '');
        });
        // ① 入力中でなければ即座に描画されること
+       // v0.48.23: 「入力していない」という前提を、確かめる前にテスト自身で整える。
+       // 前のテストが入力欄（検索・雑記帳など）を選んだまま終わると、入力中と見なされて
+       // このテストが巻き込まれていた。確かめる条件は緩めず、準備だけを正しくする（第45条）。
+       if (document.activeElement && document.activeElement !== document.body && typeof document.activeElement.blur === 'function') {
+         document.activeElement.blur();
+       }
        if (typeof window._syncDeferredRender === 'function') {
          var _ran327 = 0;
          window._syncDeferredRender(function() { _ran327++; });
@@ -76719,6 +76727,7 @@ var resultDiv = document.createElement('div');
     if (old) old.remove();
     resultDiv.className = 'smoke-result';
     box.appendChild(resultDiv);
+     } // END finishSmokeTestAfterAsyncQueue（v0.48.23）
   };
   box.appendChild(btnSmoke);
 
