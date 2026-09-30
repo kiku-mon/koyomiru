@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.25 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.26 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.25';
+    const APP_VERSION = 'v0.48.26';
   const APP_LAST_UPDATED = '2026-09-30'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -29158,6 +29158,9 @@ window._repairCloudCalendarIds();
     (function _repairOrphanCalendarRefs() {
       try {
         if (window._isTesting || window._smokeTestRunning) return;
+        // v0.48.26: 【権威】2026-09-30、見るだけモード中はカレンダーの一覧が「見せる用」に差し替わっている。
+        // そのまま走ると本物の予定が全部「迷子」に見え、まとめてメインへ寄せてしまう。
+        if (window._viewOnlyBackup || window._viewOnlyPending) return;
         var _cl = (allSettings.calendar && allSettings.calendar.list) || [];
         if (_cl.length === 0) return;
         var _known = {}, _byCloud = {};
@@ -50061,6 +50064,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.26', date: '2026-09-30',
+    items: [
+      { icon:'🚨', t:'【重大】予定のカレンダーが、すべて「メイン」に変わってしまう不具合を直しました',
+        before:'クラウドから予定を取り込むときに、予定がどのカレンダーに属するかを誤って上書きし、すべての予定がメインカレンダー（青）になることがありました',
+        after:'予定が正しいカレンダーを指しているときは、そのまま尊重するようにしました。起動時の結び直しも、見るだけリンクを開いている間は走らないようにしました' }
+    ]
+  },
+  {
     ver: 'v0.48.25', date: '2026-09-30',
     items: [
       { icon:'🔄', t:'予定が1,000件を超えると、古い予定が他の端末に届かないことがある不具合を直しました',
@@ -52118,6 +52129,9 @@ async function unifiedPullTasks() {
 
   var localMap = {};
   allTasks.forEach(function(t){ if (t && t.id) localMap[t.id] = t; });
+  // v0.48.26: この端末のカレンダーの番号の一覧（下の結び直しで使う）
+  var _knownLocalCalIds = {};
+  (calendars || []).forEach(function(c) { if (c && c.id) _knownLocalCalIds[c.id] = true; });
 
   var changed = false;
   r.data.forEach(function(row) {
@@ -52135,11 +52149,21 @@ async function unifiedPullTasks() {
     // 指したまま届き、チップにも絞り込みにも乗らない迷子になる。
     // クラウドのカレンダーIDは全端末で共通なので、それを手がかりに
     // 「この端末での」カレンダーへ結び直す。これで端末をまたいでも所属が揃う。
+    // v0.48.26: 【権威】2026-09-30、重大事故。全部の予定がメイン（青）になった。
+    // あなた専用のカレンダーの予定は、クラウドでは実際にはほぼ全部「メイン」の器に入っていて、
+    // 「どのカレンダーか」は予定の中身の印（calendarId）だけが持っていた。ところがここは
+    // 「入っている器」を見て印を上書きしていたので、取り込むたびに「メインの器にある＝メイン」
+    // と書き換えうる状態だった。v0.48.25で取り込みが1,000件で切れなくなり、全部が取り込まれて、
+    // 全部がメインに上書きされた（眠っていた穴を、1,000件の直しが踏み抜いた）。
+    // 予定の印が、この端末のカレンダーを正しく指しているなら、そのまま尊重する。
+    // 印が無い・この端末に無いカレンダーを指しているときだけ、器から結び直す（v0.45.1551の本来の目的）。
     try {
-      var _localCal = (calendars || []).filter(function(c) {
-        return c && c.cloudCalendarId === row.calendar_id;
-      })[0];
-      if (_localCal) incoming.calendarId = _localCal.id;
+      if (!incoming.calendarId || !_knownLocalCalIds[incoming.calendarId]) {
+        var _localCal = (calendars || []).filter(function(c) {
+          return c && c.cloudCalendarId === row.calendar_id;
+        })[0];
+        if (_localCal) incoming.calendarId = _localCal.id;
+      }
     } catch(eMap) {}
     // v0.45.1393: 【メンバー表示フィルタ】row.created_by（実際のユーザーID・
     // t.ownerIdの端末IDとは別物）をタスクオブジェクトにも埋め込む。共有カレンダーで
@@ -71670,6 +71694,53 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (upserted === 0)
            ? ok('ST-393·②: クラウドの方が新しい予定は、1,000件を超えても古い内容で上書きしない')
            : ng('ST-393·②: 古い内容で上書きした（巻き戻し）', upserted + '件');
+         restore();
+       }, function(e) { restore(); throw e; });
+     });
+
+     // ===== ST-394: 取り込みで、予定のカレンダーの印を「入っている器」で上書きしない（v0.48.26〜） =====
+     // 背景：重大事故。あなた専用のカレンダーの予定はクラウドでは「メイン」の器に入っており、
+     // 取り込みが器を見て印を上書きしていたため、全部の予定がメイン（青）になった。
+     // ①印がこの端末のカレンダーを正しく指していれば、そのまま残す（事故の再現）
+     // ②印が無い・この端末に無い番号なら、これまでどおり器から結び直す（本来の目的は残す）
+     enqueueSmokeAsyncTest('ST-394', function() {
+       if (typeof unifiedPullTasks !== 'function') { ng('ST-394: 取り込みの処理が見つからない', ''); return; }
+       var tasksBefore = allTasks.slice();
+       var calendarsBefore = calendars.slice();
+       var saved = { calIds: window._myCalendarIds, calIdsAt: window._myCalIdsAt };
+       var restore = function() {
+         allTasks = tasksBefore;
+         calendars.length = 0; calendarsBefore.forEach(function(c) { calendars.push(c); });
+         window._myCalendarIds = saved.calIds; window._myCalIdsAt = saved.calIdsAt;
+       };
+       calendars.push({ id: 'st394-main', name: 'ST394メイン', color: '#335bd1', cloudCalendarId: 'st394-cloud-main' });
+       calendars.push({ id: 'st394-wm', name: 'ST394WM', color: '#e83ba0', cloudCalendarId: 'st394-cloud-wm' });
+       var rows = [
+         { id: 'st394-a', calendar_id: 'st394-cloud-main', updated_at: '2026-09-30T01:00:00.000Z', deleted_at: null,
+           data: { id: 'st394-a', kind: 'task', text: 'WMの予定', date: '2026-09-30', calendarId: 'st394-wm' } },
+         { id: 'st394-b', calendar_id: 'st394-cloud-wm', updated_at: '2026-09-30T01:00:00.000Z', deleted_at: null,
+           data: { id: 'st394-b', kind: 'task', text: '別端末の番号の予定', date: '2026-09-30', calendarId: 'other-device-id' } }
+       ];
+       window.supabaseClient = { from: function() {
+         var q = { from: 0, to: 999999,
+           select: function() { return q; }, in: function() { return q; }, order: function() { return q; },
+           range: function(a, b) { q.from = a; q.to = b; return q; },
+           then: function(res) { return Promise.resolve({ data: rows.slice(q.from, q.to + 1), error: null }).then(res); } };
+         return q; } };
+       window._viewOnlyBackup = null; window._viewOnlyPending = false;
+       window._myCalendarIds = ['st394-cloud-main', 'st394-cloud-wm']; window._myCalIdsAt = Date.now();
+       window._cloudIsLoggedIn = true; window._cloudUserId = 'st394-user';
+       window.saveAllTasks = function(){};
+       window._isTesting = false; window._smokeTestRunning = false;
+       return unifiedPullTasks().then(function() {
+         var a = allTasks.filter(function(t) { return t.id === 'st394-a'; })[0];
+         var b = allTasks.filter(function(t) { return t.id === 'st394-b'; })[0];
+         (a && a.calendarId === 'st394-wm')
+           ? ok('ST-394·①: メインの器に入っていても、WMを指す予定はWMのまま（全部が青になった事故の再現）')
+           : ng('ST-394·①: 器を見てメインに上書きしている', a && a.calendarId);
+         (b && b.calendarId === 'st394-wm')
+           ? ok('ST-394·②: この端末に無い番号を指す予定は、これまでどおり器から結び直す')
+           : ng('ST-394·②: 結び直しが働いていない', b && b.calendarId);
          restore();
        }, function(e) { restore(); throw e; });
      });
