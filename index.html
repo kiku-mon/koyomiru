@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.26 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.27 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.26';
+    const APP_VERSION = 'v0.48.27';
   const APP_LAST_UPDATED = '2026-09-30'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -50064,6 +50064,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.27', date: '2026-09-30',
+    items: [
+      { icon:'🔧', t:'カレンダーの色が戻らない端末が、自分で直るようにしました',
+        before:'クラウド側を直しても、古い版のまま開いていた端末では、予定のカレンダーがメインのまま戻らないことがありました',
+        after:'新しい版を開いた時点で、クラウドの正しいカレンダーに自動で揃うようにしました' }
+    ]
+  },
+  {
     ver: 'v0.48.26', date: '2026-09-30',
     items: [
       { icon:'🚨', t:'【重大】予定のカレンダーが、すべて「メイン」に変わってしまう不具合を直しました',
@@ -52192,6 +52200,14 @@ async function unifiedPullTasks() {
     // 数で比べれば、書き方に関わらず正しい。
     // 同時刻・ローカルが新しい場合はローカル優先（安全側）。判断は _pullShouldTakeCloud に一本化。
     if (_pullShouldTakeCloud(local, row)) { localMap[row.id] = incoming; changed = true; }
+    // v0.48.27: 【権威】2026-09-30、復旧の続き。クラウドを直した瞬間、古い版のこよみるが開いたままで、
+    // 直した内容を取り込んで「メイン」に上書きしてしまった。更新時刻はクラウドと同じになったので、
+    // 新しい版に更新しても「新しくない」と判断され、二度と受け取り直されなかった。
+    // 更新時刻が同じなのにカレンダーの印が違うなら、それは同じ版の食い違いなので、クラウドを正とする。
+    else if (_tsMs(row.updated_at) === _tsMs(local.updatedAt || local.createdAt) &&
+             incoming.calendarId && local.calendarId !== incoming.calendarId) {
+      localMap[row.id] = incoming; changed = true;
+    }
   });
   try { localStorage.setItem('deletedTaskIds', JSON.stringify([...deletedIds])); } catch(e) {}
 
@@ -71719,8 +71735,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          { id: 'st394-a', calendar_id: 'st394-cloud-main', updated_at: '2026-09-30T01:00:00.000Z', deleted_at: null,
            data: { id: 'st394-a', kind: 'task', text: 'WMの予定', date: '2026-09-30', calendarId: 'st394-wm' } },
          { id: 'st394-b', calendar_id: 'st394-cloud-wm', updated_at: '2026-09-30T01:00:00.000Z', deleted_at: null,
-           data: { id: 'st394-b', kind: 'task', text: '別端末の番号の予定', date: '2026-09-30', calendarId: 'other-device-id' } }
+           data: { id: 'st394-b', kind: 'task', text: '別端末の番号の予定', date: '2026-09-30', calendarId: 'other-device-id' } },
+         { id: 'st394-c', calendar_id: 'st394-cloud-main', updated_at: '2026-09-30T06:02:50.078Z', deleted_at: null,
+           data: { id: 'st394-c', kind: 'task', text: '直した予定', date: '2026-09-30', calendarId: 'st394-wm', updatedAt: '2026-09-30T06:02:50.078Z' } }
        ];
+       // ③ 今日の仕事PCの状況：手元はメイン、時刻はクラウドと同じ、クラウドはWM
+       allTasks.push({ id: 'st394-c', kind: 'task', text: '直した予定', date: '2026-09-30', calendarId: 'st394-main', updatedAt: '2026-09-30T06:02:50.078Z' });
        window.supabaseClient = { from: function() {
          var q = { from: 0, to: 999999,
            select: function() { return q; }, in: function() { return q; }, order: function() { return q; },
@@ -71741,6 +71761,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (b && b.calendarId === 'st394-wm')
            ? ok('ST-394·②: この端末に無い番号を指す予定は、これまでどおり器から結び直す')
            : ng('ST-394·②: 結び直しが働いていない', b && b.calendarId);
+         var c = allTasks.filter(function(t) { return t.id === 'st394-c'; })[0];
+         (c && c.calendarId === 'st394-wm')
+           ? ok('ST-394·③: 更新時刻が同じでカレンダーの印が違うときは、クラウドを正として直る')
+           : ng('ST-394·③: 時刻が同じだと、食い違ったまま直らない', c && c.calendarId);
          restore();
        }, function(e) { restore(); throw e; });
      });
