@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.48.23 ★ -->
+<!-- ★ CURRENT VERSION: v0.48.24 ★ -->
 
 <html lang="ja">
 <head>
@@ -190,7 +190,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.48.23';
+    const APP_VERSION = 'v0.48.24';
   const APP_LAST_UPDATED = '2026-09-30'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -263,6 +263,37 @@
   } catch(e) {}
   // 再設定画面がちゃんと開けたかどうかの印。開けたなら見張りは何もしない。
   window._koyomiruRecoveryHandled = false;
+
+  // v0.48.24: 【権威】2026-09-30、仕事PCで朝開くと「リンクからの手続きが終わりませんでした」が
+  // 出る、との報告。アドレス欄に #access_token=… が残っていた。ログインの鍵やリンクの合言葉を
+  // 読み取るだけで消しておらず、ブラウザが「前回のページ」としてそのURLで開き直すたびに、
+  // 期限切れの鍵をもう一度処理しようとしていた。鍵がアドレス欄や履歴に残るのも安全上よくない。
+  // ログインの処理が済んだら、ログインに関わる項目だけを消す（deck・view など、こよみる自身の
+  // 項目と、設定の区画を表す #区画名 は残す）。
+  var _AUTH_URL_KEYS = ['access_token', 'refresh_token', 'expires_in', 'expires_at', 'token_type',
+    'provider_token', 'provider_refresh_token', 'type', 'error', 'error_code', 'error_description',
+    'code', 'token_hash'];
+  function _removeAuthParamsFromAddressBar() {
+    try {
+      var hashText = (window.location.hash || '').replace(/^#/, '');
+      var searchText = (window.location.search || '').replace(/^\?/, '');
+      var changed = false;
+      var newHash = hashText;
+      if (hashText.indexOf('=') !== -1) {
+        var hashParams = new URLSearchParams(hashText);
+        _AUTH_URL_KEYS.forEach(function(k) { if (hashParams.has(k)) { hashParams.delete(k); changed = true; } });
+        newHash = hashParams.toString();
+      }
+      var searchParams = new URLSearchParams(searchText);
+      _AUTH_URL_KEYS.forEach(function(k) { if (searchParams.has(k)) { searchParams.delete(k); changed = true; } });
+      if (!changed) return false;
+      var newSearch = searchParams.toString();
+      window.history.replaceState(window.history.state, '',
+        window.location.pathname + (newSearch ? '?' + newSearch : '') + (newHash ? '#' + newHash : ''));
+      return true;
+    } catch (e) { return false; }
+  }
+  window._removeAuthParamsFromAddressBar = _removeAuthParamsFromAddressBar;
 
     // 起動時クラフトタブ表示制御
     document.addEventListener('DOMContentLoaded', function() {
@@ -644,7 +675,32 @@ window._showInviteCard = _showInviteCard;
 //
 // 3秒待つのは、正常なときは合言葉の照合とログインがその間に済むため。
 // 済んでいれば何も出さない。済んでいなければ、何かが失敗している。
-function _showAuthArrivalHelp(reason) {
+// v0.48.24: 【権威】2026-09-30、Googleログインから戻っただけでも「パスワード再設定」の説明が
+// 出ていた。どこから来たか（type）で文面を分ける。パスワード再設定の説明は、本当に
+// パスワード再設定のリンクから来たときだけ出す。
+function _authArrivalHelpMessage(arrival, resetRequestedHere) {
+  if (!arrival) return null;
+  if (arrival.error) {
+    return 'メールのリンクの期限が切れているか、すでに使われています。' +
+           '下のボタンから申し込み直して、届いたメールをすぐに開いてください。';
+  }
+  if (arrival.type === 'recovery') {
+    if (resetRequestedHere) {
+      return '確認ができませんでした。リンクの期限が切れている可能性があります。' +
+             '下のボタンから申し込み直して、届いたメールをすぐに開いてください。' +
+             '<br><br><span style="color:#8a7a60;">※ メールが2通になります。<b>あとから届いたほう</b>を開いてください。</span>';
+    }
+    return 'パスワード再設定のリンクは、<b>申し込んだときと同じブラウザ</b>で開く必要があります。' +
+           'メールアプリから押すと、別のブラウザが立ち上がってしまうことがあります。<br><br>' +
+           'このまま、いま開いているブラウザで申し込み直すのが確実です。' +
+           '<br><br><span style="color:#8a7a60;">※ メールが2通になります。<b>あとから届いたほう</b>を開いてください。</span>';
+  }
+  return 'ログインの手続きが、最後まで終わりませんでした。' +
+         'お手数ですが、下のボタンからもう一度ログインしてください。';
+}
+window._authArrivalHelpMessage = _authArrivalHelpMessage;
+
+function _showAuthArrivalHelp(reason, retryLabel) {
   try {
     if (document.getElementById('authArrivalHelp')) return;
     var ov = document.createElement('div');
@@ -658,7 +714,7 @@ function _showAuthArrivalHelp(reason) {
         '<div style="font-size:0.86em;line-height:1.7;margin-bottom:16px;">' + reason + '</div>' +
         '<button id="authArrivalRetryBtn" style="width:100%;padding:12px;border:none;border-radius:12px;' +
         'background:#7a6540;color:#fff;font-size:0.9em;cursor:pointer;font-family:inherit;margin-bottom:8px;">' +
-        'このブラウザで申し込み直す</button>' +
+        (retryLabel || 'このブラウザで申し込み直す') + '</button>' +
         '<button id="authArrivalHelpBtn" style="width:100%;padding:11px;border:none;border-radius:12px;' +
         'background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">閉じる</button>' +
       '</div>';
@@ -682,35 +738,41 @@ function _showAuthArrivalHelp(reason) {
 }
 window._showAuthArrivalHelp = _showAuthArrivalHelp;
 
-(function _watchAuthArrival() {
+// v0.48.24: 【権威】2026-09-30、「3秒以内にログインできなければ失敗」と決め打ちしていたため、
+// 通信の遅い仕事PC（ファイアウォールで接続が遅れる）では、実際にはログインできているのに
+// 3秒に間に合わず案内が出ていた。ログインの確認が終わった合図（_cloudAuthInitialChecked）を
+// 待ってから判断する。確認が20秒たっても終わらないときは、通信の問題なので案内は出さない
+// （誤った案内を出すより、黙るほうがよい）。成功でも失敗でも、鍵はアドレス欄から消す。
+function _watchAuthArrival() {
   try {
     var a = window._koyomiruAuthArrival;
     if (!a) return;
-    setTimeout(function() {
-      // 再設定画面が開けた、またはログインできた ＝ 成功。何も出さない。
-      if (window._koyomiruRecoveryHandled || window._cloudIsLoggedIn) return;
-
-      var msg;
-      if (a.error) {
-        // リンク切れ・使用済みなど、原因がURLに書かれて戻ってきた場合。
-        msg = 'メールのリンクの期限が切れているか、すでに使われています。' +
-              '下のボタンから申し込み直して、届いたメールをすぐに開いてください。';
-      } else if (localStorage.getItem('koyomiru_pw_reset_from_here')) {
-        // このブラウザで申し込んだ形跡がある＝ブラウザ違いではない。
-        msg = '確認ができませんでした。リンクの期限が切れている可能性があります。' +
-              '下のボタンから申し込み直して、届いたメールをすぐに開いてください。' +
-              '<br><br><span style="color:#8a7a60;">※ メールが2通になります。<b>あとから届いたほう</b>を開いてください。</span>';
-      } else {
-        // 申し込んだ形跡が無い＝別のブラウザで開いた可能性が高い。今回の報告がこれ。
-        msg = 'パスワード再設定のリンクは、<b>申し込んだときと同じブラウザ</b>で開く必要があります。' +
-              'メールアプリから押すと、別のブラウザが立ち上がってしまうことがあります。<br><br>' +
-              'このまま、いま開いているブラウザで申し込み直すのが確実です。' +
-              '<br><br><span style="color:#8a7a60;">※ メールが2通になります。<b>あとから届いたほう</b>を開いてください。</span>';
+    var startedAt = Date.now();
+    var WAIT_LIMIT_MS = 20000;
+    var checkAuthArrivalOutcome = function() {
+      if (window._koyomiruRecoveryHandled || window._cloudIsLoggedIn) {
+        _removeAuthParamsFromAddressBar();
+        return;
       }
-      _showAuthArrivalHelp(msg);
-    }, 3000);
+      if (window._cloudAuthInitialChecked) {
+        _removeAuthParamsFromAddressBar();
+        var msg = _authArrivalHelpMessage(a, !!localStorage.getItem('koyomiru_pw_reset_from_here'));
+        var label = (a.error || a.type === 'recovery') ? 'このブラウザで申し込み直す' : 'ログインし直す';
+        if (msg) _showAuthArrivalHelp(msg, label);
+        return;
+      }
+      if (Date.now() - startedAt > WAIT_LIMIT_MS) {
+        // 20秒たてばSupabaseはURLを読み終えている。案内は出さないが、鍵は残さない。
+        _removeAuthParamsFromAddressBar();
+        return;
+      }
+      setTimeout(checkAuthArrivalOutcome, 500);
+    };
+    setTimeout(checkAuthArrivalOutcome, 500);
   } catch(e) {}
-})();
+}
+window._watchAuthArrival = _watchAuthArrival;
+_watchAuthArrival();
 
 // v0.45.1778: 保留していた初回セットアップ画面を出す。
 // 招待が片付いたとき（参加した／あとにした／見るだけを終えた）にだけ呼ぶ。
@@ -49981,6 +50043,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.48.24', date: '2026-09-30',
+    items: [
+      { icon:'🔑', t:'開いたときに「リンクからの手続きが終わりませんでした」と出ることがある不具合を直しました',
+        before:'ログインした後もアドレス欄にログインの情報が残り、ブラウザを開き直すたびにこの案内が出ることがありました。通信の遅い環境でも、ログインできているのに出ることがありました',
+        after:'ログインの情報はアドレス欄から消すようにし、ログインの確認が終わるのを待ってから判断するようにしました。パスワード再設定の説明も、再設定のリンクから来たときだけ出します' }
+    ]
+  },
+  {
     ver: 'v0.48.23', date: '2026-09-30',
     items: [
       { icon:'🧪', t:'品質を確かめる仕組みを直しました（見えないところの改善です）',
@@ -55719,6 +55789,9 @@ try {
     // session引数で判定（コールバック内でのsupabase API呼び出しはデッドロックの恐れがあるため不使用）
     window.supabaseClient.auth.onAuthStateChange(function(event, session) {
       window._cloudIsLoggedIn = !!session;
+      // v0.48.24: 最初の合図（INITIAL_SESSION）＝起動時のログイン確認が終わった、の印。
+      // リンクから戻ったときの見張りが、3秒の決め打ちではなくこれを待つ。
+      window._cloudAuthInitialChecked = true;
       // v0.45.1356: unifiedPushTasksのcreated_byに、Supabase認証ユーザーID
       // （auth.users.id）ではなく端末ID（getOrCreateDeviceId）を誤って使っており、
       // 外部キー制約違反（409 Conflict）でPushが常に失敗する重大バグがあった。
@@ -71432,6 +71505,55 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (window.showToast === toastBefore)
            ? ok('ST-391·⑤: テストが差し替えたものは、終わったあと元に戻る')
            : ng('ST-391·⑤: 差し替えたものが戻っていない', '');
+       });
+     });
+
+     // ===== ST-392: リンクから戻った後の案内と、アドレス欄の鍵（v0.48.24〜） =====
+     // 背景：仕事PCで朝開くと「リンクからの手続きが終わりませんでした」が出る、との報告。
+     // ①ログインの鍵が消されずアドレス欄に残り、毎朝そのURLで開き直していた
+     // ②「3秒以内にログインできなければ失敗」と決め打ちしており、通信の遅い環境で誤報していた
+     // ③Googleログインから戻っただけでも「パスワード再設定」の説明が出ていた
+     try {
+       if (typeof _removeAuthParamsFromAddressBar !== 'function' || typeof _authArrivalHelpMessage !== 'function') {
+         ng('ST-392: 対象の処理が見つからない', '');
+       } else {
+         var addressBarBefore = location.pathname + location.search + location.hash;
+         history.replaceState(history.state, '', location.pathname + '?deck=keep#access_token=OLD&expires_in=3600&token_type=bearer');
+         _removeAuthParamsFromAddressBar();
+         (location.search === '?deck=keep' && location.hash === '')
+           ? ok('ST-392·①: ログインの鍵だけを消し、こよみる自身の項目（deck）は残す')
+           : ng('ST-392·①: 消し方が違う', location.search + location.hash);
+         history.replaceState(history.state, '', location.pathname + '#calendar');
+         _removeAuthParamsFromAddressBar();
+         (location.hash === '#calendar')
+           ? ok('ST-392·②: 設定の区画を表す #区画名 には触らない')
+           : ng('ST-392·②: #区画名 を消してしまう', location.hash);
+         history.replaceState(history.state, '', addressBarBefore);
+         var msgOAuth = _authArrivalHelpMessage({ hasToken: true, type: '' }, false) || '';
+         var msgRecovery = _authArrivalHelpMessage({ hasToken: true, type: 'recovery' }, false) || '';
+         (msgOAuth.indexOf('パスワード') === -1 && msgOAuth.indexOf('ログイン') !== -1 && msgRecovery.indexOf('パスワード再設定') !== -1)
+           ? ok('ST-392·③: パスワード再設定の説明は、再設定のリンクから来たときだけ出す')
+           : ng('ST-392·③: 来た道と案内が合っていない', msgOAuth.slice(0, 30));
+       }
+     } catch(e) {
+       ng('ST-392: 例外', e.message);
+     }
+     enqueueSmokeAsyncTest('ST-392·④', function() {
+       // 見張りが「ログインの確認が終わった合図」を待ち、ログイン済みなら案内を出さずに鍵を消す（今朝の状況）。
+       if (typeof _watchAuthArrival !== 'function') { ng('ST-392·④: 見張りが見つからない', ''); return; }
+       var arrivalBefore = window._koyomiruAuthArrival, checkedBefore = window._cloudAuthInitialChecked;
+       var addressBarBefore = location.pathname + location.search + location.hash;
+       history.replaceState(history.state, '', location.pathname + '#access_token=OLD&expires_in=3600&token_type=bearer');
+       window._koyomiruAuthArrival = { hasToken: true, type: '' };
+       window._cloudIsLoggedIn = true; window._cloudAuthInitialChecked = true;
+       _watchAuthArrival();
+       return new Promise(function(r) { setTimeout(r, 900); }).then(function() {
+         (!document.getElementById('authArrivalHelp') && location.hash === '')
+           ? ok('ST-392·④: ログイン済みなら案内を出さず、アドレス欄の鍵を消す（今朝の状況）')
+           : ng('ST-392·④: 案内が出た、または鍵が残った', location.hash);
+         var shown = document.getElementById('authArrivalHelp'); if (shown) shown.remove();
+         window._koyomiruAuthArrival = arrivalBefore; window._cloudAuthInitialChecked = checkedBefore;
+         history.replaceState(history.state, '', addressBarBefore);
        });
      });
 
