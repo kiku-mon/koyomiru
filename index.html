@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.3';
+    const APP_VERSION = 'v0.49.4';
   const APP_LAST_UPDATED = '2026-10-01'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -36035,11 +36035,26 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       var pz = (allTasks || []).filter(function(x) { return x && x.id === id; })[0];
       if (!pz) return;
       var nm = String(pz.name || '（名前なし）');
-      if (!confirm('「' + nm + '」を消します。よろしいですか？')) return;
-      if (typeof deleteTaskById === 'function') deleteTaskById(id);
-      else { allTasks = (allTasks || []).filter(function(x) { return x.id !== id; }); saveAllTasks(); }
-      renderMoneyPurseModal();
-      if (typeof renderMonthlyMoneyLine === 'function') renderMonthlyMoneyLine();
+      // v0.49.4: 【権威】2026-10-01、開発ルール第55条（confirm/alert/prompt不使用・2クリック確認方式に統一）の
+      // 違反がLPAGで見つかっていた。ブラウザ標準の確認ではなく、他の削除と同じ確認の画面にする。
+      var _doDeletePurse = function() {
+        if (typeof deleteTaskById === 'function') deleteTaskById(id);
+        else { allTasks = (allTasks || []).filter(function(x) { return x.id !== id; }); saveAllTasks(); }
+        renderMoneyPurseModal();
+        if (typeof renderMonthlyMoneyLine === 'function') renderMonthlyMoneyLine();
+      };
+      if (typeof showChoiceModal === 'function') {
+        showChoiceModal({
+          title: '財布を消す',
+          desc: '「' + nm + '」を消します。残高は打ち直しになります。',
+          buttons: [
+            { label: '消す', style: 'danger', dangerConfirm: false, onClick: _doDeletePurse },
+            { label: 'やめる', style: 'cancel' }
+          ]
+        });
+      } else {
+        _doDeletePurse();
+      }
     }
     window.deleteMoneyPurse = deleteMoneyPurse;
 
@@ -44917,6 +44932,12 @@ async function _recordVisit() {
       String(d.getMonth() + 1).padStart(2, '0') + '-' +
       String(d.getDate()).padStart(2, '0');
 
+    // v0.49.4: 【権威】2026-10-01、同じ端末・同じ日の2回目以降の記録は、データベースの決まり（重複禁止）で
+    // 弾かれて、開くたびに赤いエラー（409）が出ていた。実害はないが、本物のエラーが紛れて見えなくなる。
+    // 今日もう記録できた端末は、送らない（送っても弾かれるだけで、残る記録は同じ）。
+    var _VISIT_DONE_KEY = 'koyomiru_visit_recorded_on';
+    if (localStorage.getItem(_VISIT_DONE_KEY) === visitDate) return;
+
     var isFirst = !localStorage.getItem(_KOYOMIRU_FIRST_KEY);
     if (isFirst) localStorage.setItem(_KOYOMIRU_FIRST_KEY, visitDate);
 
@@ -44942,6 +44963,9 @@ async function _recordVisit() {
     var r = await window.supabaseClient.from('koyomiru_visits').insert(payload);
     if (r && r.error && r.error.code !== '23505') {
       console.warn('[計測] 記録できませんでした:', r.error.message);
+    } else {
+      // 記録できた（または、既に今日の記録があった）ときだけ印を付ける。失敗したときは次に開いたとき送り直す。
+      try { localStorage.setItem(_VISIT_DONE_KEY, visitDate); } catch (eMark) {}
     }
   } catch(e) {
     // 計測の失敗でユーザー体験を損なわない
@@ -47384,7 +47408,9 @@ window.deleteSharedCalendar = deleteSharedCalendar;
 // 「数字」より「人」を軸にする。あわせて数え方の不具合を2つ直す：
 // ①同じ人が、名前を記録する前（v0.45.2076より前）と後で別人として数えられていた
 //   → 一度でも名前（UID）が付いた端末の、名前なしの訪問も、その人の分として数える
-// ②端末の番号が「v-」で始まるもの（暗号用の乱数が使えない古いブラウザ＝巡回やプレビューの機械とみられる）を
+// ②端末の番号が「v-」で始まるもの（暗号用の乱数が使えない古いブラウザ＝検索サイトの巡回や、LINE・Xで
+//   URLを貼ったときに中身を読みに来るリンクのプレビューとみられる。2026-10-01の実数で、25台とも一度も
+//   ログインせず、二度と来ていなかった）を
 //   人として数え、しかも先頭8文字が作った時刻なので、別々の番号が同じ表示に見えていた → 人の数から外す
 // 計算は画面から切り離した関数にして、数え方をテストで直接確かめられるようにする。
 function _buildVisitOverview(detailRows, summaryRows, currentVersion, todayYmd) {
@@ -47489,7 +47515,7 @@ function _renderVisitOverviewHtml(o) {
   return '<div id="visitOverview" style="margin-bottom:12px;">' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
       card('今週来た人', o.thisWeek + '人', '先週 ' + o.prevWeek + '人（' + (diff >= 0 ? '+' : '') + diff + '）') +
-      card('新しく来た人', o.newThisWeek + '人', '今週はじめて') +
+      card('新しく来た人', o.newThisWeek + '人', '今週はじめて（ログインしていない人は端末ごと）') +
       card('戻ってきた人', o.returningRate + '%', '今週来た人のうち') +
     '</div>' +
     '<div style="margin-top:12px;font-size:0.75em;color:#9aa6b8;">14日の推移　<span style="color:#5b8def;">■</span>戻ってきた人　<span style="color:#7ee0a1;">■</span>新しい人</div>' +
@@ -47499,7 +47525,7 @@ function _renderVisitOverviewHtml(o) {
     who('古い版のまま', o.outdated, function(pr) { return esc(pr.lastVersion) + '・' + pr.daysSince + '日前'; }, 'いません') +
     who('最近はじめて来た人', o.newcomers, function(pr) { return pr.visits + '回'; }, 'いません') +
     '<div style="margin-top:12px;font-size:0.78em;color:#9aa6b8;">どこから来たか（14日）：' + (srcLine || 'なし') + '</div>' +
-    (o.machineVisits ? '<div style="margin-top:4px;font-size:0.72em;color:#7a8494;">機械（検索の巡回など）とみられる訪問 ' + o.machineVisits + '件は、人数から除いています</div>' : '') +
+    (o.machineVisits ? '<div style="margin-top:4px;font-size:0.72em;color:#7a8494;">機械とみられる訪問 ' + o.machineVisits + '件は、人数から除いています（検索サイトの巡回や、LINE・XでURLを貼ったときに中身を読みに来るリンクのプレビューなど。一度もログインせず、二度と来ないもの）</div>' : '') +
   '</div>';
 }
 window._renderVisitOverviewHtml = _renderVisitOverviewHtml;
@@ -50271,6 +50297,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.49.4', date: '2026-10-01',
+    items: [
+      { icon:'🧹', t:'細かなところを整えました',
+        before:'財布を消すときの確認が、ブラウザ標準の小さな確認画面でした。開くたびに、裏側で不要な通信のエラーが記録されていました',
+        after:'財布を消すときも、ほかの削除と同じ確認画面にしました。同じ日に2回目以降開いたときは、訪問の記録を送らないようにしました' }
+    ]
+  },
   {
     ver: 'v0.49.3', date: '2026-10-01',
     items: [
@@ -66298,7 +66332,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
                         'travel', 'travel_checklist_item',
                         'travel_schedule_item', 'travel_prep_item',
                         'anniversary', 'occasion', 'blogPost', 'finance',
-                        'yukari'];   // v0.45.1769: ゆかりの人
+                        'yukari',   // v0.45.1769: ゆかりの人
+         'money'];   // v0.49.4: お金（財布）。本体の一覧には登録済みで、テスト側の一覧だけ漏れていた
        var _r153existingKinds = {};
        allTasks.forEach(function(t){
          if (t.kind) _r153existingKinds[t.kind] = (_r153existingKinds[t.kind]||0) + 1;
@@ -71497,6 +71532,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        if (typeof _ensureNewsSearchBox !== 'function') {
          ng('ST-383: お知らせ検索欄の処理が見つからない', '');
        } else {
+         // v0.49.4: 全体テストの中では、別のテストが開いたお知らせの検索欄が残っていることがあり、
+         // そのままだと2回とも既にある同じ欄を拾ってしまう。既にある欄をいったん外し、最後に戻す（第66条）。
+         var _st383parked = [];
+         ['newsSearchInput', 'newsResults'].forEach(function(id) {
+           var el = document.getElementById(id);
+           if (el && el.parentNode) { _st383parked.push({ el: el, parent: el.parentNode, next: el.nextSibling }); el.parentNode.removeChild(el); }
+         });
          var _st383box1 = document.createElement('div'); document.body.appendChild(_st383box1);
          _ensureNewsSearchBox(_st383box1);
          var _st383name1 = document.getElementById('newsSearchInput') ? document.getElementById('newsSearchInput').name : null;
@@ -71515,6 +71557,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-383·③: 開いた直後、欄の中身は空になっている')
            : ng('ST-383·③: 開いた直後から何か入っている', _st383val1);
          _st383box2.remove();
+         _st383parked.forEach(function(p) { try { p.parent.insertBefore(p.el, p.next); } catch (eBack) {} });
        }
      } catch(e) {
        ng('ST-383: 例外', e.message);
