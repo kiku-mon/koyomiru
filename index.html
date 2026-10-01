@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.6 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.5';
+    const APP_VERSION = 'v0.49.6';
   const APP_LAST_UPDATED = '2026-10-01'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -50298,6 +50298,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.6', date: '2026-10-01',
+    items: [
+      { icon:'🧪', t:'（開発者向け）品質を確かめる仕組みを整えました',
+        before:'仕様を変えたあとも古い仕様のまま残っていた確認や、準備が足りない確認が、正しく動くアプリを「失敗」と言っていました',
+        after:'今の仕様に合わせ、それぞれの確認が自分で準備を整えるようにしました' }
+    ]
+  },
+  {
     ver: 'v0.49.5', date: '2026-10-01',
     items: [
       { icon:'🧹', t:'見えないところを整えました',
@@ -57779,6 +57787,10 @@ function showDebugLog(_initOnly) {
      // 888→834に変わったりした。テストの間の保存は仮の箱に受け流し、本物には書かない。
      // 終わったら、パネルを閉じた瞬間に読み込み直して、差し替えた手元の状態ごと捨てる。
      if (typeof window._installStorageSandbox === 'function') window._installStorageSandbox('smoke');
+     // v0.49.6: タブの表示設定を書き換えたテストを突き止める診断の仕掛け（v0.45.1382）は、起動時に1回だけ
+     // 取り付けていたので、同期で設定が入れ替わると外れ、肝心の全体テストの最中に働いていなかった（ST-270②）。
+     // 全体テストを始めるときに取り付け直す。
+     if (typeof window._installVisibleTabsWatcher === 'function') window._installVisibleTabsWatcher();
      var results = [];
      var pass = 0, fail = 0;
      var _lastTaskCount = null;
@@ -69523,12 +69535,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            (_st345et.value === '14:00')
              ? ok('ST-345·①: 開始を入れると、終了に1時間後が入る')
              : ng('ST-345·①: 終了が想定と違う', _st345et.value);
-           // ② すでに終了があれば動かさない（打った値を勝手に変えない）
+           // ② すでに終了があれば、長さを保って一緒に動く
+           // v0.49.6: 【権威】2026-09（v0.47.66・ST-363）、「開始を打ち直したら、終了もそれまでの長さを
+           // 保ったまま連動してほしい」との要望で仕様を変えた。このテストは変える前の仕様
+           // （終了があれば動かさない）のまま残っており、正しく動くアプリを「失敗」と言い続けていた。
+           // 変えた仕様に合わせる（条件を緩めたのではない。第45条）。13:00〜14:00の1時間を保つ。
            _st345st.value = '15:00';
            window._msbOnStartTimeChange();
-           (_st345et.value === '14:00')
-             ? ok('ST-345·②: すでに終了が入っていれば動かさない')
-             : ng('ST-345·②: 終了を勝手に動かした', _st345et.value);
+           (_st345et.value === '16:00')
+             ? ok('ST-345·②: すでに終了が入っていれば、長さ（1時間）を保って一緒に動く')
+             : ng('ST-345·②: 長さを保って動いていない', _st345et.value);
            // ③ 時刻なしで両方消える
            window._msbClearTimes();
            (_st345st.value === '' && _st345et.value === '')
@@ -69619,6 +69635,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st347was = null;
          try { _st347was = localStorage.getItem('moneyLineOpen'); } catch (e1) {}
          var _st347wasDisp = _st347el.style.display;
+         // v0.49.6: 実際に描いて高さを測るので、月間を表示していないと高さが0と測られていた
+         // （前のテストが別の画面を開いたまま終わると落ちる）。前提をテスト自身で整え、終わったら戻す。
+         var _st347prevView = (typeof currentView !== 'undefined') ? currentView : null;
+         if (typeof switchView === 'function') switchView('monthly');
          try {
            localStorage.setItem('moneyLineOpen', '0');
            window.renderMonthlyMoneyLine();
@@ -69647,6 +69667,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            } catch (e2) {}
            window.renderMonthlyMoneyLine();
            _st347el.style.display = _st347wasDisp;
+           if (_st347prevView && _st347prevView !== 'monthly' && typeof switchView === 'function') switchView(_st347prevView);
          }
        }
      } catch(e) {
@@ -74638,6 +74659,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-270·①: _installVisibleTabsWatcher window公開確認')
          : ng('ST-270·①: 関数が見つからない', '');
        // ② 実際にsetterとして機能しているか実挙動確認
+       // v0.49.6: 全体テストの途中で、ほかのテストが設定を丸ごと控えて戻すたびに、仕掛けごと入れ替わって
+       // 外れていた（起動時に1回だけ取り付ける作りのため）。「今付いているか」ではなく「付ければ働くか」を
+       // 確かめる。付け直しても値は変わらない（読み書きを中継するだけ）。
+       if (typeof window._installVisibleTabsWatcher === 'function') window._installVisibleTabsWatcher();
        var _st270desc = Object.getOwnPropertyDescriptor(allSettings.ui, 'visibleTabs');
        (_st270desc && typeof _st270desc.set === 'function' && typeof _st270desc.get === 'function')
          ? ok('ST-270·②: visibleTabsがgetter/setterとして設置されている実挙動確認')
@@ -75086,7 +75111,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st282scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        var _st282kzSrc = _stFnSrc('function showKazedayoriModal');
        var _st282flexPos = _st282kzSrc.indexOf("_modal.style.display = 'flex';");
-       var _st282drawPos = _st282kzSrc.indexOf("_drawMoonCanvas('kazedayoriMoonCanvas', _age)");
+       // v0.49.6: 月の傾きを足したとき、描く命令に引数が1つ増えた（_kzTilt）。古い書き方と完全一致で
+       // 探していたので見つからず、正しい順番なのに「失敗」と言っていた。命令の始まりで探す。
+       var _st282drawPos = _st282kzSrc.indexOf("_drawMoonCanvas('kazedayoriMoonCanvas', _age");
        (_st282flexPos !== -1 && _st282drawPos !== -1 && _st282drawPos > _st282flexPos)
          ? ok('ST-282·①: Canvas描画がモーダル表示後に実行される順序確認')
          : ng('ST-282·①: 描画順序が正しくない', '');
