@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.5 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.4';
+    const APP_VERSION = 'v0.49.5';
   const APP_LAST_UPDATED = '2026-10-01'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -50298,6 +50298,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.5', date: '2026-10-01',
+    items: [
+      { icon:'🧹', t:'見えないところを整えました',
+        before:'天気のリンクの設定を読むだけで、設定が書き換わることがありました',
+        after:'読むだけでは何も書き換えないようにしました' }
+    ]
+  },
+  {
     ver: 'v0.49.4', date: '2026-10-01',
     items: [
       { icon:'🧹', t:'細かなところを整えました',
@@ -51307,7 +51315,12 @@ function getWeatherLinks() {
     if (Array.isArray(_list)) return _list;
     // 古い3つ（weatherRainUrl 等）から、一度だけ移す。
     _list = [];
+    // v0.49.5: 【権威】2026-10-01、移すものが何も無くても保存していたため、まっさらな環境では
+    // 「読むだけ」で設定が書き換わり、全体テストの点検（TPAG）にも引っかかっていた。
+    // 読み出しは本来なにも書き換えないのが筋。古い形の設定があったときだけ保存する。
+    var _hadLegacy = false;
     ['weatherRainUrl', 'weatherRainUrl2', 'weatherWeekUrl'].forEach(function(k, i) {
+      if (k in allSettings.ui) _hadLegacy = true;
       var _u = String(allSettings.ui[k] || '').trim();
       // 空の枠は作らない。要るときに「＋ リンクを足す」で増やせる。
       if (_u && /^https?:\/\//i.test(_u)) {
@@ -51315,6 +51328,9 @@ function getWeatherLinks() {
       }
       delete allSettings.ui[k];
     });
+    // 古い形が無ければ、手元の設定にも書き込まない（空の一覧を返すだけ）。
+    // 書き込むと、別の処理が設定を保存したときに一緒に保存されてしまう。
+    if (!_hadLegacy) return _list;
     allSettings.ui.weatherLinks = _list;
     saveAllSettings();
     return _list;
@@ -61627,6 +61643,11 @@ window._stFnSrc = _stFnSrc;
 
        // ⑨ adjustMonthlyRowH 挙動確認（120pxに変更→元に戻す）
        var _prevRowH = allSettings.ui.monthlyRowH;
+       // v0.49.5: 高さを変えると「画面に収める」が切れ、本物の設定の保存まで動いていた（第7条）。
+       // テストの間は設定の保存を止め、「画面に収める」も元の値に戻す（第66条：控えて戻す）。
+       var _st73PrevFit = allSettings.ui.monthlyFitToScreen;
+       var _st73SaveSettingsOrig = window.saveAllSettings;
+       window.saveAllSettings = function(){};
        adjustMonthlyRowH(120);
        allSettings.ui.monthlyRowH === 120
          ? ok('ST-73: adjustMonthlyRowH(120) → allSettings反映確認')
@@ -61642,6 +61663,8 @@ window._stFnSrc = _stFnSrc;
          ok('ST-73: セルheight確認スキップ（月間非表示）');
        }
        adjustMonthlyRowH(_prevRowH);
+       allSettings.ui.monthlyFitToScreen = _st73PrevFit;
+       window.saveAllSettings = _st73SaveSettingsOrig;
        ok('ST-73: adjustMonthlyRowH ロールバック完了（' + _prevRowH + '）');
 
        // ⑩ monthly-scroll-area DOM確認
