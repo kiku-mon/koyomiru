@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.2';
+    const APP_VERSION = 'v0.49.3';
   const APP_LAST_UPDATED = '2026-10-01'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -47377,6 +47377,133 @@ window.deleteSharedCalendar = deleteSharedCalendar;
 // koyomiru_visits はSELECTポリシーを持たない（生データを誰にも読ませない）ため、
 // DB側のSECURITY DEFINER関数 koyomiru_visit_stats() 経由で集計値だけを受け取る。
 // 関数側で呼び出し元が管理者本人かを検証しているので、他人が呼んでも結果は返らない。
+// ===== v0.49.3: 訪問統計の「ひと目で分かる」まとめ =====
+// 【権威】2026-10-01、訪問統計をもっと見やすくしたい、との要望。今の画面は「何が起きたか」は
+// 全部書いてあるが、「次に何をすればいいか」が見えなかった。定石（大きな数字→推移→経路→詳しい表）と、
+// 最高峰（継続率と「誰に何をすればいいか」を上に置く）に倣い、利用者が数十人で顔が見える規模なので、
+// 「数字」より「人」を軸にする。あわせて数え方の不具合を2つ直す：
+// ①同じ人が、名前を記録する前（v0.45.2076より前）と後で別人として数えられていた
+//   → 一度でも名前（UID）が付いた端末の、名前なしの訪問も、その人の分として数える
+// ②端末の番号が「v-」で始まるもの（暗号用の乱数が使えない古いブラウザ＝巡回やプレビューの機械とみられる）を
+//   人として数え、しかも先頭8文字が作った時刻なので、別々の番号が同じ表示に見えていた → 人の数から外す
+// 計算は画面から切り離した関数にして、数え方をテストで直接確かめられるようにする。
+function _buildVisitOverview(detailRows, summaryRows, currentVersion, todayYmd) {
+  var rows = Array.isArray(detailRows) ? detailRows : [];
+  var people = Array.isArray(summaryRows) ? summaryRows : [];
+  var isMachine = function(visitor) { return String(visitor || '').indexOf('v-') === 0; };
+  var ymdShift = function(ymd, days) {
+    var p = String(ymd).split('-'); var dt = new Date(+p[0], +p[1] - 1, +p[2] + days);
+    return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  };
+  // 端末→名前（UID）の対応。一度でも名前が付いた端末は、その人の端末とみなす。
+  var uidByDevice = {}, nameByUid = {};
+  rows.concat(people).forEach(function(x) {
+    if (x && x.uid && x.visitor) uidByDevice[x.visitor] = x.uid;
+    if (x && x.uid && x.display_name) nameByUid[x.uid] = x.display_name;
+  });
+  var personKey = function(x) { return x.uid || uidByDevice[x.visitor] || ('dev:' + x.visitor); };
+  // 人ごとにまとめ直す（同じ人の、名前の付く前と後の記録を1人に）
+  var byPerson = {};
+  people.forEach(function(x) {
+    if (!x || isMachine(x.visitor)) return;
+    var k = personKey(x);
+    var pr = byPerson[k] || (byPerson[k] = { key: k, uid: x.uid || uidByDevice[x.visitor] || null, visits: 0,
+      firstAt: null, lastAt: null, daysSince: null, lastVersion: null, visitor: x.visitor });
+    pr.visits += (x.visits || 0);
+    if (x.first_at && (!pr.firstAt || x.first_at < pr.firstAt)) pr.firstAt = x.first_at;
+    if (x.last_at && (!pr.lastAt || x.last_at > pr.lastAt)) { pr.lastAt = x.last_at; pr.lastVersion = x.last_version || pr.lastVersion; pr.visitor = x.visitor; }
+    if (typeof x.days_since === 'number' && (pr.daysSince === null || x.days_since < pr.daysSince)) pr.daysSince = x.days_since;
+  });
+  var nameOf = function(pr) {
+    var n = pr.uid && nameByUid[pr.uid];
+    return n ? n : ('端末' + String(pr.visitor || '').slice(0, 8));
+  };
+  var firstDayOf = function(k) { var pr = byPerson[k]; return pr && pr.firstAt ? String(pr.firstAt).slice(0, 10) : null; };
+  // 14日の記録（自分と機械を除く）
+  var weekStart = ymdShift(todayYmd, -6), prevStart = ymdShift(todayYmd, -13);
+  var thisWeek = {}, prevWeek = {}, perDay = {}, sources = {}, machineVisits = 0;
+  rows.forEach(function(x) {
+    if (!x || x.is_dev) return;
+    if (isMachine(x.visitor)) { machineVisits++; return; }
+    var day = String(x.visit_day || x.visit_date || x.visited_at || '').slice(0, 10);
+    if (!day) return;
+    var k = personKey(x);
+    (perDay[day] = perDay[day] || {})[k] = true;
+    if (day >= weekStart) thisWeek[k] = true;
+    else if (day >= prevStart) prevWeek[k] = true;
+    var s = x.source || 'direct'; sources[s] = (sources[s] || 0) + 1;
+  });
+  var thisWeekKeys = Object.keys(thisWeek);
+  var newThisWeek = thisWeekKeys.filter(function(k) { var f = firstDayOf(k); return f && f >= weekStart; });
+  var returning = thisWeekKeys.length - newThisWeek.length;
+  var days = [];
+  for (var i = 13; i >= 0; i--) {
+    var dd = ymdShift(todayYmd, -i), keys = Object.keys(perDay[dd] || {});
+    var nw = keys.filter(function(k) { return firstDayOf(k) === dd; }).length;
+    days.push({ day: dd, total: keys.length, fresh: nw, back: keys.length - nw });
+  }
+  var all = Object.keys(byPerson).map(function(k) { return byPerson[k]; });
+  var lapsed = all.filter(function(pr) { return pr.visits >= 3 && pr.daysSince !== null && pr.daysSince >= 7; })
+                  .sort(function(a, b) { return b.visits - a.visits; });
+  var outdated = all.filter(function(pr) { return pr.daysSince !== null && pr.daysSince <= 7 && pr.lastVersion && pr.lastVersion !== currentVersion; })
+                    .sort(function(a, b) { return a.daysSince - b.daysSince; });
+  var newcomers = all.filter(function(pr) { var f = pr.firstAt && String(pr.firstAt).slice(0, 10); return f && f >= weekStart; })
+                     .sort(function(a, b) { return String(b.firstAt).localeCompare(String(a.firstAt)); });
+  return {
+    thisWeek: thisWeekKeys.length, prevWeek: Object.keys(prevWeek).length,
+    newThisWeek: newThisWeek.length, returning: returning,
+    returningRate: thisWeekKeys.length ? Math.round(returning * 100 / thisWeekKeys.length) : 0,
+    days: days, sources: sources, machineVisits: machineVisits, people: all.length,
+    lapsed: lapsed, outdated: outdated, newcomers: newcomers, nameOf: nameOf
+  };
+}
+window._buildVisitOverview = _buildVisitOverview;
+
+function _renderVisitOverviewHtml(o) {
+  var esc = function(s) { return (typeof escAttr === 'function') ? escAttr(String(s)) : String(s); };
+  var diff = o.thisWeek - o.prevWeek;
+  var card = function(label, value, sub) {
+    return '<div style="flex:1;min-width:90px;background:#1b2233;border:1px solid #2c3650;border-radius:10px;padding:10px 8px;text-align:center;">' +
+      '<div style="font-size:0.72em;color:#9aa6b8;">' + label + '</div>' +
+      '<div style="font-size:1.6em;font-weight:700;color:#e6edf7;line-height:1.3;">' + value + '</div>' +
+      '<div style="font-size:0.7em;color:#7a8494;">' + sub + '</div></div>';
+  };
+  var max = Math.max.apply(null, o.days.map(function(d) { return d.total; }).concat([1]));
+  var bars = o.days.map(function(d) {
+    var hb = Math.round(d.back * 60 / max), hf = Math.round(d.fresh * 60 / max);
+    return '<div title="' + d.day + '　' + d.total + '人（新しい人 ' + d.fresh + '）" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:1px;">' +
+      (hf ? '<div style="width:70%;height:' + hf + 'px;background:#7ee0a1;border-radius:2px;"></div>' : '') +
+      (hb ? '<div style="width:70%;height:' + hb + 'px;background:#5b8def;border-radius:2px;"></div>' : '') +
+      '<div style="font-size:0.6em;color:#7a8494;margin-top:2px;">' + Number(d.day.slice(8)) + '</div></div>';
+  }).join('');
+  var who = function(title, list, line, empty) {
+    var shown = list.slice(0, 8);
+    return '<div style="margin-top:10px;"><div style="font-size:0.85em;font-weight:700;color:#e6edf7;margin-bottom:4px;">' + title + '（' + list.length + '人）</div>' +
+      (shown.length ? shown.map(function(pr) { return '<div style="font-size:0.8em;color:#c9d3e3;padding:2px 0;">・' + esc(o.nameOf(pr)) + '　<span style="color:#7a8494;">' + line(pr) + '</span></div>'; }).join('') +
+        (list.length > shown.length ? '<div style="font-size:0.75em;color:#7a8494;">ほか ' + (list.length - shown.length) + '人</div>' : '')
+       : '<div style="font-size:0.78em;color:#7a8494;">' + empty + '</div>') + '</div>';
+  };
+  var srcTotal = Object.keys(o.sources).reduce(function(s, k) { return s + o.sources[k]; }, 0) || 1;
+  var srcLine = Object.keys(o.sources).sort(function(a, b) { return o.sources[b] - o.sources[a]; })
+    .map(function(k) { return esc(k) + ' ' + Math.round(o.sources[k] * 100 / srcTotal) + '%'; }).join('・');
+  return '<div id="visitOverview" style="margin-bottom:12px;">' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      card('今週来た人', o.thisWeek + '人', '先週 ' + o.prevWeek + '人（' + (diff >= 0 ? '+' : '') + diff + '）') +
+      card('新しく来た人', o.newThisWeek + '人', '今週はじめて') +
+      card('戻ってきた人', o.returningRate + '%', '今週来た人のうち') +
+    '</div>' +
+    '<div style="margin-top:12px;font-size:0.75em;color:#9aa6b8;">14日の推移　<span style="color:#5b8def;">■</span>戻ってきた人　<span style="color:#7ee0a1;">■</span>新しい人</div>' +
+    '<div style="display:flex;align-items:flex-end;height:78px;gap:2px;margin-top:4px;">' + bars + '</div>' +
+    '<div style="margin-top:12px;padding-top:8px;border-top:1px solid #2c3650;font-size:0.9em;font-weight:700;color:#8ec5ff;">💬 声をかけたい人</div>' +
+    who('最近来なくなった常連', o.lapsed, function(pr) { return pr.visits + '回・' + pr.daysSince + '日前'; }, 'いません') +
+    who('古い版のまま', o.outdated, function(pr) { return esc(pr.lastVersion) + '・' + pr.daysSince + '日前'; }, 'いません') +
+    who('最近はじめて来た人', o.newcomers, function(pr) { return pr.visits + '回'; }, 'いません') +
+    '<div style="margin-top:12px;font-size:0.78em;color:#9aa6b8;">どこから来たか（14日）：' + (srcLine || 'なし') + '</div>' +
+    (o.machineVisits ? '<div style="margin-top:4px;font-size:0.72em;color:#7a8494;">機械（検索の巡回など）とみられる訪問 ' + o.machineVisits + '件は、人数から除いています</div>' : '') +
+  '</div>';
+}
+window._renderVisitOverviewHtml = _renderVisitOverviewHtml;
+
 async function loadAdminVisitStats() {
   var listEl = document.getElementById('adminVisitStatsList');
   var btn = document.getElementById('adminVisitStatsBtn');
@@ -47467,6 +47594,7 @@ async function loadAdminVisitStats() {
               });
             } catch (eN) {}
             var dr = await rpcWithTimeout('koyomiru_visit_detail', { p_days: 14 });
+            window._visitDetailRows = (dr && !dr.error && dr.data) ? dr.data : [];
         if (dr && !dr.error && dr.data && dr.data.length > 0) {
           var _fmt = function(iso) {
             try {
@@ -47749,6 +47877,25 @@ async function loadAdminVisitStats() {
           '</div>';
         }
       } catch(eEv) {}
+      // v0.49.3: ひと目で分かるまとめを一番上に置き、今までの詳しい表は折りたたみの中へ移す。
+      // 中のボタンの働きを壊さないよう、作り直さず「そのまま移す」。
+      try {
+        var _now = new Date();
+        var _today = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0') + '-' + String(_now.getDate()).padStart(2, '0');
+        var _ov = _buildVisitOverview(window._visitDetailRows || [], window._visitorSummary || [],
+          (typeof APP_VERSION !== 'undefined') ? APP_VERSION : '', _today);
+        var _ovBox = document.createElement('div');
+        _ovBox.innerHTML = _renderVisitOverviewHtml(_ov);
+        var _details = document.createElement('details');
+        _details.style.cssText = 'margin-top:8px;border-top:1px solid #2c3650;padding-top:8px;';
+        var _sum = document.createElement('summary');
+        _sum.style.cssText = 'cursor:pointer;color:#8ec5ff;font-size:0.85em;';
+        _sum.textContent = '📋 詳しい記録（日ごと・人ごと・全員の順位）';
+        _details.appendChild(_sum);
+        while (listEl.firstChild) _details.appendChild(listEl.firstChild);
+        listEl.appendChild(_ovBox.firstChild);
+        listEl.appendChild(_details);
+      } catch (eOv) { console.warn('[訪問] まとめの作成に失敗:', eOv && eOv.message); }
     }
   } catch(e) {
     listEl.innerHTML = '<span style="color:#ff9a9a;">取得に失敗しました</span>';
@@ -50124,6 +50271,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.49.3', date: '2026-10-01',
+    items: [
+      { icon:'📊', t:'（管理者向け）訪問統計を、ひと目で分かる形にしました',
+        before:'日ごとの一覧と全員の順位が並び、全体の様子や、誰に声をかければいいかが読み取りにくい作りでした。同じ人が2人に数えられることもありました',
+        after:'今週の人数・新しい人・戻ってきた人の割合、14日の推移、声をかけたい人を一番上にまとめました。詳しい記録は折りたたみの中にあります' }
+    ]
+  },
   {
     ver: 'v0.49.2', date: '2026-10-01',
     items: [
@@ -71885,6 +72040,40 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-395: 例外', e.message);
+     }
+
+     // ===== ST-396: 訪問統計の数え方（同じ人を1人に・機械を除く）（v0.49.3〜） =====
+     // 背景：同じ人が、名前を記録する前と後で別人として数えられ、最近も来ている人が
+     // 「来なくなった常連」に誤って入っていた。「v-」で始まる端末（機械とみられる）も人として数えていた。
+     try {
+       if (typeof _buildVisitOverview !== 'function') {
+         ng('ST-396: 訪問統計のまとめが見つからない', '');
+       } else {
+         var _st396S = [
+           { visitor:'dev-a', uid:null, visits:23, first_at:'2026-08-06T00:00', last_at:'2026-08-30T00:00', days_since:32, last_version:'v0.45.1' },
+           { visitor:'dev-a', uid:'uid-a', display_name:'Aさん', visits:17, first_at:'2026-09-06T00:00', last_at:'2026-09-30T20:00', days_since:1, last_version:'v1' },
+           { visitor:'v-machine1', visits:1, first_at:'2026-10-01T04:47', last_at:'2026-10-01T04:47', days_since:0, last_version:'v1' },
+           { visitor:'dev-b', visits:5, first_at:'2026-08-01T00:00', last_at:'2026-09-01T00:00', days_since:30, last_version:'v0.45.1' }
+         ];
+         var _st396D = [
+           { visit_day:'2026-09-30', visitor:'dev-a', source:'direct' },
+           { visit_day:'2026-10-01', visitor:'v-machine1', source:'direct' },
+           { visit_day:'2026-09-29', visitor:'me', is_dev:true, source:'direct' }
+         ];
+         var _st396 = _buildVisitOverview(_st396D, _st396S, 'v1', '2026-10-01');
+         (_st396.people === 2)
+           ? ok('ST-396·①: 同じ人の名前の前と後の記録を1人にまとめ、機械は人数に入れない（4件→2人）')
+           : ng('ST-396·①: 人数が違う', _st396.people);
+         var _st396names = _st396.lapsed.map(_st396.nameOf);
+         (_st396names.indexOf('Aさん') === -1 && _st396names.indexOf('端末dev-b') !== -1)
+           ? ok('ST-396·②: 最近も来ている人は「来なくなった常連」に入らない（名前の前の古い記録に引きずられない）')
+           : ng('ST-396·②: 来なくなった常連の判定が違う', _st396names.join(','));
+         (_st396.machineVisits === 1 && _st396.thisWeek === 1)
+           ? ok('ST-396·③: 機械の訪問と自分の訪問は、今週来た人に数えない')
+           : ng('ST-396·③: 今週の数え方が違う', _st396.thisWeek + '人・機械' + _st396.machineVisits);
+       }
+     } catch(e) {
+       ng('ST-396: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
