@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.7 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.9 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.7';
+    const APP_VERSION = 'v0.49.9';
   const APP_LAST_UPDATED = '2026-10-01'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -869,6 +869,45 @@ function _cleanDisplayName(v) {
 }
 window._cleanDisplayName = _cleanDisplayName;
 
+// ===== v0.49.9: 使えない名前（NGワード） =====
+// 【権威】2026-10-01、性的な名前やふざけた名前（荒らし目的の名前）を、あらかじめ防ぎたい、との要望。
+// 一覧はここ1か所に置く（第71条④・第79条②：判定は1か所、全部がここを通る）。
+// 比べる前に、全角半角・カタカナひらがな・大文字小文字をそろえ、空白・記号・絵文字を取り除く
+// （「ち ん ち ん！」「ﾁﾝﾁﾝ」「チンチン」を同じ言葉として見分ける）。
+// 普通の名前を誤って弾かないよう、短くて普通の言葉に含まれやすいもの
+// （かす→かすみ、えっち→えっちゃん など）は、あえて入れていない。
+// データベース側にも同じ確かめを置く（第71条：画面で止めるだけでは守りではない）。
+var KOYOMIRU_NG_NAME_WORDS = [
+  // 性的なもの
+  'ちんちん', 'ちんこ', 'ちんぽ', 'まんこ', 'せっくす', 'sex', 'porn', 'ぽるの', 'おっぱい', 'ぱいぱい', 'fuck',
+  // 荒らし・暴言
+  'しね', 'ころす', 'ころしてやる', 'きえろ', 'うざい', 'きもい', 'ごみくず',
+  // なりすまし
+  'こよみる', 'koyomiru', 'うんえい', 'かんりしゃ', 'admin', '公式'
+];
+window.KOYOMIRU_NG_NAME_WORDS = KOYOMIRU_NG_NAME_WORDS;
+function _normalizeNameForCheck(v) {
+  var s = String(v == null ? '' : v);
+  try { s = s.normalize('NFKC'); } catch (e) {}
+  s = s.toLowerCase();
+  s = s.replace(/[\u30a1-\u30f6]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0x60); });
+  try { s = s.replace(/[^\p{L}\p{N}]/gu, ''); } catch (e) { s = s.replace(/[\s!-\/:-@\[-`{-~、。・！？「」（）]/g, ''); }
+  return s;
+}
+window._normalizeNameForCheck = _normalizeNameForCheck;
+function _isDisplayNameAllowed(name) {
+  var n = _normalizeNameForCheck(name);
+  if (!n) return { ok: true };
+  for (var i = 0; i < KOYOMIRU_NG_NAME_WORDS.length; i++) {
+    var w = _normalizeNameForCheck(KOYOMIRU_NG_NAME_WORDS[i]);
+    if (w && n.indexOf(w) !== -1) return { ok: false, word: KOYOMIRU_NG_NAME_WORDS[i] };
+  }
+  return { ok: true };
+}
+window._isDisplayNameAllowed = _isDisplayNameAllowed;
+var KOYOMIRU_NG_NAME_MESSAGE = 'この名前は使えません。別の名前にしてください';
+// ===== END v0.49.9 使えない名前 =====
+
 async function _isNameTaken(calendarId, name) {
   try {
     if (!window.supabaseClient || !calendarId || !name) return false;
@@ -904,6 +943,13 @@ async function _acceptInvite(code) {
       _hint.style.color = '#c07a2a';
       _hint.textContent = '呼び名を入れてください（あとから設定で変えられます）';
     }
+    return;
+  }
+  // v0.49.9: 使えない名前は、参加する前に止める
+  if (!_isDisplayNameAllowed(nm).ok) {
+    if (inp) { inp.style.borderColor = '#e0a458'; inp.focus(); }
+    var _hintNg = document.getElementById('inviteCardNameHint');
+    if (_hintNg) { _hintNg.style.color = '#c07a2a'; _hintNg.textContent = KOYOMIRU_NG_NAME_MESSAGE; }
     return;
   }
   if (btn) { btn.disabled = true; btn.textContent = '参加しています…'; }
@@ -33634,6 +33680,11 @@ window._repairCloudCalendarIds();
       const inp = document.getElementById('familySenderNameInput');
       const name = (inp ? inp.value : '').trim();
       if (!name) return;
+      if (!_isDisplayNameAllowed(name).ok) {   // v0.49.9
+        document.getElementById('familyExportMsg').textContent = KOYOMIRU_NG_NAME_MESSAGE;
+        document.getElementById('familyExportMsg').style.color = '#c0392b';
+        return;
+      }
       allSettings.profile.name = name; saveAllSettings();
       const settingInp = document.getElementById('profileNameInput');
       if (settingInp) settingInp.value = name;
@@ -36556,6 +36607,10 @@ function renderMonthlyMoneyLine() {
     function saveProfileQuick() {
       var nameEl = document.getElementById('profileNameInput');
       var name = nameEl ? nameEl.value.trim() : '';
+      if (name && !_isDisplayNameAllowed(name).ok) {   // v0.49.9
+        if (typeof showToast === 'function') showToast('⚠️ ' + KOYOMIRU_NG_NAME_MESSAGE, {type:'error'});
+        return;
+      }
       if (name) allSettings.profile.name = name; saveAllSettings();
       var gender = allSettings.profile.gender || 'king';
       var gLabel = gender === 'princess' ? '女' : '男';
@@ -36602,7 +36657,12 @@ function renderMonthlyMoneyLine() {
         saveStampSettings();
         // プロフィール名
         var profileNameEl = document.getElementById('profileNameInput');
-        if (profileNameEl) allSettings.profile.name = profileNameEl.value.trim(); saveAllSettings();
+        if (profileNameEl) {
+          var _pnV = profileNameEl.value.trim();
+          if (_isDisplayNameAllowed(_pnV).ok) allSettings.profile.name = _pnV;   // v0.49.9: 使えない名前は保存しない
+          else if (typeof showToast === 'function') showToast('⚠️ ' + KOYOMIRU_NG_NAME_MESSAGE, {type:'error'});
+        }
+        saveAllSettings();
         // 性別：selectGenderでlocalStorageに既に書き込み済みなので読むだけ
         // （何も選択されていない場合のフォールバックのみ）
         if (!allSettings.profile.gender) {
@@ -47488,7 +47548,41 @@ function _buildVisitOverview(detailRows, summaryRows, currentVersion, todayYmd) 
                     .sort(function(a, b) { return a.daysSince - b.daysSince; });
   var newcomers = all.filter(function(pr) { var f = pr.firstAt && String(pr.firstAt).slice(0, 10); return f && f >= weekStart; })
                      .sort(function(a, b) { return String(b.firstAt).localeCompare(String(a.firstAt)); });
+  // v0.49.8: 【権威】2026-10-01、週ごとの数字より先に、まず「今日来た人」を、誰が・どの経路で・何時に、
+  // ひと目で見たい、との要望。今日と昨日の訪問を、新しい順に1件ずつ並べる（自分と機械は除き、件数を添える）。
+  var SOURCE_LABELS = { direct: '直接', line: 'LINE', homescreen: 'ホーム画面', x: 'X', discord: 'Discord',
+    mailmagazine: 'メルマガ', note: 'note', blog: 'ブログ', 'chatgpt.com': 'ChatGPT', other: 'その他' };
+  var timeOf = function(x) {
+    if (x.visit_time) return String(x.visit_time).slice(0, 5);
+    var t = new Date(x.visited_at || ''); if (isNaN(t)) return '';
+    return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+  };
+  var whoOf = function(x) {
+    var uid = x.uid || uidByDevice[x.visitor] || null;
+    var nm = x.display_name || (uid && nameByUid[uid]);
+    if (nm) return { name: nm, named: true };
+    if (uid) return { name: '名前なし（UID:' + String(uid).slice(0, 8) + '）', named: false };
+    return { name: '端末' + String(x.visitor || '').slice(0, 8), named: false };
+  };
+  var visitsOn = function(ymd) {
+    var list = [], selfCount = 0, machineCount = 0;
+    rows.forEach(function(x) {
+      if (!x) return;
+      var day = String(x.visit_day || x.visit_date || x.visited_at || '').slice(0, 10);
+      if (day !== ymd) return;
+      if (x.is_dev) { selfCount++; return; }
+      if (isMachine(x.visitor)) { machineCount++; return; }
+      var w = whoOf(x);
+      list.push({ time: timeOf(x), who: w.name, named: w.named, source: SOURCE_LABELS[x.source] || x.source || '直接',
+        isFirst: !!x.is_first, loggedIn: !!x.is_logged_in,
+        outdated: !!(x.app_version && currentVersion && x.app_version !== currentVersion), version: x.app_version || '' });
+    });
+    list.sort(function(a, b) { return String(b.time).localeCompare(String(a.time)); });
+    var people = {}; list.forEach(function(v) { people[v.who] = true; });
+    return { visits: list, people: Object.keys(people).length, selfCount: selfCount, machineCount: machineCount };
+  };
   return {
+    today: visitsOn(todayYmd), yesterday: visitsOn(ymdShift(todayYmd, -1)),
     thisWeek: thisWeekKeys.length, prevWeek: Object.keys(prevWeek).length,
     newThisWeek: newThisWeek.length, returning: returning,
     returningRate: thisWeekKeys.length ? Math.round(returning * 100 / thisWeekKeys.length) : 0,
@@ -47525,7 +47619,29 @@ function _renderVisitOverviewHtml(o) {
   var srcTotal = Object.keys(o.sources).reduce(function(s, k) { return s + o.sources[k]; }, 0) || 1;
   var srcLine = Object.keys(o.sources).sort(function(a, b) { return o.sources[b] - o.sources[a]; })
     .map(function(k) { return esc(k) + ' ' + Math.round(o.sources[k] * 100 / srcTotal) + '%'; }).join('・');
+  var dayList = function(title, dv) {
+    var head = '<div style="font-size:0.95em;font-weight:700;color:#e6edf7;margin:2px 0 6px;">' + title + '　' +
+      '<span style="font-size:0.85em;color:#9aa6b8;font-weight:400;">' + dv.people + '人・' + dv.visits.length + '回</span></div>';
+    var body = dv.visits.length ? dv.visits.map(function(v) {
+      var marks = [];
+      if (v.isFirst) marks.push('<span style="color:#7ee0a1;">はじめて</span>');
+      if (v.loggedIn) marks.push('<span style="color:#8ec5ff;">ログイン済み</span>');
+      if (v.outdated) marks.push('<span style="color:#e0a458;">古い版 ' + esc(v.version) + '</span>');
+      return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid #222b3d;font-size:0.85em;">' +
+        '<span style="color:#9aa6b8;min-width:3.2em;">' + esc(v.time) + '</span>' +
+        '<span style="flex:1;color:' + (v.named ? '#e6edf7' : '#9aa6b8') + ';font-weight:' + (v.named ? '700' : '400') + ';">' + esc(v.who) + '</span>' +
+        '<span style="color:#c9d3e3;">' + esc(v.source) + '</span>' +
+        (marks.length ? '<span style="font-size:0.85em;">' + marks.join('・') + '</span>' : '') +
+      '</div>';
+    }).join('') : '<div style="font-size:0.8em;color:#7a8494;padding:4px 0;">まだいません</div>';
+    var foot = (dv.selfCount || dv.machineCount)
+      ? '<div style="font-size:0.72em;color:#7a8494;margin-top:3px;">（除いたもの：自分 ' + dv.selfCount + '回' + (dv.machineCount ? '・機械 ' + dv.machineCount + '回' : '') + '）</div>' : '';
+    return '<div style="margin-bottom:12px;">' + head + body + foot + '</div>';
+  };
   return '<div id="visitOverview" style="margin-bottom:12px;">' +
+    dayList('📅 今日来た人', o.today) +
+    dayList('🗓 昨日来た人', o.yesterday) +
+    '<div style="margin:4px 0 8px;padding-top:8px;border-top:1px solid #2c3650;font-size:0.9em;font-weight:700;color:#8ec5ff;">📈 今週のようす</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
       card('今週来た人', o.thisWeek + '人', '先週 ' + o.prevWeek + '人（' + (diff >= 0 ? '+' : '') + diff + '）') +
       card('新しく来た人', o.newThisWeek + '人', '今週はじめて（ログインしていない人は端末ごと）') +
@@ -50311,6 +50427,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.9', date: '2026-10-01',
+    items: [
+      { icon:'🚫', t:'使えない名前を決めました',
+        before:'名前には、どんな言葉でも使えました',
+        after:'性的な言葉、荒らしや暴言、こよみるの運営になりすます名前は、使えないようにしました。安心して名前を見せ合えるようにするためです' }
+    ]
+  },
+  {
+    ver: 'v0.49.8', date: '2026-10-01',
+    items: [
+      { icon:'📅', t:'（管理者向け）訪問統計のいちばん上を「今日来た人」にしました',
+        before:'週ごとの数字が先にあり、今日だれが来たかは、詳しい記録を開かないと分かりませんでした',
+        after:'今日と昨日来た人を、時刻・名前・経路で1行ずつ、新しい順に並べました。週ごとの数字はその下にあります' }
+    ]
+  },
+  {
     ver: 'v0.49.7', date: '2026-10-01',
     items: [
       { icon:'🪪', t:'決めた名前が、ほかの人にもちゃんと見えるようにしました',
@@ -51801,6 +51933,11 @@ function _showNameInput(_cur) {
       if (typeof _cleanDisplayName === 'function') _v = _cleanDisplayName(_v);
       if (!_v) {
         if (typeof showToast === 'function') showToast('⚠️ 呼び名を入れてください', {type:'warn'});
+        if (_f) _f.style.borderColor = '#e0a458';
+        return;
+      }
+      if (!_isDisplayNameAllowed(_v).ok) {   // v0.49.9
+        if (typeof showToast === 'function') showToast('⚠️ ' + KOYOMIRU_NG_NAME_MESSAGE, {type:'warn'});
         if (_f) _f.style.borderColor = '#e0a458';
         return;
       }
@@ -53832,7 +53969,9 @@ async function pushPublicProfile() {
     if (!_u || !_u.data || !_u.data.user) return;
     var r = await window.supabaseClient.from('koyomiru_public_profiles').upsert({
       user_id:      _u.data.user.id,
-      display_name: (allSettings.profile && allSettings.profile.name) || null,
+      // v0.49.9: 使えない名前は、他の人に見える場所へ出さない（空にして届ける）
+      display_name: (allSettings.profile && allSettings.profile.name && _isDisplayNameAllowed(allSettings.profile.name).ok)
+        ? allSettings.profile.name : null,
       avatar:       (allSettings.profile && allSettings.profile.avatar) || null,
       updated_at:   new Date().toISOString()
     });
@@ -53860,6 +53999,46 @@ async function _syncPublicProfileIfChanged() {
   } catch (e) { return false; }
 }
 window._syncPublicProfileIfChanged = _syncPublicProfileIfChanged;
+
+// v0.49.9: 【権威】2026-10-01、すでに使えない名前になっている人には、その人にだけ付け直しを求める。
+// 付け直すまで、その名前は他の人に見せない（公開プロフィールには空で届ける）。名前を決めている
+// 普通の人には、決して出さない。見るだけモード中・テスト中は出さない。
+var _renameAskedThisLaunch = false;
+function _promptRenameIfNameNotAllowed() {
+  try {
+    if (_renameAskedThisLaunch) return false;
+    if (window._viewOnlyBackup || window._viewOnlyPending || window._isTesting || window._smokeTestRunning) return false;
+    var nm = (allSettings.profile && allSettings.profile.name) ? String(allSettings.profile.name) : '';
+    if (!nm || _isDisplayNameAllowed(nm).ok) return false;
+    if (typeof showTextInputModal !== 'function') return false;
+    _renameAskedThisLaunch = true;
+    var ask = function() {
+      showTextInputModal({
+        title: 'この名前は使えなくなりました。別の名前にしてください',
+        placeholder: '例：きくモン',
+        defaultValue: '',
+        onSubmit: function(v) {
+          var nv = (typeof _cleanDisplayName === 'function') ? _cleanDisplayName(v) : String(v || '').trim();
+          if (!nv || !_isDisplayNameAllowed(nv).ok) {
+            if (typeof showToast === 'function') showToast('⚠️ ' + KOYOMIRU_NG_NAME_MESSAGE, {type:'warn'});
+            setTimeout(ask, 300);
+            return;
+          }
+          allSettings.profile.name = nv;
+          saveAllSettings();
+          if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
+          if (typeof showToast === 'function') showToast('名前を「' + nv + '」にしました');
+        }
+      });
+    };
+    ask();
+    // 他の人に見える場所からは、すぐ外す
+    if (window._cloudIsLoggedIn && typeof pushPublicProfile === 'function') pushPublicProfile();
+    return true;
+  } catch (e) { return false; }
+}
+window._promptRenameIfNameNotAllowed = _promptRenameIfNameNotAllowed;
+setTimeout(function() { if (typeof _promptRenameIfNameNotAllowed === 'function') _promptRenameIfNameNotAllowed(); }, 5000);
 
 // 他人の名前とアイコンをまとめて取る。1件ずつ取ると回数が増えるので、
 // 必要なぶんを1回で取って手元に持っておく。
@@ -56219,7 +56398,10 @@ try {
       window._cloudAuthInitialChecked = true;
       // v0.49.7: ログインして開いたら、設定の名前を公開プロフィールに届ける（変わっていたときだけ）。
       // 設定をクラウドから取り込み終わるのを少し待つ。
-      if (session) setTimeout(function() { if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged(); }, 4000);
+      if (session) setTimeout(function() {
+        if (typeof _promptRenameIfNameNotAllowed === 'function') _promptRenameIfNameNotAllowed();   // v0.49.9
+        if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
+      }, 4000);
       // v0.45.1356: unifiedPushTasksのcreated_byに、Supabase認証ユーザーID
       // （auth.users.id）ではなく端末ID（getOrCreateDeviceId）を誤って使っており、
       // 外部キー制約違反（409 Conflict）でPushが常に失敗する重大バグがあった。
@@ -72272,6 +72454,76 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          restore();
        }, function(e) { restore(); throw e; });
      });
+
+     // ===== ST-398: 訪問統計の「今日来た人」（v0.49.8〜） =====
+     // 背景：週ごとの数字より先に、今日来た人を、誰が・どの経路で・何時に、ひと目で見たい、との要望。
+     try {
+       if (typeof _buildVisitOverview !== 'function') {
+         ng('ST-398: 訪問統計のまとめが見つからない', '');
+       } else {
+         var _st398 = _buildVisitOverview([
+           { visit_day:'2026-10-01', visit_time:'09:02', visitor:'dev-x', source:'x', is_first:true, app_version:'v0' },
+           { visit_day:'2026-10-01', visit_time:'21:47', visitor:'dev-a', uid:'uid-a', display_name:'Aさん', source:'direct', is_logged_in:true, app_version:'v1' },
+           { visit_day:'2026-10-01', visit_time:'12:10', visitor:'dev-b', uid:'uid-b', source:'line', is_logged_in:true, app_version:'v1' },
+           { visit_day:'2026-10-01', visit_time:'08:00', visitor:'me', is_dev:true, source:'direct' },
+           { visit_day:'2026-10-01', visit_time:'04:47', visitor:'v-bot', source:'direct' },
+           { visit_day:'2026-09-30', visit_time:'15:49', visitor:'dev-a', uid:'uid-a', source:'line', is_logged_in:true, app_version:'v1' }
+         ], [], 'v1', '2026-10-01');
+         var _st398t = _st398.today.visits;
+         (_st398t.map(function(v) { return v.time; }).join(',') === '21:47,12:10,09:02')
+           ? ok('ST-398·①: 今日来た人が、新しい順に並ぶ（自分と機械は除く）')
+           : ng('ST-398·①: 並びか除き方が違う', _st398t.map(function(v) { return v.time; }).join(','));
+         (_st398t[0].who === 'Aさん' && _st398t[1].who.indexOf('名前なし（UID:uid-b') === 0 && _st398t[2].who === '端末dev-x')
+           ? ok('ST-398·②: 誰か：表示名 → 名前なし（UID） → 端末 の順で示す')
+           : ng('ST-398·②: 誰かの示し方が違う', _st398t.map(function(v) { return v.who; }).join(' / '));
+         (_st398t[1].source === 'LINE' && _st398t[2].source === 'X' && _st398t[2].isFirst && _st398t[2].outdated)
+           ? ok('ST-398·③: 経路は日本語で、はじめて・古い版の印も付く')
+           : ng('ST-398·③: 経路か印が違う', JSON.stringify(_st398t[2]));
+         (_st398.today.selfCount === 1 && _st398.today.machineCount === 1 && _st398.yesterday.visits.length === 1 && _st398.yesterday.visits[0].who === 'Aさん')
+           ? ok('ST-398·④: 除いた件数を数え、昨日来た人も同じ形で出る（昨日の名前なしの記録も同じ人の名前で）')
+           : ng('ST-398·④: 除いた件数か昨日の一覧が違う', JSON.stringify(_st398.yesterday));
+       }
+     } catch(e) {
+       ng('ST-398: 例外', e.message);
+     }
+
+     // ===== ST-399: 使えない名前（NGワード）（v0.49.9〜） =====
+     // 背景：性的な名前や荒らし目的の名前を、あらかじめ防ぎたい、との要望。
+     // 弾くべきものを弾くことと同じくらい、普通の名前を誤って弾かないことを確かめる。
+     try {
+       if (typeof _isDisplayNameAllowed !== 'function') {
+         ng('ST-399: 名前の確かめが見つからない', '');
+       } else {
+         var _st399bad = ['ちんちん！', 'ﾁﾝﾁﾝ', 'チ ン チ ン', 'ＳＥＸ', 'しね', 'こよみる公式', 'Admin太郎', 'うんえい'];
+         var _st399passBad = _st399bad.filter(function(n) { return _isDisplayNameAllowed(n).ok; });
+         (_st399passBad.length === 0)
+           ? ok('ST-399·①: 書き換え（半角・カタカナ・空白・記号・全角英字）も含めて、使えない名前を弾く')
+           : ng('ST-399·①: すり抜けた名前がある', _st399passBad.join(' / '));
+         var _st399good = ['きくモン', '犬飼', 'すず', 'T.KAIMORI', 'かにゃん', 'みや', 'mirere', 'おさめ', 'かすみ', 'えっちゃん', 'しねま好き'];
+         var _st399blockedGood = _st399good.filter(function(n) { return !_isDisplayNameAllowed(n).ok; });
+         (_st399blockedGood.length === 1 && _st399blockedGood[0] === 'しねま好き')
+           ? ok('ST-399·②: 普通の名前は弾かない（「しねま好き」のように「しね」を含む名前だけは弾く＝一覧を見直すときの目印）')
+           : ng('ST-399·②: 普通の名前を誤って弾いている', _st399blockedGood.join(' / '));
+         var _st399profile = JSON.parse(JSON.stringify(allSettings.profile || {}));
+         var _st399modal = window.showTextInputModal, _st399shown = 0;
+         window.showTextInputModal = function() { _st399shown++; };
+         var _st399flags = { t: window._isTesting, s: window._smokeTestRunning };
+         window._isTesting = false; window._smokeTestRunning = false;
+         allSettings.profile = allSettings.profile || {};
+         allSettings.profile.name = '犬飼';
+         var _st399a = _promptRenameIfNameNotAllowed();
+         allSettings.profile.name = 'ちんちん！';
+         var _st399b = _promptRenameIfNameNotAllowed();
+         window._isTesting = _st399flags.t; window._smokeTestRunning = _st399flags.s;
+         window.showTextInputModal = _st399modal;
+         allSettings.profile = _st399profile;
+         (_st399a === false && _st399b === true && _st399shown === 1)
+           ? ok('ST-399·③: 付け直しの画面は、使えない名前の人にだけ出る（普通の名前の人には出ない）')
+           : ng('ST-399·③: 付け直しの出方が違う', JSON.stringify([_st399a, _st399b, _st399shown]));
+       }
+     } catch(e) {
+       ng('ST-399: 例外', e.message);
+     }
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
