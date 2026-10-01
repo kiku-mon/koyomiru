@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.6 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.7 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.6';
+    const APP_VERSION = 'v0.49.7';
   const APP_LAST_UPDATED = '2026-10-01'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -938,6 +938,19 @@ async function _acceptInvite(code) {
   }
   var ov = document.getElementById('inviteCardOverlay');
   if (ov) ov.remove();
+  // v0.49.7: 【権威】2026-10-01、名前の置き場所は「設定の名前」1つにしたい、との指示。
+  // 招待のカードで打った呼び名は、このカレンダーの中でしか使われておらず、設定の名前は空のままだった。
+  // 設定の名前が空なら、本人が「この名前で」と打ったこの呼び名をそのまま入れ、あとで変えられると伝える。
+  // すでに名前を決めている人の名前は、決して上書きしない。
+  try {
+    if (!allSettings.profile) allSettings.profile = {};
+    if (!String(allSettings.profile.name || '').trim() && nm) {
+      allSettings.profile.name = nm;
+      saveAllSettings();
+      if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
+      if (typeof showToast === 'function') showToast('こよみるでの名前を「' + nm + '」にしました。あとから設定で変えられます');
+    }
+  } catch (eNm) {}
   // v0.45.2016: 【権威】2026-09-03、参加したのに書いた予定が相手に届かない、との報告。
   // 調べたところ、参加した人の予定186件が、共有ではなく自分のカレンダーに入っていた。
   //
@@ -50298,6 +50311,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.7', date: '2026-10-01',
+    items: [
+      { icon:'🪪', t:'決めた名前が、ほかの人にもちゃんと見えるようにしました',
+        before:'設定で名前を決めていても、コメント欄などでほかの人に名前が出ないことがありました。招待のカードで入れた呼び名も、設定の名前には入っていませんでした',
+        after:'開いたときに、決めた名前がほかの人にも見えるよう届けます。設定の名前がまだ無ければ、招待のカードで入れた呼び名をそのまま使います（あとから設定で変えられます）' }
+    ]
+  },
+  {
     ver: 'v0.49.6', date: '2026-10-01',
     items: [
       { icon:'🧪', t:'（開発者向け）品質を確かめる仕組みを整えました',
@@ -53820,6 +53841,26 @@ async function pushPublicProfile() {
 }
 window.pushPublicProfile = pushPublicProfile;
 
+// v0.49.7: 【権威】2026-10-01、表示名が思ったほど増えない、との指摘で実数を見たところ、
+// 名前を決めている人は12人中7人いたのに、他の人に見せる公開プロフィールには1人分しか届いていなかった。
+// 公開プロフィールへ届けるのが、特定の操作をしたときだけだったため。決めた名前が、コメント欄などで
+// 他の人に出ていなかった。ログインして開いたとき、設定の名前とアイコンが前回届けたものと違えば届ける。
+// 名前が空のときは届けない（別の端末で決めた名前を、まだ設定を取り込んでいない端末が空で消さないため）。
+var _PUBLIC_PROFILE_SENT_KEY = 'koyomiru_public_profile_sent';
+async function _syncPublicProfileIfChanged() {
+  try {
+    if (!window._cloudIsLoggedIn || typeof pushPublicProfile !== 'function') return false;
+    var nm = (allSettings.profile && allSettings.profile.name) ? String(allSettings.profile.name).trim() : '';
+    if (!nm) return false;
+    var sig = nm + '\u0001' + ((allSettings.profile && allSettings.profile.avatar) || '');
+    if (localStorage.getItem(_PUBLIC_PROFILE_SENT_KEY) === sig) return false;
+    await pushPublicProfile();
+    localStorage.setItem(_PUBLIC_PROFILE_SENT_KEY, sig);
+    return true;
+  } catch (e) { return false; }
+}
+window._syncPublicProfileIfChanged = _syncPublicProfileIfChanged;
+
 // 他人の名前とアイコンをまとめて取る。1件ずつ取ると回数が増えるので、
 // 必要なぶんを1回で取って手元に持っておく。
 window._publicProfileCache = window._publicProfileCache || {};
@@ -56176,6 +56217,9 @@ try {
       // v0.48.24: 最初の合図（INITIAL_SESSION）＝起動時のログイン確認が終わった、の印。
       // リンクから戻ったときの見張りが、3秒の決め打ちではなくこれを待つ。
       window._cloudAuthInitialChecked = true;
+      // v0.49.7: ログインして開いたら、設定の名前を公開プロフィールに届ける（変わっていたときだけ）。
+      // 設定をクラウドから取り込み終わるのを少し待つ。
+      if (session) setTimeout(function() { if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged(); }, 4000);
       // v0.45.1356: unifiedPushTasksのcreated_byに、Supabase認証ユーザーID
       // （auth.users.id）ではなく端末ID（getOrCreateDeviceId）を誤って使っており、
       // 外部キー制約違反（409 Conflict）でPushが常に失敗する重大バグがあった。
@@ -72162,6 +72206,72 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-396: 例外', e.message);
      }
+
+     // ===== ST-397: 名前の置き場所は「設定の名前」1つ・公開プロフィールに届く（v0.49.7〜） =====
+     // 背景：名前を決めた人は12人中7人いたのに、公開プロフィールには1人分しか届いていなかった。
+     // 招待のカードで打った呼び名も、設定の名前には入っていなかった。
+     enqueueSmokeAsyncTest('ST-397', function() {
+       if (typeof _syncPublicProfileIfChanged !== 'function' || typeof _acceptInvite !== 'function') {
+         ng('ST-397: 名前の処理が見つからない', ''); return;
+       }
+       var pushed = 0;
+       var savedFns = { push: window.pushPublicProfile, join: window.joinSharedCalendarByCode,
+         taken: window._isNameTaken, link: window.linkSharedCalendarToLocal,
+         sent: localStorage.getItem('koyomiru_public_profile_sent') };
+       window.pushPublicProfile = function() { pushed++; return Promise.resolve(); };
+       window.saveAllSettings = function(){};
+       window._cloudIsLoggedIn = true;
+       window._isTesting = false; window._smokeTestRunning = false;
+       var profileBefore = JSON.parse(JSON.stringify(allSettings.profile || {}));
+       var restore = function() {
+         allSettings.profile = profileBefore;
+         window.pushPublicProfile = savedFns.push; window.joinSharedCalendarByCode = savedFns.join;
+         window._isNameTaken = savedFns.taken; window.linkSharedCalendarToLocal = savedFns.link;
+         if (savedFns.sent === null) localStorage.removeItem('koyomiru_public_profile_sent');
+         else localStorage.setItem('koyomiru_public_profile_sent', savedFns.sent);
+       };
+       allSettings.profile = allSettings.profile || {};
+       allSettings.profile.name = '';
+       localStorage.removeItem('koyomiru_public_profile_sent');
+       return _syncPublicProfileIfChanged().then(function() {
+         (pushed === 0)
+           ? ok('ST-397·①: 名前が空のときは、公開プロフィールを空で上書きしない')
+           : ng('ST-397·①: 空の名前で上書きしてしまう', pushed + '回');
+         allSettings.profile.name = 'ST397さん';
+         return _syncPublicProfileIfChanged();
+       }).then(function() {
+         return _syncPublicProfileIfChanged();
+       }).then(function() {
+         (pushed === 1)
+           ? ok('ST-397·②: 名前があれば1回だけ届け、変わっていなければ二度は送らない')
+           : ng('ST-397·②: 届ける回数が違う', pushed + '回');
+         // ③ 招待のカード：設定の名前が空なら、打った呼び名を入れる
+         allSettings.profile.name = '';
+         var box = document.createElement('div'); box.id = 'inviteCardOverlay';
+         box.innerHTML = '<input id="inviteCardName" value="招待で打った名前"><div id="inviteCardNameHint"></div><button>参加する</button>';
+         document.body.appendChild(box);
+         window.joinSharedCalendarByCode = function() { return Promise.resolve({ data: 'st397-cal', error: null }); };
+         window._isNameTaken = function() { return Promise.resolve(false); };
+         window.linkSharedCalendarToLocal = function(){};
+         return _acceptInvite('st397code');
+       }).then(function() {
+         (allSettings.profile.name === '招待で打った名前')
+           ? ok('ST-397·③: 設定の名前が空なら、招待のカードで打った呼び名がそのまま入る')
+           : ng('ST-397·③: 設定の名前に入っていない', allSettings.profile.name);
+         // ④ すでに名前がある人は上書きしない
+         allSettings.profile.name = '決めてある名前';
+         var box2 = document.createElement('div'); box2.id = 'inviteCardOverlay';
+         box2.innerHTML = '<input id="inviteCardName" value="別の呼び名"><div id="inviteCardNameHint"></div><button>参加する</button>';
+         document.body.appendChild(box2);
+         return _acceptInvite('st397code2');
+       }).then(function() {
+         (allSettings.profile.name === '決めてある名前')
+           ? ok('ST-397·④: すでに名前を決めている人の名前は、上書きしない')
+           : ng('ST-397·④: 決めてある名前を上書きした', allSettings.profile.name);
+         ['inviteCardOverlay'].forEach(function(id) { var e = document.getElementById(id); if (e) e.remove(); });
+         restore();
+       }, function(e) { restore(); throw e; });
+     });
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
