@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.14 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.15 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.14';
+    const APP_VERSION = 'v0.49.15';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -50497,6 +50497,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.15', date: '2026-10-02',
+    items: [
+      { icon:'🪪', t:'名前がまだの方に、名前を決めてもらうようにしました',
+        before:'GoogleやDiscordでログインした方には、名前を決める場面がありませんでした',
+        after:'名前がまだの方には、開いたときに名前を聞きます。ログインしたサービスの名前を入れてあるので、押すだけで決められます（本名なら変えてください。あとから設定でも変えられます）' }
+    ]
+  },
+  {
     ver: 'v0.49.14', date: '2026-10-02',
     items: [
       { icon:'🔑', t:'予定の入力欄に、ログインのメールアドレスの候補が出ることがあるのを直しました',
@@ -54140,6 +54148,68 @@ function _promptRenameIfNameNotAllowed() {
   } catch (e) { return false; }
 }
 window._promptRenameIfNameNotAllowed = _promptRenameIfNameNotAllowed;
+
+// ===== v0.49.15: 名前がまだ無い人に、自然に名前を決めてもらう =====
+// 【権威】2026-10-02、ログインしても表示名が思ったほど増えない、との指摘。Google・Discordでログインした人には、
+// 名前を聞く場面がどこにも無かった。名前がまだ空なら、こよみるを開くたびに1回聞く（「あとで」はその回だけ）。
+// ログインに使ったサービスの名前を候補として入れておき、押すだけで決められるようにする。
+// Googleの名前は本名のことが多いので、勝手には入れず、必ずこの画面で確かめる。
+// すでに名前を決めている人には、決して出さない。見るだけモード中・テスト中は出さない。
+function _providerNameCandidate(user) {
+  try {
+    var md = (user && user.user_metadata) || {};
+    var cands = [md.custom_claims && md.custom_claims.global_name, md.full_name, md.name, md.user_name, md.preferred_username];
+    for (var i = 0; i < cands.length; i++) {
+      var v = (typeof _cleanDisplayName === 'function') ? _cleanDisplayName(cands[i] || '') : String(cands[i] || '').trim();
+      if (!v || v.indexOf('@') !== -1) continue;              // メールアドレスの形は候補にしない
+      if (typeof _isDisplayNameAllowed === 'function' && !_isDisplayNameAllowed(v).ok) continue;
+      return v;
+    }
+  } catch (e) {}
+  return '';
+}
+window._providerNameCandidate = _providerNameCandidate;
+var _nameAskedThisLaunch = false;
+function _askDisplayNameIfEmpty(user) {
+  try {
+    if (_nameAskedThisLaunch) return false;
+    if (window._viewOnlyBackup || window._viewOnlyPending || window._isTesting || window._smokeTestRunning) return false;
+    if (!window._cloudIsLoggedIn) return false;
+    var cur = (allSettings.profile && allSettings.profile.name) ? String(allSettings.profile.name).trim() : '';
+    if (cur) return false;
+    if (typeof showTextInputModal !== 'function') return false;
+    _nameAskedThisLaunch = true;
+    var candidate = _providerNameCandidate(user);
+    var ask = function(prefill) {
+      showTextInputModal({
+        title: candidate
+          ? 'こよみるでは、この名前で表示します（ログインしたサービスの名前を入れてあります。本名なら変えてください。あとから設定でも変えられます）'
+          : 'こよみるで表示する名前を決めてください（共有カレンダーやコメントで、ほかの人に見えます。あとから設定で変えられます）',
+        placeholder: '例：きくモン',
+        defaultValue: prefill || '',
+        onSubmit: function(v) {
+          var nv = (typeof _cleanDisplayName === 'function') ? _cleanDisplayName(v) : String(v || '').trim();
+          if (!nv) { setTimeout(function() { ask(''); }, 300); return; }
+          if (!_isDisplayNameAllowed(nv).ok) {
+            if (typeof showToast === 'function') showToast('⚠️ ' + KOYOMIRU_NG_NAME_MESSAGE, {type:'warn'});
+            setTimeout(function() { ask(''); }, 300);
+            return;
+          }
+          if (!allSettings.profile) allSettings.profile = {};
+          allSettings.profile.name = nv;
+          saveAllSettings();
+          if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
+          if (typeof showToast === 'function') showToast('名前を「' + nv + '」にしました');
+        },
+        onCancel: function() { /* その回だけ閉じる。次に開いたら、また聞く */ }
+      });
+    };
+    ask(candidate);
+    return true;
+  } catch (e) { return false; }
+}
+window._askDisplayNameIfEmpty = _askDisplayNameIfEmpty;
+// ===== END v0.49.15 =====
 setTimeout(function() { if (typeof _promptRenameIfNameNotAllowed === 'function') _promptRenameIfNameNotAllowed(); }, 5000);
 
 // 他人の名前とアイコンをまとめて取る。1件ずつ取ると回数が増えるので、
@@ -56501,7 +56571,9 @@ try {
       // v0.49.7: ログインして開いたら、設定の名前を公開プロフィールに届ける（変わっていたときだけ）。
       // 設定をクラウドから取り込み終わるのを少し待つ。
       if (session) setTimeout(function() {
-        if (typeof _promptRenameIfNameNotAllowed === 'function') _promptRenameIfNameNotAllowed();   // v0.49.9
+        // v0.49.15: 使えない名前の付け直しが出たときは、それを優先する（2つ重ねて出さない）
+        var _renameShown = (typeof _promptRenameIfNameNotAllowed === 'function') && _promptRenameIfNameNotAllowed();   // v0.49.9
+        if (!_renameShown && typeof _askDisplayNameIfEmpty === 'function') _askDisplayNameIfEmpty(session.user);
         if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
       }, 4000);
       // v0.45.1356: unifiedPushTasksのcreated_byに、Supabase認証ユーザーID
@@ -72678,6 +72750,40 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-401·②: ほかの文字の欄が同じformに入っている', _st401mixed.join(','));
      } catch(e) {
        ng('ST-401: 例外', e.message);
+     }
+
+     // ===== ST-402: 名前がまだ無い人に、開くたびに1回聞く（v0.49.15〜） =====
+     // 背景：Google・Discordでログインした人には、名前を聞く場面がどこにも無かった。
+     try {
+       if (typeof _askDisplayNameIfEmpty !== 'function' || typeof _providerNameCandidate !== 'function') {
+         ng('ST-402: 名前を聞く処理が見つからない', '');
+       } else {
+         var _st402c1 = _providerNameCandidate({ user_metadata: { custom_claims: { global_name: 'きくモン' }, full_name: 'x#0001' } });
+         var _st402c2 = _providerNameCandidate({ user_metadata: { name: 'a@b.com' } });
+         var _st402c3 = _providerNameCandidate({ user_metadata: { full_name: 'チンチン' } });
+         (_st402c1 === 'きくモン' && _st402c2 === '' && _st402c3 === '')
+           ? ok('ST-402·①: ログインしたサービスの名前を候補にする（メールの形・使えない名前は候補にしない）')
+           : ng('ST-402·①: 候補の選び方が違う', [_st402c1, _st402c2, _st402c3].join(' / '));
+         var _st402modal = window.showTextInputModal, _st402shown = 0;
+         var _st402prof = JSON.parse(JSON.stringify(allSettings.profile || {}));
+         var _st402flags = { t: window._isTesting, s: window._smokeTestRunning, li: window._cloudIsLoggedIn };
+         window.showTextInputModal = function() { _st402shown++; };
+         window._isTesting = false; window._smokeTestRunning = false; window._cloudIsLoggedIn = true;
+         allSettings.profile = allSettings.profile || {};
+         allSettings.profile.name = '決めてある名前';
+         var _st402a = _askDisplayNameIfEmpty({ user_metadata: {} });
+         allSettings.profile.name = '';
+         var _st402b = _askDisplayNameIfEmpty({ user_metadata: {} });
+         var _st402c = _askDisplayNameIfEmpty({ user_metadata: {} });   // 同じ起動の中では2回目は出ない
+         window.showTextInputModal = _st402modal;
+         window._isTesting = _st402flags.t; window._smokeTestRunning = _st402flags.s; window._cloudIsLoggedIn = _st402flags.li;
+         allSettings.profile = _st402prof;
+         (_st402a === false && _st402b === true && _st402c === false && _st402shown === 1)
+           ? ok('ST-402·②: 名前を決めている人には出さず、空の人には開いた回に1回だけ出る')
+           : ng('ST-402·②: 出方が違う', JSON.stringify([_st402a, _st402b, _st402c, _st402shown]));
+       }
+     } catch(e) {
+       ng('ST-402: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
