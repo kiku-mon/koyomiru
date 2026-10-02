@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.19 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.20 ★ -->
 
 <html lang="ja">
 <head>
@@ -79,6 +79,15 @@
       proto.setItem = function(key, value) {
         if (this !== realStorage) return realSet.call(this, key, value);
         key = String(key); writtenInSandbox.set(key, String(value)); removedInSandbox.delete(key);
+        // v0.49.20: 全体テストの点検（TPAG）が「予定が書き換わった」と見抜いたとき、誰が書いたかが分からなかった。
+        // 予定の保存場所への最初の書き込みについて、直前の確かめの行と、呼び出した処理を控えておく。
+        if (key === 'allTasks' && !window._sandboxAllTasksWriter) {
+          var _ref = window._smokeResultsRef;
+          window._sandboxAllTasksWriter = {
+            after: (_ref && _ref.length) ? String(_ref[_ref.length - 1]).slice(0, 90) : '(始まる前)',
+            stack: String((new Error()).stack || '').split('\n').slice(2, 6).map(function(s) { return s.trim(); }).join(' ← ')
+          };
+        }
       };
       proto.removeItem = function(key) {
         if (this !== realStorage) return realRemove.call(this, key);
@@ -246,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.19';
+    const APP_VERSION = 'v0.49.20';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -50511,6 +50520,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.20', date: '2026-10-02',
+    items: [
+      { icon:'🧪', t:'（開発者向け）品質の確認が、保存されている予定を書き換えないようにしました',
+        before:'品質の確認の始めに、保存されている予定を、読み込まれている予定で上書きしていました（確認は仮の箱の中なので、実際の予定は無事でした）',
+        after:'確認の前の中身を控えて、確認のあと元に戻すようにしました' }
+    ]
+  },
+  {
     ver: 'v0.49.19', date: '2026-10-02',
     items: [
       { icon:'🛡️', t:'（開発者向け）品質の確認の最中に、設定がクラウドへ送られることがあるのを止めました',
@@ -58258,6 +58275,9 @@ function showDebugLog(_initOnly) {
      // 888→834に変わったりした。テストの間の保存は仮の箱に受け流し、本物には書かない。
      // 終わったら、パネルを閉じた瞬間に読み込み直して、差し替えた手元の状態ごと捨てる。
      if (typeof window._installStorageSandbox === 'function') window._installStorageSandbox('smoke');
+     window._smokeResultsRef = results;   // v0.49.20: 予定の保存場所を書いた犯人探し用（直前の確かめの行）
+     window._sandboxAllTasksWriter = null;
+     window._smokeAllTasksAtStart = localStorage.getItem('allTasks');   // 終わったときに比べる
      // v0.49.6: タブの表示設定を書き換えたテストを突き止める診断の仕掛け（v0.45.1382）は、起動時に1回だけ
      // 取り付けていたので、同期で設定が入れ替わると外れ、肝心の全体テストの最中に働いていなかった（ST-270②）。
      // 全体テストを始めるときに取り付け直す。
@@ -58684,6 +58704,11 @@ function showDebugLog(_initOnly) {
      });
 
      // ===== UT-7: localStorage往復テスト =====
+     // v0.49.20: 【権威】2026-10-02、実機の全体テストで、点検（TPAG）が「予定が907件→847件に書き換わった」と
+     // 落ち続けていた。犯人の仕掛けで調べると、このUT-7が本物の保存処理を呼んで、確かめたあと元に戻して
+     // いなかった。実機では、保存場所（907件）と読み込まれた予定（847件。消した印の付いたものは外して読み込む）
+     // が違うので、ここで書き換わっていた。確かめはそのまま、前の中身を控えて、確かめたあと必ず戻す（第66条）。
+     var _ut7before = localStorage.getItem('allTasks');
      try {
        saveAllTasks();
        var _lsCount = JSON.parse(localStorage.getItem('allTasks') || '[]').length;
@@ -58691,6 +58716,12 @@ function showDebugLog(_initOnly) {
          ? ok('UT-7: saveAllTasks/localStorage往復（' + allTasks.length + '件一致）')
          : ng('UT-7: saveAllTasks/localStorage往復', 'メモリ' + allTasks.length + '件 ≠ localStorage' + _lsCount + '件');
      } catch(e) { ng('UT-7: saveAllTasks往復', e.message); }
+     finally {
+       try {
+         if (_ut7before === null) localStorage.removeItem('allTasks');
+         else localStorage.setItem('allTasks', _ut7before);
+       } catch (eUt7) {}
+     }
 
      // ===== UT-8: UUID v7品質テスト =====
      try {
@@ -72284,6 +72315,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            return b; } }; };
          var _st388c = _st388mk(); window._installCloudWriteGate(_st388c);
          window._isTesting = false; window._smokeTestRunning = false; window._viewOnlyBackup = null; window._viewOnlyPending = false;
+         // v0.49.20: 全体テストの最中は関所が必ず止める（v0.49.19）ので、「ふだん」を確かめる間だけ全体テストの印を外す（最後に戻す）。
+         var _st388sandbox = window._storageSandboxReason; window._storageSandboxReason = null;
          _st388c.from('koyomiru_shared_tasks').update({}).eq('id', 1);
          (_st388sent.indexOf('koyomiru_shared_tasks.update') !== -1)
            ? ok('ST-388·①: ふだんの書き込みは関所を通る')
@@ -72297,6 +72330,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st388sent.indexOf('koyomiru_visits.insert') !== -1)
            ? ok('ST-388·③: 見るだけ中でも、訪問の記録は通る')
            : ng('ST-388·③: 訪問の記録まで止まっている', '');
+         window._storageSandboxReason = _st388sandbox;   // ④の前に戻す（④はテスト中に止まることを確かめる）
          _st388sent.length = 0; window._viewOnlyPending = false; window._smokeTestRunning = true;
          _st388c.from('koyomiru_task_comments').delete().eq('id', 1);
          (_st388sent.length === 0)
@@ -72316,6 +72350,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        window._isTesting = _st388saved.t; window._smokeTestRunning = _st388saved.s;
        window._viewOnlyBackup = _st388saved.b; window._viewOnlyPending = _st388saved.p;
+       if (typeof _st388sandbox !== 'undefined' && _st388sandbox) window._storageSandboxReason = _st388sandbox;   // v0.49.20: 途中で失敗しても戻す
      }
 
      // ===== ST-389: 権限で弾かれた更新・削除を、成功のふりにしない（v0.48.19〜） =====
@@ -72951,6 +72986,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 以前はここで待たずに表示していたため、後から返る結果は画面にも件数にも出ていなかった。
      runSmokeAsyncTestQueueInOrder(finishSmokeTestAfterAsyncQueue);
      function finishSmokeTestAfterAsyncQueue() {
+     // v0.49.20: 予定の保存場所を書き換えた犯人が分かれば、結果に出す（TPAGの「予定が書き換わった」の手がかり）
+     // 書いたあと元に戻したものは犯人ではないので、終わった時点で中身が始まりと違うときだけ出す
+     if (window._sandboxAllTasksWriter && localStorage.getItem('allTasks') !== window._smokeAllTasksAtStart) {
+       results.push('🔍 予定の保存場所を最初に書き換えた場所：直前の確かめ＝' + window._sandboxAllTasksWriter.after +
+         '｜呼び出し＝' + window._sandboxAllTasksWriter.stack);
+     }
      ok('');
      ok('🚀 APAG LAUNCH SEQUENCE — 五ガーディアン起動');
      ok('');
