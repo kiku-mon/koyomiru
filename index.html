@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.15 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.16 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.15';
+    const APP_VERSION = 'v0.49.16';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -906,6 +906,8 @@ function _isDisplayNameAllowed(name) {
 }
 window._isDisplayNameAllowed = _isDisplayNameAllowed;
 var KOYOMIRU_NG_NAME_MESSAGE = 'この名前は使えません。別の名前にしてください';
+// v0.49.16: 内側でしか使えない定義だったため、ほかの処理から使うと「無い」と止まり、理由が出ていなかった。外から使えるようにする。
+window.KOYOMIRU_NG_NAME_MESSAGE = KOYOMIRU_NG_NAME_MESSAGE;
 // ===== END v0.49.9 使えない名前 =====
 
 async function _isNameTaken(calendarId, name) {
@@ -50497,6 +50499,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.16', date: '2026-10-02',
+    items: [
+      { icon:'🪪', t:'呼び名を決める画面を作り直しました',
+        before:'名前がまだの方に出す画面が、事務的な文で、なぜ名前が要るのかも伝わりませんでした',
+        after:'「ようこそ、○○さん！」と呼びかけ、共有カレンダーやコメントで仲間にあなただと分かるように、呼び名を決めてもらう画面にしました。ニックネームでも大丈夫です' }
+    ]
+  },
+  {
     ver: 'v0.49.15', date: '2026-10-02',
     items: [
       { icon:'🪪', t:'名前がまだの方に、名前を決めてもらうようにしました',
@@ -54170,6 +54180,57 @@ function _providerNameCandidate(user) {
 }
 window._providerNameCandidate = _providerNameCandidate;
 var _nameAskedThisLaunch = false;
+// v0.49.16: 【権威】2026-10-02、聞き方の見直し（最高峰会議）。「ようこそ、○○さん！」と呼びかけ、呼び名を決める
+// 理由を伝える。「あとで」は消す（逃がさない）。Slack・Discordと同じく、ログインを選んだ人には、ここで呼び名を
+// 1つ入れてもらう。閉じる手段（ボタン・外側を押す・Esc）は無い。空・使えない名前では進めない。
+// 招待のカード・初回の案内など、ほかの画面が開いている間は待ち、重ねない。
+var _NAME_REQUIRED_BLOCKERS = ['inviteCardOverlay', 'setupOverlay', 'ycSplash', 'kazedayoriModal', 'textInputModalOverlay'];
+function _otherModalOpen() {
+  return _NAME_REQUIRED_BLOCKERS.some(function(id) {
+    var el = document.getElementById(id);
+    return !!(el && el.offsetParent !== null && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden');
+  });
+}
+window._otherModalOpen = _otherModalOpen;
+function _showNameRequiredModal(candidate) {
+  if (document.getElementById('nameRequiredOverlay')) return;
+  var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
+  var ov = document.createElement('div');
+  ov.id = 'nameRequiredOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.55);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML =
+    '<form id="nameRequiredForm" onsubmit="return false;" autocomplete="off" style="background:#fff;border-radius:16px;max-width:380px;width:100%;padding:22px 20px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">' +
+      // 名前がもともと「〜さん」「〜様」で終わるときは、呼びかけの「さん」を重ねない
+      '<div style="font-size:1.15em;font-weight:700;color:#333;margin-bottom:10px;">' +
+        (candidate ? 'ようこそ、' + esc(candidate) + (/(さん|様|さま|ちゃん|くん|君)$/.test(candidate) ? '' : 'さん') + '！' : 'ようこそ！') + '</div>' +
+      '<div style="font-size:0.88em;color:#555;line-height:1.7;margin-bottom:14px;">まずは呼び名を決めてください。共有カレンダーやコメントで、仲間にあなただと分かるようにするためです。ニックネームでも大丈夫。いつでも変えられます。</div>' +
+      '<input id="nameRequiredInput" type="text" maxlength="20" autocomplete="off" data-lpignore="true" data-1p-ignore placeholder="例：きくモン" value="' + esc(candidate || '') + '" ' +
+        'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid #ccd;border-radius:10px;font-size:16px;">' +
+      '<div id="nameRequiredHint" style="min-height:1.4em;font-size:0.8em;color:#c07a2a;margin:6px 2px 10px;"></div>' +
+      '<button id="nameRequiredBtn" type="submit" style="width:100%;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:1em;font-weight:700;cursor:pointer;">この呼び名で始める</button>' +
+    '</form>';
+  document.body.appendChild(ov);
+  // 閉じさせない：外側を押しても、Escでも閉じない
+  ov.addEventListener('click', function(e) { if (e.target === ov) { e.stopPropagation(); var i = document.getElementById('nameRequiredInput'); if (i) i.focus(); } });
+  ov.addEventListener('keydown', function(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); } }, true);
+  var inp = document.getElementById('nameRequiredInput');
+  var hint = document.getElementById('nameRequiredHint');
+  var submit = function() {
+    var nv = (typeof _cleanDisplayName === 'function') ? _cleanDisplayName(inp.value) : String(inp.value || '').trim();
+    if (!nv) { hint.textContent = '呼び名を入れてください'; inp.style.borderColor = '#e0a458'; inp.focus(); return; }
+    if (!_isDisplayNameAllowed(nv).ok) { hint.textContent = KOYOMIRU_NG_NAME_MESSAGE; inp.style.borderColor = '#e0a458'; inp.focus(); return; }
+    if (!allSettings.profile) allSettings.profile = {};
+    allSettings.profile.name = nv;
+    saveAllSettings();
+    if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
+    ov.remove();
+    if (typeof showToast === 'function') showToast('呼び名を「' + nv + '」にしました');
+  };
+  document.getElementById('nameRequiredForm').addEventListener('submit', function(e) { e.preventDefault(); submit(); });
+  inp.addEventListener('input', function() { hint.textContent = ''; inp.style.borderColor = '#ccd'; });
+  setTimeout(function() { try { inp.focus(); inp.select(); } catch (e) {} }, 50);
+}
+window._showNameRequiredModal = _showNameRequiredModal;
 function _askDisplayNameIfEmpty(user) {
   try {
     if (_nameAskedThisLaunch) return false;
@@ -54177,34 +54238,17 @@ function _askDisplayNameIfEmpty(user) {
     if (!window._cloudIsLoggedIn) return false;
     var cur = (allSettings.profile && allSettings.profile.name) ? String(allSettings.profile.name).trim() : '';
     if (cur) return false;
-    if (typeof showTextInputModal !== 'function') return false;
     _nameAskedThisLaunch = true;
     var candidate = _providerNameCandidate(user);
-    var ask = function(prefill) {
-      showTextInputModal({
-        title: candidate
-          ? 'こよみるでは、この名前で表示します（ログインしたサービスの名前を入れてあります。本名なら変えてください。あとから設定でも変えられます）'
-          : 'こよみるで表示する名前を決めてください（共有カレンダーやコメントで、ほかの人に見えます。あとから設定で変えられます）',
-        placeholder: '例：きくモン',
-        defaultValue: prefill || '',
-        onSubmit: function(v) {
-          var nv = (typeof _cleanDisplayName === 'function') ? _cleanDisplayName(v) : String(v || '').trim();
-          if (!nv) { setTimeout(function() { ask(''); }, 300); return; }
-          if (!_isDisplayNameAllowed(nv).ok) {
-            if (typeof showToast === 'function') showToast('⚠️ ' + KOYOMIRU_NG_NAME_MESSAGE, {type:'warn'});
-            setTimeout(function() { ask(''); }, 300);
-            return;
-          }
-          if (!allSettings.profile) allSettings.profile = {};
-          allSettings.profile.name = nv;
-          saveAllSettings();
-          if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
-          if (typeof showToast === 'function') showToast('名前を「' + nv + '」にしました');
-        },
-        onCancel: function() { /* その回だけ閉じる。次に開いたら、また聞く */ }
-      });
+    var startedAt = Date.now();
+    var tryShow = function() {
+      // 待っている間に呼び名が入った（招待のカードなど）なら出さない
+      var now = (allSettings.profile && allSettings.profile.name) ? String(allSettings.profile.name).trim() : '';
+      if (now) return;
+      if (_otherModalOpen() && Date.now() - startedAt < 120000) { setTimeout(tryShow, 1000); return; }
+      _showNameRequiredModal(candidate);
     };
-    ask(candidate);
+    tryShow();
     return true;
   } catch (e) { return false; }
 }
@@ -72764,23 +72808,44 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st402c1 === 'きくモン' && _st402c2 === '' && _st402c3 === '')
            ? ok('ST-402·①: ログインしたサービスの名前を候補にする（メールの形・使えない名前は候補にしない）')
            : ng('ST-402·①: 候補の選び方が違う', [_st402c1, _st402c2, _st402c3].join(' / '));
-         var _st402modal = window.showTextInputModal, _st402shown = 0;
          var _st402prof = JSON.parse(JSON.stringify(allSettings.profile || {}));
          var _st402flags = { t: window._isTesting, s: window._smokeTestRunning, li: window._cloudIsLoggedIn };
-         window.showTextInputModal = function() { _st402shown++; };
+         var _st402saveSet = window.saveAllSettings, _st402sync = window._syncPublicProfileIfChanged;
+         window.saveAllSettings = function(){}; window._syncPublicProfileIfChanged = function(){};
          window._isTesting = false; window._smokeTestRunning = false; window._cloudIsLoggedIn = true;
+         var _st402blockers = [];
+         ['inviteCardOverlay', 'setupOverlay', 'ycSplash', 'kazedayoriModal'].forEach(function(id) {
+           var el = document.getElementById(id); if (el) { _st402blockers.push({ el: el, d: el.style.display }); el.style.display = 'none'; }
+         });
          allSettings.profile = allSettings.profile || {};
          allSettings.profile.name = '決めてある名前';
          var _st402a = _askDisplayNameIfEmpty({ user_metadata: {} });
          allSettings.profile.name = '';
-         var _st402b = _askDisplayNameIfEmpty({ user_metadata: {} });
+         var _st402b = _askDisplayNameIfEmpty({ user_metadata: { full_name: 'ST402さん' } });   // 「さん」で終わる名前でも「さんさん」にしない
          var _st402c = _askDisplayNameIfEmpty({ user_metadata: {} });   // 同じ起動の中では2回目は出ない
-         window.showTextInputModal = _st402modal;
+         var _st402ov = document.getElementById('nameRequiredOverlay');
+         var _st402btns = _st402ov ? [].map.call(_st402ov.querySelectorAll('button'), function(b) { return b.textContent.trim(); }) : [];
+         (_st402a === false && _st402b === true && _st402c === false && _st402ov && _st402ov.textContent.indexOf('ようこそ、ST402さん！') !== -1)
+           ? ok('ST-402·②: 呼び名を決めている人には出さず、空の人には「ようこそ、○○さん！」と1回出る')
+           : ng('ST-402·②: 出方が違う', JSON.stringify([_st402a, _st402b, _st402c, !!_st402ov]));
+         (_st402btns.length === 1 && _st402btns[0] === 'この呼び名で始める')
+           ? ok('ST-402·③: 「あとで」は無く、「この呼び名で始める」だけ（逃がさない）')
+           : ng('ST-402·③: ボタンが違う', _st402btns.join(' / '));
+         var _st402inp = document.getElementById('nameRequiredInput');
+         if (_st402inp) { _st402inp.value = 'ﾁﾝﾁﾝ'; document.getElementById('nameRequiredBtn').click(); }
+         var _st402hint = (document.getElementById('nameRequiredHint') || {}).textContent || '';
+         (typeof window.KOYOMIRU_NG_NAME_MESSAGE === 'string' && _st402hint === window.KOYOMIRU_NG_NAME_MESSAGE && document.getElementById('nameRequiredOverlay'))
+           ? ok('ST-402·④: 使えない名前では進めず、理由が出る（文言は、ほかの処理からも使える）')
+           : ng('ST-402·④: 理由が出ない、または進んでしまった', _st402hint);
+         if (_st402inp) { _st402inp.value = 'ST402の呼び名'; document.getElementById('nameRequiredBtn').click(); }
+         (!document.getElementById('nameRequiredOverlay') && allSettings.profile.name === 'ST402の呼び名')
+           ? ok('ST-402·⑤: 正しい呼び名を入れると、設定の名前に入って画面が閉じる')
+           : ng('ST-402·⑤: 閉じない、または名前が入らない', allSettings.profile.name);
+         var _st402left = document.getElementById('nameRequiredOverlay'); if (_st402left) _st402left.remove();
+         _st402blockers.forEach(function(x) { x.el.style.display = x.d; });
+         window.saveAllSettings = _st402saveSet; window._syncPublicProfileIfChanged = _st402sync;
          window._isTesting = _st402flags.t; window._smokeTestRunning = _st402flags.s; window._cloudIsLoggedIn = _st402flags.li;
          allSettings.profile = _st402prof;
-         (_st402a === false && _st402b === true && _st402c === false && _st402shown === 1)
-           ? ok('ST-402·②: 名前を決めている人には出さず、空の人には開いた回に1回だけ出る')
-           : ng('ST-402·②: 出方が違う', JSON.stringify([_st402a, _st402b, _st402c, _st402shown]));
        }
      } catch(e) {
        ng('ST-402: 例外', e.message);
