@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.13 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.14 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.13';
+    const APP_VERSION = 'v0.49.14';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11060,9 +11060,10 @@ function _showInviteWelcome() {
           </div>
           <div style="display:flex;flex-direction:column;gap:10px;">
             <div id="gistSyncBadge" style="font-size:0.85em;font-weight:700;padding:8px 12px;background:#f8f8f8;border-radius:8px;text-align:center;">❌ 未設定</div>
-            <input type="password" id="gistTokenInput" placeholder="ghp_xxxxxxxxxx（GitHub Token）"
+            <!-- v0.49.14: 【権威】2026-10-02、マトリクスの入力欄にChromeがログインのメールとパスワードの候補を出していた。formの外に裸のパスワード欄が3つあり、Chromeがページ全体をログインの画面とみなして、ほかの文字の欄まで巻き込んでいた。パスワード欄を1つずつ自分専用のformで囲み、Chromeが探す範囲をその中だけにする（見た目は変えない） -->
+            <form onsubmit="return false;" autocomplete="off" style="display:contents;"><input type="password" id="gistTokenInput" placeholder="ghp_xxxxxxxxxx（GitHub Token）" autocomplete="off"
               style="padding:10px 12px;border:1.5px solid #ddd;border-radius:10px;font-size:0.88em;width:100%;box-sizing:border-box;"
-              oninput="window._gistTokenChanged=true;">
+              oninput="window._gistTokenChanged=true;"></form>
             <div style="display:flex;gap:8px;">
               <button onclick="saveGistToken()"
                 style="flex:1;padding:11px;border:1.5px solid #6e40c9;border-radius:10px;background:#f5f0ff;color:#6e40c9;font-size:0.88em;font-weight:600;cursor:pointer;">
@@ -11106,7 +11107,7 @@ function _showInviteWelcome() {
         <div data-setgroup="admin" id="adminPwSection" style="display:none;margin-bottom:16px;background:rgba(0,0,0,0.04);border:1px dashed #ccc;border-radius:10px;padding:14px;">
           <div style="font-size:0.78em;color:#888;margin-bottom:8px;">🔐 管理者コード</div>
           <div style="display:flex;gap:8px;">
-            <input type="password" id="adminPwInput" placeholder="管理者コードを入力" style="flex:1;padding:8px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:0.9em;">
+            <form onsubmit="return false;" autocomplete="off" style="display:contents;"><input type="password" autocomplete="off" id="adminPwInput" placeholder="管理者コードを入力" style="flex:1;padding:8px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:0.9em;"></form>
             <button onclick="checkAdminPw()" style="padding:8px 16px;background:#333;color:#fff;border:none;border-radius:8px;font-size:0.85em;cursor:pointer;">解錠</button>
           </div>
           <div id="adminPwMsg" style="font-size:0.75em;margin-top:6px;"></div>
@@ -50496,6 +50497,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.14', date: '2026-10-02',
+    items: [
+      { icon:'🔑', t:'予定の入力欄に、ログインのメールアドレスの候補が出ることがあるのを直しました',
+        before:'Chromeが予定の入力欄をログインの欄と勘違いして、メールアドレスやパスワードの候補を出すことがありました',
+        after:'パスワードの欄を1つずつ分けて、Chromeがほかの欄をログインの欄と勘違いしないようにしました' }
+    ]
+  },
+  {
     ver: 'v0.49.13', date: '2026-10-02',
     items: [
       { icon:'🔧', t:'日次のマトリクスの並びが崩れていたのを直しました',
@@ -72649,6 +72658,28 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window.saveAllTasks = _st400save;
      }
 
+     // ===== ST-401: パスワード欄はすべて自分専用のformの中（v0.49.14〜） =====
+     // 背景：マトリクスの入力欄に、Chromeがログインのメールとパスワードの候補を出していた。formの外に裸の
+     // パスワード欄があると、Chromeはページ全体をログインの画面とみなし、ほかの文字の欄まで巻き込む。
+     try {
+       var _st401pw = [].slice.call(document.querySelectorAll('input[type=password]'));
+       var _st401bare = _st401pw.filter(function(e) { return !e.form; }).map(function(e) { return e.id || '(idなし)'; });
+       (_st401pw.length > 0 && _st401bare.length === 0)
+         ? ok('ST-401·①: パスワード欄（' + _st401pw.length + '個）は、どれもformの中にある（裸のものが無い）')
+         : ng('ST-401·①: formの外のパスワード欄がある', _st401bare.join(','));
+       var _st401mixed = _st401pw.filter(function(e) {
+         if (!e.form || e.id === 'cloudLoginPassword') return false;   // ログインの画面は、メール欄と組で正しい
+         return [].slice.call(e.form.elements).some(function(x) {
+           return x !== e && x.tagName === 'INPUT' && /^(text|email|search|tel)$/.test(x.type || 'text');
+         });
+       }).map(function(e) { return e.id; });
+       (_st401mixed.length === 0)
+         ? ok('ST-401·②: ログイン以外のパスワード欄のformには、ほかの文字の欄が入っていない（巻き込まない）')
+         : ng('ST-401·②: ほかの文字の欄が同じformに入っている', _st401mixed.join(','));
+     } catch(e) {
+       ng('ST-401: 例外', e.message);
+     }
+
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
      // 後から結果が返るテストはキューに並んでいるので、1本ずつ順番に走らせ、
@@ -86749,7 +86780,7 @@ window.addMigration = addMigration;
         <div style="margin-top:10px;">
           <div style="border-top:1px solid #e5dccc;padding-top:12px;margin-bottom:14px;">
             <div style="font-size:0.78em;color:#8a7a63;margin-bottom:8px;">🔑 パスワードでもログインできるようにする（会社PC等、Discordログインが使えない環境向け）</div>
-            <input type="password" id="cloudSetPasswordInput" placeholder="新しいパスワード（8文字以上）" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #d8cbb8;border-radius:8px;font-size:0.9em;margin-bottom:8px;">
+            <form onsubmit="return false;" autocomplete="off" style="display:contents;"><input type="password" autocomplete="new-password" id="cloudSetPasswordInput" placeholder="新しいパスワード（8文字以上）" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #d8cbb8;border-radius:8px;font-size:0.9em;margin-bottom:8px;"></form>
             <button id="cloudSetPasswordBtn" onclick="cloudSetPasswordForCurrentAccount()" style="width:100%;padding:9px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.85em;font-weight:600;cursor:pointer;">このアカウントにパスワードを設定</button>
           </div>
           <button onclick="signOutOtherDevicesFromModal()" style="width:100%;padding:9px;border:1px solid #e0cba0;border-radius:8px;background:transparent;color:#a67c00;font-size:0.8em;cursor:pointer;margin-bottom:10px;">📵 他端末を全てログアウトさせる</button>
