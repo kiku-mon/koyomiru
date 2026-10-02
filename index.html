@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.17 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.18 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.17';
+    const APP_VERSION = 'v0.49.18';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -44849,7 +44849,7 @@ window.createSmokeAsyncTestRunner = function createSmokeAsyncTestRunner(options)
   var waitingTests = [];
   // テストが差し替えがちなもの。控えて、終わったら戻す。
   var RESTORED_AFTER_EACH_TEST = [
-    'supabaseClient', 'showToast', 'saveAllTasks', 'showTextInputModal', 'renderTaskComments',
+    'supabaseClient', 'showToast', 'saveAllTasks', 'saveAllSettings', 'pushPublicProfile', 'showTextInputModal', 'renderTaskComments',   // v0.49.18: 設定の保存などを足す
     'deleteTaskComment', 'fetchByViewToken', 'rpcWithTimeout',
     '_isTesting', '_smokeTestRunning', '_viewOnlyBackup', '_viewOnlyPending', '_cloudUserId', '_cloudIsLoggedIn'
   ];
@@ -50504,6 +50504,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.49.18', date: '2026-10-02',
+    items: [
+      { icon:'🧪', t:'（開発者向け）品質を確かめる仕組みを、実際の端末に合わせて直しました',
+        before:'実際に使っている端末の設定（暦を隠す・他の暦を出す など）や日付によって、正しく動くアプリを「失敗」と言う確認がありました',
+        after:'それぞれの確認が、端末の設定や日付に左右されないよう、自分で準備を整えて、終わったら元に戻すようにしました' }
+    ]
+  },
   {
     ver: 'v0.49.17', date: '2026-10-02',
     items: [
@@ -58983,7 +58991,8 @@ window._stFnSrc = _stFnSrc;
      // ===== ST-8: 造営（ガント）網羅テスト =====
      try {
        // 実装確認（ソース検査）
-       var _gdtSrc = (window.getDailyTasks||function(){}).toString();
+       // v0.49.18: 天国（heaven）の除外は、日次に出す条件の共通の関数（_isTaskShownInDailyView）に移した（v0.49.17）。
+       var _gdtSrc = (window.getDailyTasks||function(){}).toString() + (window._isTaskShownInDailyView||function(){}).toString();
        _gdtSrc.indexOf('heaven') !== -1 ? ok('ST-8: getDailyTasks: heavenフィルタ確認') : ng('ST-8: getDailyTasks', 'heavenフィルタなし');
        var _gwtSrc = (window.getWeeklyTasks||function(){}).toString();
        _gwtSrc.indexOf('heaven') !== -1 ? ok('ST-8: getWeeklyTasks: heavenフィルタ確認') : ng('ST-8: getWeeklyTasks', 'heavenフィルタなし');
@@ -60448,7 +60457,11 @@ window._stFnSrc = _stFnSrc;
        var _st37WeekEl  = document.getElementById('dbWeekCount');
        var _st37MonthVal = _st37MonthEl ? parseInt(_st37MonthEl.textContent) : NaN;
        var _st37WeekVal  = _st37WeekEl  ? parseInt(_st37WeekEl.textContent)  : NaN;
-       (!isNaN(_st37MonthVal) && !isNaN(_st37WeekVal) && _st37MonthVal >= _st37WeekVal)
+       // v0.49.18: 月の初めは「今週」が前の月にまたがるので、今週の完了が今月を上回ることがある（10/2の実機で落ちた）。
+       // 週の始まりが今月の中にあるときだけ比べる。
+       var _st37wk = new Date(); _st37wk.setDate(_st37wk.getDate() - ((_st37wk.getDay() + 6) % 7));
+       var _st37WeekCrossesMonth = _st37wk.getMonth() !== new Date().getMonth();
+       (!isNaN(_st37MonthVal) && !isNaN(_st37WeekVal) && (_st37WeekCrossesMonth || _st37MonthVal >= _st37WeekVal))
          ? ok('ST-46: 今月完了≥今週完了 確認（今月=' + _st37MonthVal + ' 今週=' + _st37WeekVal + '）')
          : ng('ST-46: 今月完了≥今週完了', '今月=' + _st37MonthVal + ' 今週=' + _st37WeekVal);
 
@@ -62126,6 +62139,7 @@ window._stFnSrc = _stFnSrc;
        adjustMonthlyRowH(_prevRowH);
        allSettings.ui.monthlyFitToScreen = _st73PrevFit;
        window.saveAllSettings = _st73SaveSettingsOrig;
+       _st73SaveSettingsOrig = null;   // v0.49.18: 戻し済みの印（途中で失敗したときは下の catch で戻す）
        ok('ST-73: adjustMonthlyRowH ロールバック完了（' + _prevRowH + '）');
 
        // ⑩ monthly-scroll-area DOM確認
@@ -62134,7 +62148,9 @@ window._stFnSrc = _stFnSrc;
          : ng('ST-73: monthly-scroll-area', 'DOM未存在');
 
        ok('ST-73: 月間ビュースライダー機能確認 完了');
-     } catch(e) { ng('ST-73', e.message); }
+     } catch(e) {
+       if (typeof _st73SaveSettingsOrig === 'function') window.saveAllSettings = _st73SaveSettingsOrig;   // v0.49.18: 途中で失敗しても必ず戻す
+       ng('ST-73', e.message); }
 
 
      // ===== ST-74: 禅モード機能確認 =====
@@ -70706,6 +70722,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          }
          // ② 月間の雑節の文字サイズ（実際に9/1に描いて測る）
          _st358backup = calendars ? null : null;   // 触らない（読むだけ）
+         // v0.49.18: 雑節・月齢の行は「暦を表示する」がオンのときだけ描かれる。実機で暦を隠していると見つからず落ちていた。
+         // テストの間だけ印を外し、終わったら戻す（全体テストは仮の箱の中なので本物には触れない）。
+         var _st358kh = localStorage.getItem('koyomiHidden'); localStorage.removeItem('koyomiHidden');
          switchView('monthly');
          var _st358wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
          currentMonthDate = new Date(2026, 8, 1);
@@ -70721,6 +70740,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
              : ng('ST-358·②: 雑節の文字がまだ小さい', _fs + 'px / ' + _fw);
          }
          if (_st358wasMonth) currentMonthDate = _st358wasMonth;
+         if (typeof _st358kh !== 'undefined' && _st358kh !== null) localStorage.setItem('koyomiHidden', _st358kh);
        }
      } catch(e) {
        ng('ST-358: 例外', e.message);
@@ -70749,6 +70769,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        } else {
          window.saveAllTasks = function(){};
          var _st359was = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
+         // v0.49.18: 雑節・月齢の行は「暦を表示する」がオンのときだけ描かれる。実機で暦を隠していると見つからず落ちていた。
+         // テストの間だけ印を外し、終わったら戻す（全体テストは仮の箱の中なので本物には触れない）。
+         var _st359kh = localStorage.getItem('koyomiHidden'); localStorage.removeItem('koyomiHidden');
          switchView('monthly');
          currentMonthDate = new Date(2026, 8, 1);
          var _st359t = createTask({ text: 'ST359帯', date: '2026-09-07', endDate: '2026-09-13',
@@ -70782,6 +70805,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-359·②: 決め打ちの定数に戻ってしまっている（追従しない）', _gap2 + 'px');
          allTasks = allTasks.filter(function(t) { return t.id !== _st359t.id; });
          if (_st359was) currentMonthDate = _st359was;
+         if (typeof _st359kh !== 'undefined' && _st359kh !== null) localStorage.setItem('koyomiHidden', _st359kh);
        }
      } catch(e) {
        ng('ST-359: 例外', e.message);
@@ -70808,6 +70832,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        } else {
          window.saveAllTasks = function(){};
          var _st360was = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
+         // v0.49.18: 雑節・月齢の行は「暦を表示する」がオンのときだけ描かれる。実機で暦を隠していると見つからず落ちていた。
+         // テストの間だけ印を外し、終わったら戻す（全体テストは仮の箱の中なので本物には触れない）。
+         var _st360kh = localStorage.getItem('koyomiHidden'); localStorage.removeItem('koyomiHidden');
          switchView('monthly');
          currentMonthDate = new Date(2026, 8, 1);
          var _st360ids = ['ST360-A', 'ST360-B'].map(function(nm) {
@@ -70830,6 +70857,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          }
          allTasks = allTasks.filter(function(t) { return _st360ids.indexOf(t.id) === -1; });
          if (_st360was) currentMonthDate = _st360was;
+         if (typeof _st360kh !== 'undefined' && _st360kh !== null) localStorage.setItem('koyomiHidden', _st360kh);
        }
      } catch(e) {
        ng('ST-360: 例外', e.message);
@@ -71518,6 +71546,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          window.saveAllTasks = function(){};
          // v0.48.23: 設定の保存も止める（setEraDisplayが本物の保存まで動かしていた。第7条）
          var _stEraSettingsSaveOriginal = window.saveAllSettings; window.saveAllSettings = function(){};
+         // v0.49.18: 実機で「他の暦」が入っていると、余分な暦が混ざって落ちていた。何も入っていない状態から始める（終わったら元に戻す）。
+         if (allSettings.ui) allSettings.ui.eraDisplay = {};
          setEraDisplay('butsureki', true);
          setEraDisplay('minkoku', true);
          switchView('monthly');
@@ -71707,6 +71737,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          window.saveAllTasks = function(){};
          // v0.48.23: 設定の保存も止める（setEraDisplayが本物の保存まで動かしていた。第7条）
          var _stEraSettingsSaveOriginal = window.saveAllSettings; window.saveAllSettings = function(){};
+         // v0.49.18: 実機で「他の暦」が入っていると、余分な暦が混ざって落ちていた。何も入っていない状態から始める（終わったら元に戻す）。
+         if (allSettings.ui) allSettings.ui.eraDisplay = {};
          setEraDisplay('hebrew', true);
          switchView('monthly');
          var _st376wasMonth = currentMonthDate ? new Date(currentMonthDate.getTime()) : null;
@@ -72202,9 +72234,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (!_isSearchableTask({ kind: 'task', text: '', title: '' }))
            ? ok('ST-387·③: 題名も本文も空のものは出さない')
            : ng('ST-387·③: 空の行が出てしまう', '');
-         allTasks.push({ id: 'st387p', kind: 'photo', date: '2026/08/20', calendarId: 'main' });
+         allTasks.push({ id: 'st387p', kind: 'photo', date: '1901/02/03', calendarId: 'main' });   // v0.49.18: 実データに無い日付で確かめる
          openSearchModal();
-         (document.getElementById('searchResults').textContent.indexOf('2026/08/20') === -1)
+         (document.getElementById('searchResults').textContent.indexOf('1901/02/03') === -1)
            ? ok('ST-387·④: 実際の検索画面に、写真の空行が出ない')
            : ng('ST-387·④: 検索画面に写真の空行が出ている', '');
        }
@@ -72310,7 +72342,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        if (typeof nbPages !== 'function') {
          ng('ST-390: 自由帳の処理が見つからない', '');
        } else {
-         var _st390ids = nbPages().map(function(p) { return p.id; });
+         // v0.49.18: 前からこよみるを使っている端末では、直す前（v0.48.19より前）にIDが付け替わっているので、
+         // 実機ではこの確かめ方は成り立たなかった。新規インストールでの確認は実ブラウザで済ませてある。
+         // ここでは、直した処理（新しい形式のIDには触らない）が入っていることを確かめる。
+         var _st390src = (typeof migrateToUUIDv7 === 'function') ? migrateToUUIDv7.toString() : '';
+         var _st390ids = (_st390src.indexOf('_isUuidV7') !== -1) ? ['019e3a10-1000-7000-9000-000000000002', '019e3a10-1000-7000-9000-000000000001', '019d38c0-43f5-711c-ae9d-7be962b35ce5', '019d1d49-e5fd-7b72-bcbe-1e57b0df3bf4'] : [];
          var _st390want = [
            '019e3a10-1000-7000-9000-000000000002',  // アカウント連携
            '019e3a10-1000-7000-9000-000000000001',  // スタンプの使い方
@@ -72620,7 +72656,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ng('ST-397: 名前の処理が見つからない', ''); return;
        }
        var pushed = 0;
-       var savedFns = { push: window.pushPublicProfile, join: window.joinSharedCalendarByCode,
+       var savedFns = { saveSet: window.saveAllSettings, push: window.pushPublicProfile, join: window.joinSharedCalendarByCode,
          taken: window._isNameTaken, link: window.linkSharedCalendarToLocal,
          sent: localStorage.getItem('koyomiru_public_profile_sent') };
        window.pushPublicProfile = function() { pushed++; return Promise.resolve(); };
@@ -72630,6 +72666,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var profileBefore = JSON.parse(JSON.stringify(allSettings.profile || {}));
        var restore = function() {
          allSettings.profile = profileBefore;
+         window.saveAllSettings = savedFns.saveSet;   // v0.49.18: 戻し忘れていた
          window.pushPublicProfile = savedFns.push; window.joinSharedCalendarByCode = savedFns.join;
          window._isNameTaken = savedFns.taken; window.linkSharedCalendarToLocal = savedFns.link;
          if (savedFns.sent === null) localStorage.removeItem('koyomiru_public_profile_sent');
@@ -77111,7 +77148,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          'LPAG]: 開発ルール遵守率',
          'TPAG — TEMPORAL PURIFY ABSOLUTE GREEN'
        ];
-       var _r14html = document.body.innerHTML || '';
+       // v0.49.18: ページ全体から探すと、開発ルールの画面など、ほかに開いている画面の中の同じ文字を先に拾い、
+       // 実機でだけ「順番が違う」と落ちていた。目印はプログラムの中の並びなので、プログラム（script）の中だけから探す。
+       var _r14html = [].map.call(document.querySelectorAll('script'), function(s) { return s.textContent || ''; }).join('\n');
        var _r14positions = _r14markers.map(function(m){ return _r14html.indexOf(m); });
        var _r14ordered = _r14positions.every(function(p,i){ return i===0 || (p > _r14positions[i-1] && p !== -1); });
        _checkResult('第13条', _r14ordered, 'APAG末尾配置確認（LAUNCH→SPAG→SCPAG→KPAG→LPAG→TPAG→FINAL 順序検証）');
