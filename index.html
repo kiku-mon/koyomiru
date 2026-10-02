@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.20 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.22 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.20';
+    const APP_VERSION = 'v0.49.22';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -36096,14 +36096,18 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           (t.unreadable > 0 ? '<div style="color:#c07a2a;font-size:0.9em;margin-bottom:8px;">⚠️ 読めない残高が' + t.unreadable + '件あります。数字だけで入れてください。</div>' : '') +
           '<div style="display:flex;gap:8px;margin-top:14px;">' +
             '<button onclick="addMoneyPurse()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;background:#fff;">＋ 追加する</button>' +
-            '<button onclick="saveMoneyPurses()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#2f6fed;color:#fff;font-weight:700;">保存</button>' +
+            '<button onclick="saveMoneyPurses({ closeAfter: true })" style="flex:1;padding:10px;border:none;border-radius:8px;background:#2f6fed;color:#fff;font-weight:700;">保存</button>' +
             '<button onclick="closeMoneyPurseModal()" style="flex:0 0 auto;padding:10px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;">閉じる</button>' +
           '</div>' +
         '</div>';
     }
 
     // 画面の入力を記録へ書き戻す。保存口は1つ（第4条）。
-    function saveMoneyPurses() {
+    // v0.49.21: 【権威】2026-10-02、手持ちを保存しても画面が開いたままで、ほかを押して初めて閉じていた、との指摘。
+    // 「保存」は「決めて閉じる」の意味で使われるのが普通なので、保存ボタンから呼ばれたときは、保存して閉じる。
+    // 「＋追加する」などから打ちかけを守るために呼ばれるときは閉じない。読めない数字があったときも閉じない。
+    function saveMoneyPurses(opts) {
+      opts = opts || {};
       var box = document.getElementById('moneyPurseModal');
       if (!box) return;
       var changed = 0, bad = 0;
@@ -36125,7 +36129,11 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       });
       saveAllTasks();
       if (typeof renderMonthlyMoneyLine === 'function') renderMonthlyMoneyLine();
-      renderMoneyPurseModal();
+      if (opts.closeAfter && bad === 0) {
+        closeMoneyPurseModal();
+      } else {
+        renderMoneyPurseModal();
+      }
       if (typeof showToast === 'function') {
         showToast(bad > 0 ? ('⚠️ ' + bad + '件は数字として読めませんでした') : ('💰 手持ちを保存しました'));
       }
@@ -50520,6 +50528,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.22', date: '2026-10-02',
+    items: [
+      { icon:'🧪', t:'（開発者向け）品質の確認の後片づけが、保存されている予定を書き換えないようにしました',
+        before:'確認の最後の後片づけで、保存されている予定を、読み込まれている予定で上書きしていました（確認は仮の箱の中なので、実際の予定は無事でした）',
+        after:'確認の始まりに控えた中身を、そのまま書き戻すようにしました' }
+    ]
+  },
+  {
+    ver: 'v0.49.21', date: '2026-10-02',
+    items: [
+      { icon:'💰', t:'手持ちを保存したら、画面が閉じるようにしました',
+        before:'保存しても手持ちの画面が開いたままで、ほかを押して初めて閉じていました',
+        after:'「保存」を押すと、保存して画面を閉じます。読めない数字があったときは、閉じずにお知らせします' }
+    ]
+  },
+  {
     ver: 'v0.49.20', date: '2026-10-02',
     items: [
       { icon:'🧪', t:'（開発者向け）品質の確認が、保存されている予定を書き換えないようにしました',
@@ -58319,6 +58343,8 @@ function showDebugLog(_initOnly) {
      // 個別の後片づけを不要にするわけではないが、最後の砦になる。
      try {
        window._stGlobalSnapshot = JSON.parse(JSON.stringify(allTasks));
+       // v0.49.22: 保存場所の中身そのものも控える（後片づけでそのまま書き戻すため）
+       window._stGlobalStorageAllTasks = localStorage.getItem('allTasks');
        console.log('[ST] テスト前の予定を控えました:', window._stGlobalSnapshot.length + '件');
      } catch(eSnap) {
        window._stGlobalSnapshot = null;
@@ -77976,7 +78002,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            console.warn('[ST] テストで' + Math.abs(_stDiffCount) + '件の' +
              (_stDiffCount > 0 ? '消え漏れ' : '消し漏れ') + 'がありました。復元しました。');
          }
-         if (typeof saveAllTasks === 'function') saveAllTasks();
+         // v0.49.22: 【権威】2026-10-02、実機の全体テストで、点検（TPAG）が毎回「予定が907件→847件に書き換わった」と
+         // 落ちていた。この後片づけが、手元の予定（847件。消した印の付いたものは外して読み込む）を、本物の保存処理で
+         // 書き戻していたため、保存場所の907件が847件に置き換わっていた（UT-7と同じ型）。手元の予定はそのまま戻し、
+         // 保存場所は、テストの始まりに控えた中身そのものを書き戻す（第66条）。
+         if (typeof window._stGlobalStorageAllTasks === 'string') {
+           localStorage.setItem('allTasks', window._stGlobalStorageAllTasks);
+         } else if (window._stGlobalStorageAllTasks === null) {
+           localStorage.removeItem('allTasks');
+         } else if (typeof saveAllTasks === 'function') {
+           saveAllTasks();
+         }
+         window._stGlobalStorageAllTasks = undefined;
          window._stGlobalSnapshot = null;
        }
      } catch(eRestore) { console.warn('[ST] 復元に失敗:', eRestore && eRestore.message); }
