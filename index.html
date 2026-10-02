@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.18 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.19 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.18';
+    const APP_VERSION = 'v0.49.19';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -44924,6 +44924,12 @@ window._installCloudWriteGate = function _installCloudWriteGate(client) {
       var _WRITE_OPS = ['insert', 'update', 'upsert', 'delete'];
       function _cloudWriteBlockedReason(table) {
         if (window._isTesting || window._smokeTestRunning) return 'テスト中';
+        // v0.49.19: 【権威】2026-10-02、実機で全体テストを走らせたら、その最中に設定がクラウドへ送られていた。
+        // キューのテストは確かめのため一時的に「テスト中」の印を下ろすので、その隙に、前に予約されていた
+        // 送信が動いた。テストが一時的に書き換えた設定が、本物としてクラウドに送られる恐れがある。
+        // 全体テストの間は、始まりから読み込み直すまで仮の箱（'smoke'）が入っているので、それを見て必ず止める。
+        // テストが使う偽の接続には関所が付かないので、テストの確かめは今までどおり動く。
+        if (window._storageSandboxReason === 'smoke') return '全体テストの最中';
         if ((window._viewOnlyBackup || window._viewOnlyPending) && !_VIEWONLY_WRITE_OK[table]) return '見るだけモード中';
         return null;
       }
@@ -50504,6 +50510,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.49.19', date: '2026-10-02',
+    items: [
+      { icon:'🛡️', t:'（開発者向け）品質の確認の最中に、設定がクラウドへ送られることがあるのを止めました',
+        before:'品質の確認を走らせている最中に、確認のために一時的に変えた設定が、クラウドへ送られることがありました',
+        after:'確認の最中は、始まりから読み込み直すまで、クラウドへの書き込みを必ず止めるようにしました' }
+    ]
+  },
   {
     ver: 'v0.49.18', date: '2026-10-02',
     items: [
@@ -70776,11 +70790,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          currentMonthDate = new Date(2026, 8, 1);
          var _st359t = createTask({ text: 'ST359帯', date: '2026-09-07', endDate: '2026-09-13',
                                      section: 1, displayScope: 'both' });
+         // v0.49.19: 実機では9月に実際の帯が何本もあり、テストの帯が下の段に押し出されていた。測る間だけ、
+         // ほかの予定を画面から外す（最初に控えた予定は、最後に必ず元に戻す）。
+         allTasks = allTasks.filter(function(t) { return t && t.id === _st359t.id; });
          renderMonthlyView();
          var _st359measure = function() {
            var cell = document.querySelector('[data-date="2026-09-07"]');
            var moon = cell && cell.querySelector('.monthly-moon-row');
-           var band = document.querySelector('#monthlyBandLayer > div');
+           // v0.49.19: 「帯の1本目」で選ぶと、実機では実際の帯（別の週）を測っていた。テストの帯そのものを選ぶ。
+           var band = [].filter.call(document.querySelectorAll('#monthlyBandLayer > div'), function(el) {
+             return (el.textContent || '').indexOf('ST359帯') !== -1;
+           })[0];
            if (!moon || !band) return null;
            return Math.round((band.getBoundingClientRect().top - moon.getBoundingClientRect().bottom) * 100) / 100;
          };
@@ -72604,11 +72624,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-395·②: 本物に書かれてしまった', window._storageSandboxReadReal('st395-probe'));
          localStorage.removeItem('st395-probe');
          var _st395realTasks = window._storageSandboxReadReal('allTasks');
+         // v0.49.19: 書き戻すのは「保存場所にあった中身」そのもの。以前は手元に読み込まれている予定（allTasks）を
+         // 書き戻していたが、実機では保存場所（907件）と読み込まれた予定（847件。消した印の付いたものは外して
+         // 読み込む）が一致せず、点検（TPAG）が「予定が書き換わった」と正しく見抜いて落ちていた。
+         var _st395before = localStorage.getItem('allTasks');
          localStorage.removeItem('allTasks');
          (window._storageSandboxReadReal('allTasks') === _st395realTasks)
            ? ok('ST-395·③: 消しても、本物の保存場所は消えない')
            : ng('ST-395·③: 本物が消えてしまった', '');
-         localStorage.setItem('allTasks', JSON.stringify(allTasks));
+         if (_st395before === null) localStorage.removeItem('allTasks');
+         else localStorage.setItem('allTasks', _st395before);
        }
      } catch(e) {
        ng('ST-395: 例外', e.message);
@@ -72892,6 +72917,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-402: 例外', e.message);
+     }
+
+     // ===== ST-403: 全体テストの最中は、本物のクラウドへの書き込みを必ず止める（v0.49.19〜） =====
+     // 背景：実機で全体テストを走らせたら、その最中に設定がクラウドへ送られていた（キューのテストが一時的に
+     // 「テスト中」の印を下ろした隙に、予約されていた送信が動いた）。
+     try {
+       if (typeof window._installCloudWriteGate !== 'function') {
+         ng('ST-403: 関所が見つからない', '');
+       } else {
+         var _st403sent = [];
+         var _st403c = { from: function(t) { var q = { eq: function() { return q; }, select: function() { return q; } };
+           ['insert', 'update', 'upsert', 'delete'].forEach(function(op) { q[op] = function() { _st403sent.push(t + '.' + op); return q; }; });
+           return q; } };
+         window._installCloudWriteGate(_st403c);
+         var _st403prev = { t: window._isTesting, s: window._smokeTestRunning, r: window._storageSandboxReason };
+         window._isTesting = false; window._smokeTestRunning = false; window._storageSandboxReason = 'smoke';
+         _st403c.from('koyomiru_user_settings').upsert({});
+         window._storageSandboxReason = _st403prev.r;
+         window._isTesting = _st403prev.t; window._smokeTestRunning = _st403prev.s;
+         (_st403sent.length === 0)
+           ? ok('ST-403·①: 「テスト中」の印を一時的に下ろしても、全体テストの最中は本物のクラウドに書き込まない')
+           : ng('ST-403·①: 全体テストの最中に書き込みが通った', _st403sent.join(','));
+       }
+     } catch(e) {
+       ng('ST-403: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
