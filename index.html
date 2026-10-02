@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.49.16 ★ -->
+<!-- ★ CURRENT VERSION: v0.49.17 ★ -->
 
 <html lang="ja">
 <head>
@@ -246,7 +246,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.49.16';
+    const APP_VERSION = 'v0.49.17';
   const APP_LAST_UPDATED = '2026-10-02'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14767,15 +14767,23 @@ function renderTodoList() {
     // 「期間中」の帯として出す。1か月続く予定が毎日4つの枠に居座ると、その日やることが見えにくくなるため。
     // 始まりの日は今までどおり枠に出るので、帯は2日目以降（つづきの日）だけ（二重に出さない）。
     // 表示中のカレンダー・メンバーの絞り込みには、日次と同じく従う。
+    // v0.49.17: 日次に出す予定かどうか（どの画面に出す予定か・表示中のカレンダーか・表示中のメンバーか）。
+    // 日次の予定（getDailyTasks）と期間中の帯（getOngoingSpanTasks）が、同じ条件を別々に書いていたので
+    // 1か所にまとめる（第71条④：同じ判定は1か所に。片方だけ直して食い違うのを防ぐ）。
+    function _isTaskShownInDailyView(t) {
+      if (!t) return false;
+      var sc = t.displayScope || (t.showInDaily && !t.showInWeekly ? 'daily_only' : t.showInDaily && t.showInWeekly ? 'both' : null);
+      if (!sc || sc === 'weekly_only' || sc === 'heaven') return false;
+      if (!isCalendarVisible(t.calendarId)) return false;
+      if (!isTaskMemberVisible(t)) return false; // v0.45.1393: メンバー表示フィルタ
+      return true;
+    }
+    window._isTaskShownInDailyView = _isTaskShownInDailyView;
     function getOngoingSpanTasks(dateStr) {
       return allTasks.filter(function(t) {
         if (!t || !t.endDate || !t.date || !dateStr) return false;
         if (!(t.date < dateStr && dateStr <= t.endDate)) return false;
-        var sc = t.displayScope || (t.showInDaily && !t.showInWeekly ? 'daily_only' : t.showInDaily && t.showInWeekly ? 'both' : null);
-        if (!sc || sc === 'weekly_only' || sc === 'heaven') return false;
-        if (typeof isCalendarVisible === 'function' && !isCalendarVisible(t.calendarId)) return false;
-        if (typeof isTaskMemberVisible === 'function' && !isTaskMemberVisible(t)) return false;
-        return true;
+        return _isTaskShownInDailyView(t);
       }).sort(function(a, b) { return String(a.endDate).localeCompare(String(b.endDate)); });
     }
     window.getOngoingSpanTasks = getOngoingSpanTasks;
@@ -14813,12 +14821,9 @@ function renderTodoList() {
       const result = { 1: [], 2: [], 3: [], 4: [] };
       allTasks
         .filter(t => {
-          const sc = t.displayScope || (t.showInDaily && !t.showInWeekly ? 'daily_only' : t.showInDaily && t.showInWeekly ? 'both' : null);
-          if (!sc || sc === 'weekly_only' || sc === 'heaven') return false;
-          if (!isCalendarVisible(t.calendarId)) return false;
-          if (!isTaskMemberVisible(t)) return false; // v0.45.1393: メンバー表示フィルタ
-          if (sc === 'daily_only') return t.date === date;
-          return (t.date === date); // both: その日だけ
+          if (!_isTaskShownInDailyView(t)) return false;   // v0.49.17: 条件は1か所に
+          // 始まりの日だけ枠に出す。2日目以降は「期間中」の帯（getOngoingSpanTasks）に出る（v0.49.10）
+          return t.date === date;
         })
         .forEach(t => {
           if (result[t.section]) result[t.section].push(t);
@@ -27873,6 +27878,7 @@ function saveMsbEdit() {
     function showTextInputModal(opts) {
       opts = opts || {};
       var m = document.createElement('div');
+      m.id = 'textInputModalOverlay';   // v0.49.17: 呼び名の画面が重ならないよう、開いているか見分ける目印
       m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
       var box = document.createElement('div');
       box.style.cssText = 'background:#fff;border-radius:20px;padding:24px;width:100%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,0.18);';
@@ -50499,6 +50505,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.49.17', date: '2026-10-02',
+    items: [
+      { icon:'🧹', t:'細かなところを整えました',
+        before:'使えない呼び名の付け直しの画面だけ、キャンセルで閉じられました。ほかの画面と重なることもありました',
+        after:'付け直しの画面も、呼び名を決める画面と同じ作りにそろえ、ほかの画面が開いている間は待ってから出すようにしました' }
+    ]
+  },
+  {
     ver: 'v0.49.16', date: '2026-10-02',
     items: [
       { icon:'🪪', t:'呼び名を決める画面を作り直しました',
@@ -54132,26 +54146,16 @@ function _promptRenameIfNameNotAllowed() {
     if (!nm || _isDisplayNameAllowed(nm).ok) return false;
     if (typeof showTextInputModal !== 'function') return false;
     _renameAskedThisLaunch = true;
-    var ask = function() {
-      showTextInputModal({
-        title: 'この名前は使えなくなりました。別の名前にしてください',
-        placeholder: '例：きくモン',
-        defaultValue: '',
-        onSubmit: function(v) {
-          var nv = (typeof _cleanDisplayName === 'function') ? _cleanDisplayName(v) : String(v || '').trim();
-          if (!nv || !_isDisplayNameAllowed(nv).ok) {
-            if (typeof showToast === 'function') showToast('⚠️ ' + KOYOMIRU_NG_NAME_MESSAGE, {type:'warn'});
-            setTimeout(ask, 300);
-            return;
-          }
-          allSettings.profile.name = nv;
-          saveAllSettings();
-          if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
-          if (typeof showToast === 'function') showToast('名前を「' + nv + '」にしました');
-        }
+    // v0.49.17: 呼び名の画面（v0.49.16）と同じ作りにそろえる。キャンセルで逃げられないようにする。
+    var showRename = function() {
+      if (typeof _otherModalOpen === 'function' && _otherModalOpen()) { setTimeout(showRename, 1000); return; }
+      if (typeof _showNameRequiredModal !== 'function') return;
+      _showNameRequiredModal('', {
+        title: 'この呼び名は使えなくなりました',
+        text: 'ほかの人に見える呼び名に、使えない言葉が入っていました。別の呼び名にしてください。ニックネームでも大丈夫。いつでも変えられます。'
       });
     };
-    ask();
+    showRename();
     // 他の人に見える場所からは、すぐ外す
     if (window._cloudIsLoggedIn && typeof pushPublicProfile === 'function') pushPublicProfile();
     return true;
@@ -54192,7 +54196,8 @@ function _otherModalOpen() {
   });
 }
 window._otherModalOpen = _otherModalOpen;
-function _showNameRequiredModal(candidate) {
+function _showNameRequiredModal(candidate, opts) {
+  opts = opts || {};
   if (document.getElementById('nameRequiredOverlay')) return;
   var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
   var ov = document.createElement('div');
@@ -54202,8 +54207,8 @@ function _showNameRequiredModal(candidate) {
     '<form id="nameRequiredForm" onsubmit="return false;" autocomplete="off" style="background:#fff;border-radius:16px;max-width:380px;width:100%;padding:22px 20px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">' +
       // 名前がもともと「〜さん」「〜様」で終わるときは、呼びかけの「さん」を重ねない
       '<div style="font-size:1.15em;font-weight:700;color:#333;margin-bottom:10px;">' +
-        (candidate ? 'ようこそ、' + esc(candidate) + (/(さん|様|さま|ちゃん|くん|君)$/.test(candidate) ? '' : 'さん') + '！' : 'ようこそ！') + '</div>' +
-      '<div style="font-size:0.88em;color:#555;line-height:1.7;margin-bottom:14px;">まずは呼び名を決めてください。共有カレンダーやコメントで、仲間にあなただと分かるようにするためです。ニックネームでも大丈夫。いつでも変えられます。</div>' +
+        (opts.title ? esc(opts.title) : (candidate ? 'ようこそ、' + esc(candidate) + (/(さん|様|さま|ちゃん|くん|君)$/.test(candidate) ? '' : 'さん') + '！' : 'ようこそ！')) + '</div>' +
+      '<div style="font-size:0.88em;color:#555;line-height:1.7;margin-bottom:14px;">' + esc(opts.text || 'まずは呼び名を決めてください。共有カレンダーやコメントで、仲間にあなただと分かるようにするためです。ニックネームでも大丈夫。いつでも変えられます。') + '</div>' +
       '<input id="nameRequiredInput" type="text" maxlength="20" autocomplete="off" data-lpignore="true" data-1p-ignore placeholder="例：きくモン" value="' + esc(candidate || '') + '" ' +
         'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid #ccd;border-radius:10px;font-size:16px;">' +
       '<div id="nameRequiredHint" style="min-height:1.4em;font-size:0.8em;color:#c07a2a;margin:6px 2px 10px;"></div>' +
@@ -72723,8 +72728,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-399·②: 普通の名前は弾かない（「しねま好き」のように「しね」を含む名前だけは弾く＝一覧を見直すときの目印）')
            : ng('ST-399·②: 普通の名前を誤って弾いている', _st399blockedGood.join(' / '));
          var _st399profile = JSON.parse(JSON.stringify(allSettings.profile || {}));
-         var _st399modal = window.showTextInputModal, _st399shown = 0;
-         window.showTextInputModal = function() { _st399shown++; };
+         var _st399modalFn = window._showNameRequiredModal, _st399shown = 0;
+         window._showNameRequiredModal = function() { _st399shown++; };
+         var _st399other = window._otherModalOpen; window._otherModalOpen = function() { return false; };
          var _st399flags = { t: window._isTesting, s: window._smokeTestRunning };
          window._isTesting = false; window._smokeTestRunning = false;
          allSettings.profile = allSettings.profile || {};
@@ -72733,7 +72739,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          allSettings.profile.name = 'ちんちん！';
          var _st399b = _promptRenameIfNameNotAllowed();
          window._isTesting = _st399flags.t; window._smokeTestRunning = _st399flags.s;
-         window.showTextInputModal = _st399modal;
+         window._showNameRequiredModal = _st399modalFn; window._otherModalOpen = _st399other;
          allSettings.profile = _st399profile;
          (_st399a === false && _st399b === true && _st399shown === 1)
            ? ok('ST-399·③: 付け直しの画面は、使えない名前の人にだけ出る（普通の名前の人には出ない）')
