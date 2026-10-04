@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.50.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.50.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.50.2';
+    const APP_VERSION = 'v0.50.3';
   const APP_LAST_UPDATED = '2026-10-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -50579,6 +50579,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.50.3', date: '2026-10-04',
+    items: [
+      { icon:'🛠', t:'LINEでのログインは、ただいま改修中です',
+        before:'LINEのボタンを押しても、うまくログインできないことがありました',
+        after:'直るまでのあいだ、LINEのボタンには「改修中」と出します。Google・Discord・メールでログインしてください' }
+    ]
+  },
+  {
     ver: 'v0.50.2', date: '2026-10-04',
     items: [
       { icon:'📒', t:'大福帳を充実させました',
@@ -57476,7 +57484,16 @@ window.cloudLoginWithGoogle = cloudLoginWithGoogle;
 // SupabaseにLINE専用のネイティブ対応（provider:'line'）が追加されたことを確認済み。
 // 「汎用OIDCで自分で繋ぐ」方式は、LINEのWeb版ログイン（HS256）とSupabaseの
 // 検証（ES256のみ）が噛み合わず直せない不具合が報告されているため、使わない。
+// v0.50.3: 【権威】2026-10-04、LINEログインは改修中なので、そのことを伝えてほしい、との指示。
+// 押してもLINEへ移動せず、改修中であることと、ほかのログイン方法を伝える。
+// 直ったら、この印を false にし、ボタンの「（改修中）」と薄さ（opacity）を外せば元に戻る。
+var LINE_LOGIN_UNDER_REPAIR = true;
+window.LINE_LOGIN_UNDER_REPAIR = LINE_LOGIN_UNDER_REPAIR;
 async function cloudLoginWithLine() {
+  if (LINE_LOGIN_UNDER_REPAIR) {
+    _cloudLoginSetStatus('🛠 LINEでのログインは、ただいま改修中です。Google・Discord・メールでログインしてください。', 'error');
+    return;
+  }
   if (!window.supabaseClient) { _cloudLoginSetStatus('⚠️ 接続の初期化に失敗しています', 'error'); return; }
   var btn = document.getElementById('cloudLoginLineBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'LINEへ移動中…'; }
@@ -72149,7 +72166,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }};
        window.showToast = function(message) { lastToastMessage = message; };
        window._isTesting = false; window._smokeTestRunning = false;
+       // v0.50.3: LINEログインは改修中（押してもLINEへ移動しない）。改修中の間は呼ばないことを確かめ、
+       // そのあと印を外して、直ったときに元どおりLINEへのログインが呼ばれることも確かめる。
+       var _st377repair = window.LINE_LOGIN_UNDER_REPAIR;
+       window.LINE_LOGIN_UNDER_REPAIR = true;
        return window.cloudLoginWithLine().then(function() {
+         (lastCallOptions === null)
+           ? ok('ST-377·⓪: 改修中の間は、押してもLINEへ移動しない')
+           : ng('ST-377·⓪: 改修中なのにLINEへ移動しようとした', JSON.stringify(lastCallOptions));
+         window.LINE_LOGIN_UNDER_REPAIR = false;
+         return window.cloudLoginWithLine();
+       }).then(function() {
+         window.LINE_LOGIN_UNDER_REPAIR = _st377repair;
          (lastCallOptions && lastCallOptions.provider === 'line')
            ? ok('ST-377·②: ログイン時、正しくprovider:\'line\'で呼ばれる')
            : ng('ST-377·②: 呼び出し引数が違う', JSON.stringify(lastCallOptions));
@@ -87408,7 +87436,7 @@ window.addMigration = addMigration;
            色はLINE公式のログインボタン規定どおり #06C755（ブランドカラーの#00B900とは別の、
            ボタン専用の色）。アイコンはLINEの吹き出しマークを白で簡略化して描く
            （Google・Discordの既存ボタンと同じ、独自SVGでの簡易表現）。 -->
-      <button id="cloudLoginLineBtn" onclick="cloudLoginWithLine()" style="width:100%;padding:13px;border:none;border-radius:10px;background:#06C755;color:#fff;font-size:0.92em;font-weight:600;cursor:pointer;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:9px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 3C6.98 3 3 6.36 3 10.5c0 3.7 3.14 6.79 7.39 7.39.29.06.68.19.78.44.09.22.06.57.03.8l-.13.78c-.04.22-.17.87.76.47.94-.4 5.06-2.98 6.9-5.1C19.98 13.9 21 12.3 21 10.5 21 6.36 17.02 3 12 3z" fill="#fff"/><circle cx="8.3" cy="10.6" r="1.05" fill="#06C755"/><circle cx="12" cy="10.6" r="1.05" fill="#06C755"/><circle cx="15.7" cy="10.6" r="1.05" fill="#06C755"/></svg>LINEでログイン</button>
+      <button id="cloudLoginLineBtn" onclick="cloudLoginWithLine()" style="width:100%;padding:13px;border:none;border-radius:10px;background:#06C755;color:#fff;opacity:0.45;font-size:0.92em;font-weight:600;cursor:pointer;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:9px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 3C6.98 3 3 6.36 3 10.5c0 3.7 3.14 6.79 7.39 7.39.29.06.68.19.78.44.09.22.06.57.03.8l-.13.78c-.04.22-.17.87.76.47.94-.4 5.06-2.98 6.9-5.1C19.98 13.9 21 12.3 21 10.5 21 6.36 17.02 3 12 3z" fill="#fff"/><circle cx="8.3" cy="10.6" r="1.05" fill="#06C755"/><circle cx="12" cy="10.6" r="1.05" fill="#06C755"/><circle cx="15.7" cy="10.6" r="1.05" fill="#06C755"/></svg>LINEでログイン（改修中）</button>
 
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;color:#b0b0b0;font-size:0.8em;"><span style="flex:1;height:1px;background:#e8e8e8;"></span>または<span style="flex:1;height:1px;background:#e8e8e8;"></span></div>
 
