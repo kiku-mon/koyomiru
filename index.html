@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.51.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.51.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.51.0';
+    const APP_VERSION = 'v0.51.1';
   const APP_LAST_UPDATED = '2026-10-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14812,6 +14812,16 @@ function renderTodoList() {
     var TOKI_STEPS_1 = ['物', '入', '押', '申', '依', 'カク', '組', '決', '金'];
     var TOKI_STEPS_2 = ['謄本', '印字', '送付状', '法務局からの返却', '組み立て', 'カク', '依頼'];
     window.TOKI_STEPS_1 = TOKI_STEPS_1; window.TOKI_STEPS_2 = TOKI_STEPS_2;
+    // v0.51.1: 【権威】2026-10-04、「金消、金がなくね？」との指摘。設計では「金消日が空なら［金］を出さない」と
+    // したのに、［金］をチェックの有無だけで出していた。［金］は金消日で決める（入っていれば出す・空なら出さない）。
+    function tokiStepsFor(c) {
+      var base = (c && c.enabled1) || TOKI_STEPS_1;
+      return TOKI_STEPS_1.filter(function(st) {
+        if (st === '金') return !!(c && c.kinshoDate);
+        return base.indexOf(st) !== -1;
+      });
+    }
+    window.tokiStepsFor = tokiStepsFor;
     function isTokiModeOn() {
       return !!(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode() &&
         allSettings && allSettings.flags && allSettings.flags.tokiMode);
@@ -14847,7 +14857,7 @@ function renderTodoList() {
       var s1 = c.steps1 || {}, s2 = c.steps2 || {}, out = [];
       if (c.kinshoDate === todayYmd) out.push('今日は金消');
       if (c.kessaiDate === todayYmd) out.push('今日は決済');
-      if (c.kinshoDate && c.kinshoDate < todayYmd && !s1['金'] && (c.enabled1 || TOKI_STEPS_1).indexOf('金') !== -1) out.push('金消を過ぎています');
+      if (c.kinshoDate && c.kinshoDate < todayYmd && !s1['金']) out.push('金消を過ぎています');
       if (c.kessaiDate && c.kessaiDate < todayYmd && !s1['決']) out.push('決済を過ぎています');
       if (c.kanryoDate && c.kanryoDate < todayYmd && !s2['謄本']) out.push('完了予定を過ぎています');
       return out;
@@ -14894,7 +14904,7 @@ function renderTodoList() {
       };
       var rows = list.map(function(c) {
         var al = tokiAlerts(c, today), s1 = c.steps1 || {}, s2 = c.steps2 || {};
-        var en1 = c.enabled1 || TOKI_STEPS_1;
+        var en1 = tokiStepsFor(c);
         var stage2Faint = !s1['決'];
         var dates = [_tokiDateLabel('金消', c.kinshoDate, today), _tokiDateLabel('決済', c.kessaiDate, today), _tokiDateLabel('完了予定', c.kanryoDate, today)]
           .filter(function(x) { return !!x; }).join('　｜　');
@@ -14939,8 +14949,8 @@ function renderTodoList() {
         field('金消日', 'tokiKinsho', c && c.kinshoDate, 'date') +
         field('決済日（必須）', 'tokiKessai', c && c.kessaiDate, 'date') +
         field('完了予定日', 'tokiKanryo', c && c.kanryoDate, 'date') +
-        '<div style="font-size:0.8em;color:#555;margin:10px 0 2px;">要る工程（決済まで）</div><div>' +
-          TOKI_STEPS_1.map(function(st) {
+        '<div style="font-size:0.8em;color:#555;margin:10px 0 2px;">要る工程（決済まで）<span style="color:#999;font-size:0.9em;">　※［金］は、金消日を入れると出ます</span></div><div>' +
+          TOKI_STEPS_1.filter(function(st) { return st !== '金'; }).map(function(st) {
             return '<label style="display:inline-flex;align-items:center;gap:3px;margin:2px 8px 2px 0;font-size:0.85em;"><input type="checkbox" data-toki-step="' + esc(st) + '"' + (en1.indexOf(st) !== -1 ? ' checked' : '') + '>' + esc(st) + '</label>';
           }).join('') + '</div>' +
         '<div id="tokiHint" style="min-height:1.3em;font-size:0.8em;color:#c07a2a;margin:6px 0;"></div>' +
@@ -50808,7 +50818,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.51.0', date: '2026-10-04',
+    ver: 'v0.51.1', date: '2026-10-04',
     items: [
       { icon:'🛠', t:'（管理者向け）仕事の案件を管理する機能を足しました',
         before:'ふだん使う方には関係のない変更です',
@@ -73673,6 +73683,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st406s && _st406closed && _st406reopen)
            ? ok('ST-406·④: 工程は押すと済み。完了分の最後（依頼）で閉じ、戻すと開き直す')
            : ng('ST-406·④: 工程の進み方が違う', JSON.stringify([_st406s, _st406closed, _st406reopen]));
+         var _st406k1 = tokiStepsFor({ kinshoDate: '2026-10-10', enabled1: TOKI_STEPS_1.filter(function(s) { return s !== '金'; }) }).indexOf('金') !== -1;
+         var _st406k2 = tokiStepsFor({ kinshoDate: '', enabled1: TOKI_STEPS_1.slice() }).indexOf('金') === -1;
+         (_st406k1 && _st406k2)
+           ? ok('ST-406·⑥: ［金］は金消日で決まる（入っていれば出る・空なら出ない）')
+           : ng('ST-406·⑥: ［金］の出方が違う', JSON.stringify([_st406k1, _st406k2]));
          (getDailyTasks(_t)[1].concat(getDailyTasks(_t)[2], getDailyTasks(_t)[3], getDailyTasks(_t)[4]).every(function(x) { return x.kind !== 'toki'; }))
            ? ok('ST-406·⑤: 登記の案件は、日次の普通の予定には混ざらない')
            : ng('ST-406·⑤: 普通の予定に混ざった', '');
