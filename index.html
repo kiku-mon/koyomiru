@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.51.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.51.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,8 +255,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.51.1';
-  const APP_LAST_UPDATED = '2026-10-04'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.51.3';
+  const APP_LAST_UPDATED = '2026-10-05'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -8158,6 +8158,8 @@ function _showInviteWelcome() {
       </div>
       <!-- v0.45.1593: 旧・簡易入力は編集フォームに統合したため撤去（第31条）。
            入口が2つあると「時刻が書けない方」に当たった人が二度手間になる。 -->
+      <!-- v0.51.2: 登記モード（管理者だけ）。月間の日の欄に、その日の登記と「＋ 登記の案件」を出す -->
+      <div id="monthlySidebarToki" style="display:none;"></div>
       <div class="monthly-sidebar-tasks" id="monthlySidebarTasks"></div>
       <!-- v0.45.1566: 予定ごとのコメント。予定を選ぶと、その予定の会話がここに出る。 -->
       <!-- v0.45.1583: 参加表明。コメントの上に置く。「誰が来るか」が先で、話はその後。 -->
@@ -14822,6 +14824,24 @@ function renderTodoList() {
       });
     }
     window.tokiStepsFor = tokiStepsFor;
+    // v0.51.3: 【権威】2026-10-05、自分ではない担当者Aさんの金消に自分が行くこともある、との指摘。
+    // 案件に担当者を持たせ、金消・決済それぞれに「行く人」を持たせる（空なら担当者、担当者も空なら自分）。
+    var TOKI_SELF = '自分';
+    function tokiTantou(c) { return String((c && c.tantou) || '').trim() || TOKI_SELF; }
+    function tokiGoer(c, kind) {
+      var g = String((c && (kind === 'kinsho' ? c.kinshoGoer : c.kessaiGoer)) || '').trim();
+      return g || tokiTantou(c);
+    }
+    function tokiIsSelf(name) { return String(name || '').trim() === TOKI_SELF; }
+    window.tokiTantou = tokiTantou; window.tokiGoer = tokiGoer;
+    // 前に入れた名前（担当者・行く人）を、選べるように集める
+    function tokiKnownPeople() {
+      var seen = {}; seen[TOKI_SELF] = 1;
+      getTokiCases(true).forEach(function(c) {
+        [c.tantou, c.kinshoGoer, c.kessaiGoer].forEach(function(n) { n = String(n || '').trim(); if (n) seen[n] = 1; });
+      });
+      return Object.keys(seen);
+    }
     function isTokiModeOn() {
       return !!(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode() &&
         allSettings && allSettings.flags && allSettings.flags.tokiMode);
@@ -14874,7 +14894,7 @@ function renderTodoList() {
       if (row === 2 && step === last) { c.closed = !!c[key][step]; c.closedAt = c.closed ? new Date().toISOString() : null; }
       c.updatedAt = new Date().toISOString();
       saveAllTasks();
-      renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad');
+      _tokiRefreshAll();
       if (row === 2 && step === last && c.closed && typeof showToast === 'function') showToast('✅ ' + (c.box || '') + ' を完了にしました（済んだ案件に移しました）');
     }
     window.toggleTokiStep = toggleTokiStep;
@@ -14902,22 +14922,7 @@ function renderTodoList() {
           (done ? 'background:#2f9e44;color:#fff;border:1px solid #2f9e44;' : 'background:#fff;color:' + (faint ? '#bbb' : '#444') + ';border:1px solid ' + (faint ? '#e3e3e3' : '#ccd') + ';') + '">' +
           esc(step) + (done ? '✓' : '') + '</button>';
       };
-      var rows = list.map(function(c) {
-        var al = tokiAlerts(c, today), s1 = c.steps1 || {}, s2 = c.steps2 || {};
-        var en1 = tokiStepsFor(c);
-        var stage2Faint = !s1['決'];
-        var dates = [_tokiDateLabel('金消', c.kinshoDate, today), _tokiDateLabel('決済', c.kessaiDate, today), _tokiDateLabel('完了予定', c.kanryoDate, today)]
-          .filter(function(x) { return !!x; }).join('　｜　');
-        return '<div style="padding:7px 8px;margin:0 0 6px;border-radius:8px;background:' + (al.length ? '#fff4e6' : '#f6f8fc') + ';border-left:4px solid ' + (al.length ? '#e8590c' : '#5b8def') + ';">' +
-          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;"><b>' + esc(c.box || '') + '</b>　' + esc(c.buyer || '') + '様' +
-            (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(c.seller) + '様）</span>' : '') + '</div>' +
-          (dates ? '<div style="font-size:0.75em;color:#666;margin-top:2px;">' + dates + '</div>' : '') +
-          (al.length ? '<div style="font-size:0.75em;color:#d9480f;font-weight:700;margin-top:2px;">⚠️ ' + al.join('・') + '</div>' : '') +
-          '<div style="margin-top:3px;">' + en1.map(function(st) { return chip(c, 1, st, !!s1[st], false); }).join('') + '</div>' +
-          '<div style="margin-top:2px;"><span style="font-size:0.72em;color:' + (stage2Faint ? '#bbb' : '#666') + ';margin-right:3px;">完了分</span>' +
-            TOKI_STEPS_2.map(function(st) { return chip(c, 2, st, !!s2[st], stage2Faint); }).join('') + '</div>' +
-        '</div>';
-      }).join('');
+      var rows = list.map(function(c) { return _tokiCaseRowHtml(c, today); }).join('');
       var closedN = getTokiCases(true).filter(function(t) { return t.closed; }).length;
       el.innerHTML = '<div style="padding:4px 6px 2px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
@@ -14928,8 +14933,81 @@ function renderTodoList() {
       el.style.display = 'block';
     }
     window.renderTokiPanel = renderTokiPanel;
-    // 案件を作る・直す
-    function openTokiCaseEditor(caseId) {
+    // v0.51.2: 案件1件ぶんの見え方（日次と月間の日の欄で使い回す）
+    function _tokiCaseRowHtml(c, today) {
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
+      var chip = function(c, row, step, done, faint) {
+        return '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',' + row + ',\'' + esc(step) + '\')" style="padding:2px 7px;margin:2px 2px 0 0;border-radius:6px;font-size:0.78em;cursor:pointer;' +
+          (done ? 'background:#2f9e44;color:#fff;border:1px solid #2f9e44;' : 'background:#fff;color:' + (faint ? '#bbb' : '#444') + ';border:1px solid ' + (faint ? '#e3e3e3' : '#ccd') + ';') + '">' +
+          esc(step) + (done ? '✓' : '') + '</button>';
+      };
+        var al = tokiAlerts(c, today), s1 = c.steps1 || {}, s2 = c.steps2 || {};
+        var en1 = tokiStepsFor(c);
+        var stage2Faint = !s1['決'];
+        var goerTag = function(kind) {   // v0.51.3: 行く人
+          var g = tokiGoer(c, kind);
+          return tokiIsSelf(g) ? '<span style="color:#6741d9;font-weight:700;">（自分が行く）</span>' : '（行く：' + esc(g) + '）';
+        };
+        var dates = [c.kinshoDate ? _tokiDateLabel('金消', c.kinshoDate, today) + goerTag('kinsho') : '',
+                     _tokiDateLabel('決済', c.kessaiDate, today) + (c.kessaiDate ? goerTag('kessai') : ''),
+                     _tokiDateLabel('完了予定', c.kanryoDate, today)]
+          .filter(function(x) { return !!x; }).join('　｜　');
+        return '<div style="padding:7px 8px;margin:0 0 6px;border-radius:8px;background:' + (al.length ? '#fff4e6' : '#f6f8fc') + ';border-left:4px solid ' + (al.length ? '#e8590c' : '#5b8def') + ';">' +
+          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;"><b>' + esc(c.box || '') + '</b>　' + esc(c.buyer || '') + '様' +
+            (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(c.seller) + '様）</span>' : '') +
+            (!tokiIsSelf(tokiTantou(c)) ? '<span style="color:#555;font-size:0.85em;">　担当 ' + esc(tokiTantou(c)) + '</span>' : '') + '</div>' +
+          (dates ? '<div style="font-size:0.75em;color:#666;margin-top:2px;">' + dates + '</div>' : '') +
+          (al.length ? '<div style="font-size:0.75em;color:#d9480f;font-weight:700;margin-top:2px;">⚠️ ' + al.join('・') + '</div>' : '') +
+          '<div style="margin-top:3px;">' + en1.map(function(st) { return chip(c, 1, st, !!s1[st], false); }).join('') + '</div>' +
+          '<div style="margin-top:2px;"><span style="font-size:0.72em;color:' + (stage2Faint ? '#bbb' : '#666') + ';margin-right:3px;">完了分</span>' +
+            TOKI_STEPS_2.map(function(st) { return chip(c, 2, st, !!s2[st], stage2Faint); }).join('') + '</div>' +
+        '</div>';
+    }
+    window._tokiCaseRowHtml = _tokiCaseRowHtml;
+
+    // v0.51.2: 月間のマス目に出す印（その日に金消・決済・完了予定がある、まだ閉じていない案件）
+    function tokiMarksOnDate(ymd) {
+      if (!isTokiModeOn()) return [];
+      var out = [];
+      getTokiCases(false).forEach(function(c) {
+        if (c.kinshoDate === ymd) out.push({ id: c.id, icon: '💴', label: '金', box: c.box || '', buyer: c.buyer || '', goer: tokiGoer(c, 'kinsho'), self: tokiIsSelf(tokiGoer(c, 'kinsho')) });
+        if (c.kessaiDate === ymd) out.push({ id: c.id, icon: '🔑', label: '決', box: c.box || '', buyer: c.buyer || '', goer: tokiGoer(c, 'kessai'), self: tokiIsSelf(tokiGoer(c, 'kessai')) });
+        if (c.kanryoDate === ymd) out.push({ id: c.id, icon: '✅', label: '完', box: c.box || '', buyer: c.buyer || '', goer: tokiTantou(c), self: tokiIsSelf(tokiTantou(c)) });
+      });
+      return out;
+    }
+    window.tokiMarksOnDate = tokiMarksOnDate;
+    // v0.51.2: 月間の日の欄：その日の登記（工程を押して進められる）と「＋ 登記の案件」（この日を決済日に）
+    function renderTokiSidebar(ymd) {
+      var el = document.getElementById('monthlySidebarToki');
+      if (!el) return;
+      if (!isTokiModeOn()) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
+      var today = getLocalDateStr(new Date());
+      var ids = {}; tokiMarksOnDate(ymd).forEach(function(m) {
+        var nm = m.label === '金' ? '金消' : m.label === '決' ? '決済' : '完了予定';
+        if (m.label !== '完') nm += m.self ? '（自分が行く）' : '（行く：' + m.goer + '）';
+        ids[m.id] = (ids[m.id] || []).concat(nm);
+      });
+      var cases = getTokiCases(false).filter(function(c) { return ids[c.id]; });
+      el.innerHTML = '<div style="padding:8px 12px 4px;border-bottom:1px solid #eee;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;">' +
+          '<span style="font-size:0.85em;font-weight:700;color:#6741d9;">📝 この日の登記' + (cases.length ? '（' + cases.length + '件）' : '') + '</span>' +
+          '<button onclick="openTokiCaseEditor(null, { kessaiDate: \'' + esc(ymd) + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #6741d9;background:#fff;color:#6741d9;font-size:0.8em;cursor:pointer;">＋ 登記の案件（この日を決済日に）</button></div>' +
+        cases.map(function(c) { return '<div style="font-size:0.72em;color:#6741d9;font-weight:700;">' + esc(ids[c.id].join('・')) + '</div>' + _tokiCaseRowHtml(c, today); }).join('') +
+      '</div>';
+      el.style.display = 'block';
+    }
+    window.renderTokiSidebar = renderTokiSidebar;
+    function _tokiRefreshAll() {
+      renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad');
+      if (typeof _sidebarDateStr !== 'undefined' && _sidebarDateStr) renderTokiSidebar(_sidebarDateStr);
+      if (typeof currentView !== 'undefined' && currentView === 'monthly' && typeof renderMonthlyView === 'function') renderMonthlyView();
+    }
+    window._tokiRefreshAll = _tokiRefreshAll;
+    // 案件を作る・直す（v0.51.2: 月間から開くときは、その日を決済日に入れておく）
+    function openTokiCaseEditor(caseId, prefill) {
+      prefill = prefill || {};
       var c = caseId ? allTasks.filter(function(t) { return t && t.id === caseId; })[0] : null;
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
       var en1 = (c && c.enabled1) || TOKI_STEPS_1;
@@ -14946,8 +15024,12 @@ function renderTodoList() {
         field('ボックス番号（必須）', 'tokiBox', c && c.box, 'text', '例：B20430') +
         field('買主（必須）', 'tokiBuyer', c && c.buyer, 'text', '例：大塚') +
         field('売主', 'tokiSeller', c && c.seller, 'text', '例：田中') +
+        field('担当者（空なら自分）', 'tokiTantou', c && c.tantou, 'text', '例：Aさん') +
         field('金消日', 'tokiKinsho', c && c.kinshoDate, 'date') +
-        field('決済日（必須）', 'tokiKessai', c && c.kessaiDate, 'date') +
+        field('金消に行く人（空なら担当者）', 'tokiKinshoGoer', c && c.kinshoGoer, 'text', '例：自分') +
+        field('決済日（必須）', 'tokiKessai', (c && c.kessaiDate) || prefill.kessaiDate, 'date') +
+        field('決済に行く人（空なら担当者）', 'tokiKessaiGoer', c && c.kessaiGoer, 'text', '例：自分') +
+        '<datalist id="tokiPeopleList">' + tokiKnownPeople().map(function(n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
         field('完了予定日', 'tokiKanryo', c && c.kanryoDate, 'date') +
         '<div style="font-size:0.8em;color:#555;margin:10px 0 2px;">要る工程（決済まで）<span style="color:#999;font-size:0.9em;">　※［金］は、金消日を入れると出ます</span></div><div>' +
           TOKI_STEPS_1.filter(function(st) { return st !== '金'; }).map(function(st) {
@@ -14960,6 +15042,7 @@ function renderTodoList() {
           '<button type="button" onclick="document.getElementById(\'tokiCaseOverlay\').remove()" style="flex:1;padding:10px;border:1px solid #ccd;border-radius:9px;background:#fff;">閉じる</button>' +
         '</div></form>';
       document.body.appendChild(ov);
+      ['tokiTantou', 'tokiKinshoGoer', 'tokiKessaiGoer'].forEach(function(id) { var e = document.getElementById(id); if (e) e.setAttribute('list', 'tokiPeopleList'); });
       var hint = document.getElementById('tokiHint');
       document.getElementById('tokiSaveBtn').onclick = function() {
         var v = function(id) { return String(document.getElementById(id).value || '').trim(); };
@@ -14978,12 +15061,13 @@ function renderTodoList() {
           steps1: {}, steps2: {}, closed: false, createdAt: now };
         target.box = box; target.buyer = buyer; target.seller = v('tokiSeller');
         target.kinshoDate = v('tokiKinsho'); target.kessaiDate = kessai; target.kanryoDate = v('tokiKanryo');
+        target.tantou = v('tokiTantou'); target.kinshoGoer = v('tokiKinshoGoer'); target.kessaiGoer = v('tokiKessaiGoer');   // v0.51.3
         target.enabled1 = enabled.length ? enabled : TOKI_STEPS_1.slice();
         target.updatedAt = now;
         if (!c) allTasks.push(target);
         saveAllTasks();
         ov.remove();
-        renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad');
+        _tokiRefreshAll();
         if (typeof showToast === 'function') showToast('📝 ' + box + ' を保存しました');
       };
       var del = document.getElementById('tokiDeleteBtn');
@@ -14991,7 +15075,7 @@ function renderTodoList() {
         var go = function() {
           if (typeof deleteTaskById === 'function') deleteTaskById(c.id);
           else { allTasks = allTasks.filter(function(t) { return t.id !== c.id; }); saveAllTasks(); }
-          ov.remove(); renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad');
+          ov.remove(); _tokiRefreshAll();
         };
         if (typeof showChoiceModal === 'function') {
           showChoiceModal({ title: '案件を削除', desc: (c.box || '') + '（' + (c.buyer || '') + '様）を削除します。',
@@ -17276,6 +17360,19 @@ function myDeckApply(idx) {
             _zsDiv.textContent = _zs.map(function(n) { return n.replace(/^[春夏秋冬]の?/, ''); }).join('・');
             _zsDiv.title = _zs.join('・');
             dayRow.appendChild(_zsDiv);
+          }
+        }
+        // v0.51.2: 【権威】2026-10-05、仕事PCの月間から登記を入れることが一番多い、との指摘。案件の金消・決済・完了予定の
+        // 日に、日付の行の中へ小さく印を出す（行を足すと、測って置いている帯と重なるので、高さは変えない）。
+        if (!isOtherMonth && typeof tokiMarksOnDate === 'function') {
+          var _tkMarks = tokiMarksOnDate(dateStr);
+          if (_tkMarks.length) {
+            var _tkDiv = document.createElement('div');
+            _tkDiv.className = 'monthly-toki-mark';
+            _tkDiv.style.cssText = 'font-size:10px;font-weight:700;color:#6741d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto;margin-left:3px;';
+            _tkDiv.textContent = _tkMarks.map(function(m) { return m.icon + m.label + m.box + ((m.label !== '完' && m.self) ? '★' : ''); }).join(' ');   // v0.51.3: 自分が行く日に★
+            _tkDiv.title = _tkMarks.map(function(m) { return m.label + '　' + m.box + '　' + m.buyer + '様' + (m.label !== '完' ? '　行く：' + m.goer : ''); }).join('\n');
+            dayRow.appendChild(_tkDiv);
           }
         }
         head.appendChild(dayRow);
@@ -23915,6 +24012,7 @@ window.linkifyText = linkifyText;
 function renderMonthlySidebarTasks() {
       var el = document.getElementById('monthlySidebarTasks');
       if (!el || !_sidebarDateStr) return;
+      if (typeof renderTokiSidebar === 'function') renderTokiSidebar(_sidebarDateStr);   // v0.51.2: 登記モード
       // v0.45.1652: 編集中に畳んでいた場合があるので、描き直すときは必ず戻す
       el.style.display = '';
       // v0.45.1579: 【権威】2026-08-06、月間の升目に見えている予定が、日付を開いた
@@ -50818,7 +50916,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.51.1', date: '2026-10-04',
+    ver: 'v0.51.3', date: '2026-10-05',
     items: [
       { icon:'🛠', t:'（管理者向け）仕事の案件を管理する機能を足しました',
         before:'ふだん使う方には関係のない変更です',
@@ -73688,6 +73786,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st406k1 && _st406k2)
            ? ok('ST-406·⑥: ［金］は金消日で決まる（入っていれば出る・空なら出ない）')
            : ng('ST-406·⑥: ［金］の出方が違う', JSON.stringify([_st406k1, _st406k2]));
+         // v0.51.3: 担当者と行く人
+         var _st406g = { tantou: 'Aさん', kinshoGoer: '自分', kessaiGoer: '' };
+         (tokiTantou(_st406g) === 'Aさん' && tokiGoer(_st406g, 'kinsho') === '自分' && tokiGoer(_st406g, 'kessai') === 'Aさん' && tokiTantou({}) === '自分')
+           ? ok('ST-406·⑧: 担当者（空なら自分）と、金消・決済に行く人（空なら担当者）が決まる')
+           : ng('ST-406·⑧: 担当者・行く人の決まり方が違う', '');
+         // v0.51.2: 月間の印
+         var _st406m = tokiMarksOnDate('2026-10-04').map(function(m) { return m.label + m.box; }).join(',');
+         (_st406m.indexOf('決B2') !== -1)
+           ? ok('ST-406·⑦: 月間のマス目に、その日の金消・決済・完了予定の印が出る')
+           : ng('ST-406·⑦: 月間の印が違う', _st406m);
          (getDailyTasks(_t)[1].concat(getDailyTasks(_t)[2], getDailyTasks(_t)[3], getDailyTasks(_t)[4]).every(function(x) { return x.kind !== 'toki'; }))
            ? ok('ST-406·⑤: 登記の案件は、日次の普通の予定には混ざらない')
            : ng('ST-406·⑤: 普通の予定に混ざった', '');
