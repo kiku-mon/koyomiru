@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.52.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.52.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.52.1';
+    const APP_VERSION = 'v0.52.2';
   const APP_LAST_UPDATED = '2026-10-05'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14895,6 +14895,14 @@ function renderTodoList() {
       if (c.kinshoDate && c.kinshoDate < todayYmd && !s1['金']) out.push('金消を過ぎています');
       if (c.kessaiDate && c.kessaiDate < todayYmd && !s1['決']) out.push('決済を過ぎています');
       if (c.kanryoDate && c.kanryoDate < todayYmd && !s2['謄本']) out.push('完了予定を過ぎています');
+      // v0.52.2: 7日以内の金消・決済で、段取り（時間・場所・行き方・事務所発）が固まっていなければ、足りない欄を知らせる
+      var missing = function(k) {
+        var names = [['Time', '時間'], ['Place', '場所'], ['Means', '行き方'], ['Depart', '事務所発']];
+        return names.filter(function(n) { return !c[k + n[0]]; }).map(function(n) { return n[1]; });
+      };
+      var soon = function(ymd) { return ymd && ymd >= todayYmd && _tokiDaysLeft(ymd, todayYmd) <= 7; };
+      if (!c.kinshoNone && soon(c.kinshoDate)) { var mk = missing('kinsho'); if (mk.length) out.push('金消の段取りが未確定（' + mk.join('・') + '）'); }
+      if (!c.kessaiAuto && soon(c.kessaiDate)) { var mz = missing('kessai'); if (mz.length) out.push('決済の段取りが未確定（' + mz.join('・') + '）'); }
       return out;
     }
     window.tokiAlerts = tokiAlerts;
@@ -15014,12 +15022,20 @@ function renderTodoList() {
         };
         // v0.52.0: 金消は「なし」「未定」「日付」の3つ。あるかないかで動きと速さが変わるので、未定もはっきり出す。
         // 決済は日付・時間・場所。自動決済（立会なし）は時間・場所・行く人を出さない。
+        // v0.52.2: 時間・場所・地図・行き方・事務所発
+        var plan = function(k) {
+          var MI = { '車': '🚗車', '電車': '🚃電車', 'その他': '🚶その他' };
+          return (c[k + 'Time'] ? ' ' + esc(c[k + 'Time']) : '') + (c[k + 'Place'] ? ' ' + esc(c[k + 'Place']) : '') +
+            (c[k + 'Map'] ? ' <a href="' + esc(c[k + 'Map']) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="color:#2f6fed;text-decoration:none;">🗺地図</a>' : '') +
+            (c[k + 'Means'] ? ' ' + (MI[c[k + 'Means']] || esc(c[k + 'Means'])) : '') +
+            (c[k + 'Depart'] ? ' <b>' + esc(c[k + 'Depart']) + '事務所発</b>' : '');
+        };
         var kinshoPart = c.kinshoNone ? '<span style="color:#888;">金消 なし</span>'
-          : c.kinshoDate ? _tokiDateLabel('金消', c.kinshoDate, today) + goerTag('kinsho') : '<span style="color:#999;">金消 未定</span>';
+          : c.kinshoDate ? _tokiDateLabel('金消', c.kinshoDate, today) + plan('kinsho') + goerTag('kinsho') : '<span style="color:#999;">金消 未定</span>';
         var kessaiPart = !c.kessaiDate ? '<span style="color:#999;">決済 未定</span>'
           : _tokiDateLabel('決済', c.kessaiDate, today) +
             (c.kessaiAuto ? '<span style="color:#0b7285;font-weight:700;">（自動決済）</span>'
-              : (c.kessaiTime ? ' ' + esc(c.kessaiTime) : '') + (c.kessaiPlace ? ' ' + esc(c.kessaiPlace) : '') + goerTag('kessai'));
+              : plan('kessai') + goerTag('kessai'));
         var dates = [kinshoPart, kessaiPart,
                      _tokiDateLabel('完了予定', c.kanryoDate, today)]
           .filter(function(x) { return !!x; }).join('　｜　');
@@ -15127,6 +15143,23 @@ function renderTodoList() {
           '<input id="' + id + '" class="toki-input" type="' + (type || 'text') + '" value="' + esc(val || '') + '" placeholder="' + esc(ph || '') + '" autocomplete="off" ' +
           'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;">';
       };
+      // v0.52.2: 【権威】2026-10-05、金消・決済は、時間・場所・地図・行き方・事務所発まで決まって初めて固まる、との指摘
+      var planFields = function(kind, name, c) {
+        var K = kind === 'kinsho' ? 'Kinsho' : 'Kessai';
+        var g = function(f) { return c ? c[kind + f] : ''; };
+        var means = g('Means') || '';
+        return '<div style="border-left:3px solid #e3e7f0;padding-left:8px;margin:4px 0 0;">' +
+          field(name + 'の時間', 'toki' + K + 'Time', g('Time'), 'time') +
+          field(name + 'の場所', 'toki' + K + 'Place', g('Place'), 'text', '千葉銀行 稲毛支店') +
+          field(name + 'の地図（GoogleマップのURL）', 'toki' + K + 'Map', g('Map'), 'url', 'https://maps.app.goo.gl/…') +
+          '<label style="display:block;font-size:0.8em;color:#555;margin:8px 0 2px;">行き方</label>' +
+          '<select id="toki' + K + 'Means" class="toki-input" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;background:#fff;">' +
+            ['', '車', '電車', 'その他'].map(function(m) { return '<option value="' + m + '"' + (means === m ? ' selected' : '') + '>' + (m || '未定') + '</option>'; }).join('') +
+          '</select>' +
+          field('事務所を出る時刻', 'toki' + K + 'Depart', g('Depart'), 'time') +
+          field(name + 'に行く人（空なら担当者）', 'toki' + K + 'Goer', g('Goer'), 'text', '自分') +
+        '</div>';
+      };
       var check = function(id, label, on) {
         return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:0.8em;color:#555;margin-top:4px;"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
       };
@@ -15142,14 +15175,10 @@ function renderTodoList() {
         field('担当者（空なら自分）', 'tokiTantou', c && c.tantou, 'text', '星加さん') +
         field('金消日', 'tokiKinsho', c && c.kinshoDate, 'date') +
         check('tokiKinshoNone', '金消なし', c && c.kinshoNone) +
-        field('金消に行く人（空なら担当者）', 'tokiKinshoGoer', c && c.kinshoGoer, 'text', '自分') +
+        '<div id="tokiKinshoWhere">' + planFields('kinsho', '金消', c) + '</div>' +
         field('決済日（決まったら）', 'tokiKessai', c && c.kessaiDate, 'date') +
         check('tokiKessaiAuto', '自動決済（立会なし）', c && c.kessaiAuto) +
-        '<div id="tokiKessaiWhere">' +
-          field('決済の時間', 'tokiKessaiTime', c && c.kessaiTime, 'time') +
-          field('決済の場所', 'tokiKessaiPlace', c && c.kessaiPlace, 'text', '千葉銀行 稲毛支店') +
-          field('決済に行く人（空なら担当者）', 'tokiKessaiGoer', c && c.kessaiGoer, 'text', '自分') +
-        '</div>' +
+        '<div id="tokiKessaiWhere">' + planFields('kessai', '決済', c) + '</div>' +
         field('完了予定日', 'tokiKanryo', c && c.kanryoDate, 'date') +
         '<datalist id="tokiPeopleList">' + tokiKnownPeople().map(function(n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
         '<div style="font-size:0.8em;color:#555;margin:10px 0 2px;">要る工程（決済まで）<span style="color:#999;font-size:0.9em;">　※［金］は、金消日を入れると出ます</span></div><div>' +
@@ -15167,7 +15196,7 @@ function renderTodoList() {
       var $ = function(id) { return document.getElementById(id); };
       var hint = $('tokiHint');
       // 金消なし・自動決済で、要らない欄を閉じる
-      var syncKinsho = function() { var none = $('tokiKinshoNone').checked; $('tokiKinsho').disabled = none; $('tokiKinshoGoer').disabled = none; if (none) $('tokiKinsho').value = ''; };
+      var syncKinsho = function() { var none = $('tokiKinshoNone').checked; $('tokiKinsho').disabled = none; $('tokiKinshoWhere').style.display = none ? 'none' : 'block'; if (none) $('tokiKinsho').value = ''; };
       var syncAuto = function() { $('tokiKessaiWhere').style.display = $('tokiKessaiAuto').checked ? 'none' : 'block'; };
       $('tokiKinshoNone').onchange = syncKinsho; $('tokiKessaiAuto').onchange = syncAuto; syncKinsho(); syncAuto();
       // ボックス番号：頭にB
@@ -15184,7 +15213,7 @@ function renderTodoList() {
       $('tokiBuyer').addEventListener('paste', function() { setTimeout(tryParse, 0); });
       $('tokiBuyer').addEventListener('blur', tryParse);
       // Enterで次の欄へ（最後の欄なら保存）
-      var inputs = [].slice.call(ov.querySelectorAll('input.toki-input'));
+      var inputs = [].slice.call(ov.querySelectorAll('input.toki-input, select.toki-input'));
       inputs.forEach(function(inp) {
         inp.addEventListener('keydown', function(e) {
           if (e.key !== 'Enter' || e.isComposing) return;
@@ -15221,11 +15250,21 @@ function renderTodoList() {
         target.kinshoDate = target.kinshoNone ? '' : v('tokiKinsho');
         target.kessaiDate = v('tokiKessai'); target.kanryoDate = v('tokiKanryo');
         target.kessaiAuto = $('tokiKessaiAuto').checked;
-        target.kessaiTime = target.kessaiAuto ? '' : v('tokiKessaiTime');
-        target.kessaiPlace = target.kessaiAuto ? '' : v('tokiKessaiPlace');
         target.tantou = v('tokiTantou');
-        target.kinshoGoer = target.kinshoNone ? '' : v('tokiKinshoGoer');
-        target.kessaiGoer = target.kessaiAuto ? '' : v('tokiKessaiGoer');
+        // v0.52.2: 金消・決済の段取り（なし・自動決済なら空にする）。地図は https のURLだけ受け付ける
+        var safeUrl = function(u) { return /^https:\/\//i.test(u) ? u : ''; };
+        [['kinsho', 'Kinsho', target.kinshoNone], ['kessai', 'Kessai', target.kessaiAuto]].forEach(function(x) {
+          var k = x[0], K = x[1], off = x[2];
+          target[k + 'Time'] = off ? '' : v('toki' + K + 'Time');
+          target[k + 'Place'] = off ? '' : v('toki' + K + 'Place');
+          target[k + 'Map'] = off ? '' : safeUrl(v('toki' + K + 'Map'));
+          target[k + 'Means'] = off ? '' : v('toki' + K + 'Means');
+          target[k + 'Depart'] = off ? '' : v('toki' + K + 'Depart');
+          target[k + 'Goer'] = off ? '' : v('toki' + K + 'Goer');
+        });
+        if (v('tokiKinshoMap') && !safeUrl(v('tokiKinshoMap')) || v('tokiKessaiMap') && !safeUrl(v('tokiKessaiMap'))) {
+          if (typeof showToast === 'function') showToast('⚠️ 地図は https:// で始まるURLだけ保存しました（それ以外は空にしました）');
+        }
         target.enabled1 = enabled.concat(['金']);
         target.updatedAt = now;
         if (!c) {
@@ -51094,7 +51133,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.52.1', date: '2026-10-05',
+    ver: 'v0.52.2', date: '2026-10-05',
     items: [
       { icon:'🛠', t:'（管理者向け）仕事の案件を管理する機能を整えました',
         before:'ふだん使う方には関係のない変更です',
@@ -73947,7 +73986,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-406·②: 並びが違う', _st406order);
          var _st406al = tokiAlerts(allTasks.filter(function(x) { return x.id === 'st406-b'; })[0], _t).join('') + '|' +
                         tokiAlerts(allTasks.filter(function(x) { return x.id === 'st406-c'; })[0], _t).join('');
-         (_st406al === '今日は決済|完了予定を過ぎています')
+         // v0.52.2: 今日の決済には、段取りが空なら「決済の段取りが未確定」も付く
+         (_st406al.indexOf('今日は決済') === 0 && _st406al.indexOf('決済の段取りが未確定（時間・場所・行き方・事務所発）') !== -1 && /\|完了予定を過ぎています$/.test(_st406al))
            ? ok('ST-406·③: 今日の決済、完了予定を過ぎたのに謄本が済んでいない、を目立たせる')
            : ng('ST-406·③: 目立たせる印が違う', _st406al);
          toggleTokiStep('st406-a', 1, '物');
@@ -73976,6 +74016,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st406o === 'Y,X')
            ? ok('ST-406·⑬: 手で並べ替えたら、日付よりその順を優先する')
            : ng('ST-406·⑬: 手で並べた順にならない', _st406o);
+         // v0.52.2: 段取りの知らせは、7日以内の金消・決済で、足りない欄だけ
+         var _st406pl = tokiAlerts({ kessaiDate: '2026-10-07', kessaiTime: '14:00', kessaiPlace: '銀行', kessaiMeans: '電車', steps1: {}, steps2: {} }, _t).join('');
+         var _st406far = tokiAlerts({ kessaiDate: '2026-11-30', steps1: {}, steps2: {} }, _t).join('');
+         var _st406auto = tokiAlerts({ kessaiDate: '2026-10-07', kessaiAuto: true, steps1: {}, steps2: {} }, _t).join('');
+         (_st406pl === '決済の段取りが未確定（事務所発）' && _st406far === '' && _st406auto === '')
+           ? ok('ST-406·⑮: 7日以内の決済で段取りが足りなければ、足りない欄を知らせる（先の案件・自動決済は知らせない）')
+           : ng('ST-406·⑮: 段取りの知らせが違う', JSON.stringify([_st406pl, _st406far, _st406auto]));
          // v0.52.1: 矢印で並べ替え
          var _st406save2 = window.saveAllTasks; window.saveAllTasks = function(){};
          var _st406r = _tokiRefreshAll; window._tokiRefreshAll = function(){};
