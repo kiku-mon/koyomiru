@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.50.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.51.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.50.5';
+    const APP_VERSION = 'v0.51.0';
   const APP_LAST_UPDATED = '2026-10-04'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7610,6 +7610,8 @@ function _showInviteWelcome() {
       <input type="text" class="task-input" id="input1" data-form-type="other" data-lpignore="true" data-1p-ignore placeholder="本質的で今すぐ必要な行動は？..." autocomplete="off" name="koyomiru-task-input-1">
       <!-- v0.49.13: 何日かにまたがる予定の「つづきの日」の帯。第一象限の中、入力欄の下・予定の一覧の上に置く。
            （v0.49.10では4つの枠のマス目の中の先頭に置いてしまい、帯が1マスを占領して4つの枠がずれていた） -->
+      <!-- v0.51.0: 登記モード（管理者だけ）。4つの枠のマス目を崩さないよう、枠の中に置く -->
+      <div id="tokiPanelMatrix" style="display:none;"></div>
       <div id="dailySpanStripMatrix" style="display:none;"></div>
       <ul class="task-list" id="list1"></ul>
     </div>
@@ -10038,7 +10040,14 @@ function _showInviteWelcome() {
              Supabaseダッシュボードを開かずにアプリ内で確認したいとの要望を受け追加。
              生データは返さず集計値のみを取得する（訪問者IDを画面に出さないため）。
              読み取りはDB側のSECURITY DEFINER関数で管理者本人に限定している。 -->
-        <div id="adminVisitStatsArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+        <!-- v0.51.0: 登記モード。管理者モードのとき、かつ、ここをオンにしたときだけ、日次に登記の案件が出る -->
+<div id="adminTokiModeArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+  <label style="display:flex;align-items:center;gap:8px;font-size:0.85em;font-weight:700;color:#8ec5ff;cursor:pointer;">
+    <input type="checkbox" id="tokiModeToggle" onchange="setTokiMode(this.checked)" style="width:18px;height:18px;"> 📝 登記モードを使う
+  </label>
+  <div style="font-size:0.75em;color:#9aa6b8;margin-top:4px;line-height:1.6;">日次のマトリクスと魚の目に、登記の案件（ボックス番号・金消・決済・完了予定・工程）を出します。管理者モードのときだけ出ます。</div>
+</div>
+<div id="adminVisitStatsArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
           <div style="font-size:0.82em;font-weight:700;color:#8ec5ff;margin-bottom:8px;">📊 訪問統計（直近14日）</div>
           <button id="adminVisitStatsBtn" onclick="loadAdminVisitStats()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;font-size:0.94em;cursor:pointer;margin-bottom:8px;">🔄 訪問統計を読み込む</button>
           <div id="adminVisitStatsList" style="font-size:0.9em;color:#ccc;line-height:1.7;"></div>
@@ -14793,6 +14802,217 @@ function renderTodoList() {
       return true;
     }
     window._isTaskShownInDailyView = _isTaskShownInDailyView;
+    // ===== v0.51.0: 登記モード（管理者だけ） =====
+    // 【権威】2026-10-04、仕事の登記の案件を毎朝タスクとして打ち直している、との相談。決済まで・完了分までを
+    // 一連の流れとして持ち、工程を押すだけで進められるようにする。自分しか使わないので、管理者モードのとき、
+    // かつ、管理者向けの欄で登記モードをオンにしたときだけ出す（2重の鍵）。
+    // 案件はボックス番号（例 B20430）と買主（余裕があれば売主）で見分ける。金消日・決済日・完了予定日を持つ。
+    // 工程は2段：1段目（決済まで）と2段目（完了分）。2段目の最後（依頼＝チェック者に回す）が済んだら完了して閉じる。
+    // 予定（task）とは別の種類（kind:'toki'）にして、月間・検索・ほかの日次の枠には混ざらないようにする。
+    var TOKI_STEPS_1 = ['物', '入', '押', '申', '依', 'カク', '組', '決', '金'];
+    var TOKI_STEPS_2 = ['謄本', '印字', '送付状', '法務局からの返却', '組み立て', 'カク', '依頼'];
+    window.TOKI_STEPS_1 = TOKI_STEPS_1; window.TOKI_STEPS_2 = TOKI_STEPS_2;
+    function isTokiModeOn() {
+      return !!(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode() &&
+        allSettings && allSettings.flags && allSettings.flags.tokiMode);
+    }
+    window.isTokiModeOn = isTokiModeOn;
+    function setTokiMode(on) {
+      if (!allSettings.flags) allSettings.flags = {};
+      allSettings.flags.tokiMode = !!on;
+      saveAllSettings();
+      if (typeof renderTokiPanel === 'function') { renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad'); }
+      if (typeof showToast === 'function') showToast(on ? '📝 登記モードを使います' : '登記モードを止めました');
+    }
+    window.setTokiMode = setTokiMode;
+    function getTokiCases(includeClosed) {
+      return allTasks.filter(function(t) { return t && t.kind === 'toki' && (includeClosed || !t.closed); });
+    }
+    window.getTokiCases = getTokiCases;
+    // 次に来る日（金消・決済・完了予定のうち、今日以降でいちばん近い日）。無ければ、過ぎたうちの最後の日
+    function _tokiNextDate(c, todayYmd) {
+      var ds = [c.kinshoDate, c.kessaiDate, c.kanryoDate].filter(function(x) { return !!x; }).sort();
+      var up = ds.filter(function(x) { return x >= todayYmd; });
+      return up.length ? up[0] : (ds.length ? ds[ds.length - 1] : '9999-12-31');
+    }
+    function sortTokiCases(list, todayYmd) {
+      return list.slice().sort(function(a, b) {
+        var da = _tokiNextDate(a, todayYmd), db = _tokiNextDate(b, todayYmd);
+        return da === db ? String(a.box || '').localeCompare(String(b.box || '')) : (da < db ? -1 : 1);
+      });
+    }
+    window.sortTokiCases = sortTokiCases;
+    // 目立たせる印：今日の金消・決済／過ぎたのに［金］［決］が済んでいない／完了予定を過ぎたのに［謄本］が済んでいない
+    function tokiAlerts(c, todayYmd) {
+      var s1 = c.steps1 || {}, s2 = c.steps2 || {}, out = [];
+      if (c.kinshoDate === todayYmd) out.push('今日は金消');
+      if (c.kessaiDate === todayYmd) out.push('今日は決済');
+      if (c.kinshoDate && c.kinshoDate < todayYmd && !s1['金'] && (c.enabled1 || TOKI_STEPS_1).indexOf('金') !== -1) out.push('金消を過ぎています');
+      if (c.kessaiDate && c.kessaiDate < todayYmd && !s1['決']) out.push('決済を過ぎています');
+      if (c.kanryoDate && c.kanryoDate < todayYmd && !s2['謄本']) out.push('完了予定を過ぎています');
+      return out;
+    }
+    window.tokiAlerts = tokiAlerts;
+    function toggleTokiStep(caseId, row, step) {
+      var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
+      if (!c) return;
+      var key = row === 2 ? 'steps2' : 'steps1';
+      c[key] = c[key] || {};
+      c[key][step] = !c[key][step];
+      // 2段目の最後（依頼）が済んだら完了して閉じる。戻したら開き直す
+      var last = TOKI_STEPS_2[TOKI_STEPS_2.length - 1];
+      if (row === 2 && step === last) { c.closed = !!c[key][step]; c.closedAt = c.closed ? new Date().toISOString() : null; }
+      c.updatedAt = new Date().toISOString();
+      saveAllTasks();
+      renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad');
+      if (row === 2 && step === last && c.closed && typeof showToast === 'function') showToast('✅ ' + (c.box || '') + ' を完了にしました（済んだ案件に移しました）');
+    }
+    window.toggleTokiStep = toggleTokiStep;
+    function _tokiDaysLeft(ymd, todayYmd) {
+      var a = String(todayYmd).split('-'), b = String(ymd).split('-');
+      return Math.round((new Date(+b[0], +b[1] - 1, +b[2]) - new Date(+a[0], +a[1] - 1, +a[2])) / 86400000);
+    }
+    function _tokiDateLabel(name, ymd, todayYmd) {
+      if (!ymd) return '';
+      var p = String(ymd).split('-'), n = _tokiDaysLeft(ymd, todayYmd);
+      var rest = n > 0 ? 'あと' + n + '日' : n === 0 ? '<b style="color:#d9480f;">今日</b>' : (-n) + '日前';
+      return name + ' ' + Number(p[1]) + '/' + Number(p[2]) + '・' + rest;
+    }
+    function renderTokiPanel(elId) {
+      var el = document.getElementById(elId);
+      if (!el) return;
+      var tg = document.getElementById('tokiModeToggle');
+      if (tg) tg.checked = !!(allSettings.flags && allSettings.flags.tokiMode);
+      if (!isTokiModeOn()) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
+      var today = getLocalDateStr(new Date());
+      var list = sortTokiCases(getTokiCases(false), today);
+      var chip = function(c, row, step, done, faint) {
+        return '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',' + row + ',\'' + esc(step) + '\')" style="padding:2px 7px;margin:2px 2px 0 0;border-radius:6px;font-size:0.78em;cursor:pointer;' +
+          (done ? 'background:#2f9e44;color:#fff;border:1px solid #2f9e44;' : 'background:#fff;color:' + (faint ? '#bbb' : '#444') + ';border:1px solid ' + (faint ? '#e3e3e3' : '#ccd') + ';') + '">' +
+          esc(step) + (done ? '✓' : '') + '</button>';
+      };
+      var rows = list.map(function(c) {
+        var al = tokiAlerts(c, today), s1 = c.steps1 || {}, s2 = c.steps2 || {};
+        var en1 = c.enabled1 || TOKI_STEPS_1;
+        var stage2Faint = !s1['決'];
+        var dates = [_tokiDateLabel('金消', c.kinshoDate, today), _tokiDateLabel('決済', c.kessaiDate, today), _tokiDateLabel('完了予定', c.kanryoDate, today)]
+          .filter(function(x) { return !!x; }).join('　｜　');
+        return '<div style="padding:7px 8px;margin:0 0 6px;border-radius:8px;background:' + (al.length ? '#fff4e6' : '#f6f8fc') + ';border-left:4px solid ' + (al.length ? '#e8590c' : '#5b8def') + ';">' +
+          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;"><b>' + esc(c.box || '') + '</b>　' + esc(c.buyer || '') + '様' +
+            (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(c.seller) + '様）</span>' : '') + '</div>' +
+          (dates ? '<div style="font-size:0.75em;color:#666;margin-top:2px;">' + dates + '</div>' : '') +
+          (al.length ? '<div style="font-size:0.75em;color:#d9480f;font-weight:700;margin-top:2px;">⚠️ ' + al.join('・') + '</div>' : '') +
+          '<div style="margin-top:3px;">' + en1.map(function(st) { return chip(c, 1, st, !!s1[st], false); }).join('') + '</div>' +
+          '<div style="margin-top:2px;"><span style="font-size:0.72em;color:' + (stage2Faint ? '#bbb' : '#666') + ';margin-right:3px;">完了分</span>' +
+            TOKI_STEPS_2.map(function(st) { return chip(c, 2, st, !!s2[st], stage2Faint); }).join('') + '</div>' +
+        '</div>';
+      }).join('');
+      var closedN = getTokiCases(true).filter(function(t) { return t.closed; }).length;
+      el.innerHTML = '<div style="padding:4px 6px 2px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+          '<span style="font-size:0.85em;font-weight:700;color:#333;">📝 登記の案件（' + list.length + '件）</span>' +
+          '<span><button onclick="openTokiCaseEditor()" style="padding:3px 9px;border-radius:6px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;">＋ 登記の案件</button>' +
+          (closedN ? ' <button onclick="openTokiClosedList()" style="padding:3px 7px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#888;font-size:0.75em;cursor:pointer;">済んだ案件 ' + closedN + '</button>' : '') + '</span></div>' +
+        (rows || '<div style="font-size:0.8em;color:#999;padding:4px 0 8px;">案件はまだありません</div>') + '</div>';
+      el.style.display = 'block';
+    }
+    window.renderTokiPanel = renderTokiPanel;
+    // 案件を作る・直す
+    function openTokiCaseEditor(caseId) {
+      var c = caseId ? allTasks.filter(function(t) { return t && t.id === caseId; })[0] : null;
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
+      var en1 = (c && c.enabled1) || TOKI_STEPS_1;
+      var ov = document.createElement('div');
+      ov.id = 'tokiCaseOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:14px;';
+      var field = function(label, id, val, type, ph) {
+        return '<label style="display:block;font-size:0.8em;color:#555;margin:8px 0 2px;">' + label + '</label>' +
+          '<input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(val || '') + '" placeholder="' + esc(ph || '') + '" autocomplete="off" ' +
+          'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;">';
+      };
+      ov.innerHTML = '<form onsubmit="return false;" autocomplete="off" style="background:#fff;border-radius:14px;max-width:420px;width:100%;max-height:88vh;overflow:auto;padding:16px 16px 14px;">' +
+        '<div style="font-weight:700;margin-bottom:4px;">📝 ' + (c ? '登記の案件を直す' : '登記の案件を作る') + '</div>' +
+        field('ボックス番号（必須）', 'tokiBox', c && c.box, 'text', '例：B20430') +
+        field('買主（必須）', 'tokiBuyer', c && c.buyer, 'text', '例：大塚') +
+        field('売主', 'tokiSeller', c && c.seller, 'text', '例：田中') +
+        field('金消日', 'tokiKinsho', c && c.kinshoDate, 'date') +
+        field('決済日（必須）', 'tokiKessai', c && c.kessaiDate, 'date') +
+        field('完了予定日', 'tokiKanryo', c && c.kanryoDate, 'date') +
+        '<div style="font-size:0.8em;color:#555;margin:10px 0 2px;">要る工程（決済まで）</div><div>' +
+          TOKI_STEPS_1.map(function(st) {
+            return '<label style="display:inline-flex;align-items:center;gap:3px;margin:2px 8px 2px 0;font-size:0.85em;"><input type="checkbox" data-toki-step="' + esc(st) + '"' + (en1.indexOf(st) !== -1 ? ' checked' : '') + '>' + esc(st) + '</label>';
+          }).join('') + '</div>' +
+        '<div id="tokiHint" style="min-height:1.3em;font-size:0.8em;color:#c07a2a;margin:6px 0;"></div>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<button id="tokiSaveBtn" type="submit" style="flex:2;padding:10px;border:none;border-radius:9px;background:#2f6fed;color:#fff;font-weight:700;">保存</button>' +
+          (c ? '<button id="tokiDeleteBtn" type="button" style="flex:1;padding:10px;border:1px solid #f3c4c4;border-radius:9px;background:#fff;color:#c0392b;">削除</button>' : '') +
+          '<button type="button" onclick="document.getElementById(\'tokiCaseOverlay\').remove()" style="flex:1;padding:10px;border:1px solid #ccd;border-radius:9px;background:#fff;">閉じる</button>' +
+        '</div></form>';
+      document.body.appendChild(ov);
+      var hint = document.getElementById('tokiHint');
+      document.getElementById('tokiSaveBtn').onclick = function() {
+        var v = function(id) { return String(document.getElementById(id).value || '').trim(); };
+        var box = v('tokiBox').toUpperCase(), buyer = v('tokiBuyer'), kessai = v('tokiKessai');
+        if (!box || !buyer || !kessai) { hint.textContent = 'ボックス番号・買主・決済日は必須です'; return; }
+        var dup = getTokiCases(true).filter(function(t) { return t.box === box && (!c || t.id !== c.id) && !t.closed; })[0];
+        if (dup && !document.getElementById('tokiSaveBtn').dataset.dupOk) {
+          hint.textContent = '同じボックス番号（' + box + '）の案件がすでにあります。それでも保存するときは、もう一度「保存」を押してください';
+          document.getElementById('tokiSaveBtn').dataset.dupOk = '1';
+          return;
+        }
+        var enabled = [].filter.call(ov.querySelectorAll('[data-toki-step]'), function(x) { return x.checked; })
+          .map(function(x) { return x.getAttribute('data-toki-step'); });
+        var now = new Date().toISOString();
+        var target = c || { id: (typeof generateTaskId === 'function') ? generateTaskId() : ('toki-' + Date.now()), kind: 'toki',
+          steps1: {}, steps2: {}, closed: false, createdAt: now };
+        target.box = box; target.buyer = buyer; target.seller = v('tokiSeller');
+        target.kinshoDate = v('tokiKinsho'); target.kessaiDate = kessai; target.kanryoDate = v('tokiKanryo');
+        target.enabled1 = enabled.length ? enabled : TOKI_STEPS_1.slice();
+        target.updatedAt = now;
+        if (!c) allTasks.push(target);
+        saveAllTasks();
+        ov.remove();
+        renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad');
+        if (typeof showToast === 'function') showToast('📝 ' + box + ' を保存しました');
+      };
+      var del = document.getElementById('tokiDeleteBtn');
+      if (del) del.onclick = function() {
+        var go = function() {
+          if (typeof deleteTaskById === 'function') deleteTaskById(c.id);
+          else { allTasks = allTasks.filter(function(t) { return t.id !== c.id; }); saveAllTasks(); }
+          ov.remove(); renderTokiPanel('tokiPanelMatrix'); renderTokiPanel('tokiPanelQuad');
+        };
+        if (typeof showChoiceModal === 'function') {
+          showChoiceModal({ title: '案件を削除', desc: (c.box || '') + '（' + (c.buyer || '') + '様）を削除します。',
+            buttons: [ { label: '削除する', style: 'danger', dangerConfirm: false, onClick: go }, { label: 'やめる', style: 'cancel' } ] });
+        } else { go(); }
+      };
+    }
+    window.openTokiCaseEditor = openTokiCaseEditor;
+    // 済んだ案件（あとから見返せる・戻せる）
+    function openTokiClosedList() {
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
+      var list = getTokiCases(true).filter(function(t) { return t.closed; })
+        .sort(function(a, b) { return String(b.closedAt || '').localeCompare(String(a.closedAt || '')); });
+      var ov = document.createElement('div');
+      ov.id = 'tokiClosedOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:14px;';
+      ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
+      ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;max-height:80vh;overflow:auto;padding:16px;">' +
+        '<div style="font-weight:700;margin-bottom:8px;">✅ 済んだ案件（' + list.length + '件）</div>' +
+        list.map(function(c) {
+          var dd = String(c.closedAt || '').slice(0, 10);
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:0.88em;">' +
+            '<span><b>' + esc(c.box || '') + '</b>　' + esc(c.buyer || '') + '様<span style="color:#999;font-size:0.85em;">　完了 ' + esc(dd) + '</span></span>' +
+            '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',2,\'' + esc(TOKI_STEPS_2[TOKI_STEPS_2.length - 1]) + '\');document.getElementById(\'tokiClosedOverlay\').remove();" style="padding:3px 8px;border:1px solid #ccd;border-radius:6px;background:#fff;font-size:0.8em;">戻す</button></div>';
+        }).join('') +
+        '<button onclick="document.getElementById(\'tokiClosedOverlay\').remove()" style="margin-top:10px;width:100%;padding:9px;border:1px solid #ccd;border-radius:9px;background:#fff;">閉じる</button></div>';
+      document.body.appendChild(ov);
+    }
+    window.openTokiClosedList = openTokiClosedList;
+    // ===== END v0.51.0 登記モード =====
+
     function getOngoingSpanTasks(dateStr) {
       return allTasks.filter(function(t) {
         if (!t || !t.endDate || !t.date || !dateStr) return false;
@@ -27361,6 +27581,7 @@ function saveMsbEdit() {
       // マスターデータからタスクを取得
       const targetDate = dateStr || getLocalDateStr(new Date());
       if (sectionNum === 1 && typeof renderDailySpanStrip === 'function') renderDailySpanStrip('dailySpanStripMatrix', targetDate);   // v0.49.10
+      if (sectionNum === 1 && typeof renderTokiPanel === 'function') renderTokiPanel('tokiPanelMatrix');   // v0.51.0: 登記モード
       const dailyTasks = getDailyTasks(targetDate);
       const sectionTasks = dailyTasks[sectionNum];
       sectionTasks.forEach((task, index) => {
@@ -28627,7 +28848,9 @@ function saveMsbEdit() {
             // 登録し忘れていたため、SPAGが「知らない種類がある」と警告し続けていた。
             // 予定ではないので、ここに載せるのが正しい。
             'yukari',
-          ];
+          ,
+            // v0.51.0: 登記モードの案件（管理者だけ）
+            'toki'];
           const validTasks = tasksData.filter(task => {
             if (!task.id || typeof task.id !== 'string') { _invalidCount++; return false; }
             // タスクkindは厳密バリデート
@@ -39259,6 +39482,12 @@ function renderDashboardView() {
       try {
         var _firstCol = body.firstChild;
         if (_firstCol && typeof renderDailySpanStrip === 'function') {
+          // v0.51.0: 登記モード（管理者だけ）の入れ物も、同じ列の中に作る
+          var _tokiBox = document.createElement('div');
+          _tokiBox.id = 'tokiPanelQuad';
+          _tokiBox.style.display = 'none';
+          _firstCol.insertBefore(_tokiBox, _firstCol.children[2] || null);
+          if (typeof renderTokiPanel === 'function') renderTokiPanel('tokiPanelQuad');
           var _stripBox = document.createElement('div');
           _stripBox.id = 'dailySpanStripQuad';
           _stripBox.style.display = 'none';
@@ -50578,6 +50807,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.51.0', date: '2026-10-04',
+    items: [
+      { icon:'🛠', t:'（管理者向け）仕事の案件を管理する機能を足しました',
+        before:'ふだん使う方には関係のない変更です',
+        after:'管理者だけが使う機能です。ふだんの画面は変わりません' }
+    ]
+  },
   {
     ver: 'v0.50.5', date: '2026-10-04',
     items: [
@@ -67229,7 +67466,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
                         'travel_schedule_item', 'travel_prep_item',
                         'anniversary', 'occasion', 'blogPost', 'finance',
                         'yukari',   // v0.45.1769: ゆかりの人
-         'money'];   // v0.49.4: お金（財布）。本体の一覧には登録済みで、テスト側の一覧だけ漏れていた
+         'money',   // v0.49.4: お金（財布）。本体の一覧には登録済みで、テスト側の一覧だけ漏れていた
+         'toki'];   // v0.51.0: 登記モードの案件
        var _r153existingKinds = {};
        allTasks.forEach(function(t){
          if (t.kind) _r153existingKinds[t.kind] = (_r153existingKinds[t.kind]||0) + 1;
@@ -73392,6 +73630,59 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-405: 例外', e.message);
+     }
+
+     // ===== ST-406: 登記モード（管理者だけ）（v0.51.0〜） =====
+     var _st406backup = allTasks.slice();
+     var _st406fns = { admin: window.isKoyomiruAdminMode, save: window.saveAllTasks, toast: window.showToast };
+     var _st406flag = (allSettings.flags || {}).tokiMode;
+     try {
+       if (typeof isTokiModeOn !== 'function' || typeof sortTokiCases !== 'function') {
+         ng('ST-406: 登記モードの処理が見つからない', '');
+       } else {
+         window.saveAllTasks = function(){}; window.showToast = function(){};
+         allSettings.flags = allSettings.flags || {};
+         allSettings.flags.tokiMode = true; window.isKoyomiruAdminMode = function() { return false; };
+         var _st406a = isTokiModeOn();
+         window.isKoyomiruAdminMode = function() { return true; }; allSettings.flags.tokiMode = false;
+         var _st406b = isTokiModeOn();
+         allSettings.flags.tokiMode = true;
+         var _st406c = isTokiModeOn();
+         (_st406a === false && _st406b === false && _st406c === true)
+           ? ok('ST-406·①: 管理者モードがオン、かつ、登記モードがオンのときだけ出る（2重の鍵）')
+           : ng('ST-406·①: 出る条件が違う', JSON.stringify([_st406a, _st406b, _st406c]));
+         var _t = '2026-10-04';
+         allTasks.push({ id:'st406-a', kind:'toki', box:'B1', buyer:'甲', kessaiDate:'2026-10-20', steps1:{}, steps2:{} });
+         allTasks.push({ id:'st406-b', kind:'toki', box:'B2', buyer:'乙', kessaiDate:'2026-10-04', steps1:{}, steps2:{} });
+         allTasks.push({ id:'st406-c', kind:'toki', box:'B3', buyer:'丙', kessaiDate:'2026-09-20', kanryoDate:'2026-10-01', steps1:{'決':true}, steps2:{} });
+         var _st406order = sortTokiCases(getTokiCases(false).filter(function(x) { return /^st406-/.test(x.id); }), _t).map(function(x) { return x.box; }).join(',');
+         (_st406order === 'B3,B2,B1')
+           ? ok('ST-406·②: 遅れている案件・今日の案件・先の案件の順に並ぶ（次に来る日の順）')
+           : ng('ST-406·②: 並びが違う', _st406order);
+         var _st406al = tokiAlerts(allTasks.filter(function(x) { return x.id === 'st406-b'; })[0], _t).join('') + '|' +
+                        tokiAlerts(allTasks.filter(function(x) { return x.id === 'st406-c'; })[0], _t).join('');
+         (_st406al === '今日は決済|完了予定を過ぎています')
+           ? ok('ST-406·③: 今日の決済、完了予定を過ぎたのに謄本が済んでいない、を目立たせる')
+           : ng('ST-406·③: 目立たせる印が違う', _st406al);
+         toggleTokiStep('st406-a', 1, '物');
+         var _st406s = !!allTasks.filter(function(x) { return x.id === 'st406-a'; })[0].steps1['物'];
+         toggleTokiStep('st406-a', 2, '依頼');
+         var _st406closed = allTasks.filter(function(x) { return x.id === 'st406-a'; })[0].closed;
+         toggleTokiStep('st406-a', 2, '依頼');
+         var _st406reopen = !allTasks.filter(function(x) { return x.id === 'st406-a'; })[0].closed;
+         (_st406s && _st406closed && _st406reopen)
+           ? ok('ST-406·④: 工程は押すと済み。完了分の最後（依頼）で閉じ、戻すと開き直す')
+           : ng('ST-406·④: 工程の進み方が違う', JSON.stringify([_st406s, _st406closed, _st406reopen]));
+         (getDailyTasks(_t)[1].concat(getDailyTasks(_t)[2], getDailyTasks(_t)[3], getDailyTasks(_t)[4]).every(function(x) { return x.kind !== 'toki'; }))
+           ? ok('ST-406·⑤: 登記の案件は、日次の普通の予定には混ざらない')
+           : ng('ST-406·⑤: 普通の予定に混ざった', '');
+       }
+     } catch(e) {
+       ng('ST-406: 例外', e.message);
+     } finally {
+       allTasks = _st406backup;
+       window.isKoyomiruAdminMode = _st406fns.admin; window.saveAllTasks = _st406fns.save; window.showToast = _st406fns.toast;
+       if (allSettings.flags) allSettings.flags.tokiMode = _st406flag;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
