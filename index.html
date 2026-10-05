@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.54.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.54.5 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.54.4';
+    const APP_VERSION = 'v0.54.5';
   const APP_LAST_UPDATED = '2026-10-05'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14918,7 +14918,7 @@ function renderTodoList() {
       var dayLabel = function(n) { return /日$/.test(n) ? n : n + 'の日'; };
       return {
         id: 'ippan', kind: 'gyomu', name: '一般', adminOnly: false, icon: '💼', stepLabels: s.stepLabels,
-        panelTitle: '💼 業務の案件', newButton: '＋ 案件', editorTitleNew: '案件を作る', editorTitleEdit: '案件を直す',
+        panelTitle: '💼 業務の案件', newButton: '＋ 業務の案件', editorTitleNew: '業務の案件を作る', editorTitleEdit: '業務の案件を直す',   // v0.54.5: 「＋ 案件」「＋ 業務」など、言葉がばらばらだった
         numberLabel: '案件番号', numberPrefix: s.numberPrefix, numberRequired: false,
         numberPlaceholder: s.numberPrefix ? '001（頭の' + s.numberPrefix + 'は自動で付きます）' : 'A-001（なくてもかまいません）',
         titleParse: true, titleKeyword: '場所',   // v0.54.3: 「内容：お客さま（場所：…）」を貼ると分ける
@@ -15128,18 +15128,24 @@ function renderTodoList() {
       var rest = n > 0 ? 'あと' + n + '日' : n === 0 ? '<b style="color:#d9480f;">今日</b>' : (-n) + '日前';
       return name + ' ' + Number(p[1]) + '/' + Number(p[2]) + '・' + rest;
     }
-    // v0.53.4: 済んだ案件を出す日数（済んだ日から、この日数のあいだは取り消し線で残す）
-    var GYOMU_CLOSED_SHOW_DAYS = 30;
-    function _gyomuShownClosed(kind, viewYmd) {
-      var from = new Date(viewYmd + 'T00:00:00'); from.setDate(from.getDate() - GYOMU_CLOSED_SHOW_DAYS);
-      var fromYmd = getLocalDateStr(from);
-      return getTokiCases(true, kind).filter(function(t) {
-        var dd = String(t.closedAt || '').slice(0, 10);
-        if (!t.closed || !dd) return false;
-        var local = getLocalDateStr(new Date(t.closedAt));
-        return local <= viewYmd && local >= fromYmd;
-      }).sort(function(a, b) { return String(b.closedAt).localeCompare(String(a.closedAt)); });
+    // v0.54.5: 【権威】2026-10-05、「30日で消える」は指示していない、勝手に消すな、普通の予定と同じく取り消し線で残せ、との指摘。
+    // 済んだ案件は期限なしで残す。見ている日を基準に、作る前の日には出さず、済む前の日は進行中として、済んだ日以降は取り消し線で出す。
+    var GYOMU_CLOSED_FIRST_SHOW = 10;   // 一覧の下に、まず出す済んだ案件の数（残りは「もっと見る」でその場で広げる。隠さない）
+    function _gyomuLocalYmd(iso) { if (!iso) return ''; var t = new Date(iso); return isNaN(t) ? String(iso).slice(0, 10) : getLocalDateStr(t); }
+    function _gyomuExistedOn(c, viewYmd) { var cr = _gyomuLocalYmd(c.createdAt); return !cr || cr <= viewYmd; }
+    function _gyomuClosedOn(c, viewYmd) { return !!(c.closed && c.closedAt && _gyomuLocalYmd(c.closedAt) <= viewYmd); }
+    // 見ている日に「進行中」だった案件（済む前の日なら、済んだ案件も進行中として出す）
+    function _gyomuOpenOn(kind, viewYmd) {
+      return getTokiCases(true, kind).filter(function(c) { return _gyomuExistedOn(c, viewYmd) && !_gyomuClosedOn(c, viewYmd); });
     }
+    // 見ている日までに済んだ案件（新しく済んだ順）
+    function _gyomuShownClosed(kind, viewYmd) {
+      return getTokiCases(true, kind).filter(function(c) { return _gyomuClosedOn(c, viewYmd); })
+        .sort(function(a, b) { return String(b.closedAt).localeCompare(String(a.closedAt)); });
+    }
+    window._gyomuOpenOn = _gyomuOpenOn; window._gyomuShownClosed = _gyomuShownClosed;
+    function gyomuShowAllClosed(kind) { window['_gyomuShowAllClosed_' + kind] = true; _tokiRefreshAll(); }
+    window.gyomuShowAllClosed = gyomuShowAllClosed;
     function renderTokiPanel(elId, tplId, viewYmd, withTabs) {
       var el = document.getElementById(elId);
       if (!el) return;
@@ -15150,11 +15156,14 @@ function renderTodoList() {
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
       // v0.53.4: 【権威】2026-10-05、明日の画面を開いたら明日の様子が見たい、との指摘。見ている日を基準にする
       var today = viewYmd || getLocalDateStr(new Date());
-      var list = sortTokiCases(getTokiCases(false, tpl.kind), today);
-      var closedShown = _gyomuShownClosed(tpl.kind, today);
-      var rows = list.concat(closedShown).map(function(c) { return _tokiCaseRowHtml(c, today); }).join('');
-      var closedAll = getTokiCases(true, tpl.kind).filter(function(t) { return t.closed; }).length;
-      var olderN = closedAll - closedShown.length;
+      var list = sortTokiCases(_gyomuOpenOn(tpl.kind, today), today);
+      var closedAll = _gyomuShownClosed(tpl.kind, today);
+      var showAll = !!window['_gyomuShowAllClosed_' + tpl.kind];
+      var closedShown = showAll ? closedAll : closedAll.slice(0, GYOMU_CLOSED_FIRST_SHOW);
+      var restN = closedAll.length - closedShown.length;
+      // 済む前の日を見ているときは、その日の時点では進行中だったので、取り消し線を引かない
+      var rows = list.map(function(c) { return _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, today); }).join('') +
+        closedShown.map(function(c) { return _tokiCaseRowHtml(c, today); }).join('');
       var newBtn = '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:3px 9px;border-radius:6px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;white-space:nowrap;">' + tpl.newButton + '</button>';
       var head;
       if (withTabs) {
@@ -15167,7 +15176,7 @@ function renderTodoList() {
         };
         // v0.54.4: 【権威】2026-10-05、業務の「＋」が見つからない、との指摘。選んでいない方の「＋」も、つまみの下に並べる
         var plus = function(t) {
-          return '<button onclick="openTokiCaseEditor(null, { tplId: \'' + t.id + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;white-space:nowrap;">' + t.newButton.replace('＋ 登記の案件', '＋ 登記') .replace('＋ 案件', '＋ 業務') + '</button>';
+          return '<button onclick="openTokiCaseEditor(null, { tplId: \'' + t.id + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;white-space:nowrap;">' + t.newButton + '</button>';
         };
         head = '<div style="display:flex;align-items:flex-end;gap:4px;border-bottom:1px solid #e6e9f0;">' +
           tab(GYOMU_TEMPLATE_TOKI) + tab(gyomuTemplateIppan()) + '</div>' +
@@ -15178,7 +15187,7 @@ function renderTodoList() {
       }
       el.innerHTML = '<div style="padding:4px 6px 2px;">' + head +
         (rows || '<div style="font-size:0.8em;color:#999;padding:4px 0 8px;">案件はまだありません</div>') +
-        (olderN > 0 ? '<div style="text-align:right;"><button onclick="openTokiClosedList(\'' + tpl.id + '\')" style="padding:2px 7px;border:none;background:none;color:#999;font-size:0.72em;cursor:pointer;text-decoration:underline;">それより前に済んだ案件（' + olderN + '件）</button></div>' : '') +
+        (restN > 0 ? '<div style="text-align:center;"><button onclick="gyomuShowAllClosed(\'' + tpl.kind + '\')" style="padding:4px 10px;border:1px solid #ddd;border-radius:7px;background:#fff;color:#777;font-size:0.75em;cursor:pointer;">済んだ案件をもっと見る（残り' + restN + '件）</button></div>' : '') +
         '</div>';
       el.style.display = 'block';
       _bindTokiDnD(el);
@@ -15296,7 +15305,7 @@ function renderTodoList() {
           // v0.51.7: 【権威】2026-10-05、登記は直したり消したりできないのか、との指摘。番号を押せば直せたが、
           // 普通の予定のような ✏️ と × が無く、分からなかった。普通の予定と同じ形で、右上に付ける。
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">' +
-          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (c.closed ? 'text-decoration:line-through;' : '') + '">' + (c.closed ? '✅ ' : '') + '<b>' + esc(c.box || '') + '</b>　' +
+          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (c.closed ? 'text-decoration:line-through;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
             (c.jian ? esc(c.jian) + '：' : '') + esc(tokiSama(c.buyer)) +
             (c.bukken ? '<span style="color:#555;">（物件：' + esc(c.bukken) + '）</span>' : '') +
             (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(tokiSama(c.seller)) + '）</span>' : '') +
@@ -15356,8 +15365,8 @@ function renderTodoList() {
       var cases = getTokiCases(false, tpl.kind).filter(function(c) { return ids[c.id]; });
       el.innerHTML = '<div style="padding:8px 12px 4px;border-bottom:1px solid #eee;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;">' +
-          '<span style="font-size:0.85em;font-weight:700;color:#6741d9;">' + (tpl.id === 'ippan' ? '💼 この日の案件' : '📝 この日の登記') + (cases.length ? '（' + cases.length + '件）' : '') + '</span>' +
-          '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #6741d9;background:#fff;color:#6741d9;font-size:0.8em;cursor:pointer;">' + (tpl.id === 'ippan' ? '＋ 案件を作る' : '＋ 登記の案件を作る') + '</button></div>' +
+          '<span style="font-size:0.85em;font-weight:700;color:#6741d9;">' + (tpl.id === 'ippan' ? '💼 この日の業務の案件' : '📝 この日の登記の案件') + (cases.length ? '（' + cases.length + '件）' : '') + '</span>' +
+          '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #6741d9;background:#fff;color:#6741d9;font-size:0.8em;cursor:pointer;">' + tpl.newButton + '</button></div>' +
         cases.map(function(c) { return '<div style="font-size:0.72em;color:#6741d9;font-weight:700;">' + esc(ids[c.id].join('・')) + '</div>' + _tokiCaseRowHtml(c, ymd); }).join('') +
       '</div>';
       el.style.display = 'block';
@@ -15605,28 +15614,7 @@ function renderTodoList() {
       } else { go(); }
     }
     window.deleteTokiCase = deleteTokiCase;
-    // 済んだ案件（あとから見返せる・戻せる）
-    function openTokiClosedList(tplId) {
-      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
-      var tplC = gyomuTemplateById(tplId || 'toki');
-      var list = getTokiCases(true, tplC.kind).filter(function(t) { return t.closed; })
-        .sort(function(a, b) { return String(b.closedAt || '').localeCompare(String(a.closedAt || '')); });
-      var ov = document.createElement('div');
-      ov.id = 'tokiClosedOverlay';
-      ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:100000;display:flex;align-items:center;justify-content:center;padding:14px;';
-      ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
-      ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;max-height:80vh;overflow:auto;padding:16px;">' +
-        '<div style="font-weight:700;margin-bottom:8px;">✅ 済んだ案件（' + list.length + '件）</div>' +
-        list.map(function(c) {
-          var dd = String(c.closedAt || '').slice(0, 10);
-          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:0.88em;">' +
-            '<span><b>' + esc(c.box || '') + '</b>　' + esc(tokiSama(c.buyer)) + '<span style="color:#999;font-size:0.85em;">　完了 ' + esc(dd) + '</span></span>' +
-            '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',' + tplC.closeOn.stage.replace('steps', '') + ',\'' + esc(tplC.closeOn.step) + '\');document.getElementById(\'tokiClosedOverlay\').remove();" style="padding:3px 8px;border:1px solid #ccd;border-radius:6px;background:#fff;font-size:0.8em;">戻す</button></div>';
-        }).join('') +
-        '<button onclick="document.getElementById(\'tokiClosedOverlay\').remove()" style="margin-top:10px;width:100%;padding:9px;border:1px solid #ccd;border-radius:9px;background:#fff;">閉じる</button></div>';
-      document.body.appendChild(ov);
-    }
-    window.openTokiClosedList = openTokiClosedList;
+    // v0.54.5: 「済んだ案件」の別の画面は、一覧の下に取り消し線で残す形にしたので消した（第31条）
     // ===== END v0.51.0 登記モード =====
 
     function getOngoingSpanTasks(dateStr) {
@@ -30975,6 +30963,29 @@ window._repairCloudCalendarIds();
       if (_hit) { _hit.textL = "《業務モードとは》\n\nお客さまごとの案件を、\n大事な日（期日・打ち合わせ・納品）と\n工程（受付→準備→作業→確認→完了）で\n管理できます。\n\n《始め方》\n\n設定のいちばん下の「💼 業務モード」で\n「業務モードを使う」にチェック。\n工程の名前と並び、大事な日の名前、\n案件番号の頭の文字は、\n自分の仕事に合わせて変えられます。\n\n《作り方》\n\n日次の「＋ 案件」か、\n月間の日の欄の「＋ 案件を作る」から。\nお客さまの名前だけで作れます。"; _hit.textR = "《毎日の見え方》\n\n日次の「緊急かつ重要」の中に出ます。\n工程は押すと✓、もう一度押すと戻ります。\n今日の大事な日や、過ぎたのに\n終わっていない案件は、目立たせます。\n\n《段取り》\n\n打ち合わせ・納品には、時間・場所・地図・\n行き方・出かける時刻を入れられます。\n7日以内なのに足りない欄があると、\nお知らせします。\n\n《終わったら》\n\n最後の工程を押すと完了。取り消し線を\n引いて、30日のあいだ残ります。\n\n《並べ替え》\n\nパソコンはつかんで動かす、\nスマホは↑↓で。"; _hit.updatedAt = _now; }
       else {
         _list.push({ id: _id, kind: 'note', title: _title, textL: "《業務モードとは》\n\nお客さまごとの案件を、\n大事な日（期日・打ち合わせ・納品）と\n工程（受付→準備→作業→確認→完了）で\n管理できます。\n\n《始め方》\n\n設定のいちばん下の「💼 業務モード」で\n「業務モードを使う」にチェック。\n工程の名前と並び、大事な日の名前、\n案件番号の頭の文字は、\n自分の仕事に合わせて変えられます。\n\n《作り方》\n\n日次の「＋ 案件」か、\n月間の日の欄の「＋ 案件を作る」から。\nお客さまの名前だけで作れます。", textR: "《毎日の見え方》\n\n日次の「緊急かつ重要」の中に出ます。\n工程は押すと✓、もう一度押すと戻ります。\n今日の大事な日や、過ぎたのに\n終わっていない案件は、目立たせます。\n\n《段取り》\n\n打ち合わせ・納品には、時間・場所・地図・\n行き方・出かける時刻を入れられます。\n7日以内なのに足りない欄があると、\nお知らせします。\n\n《終わったら》\n\n最後の工程を押すと完了。取り消し線を\n引いて、30日のあいだ残ります。\n\n《並べ替え》\n\nパソコンはつかんで動かす、\nスマホは↑↓で。",
+          dateL: '', dateR: '', text: '', margin: '', order: 2.6, createdAt: _now, updatedAt: _now });
+      }
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try {
+        if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) {
+          allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); });
+        }
+      } catch(e) {}
+    });
+
+    addMigration('mig_notebook_gyomu_page_v2', function() {
+      // v0.54.5: 【権威】2026-10-05、業務モードの使い方を見直す。「30日で消える」は間違い（指示していない）だったので直す。
+      // おすすめの人・向いていない人・生まれた経緯も書く
+      var _raw = localStorage.getItem('allTasks');
+      var _list = [];
+      try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
+      if (!Array.isArray(_list)) return;
+      var _now = new Date().toISOString();
+      var _id = '019e3a10-1000-7000-9000-000000000021', _title = '💼 業務モードの使い方';
+      var _hit = _list.filter(function(t) { return t && t.kind === 'note' && (t.id === _id || t.title === _title); })[0];
+      if (_hit) { _hit.textL = "《業務モードとは》\n\nお客さまごとの案件を、\n大事な日（期日・打ち合わせ・納品）と\n工程（受付→準備→作業→確認→完了）で\n管理できる機能です。\n毎朝、同じ仕事を打ち直さなくて済みます。\n\n《生まれた経緯》\n\nこよみるの作者は、司法書士事務所で\n登記の案件を毎日こよみるで管理しています。\n決済・金消・完了予定の日付と、\n「物・入・押・カク…」の工程を押して進める\n自分用の仕組みを、どんな仕事にも使えるように\n一般化して公開したのが業務モードです。\n\n《こんな人におすすめ》\n\n・お客さまごとに、同じ流れの仕事を\n　いくつも同時に進めている\n・期日や打ち合わせの日を見落としたくない\n・「あの件、どこまで進んだっけ」を減らしたい\n（士業、設計・制作、施工、イベント、\n　教室・サロンの運営 など）\n\n《向いていない人》\n\n・1件ごとに流れがまったく違う仕事\n・何十人で同時に入力する大きなチーム\n　（いまは自分ひとりで使う形です）\n\n《始め方》\n\n設定のいちばん下の「💼 業務モード」で\n「業務モードを使う」にチェック。\n工程の名前と並び、大事な日の名前、\n案件番号の頭の文字は、\n自分の仕事に合わせて変えられます。\n同じ名前の工程を2回入れてもかまいません。"; _hit.textR = "《作り方》\n\n日次の「＋ 業務の案件」か、\n月間の日の欄の「＋ 業務の案件」から。\nお客さまの名前だけで作れます。\n「内容：お客さま（場所：…）」を貼ると、\n内容・お客さま・場所に分けて入ります。\n\n《毎日の見え方》\n\n日次の「緊急かつ重要」の中に出ます。\n工程は押すと✓、もう一度押すと戻ります。\n今日の大事な日や、過ぎたのに\n終わっていない案件は、目立たせます。\n前日・翌日を開けば、その日から見た\n様子（あと何日か）になります。\n\n《段取り》\n\n打ち合わせ・納品には、時間・場所・地図・\n行き方・出かける時刻を入れられます。\n打ち合わせは「オンライン」も選べます。\n7日以内なのに足りない欄があると、\nお知らせします。\n\n《終わったら》\n\n最後の工程を押すと完了。\n普通の予定と同じく、取り消し線を引いて\n「✅ 10/5 完了」のように残ります。\n消えません。済んだ日を開けば、\nその日に済んだことが分かります。\n\n《並べ替え》\n\nパソコンはつかんで動かす、\nスマホは↑↓で。\n\n《データ》\n\n案件は、あなただけの保存場所に置かれ、\nほかの人には見えません。"; _hit.updatedAt = _now; }
+      else {
+        _list.push({ id: _id, kind: 'note', title: _title, textL: "《業務モードとは》\n\nお客さまごとの案件を、\n大事な日（期日・打ち合わせ・納品）と\n工程（受付→準備→作業→確認→完了）で\n管理できる機能です。\n毎朝、同じ仕事を打ち直さなくて済みます。\n\n《生まれた経緯》\n\nこよみるの作者は、司法書士事務所で\n登記の案件を毎日こよみるで管理しています。\n決済・金消・完了予定の日付と、\n「物・入・押・カク…」の工程を押して進める\n自分用の仕組みを、どんな仕事にも使えるように\n一般化して公開したのが業務モードです。\n\n《こんな人におすすめ》\n\n・お客さまごとに、同じ流れの仕事を\n　いくつも同時に進めている\n・期日や打ち合わせの日を見落としたくない\n・「あの件、どこまで進んだっけ」を減らしたい\n（士業、設計・制作、施工、イベント、\n　教室・サロンの運営 など）\n\n《向いていない人》\n\n・1件ごとに流れがまったく違う仕事\n・何十人で同時に入力する大きなチーム\n　（いまは自分ひとりで使う形です）\n\n《始め方》\n\n設定のいちばん下の「💼 業務モード」で\n「業務モードを使う」にチェック。\n工程の名前と並び、大事な日の名前、\n案件番号の頭の文字は、\n自分の仕事に合わせて変えられます。\n同じ名前の工程を2回入れてもかまいません。", textR: "《作り方》\n\n日次の「＋ 業務の案件」か、\n月間の日の欄の「＋ 業務の案件」から。\nお客さまの名前だけで作れます。\n「内容：お客さま（場所：…）」を貼ると、\n内容・お客さま・場所に分けて入ります。\n\n《毎日の見え方》\n\n日次の「緊急かつ重要」の中に出ます。\n工程は押すと✓、もう一度押すと戻ります。\n今日の大事な日や、過ぎたのに\n終わっていない案件は、目立たせます。\n前日・翌日を開けば、その日から見た\n様子（あと何日か）になります。\n\n《段取り》\n\n打ち合わせ・納品には、時間・場所・地図・\n行き方・出かける時刻を入れられます。\n打ち合わせは「オンライン」も選べます。\n7日以内なのに足りない欄があると、\nお知らせします。\n\n《終わったら》\n\n最後の工程を押すと完了。\n普通の予定と同じく、取り消し線を引いて\n「✅ 10/5 完了」のように残ります。\n消えません。済んだ日を開けば、\nその日に済んだことが分かります。\n\n《並べ替え》\n\nパソコンはつかんで動かす、\nスマホは↑↓で。\n\n《データ》\n\n案件は、あなただけの保存場所に置かれ、\nほかの人には見えません。",
           dateL: '', dateR: '', text: '', margin: '', order: 2.6, createdAt: _now, updatedAt: _now });
       }
       localStorage.setItem('allTasks', JSON.stringify(_list));
@@ -51478,6 +51489,26 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.54.5', date: '2026-10-05',
+    items: [
+      { icon:'💼', t:'業務モードが使えるようになりました（お試しでどうぞ）',
+        before:'お客さまごとの仕事の流れを、こよみるで管理する方法がありませんでした',
+        after:'案件ごとに、期日・打ち合わせ・納品などの大事な日と、受付→準備→作業→確認→完了などの工程を管理できます。毎朝同じ仕事を打ち直さなくて済み、工程は押すだけで進みます。設定のいちばん下の「💼 業務モード」から、お試しで使ってみてください' },
+      { icon:'📖', t:'生まれた経緯：作者の実際の仕事から',
+        before:'作者は司法書士事務所で、登記の案件（決済・金消・完了予定の日と、たくさんの工程）を、毎日こよみるで管理しています',
+        after:'その自分用の仕組みを、どんな仕事にも使えるように一般化して公開したのが業務モードです。実際の業務で毎日使って磨いたものなので、「打ち直しが減る」「どこまで進んだか一目で分かる」は保証できます' },
+      { icon:'🙆', t:'こんな人におすすめ',
+        before:'お客さまごとに、同じ流れの仕事をいくつも同時に進めている人。期日や打ち合わせの日を見落としたくない人。「あの件、どこまで進んだっけ」を減らしたい人',
+        after:'たとえば、士業、設計・制作、施工、イベントの運営、教室やサロンの運営など。工程の名前・並び、大事な日の名前は、自分の仕事に合わせて変えられます' },
+      { icon:'🙅', t:'向いていない人',
+        before:'1件ごとに流れがまったく違う仕事。何十人で同時に入力する大きなチーム',
+        after:'業務モードは、いまは自分ひとりで使う形です（案件はあなただけの保存場所に置かれ、ほかの人には見えません）' },
+      { icon:'✅', t:'済んだ案件は消えません',
+        before:'（前の版では）済んだ案件が30日で一覧から消えていました',
+        after:'普通の予定と同じく、取り消し線を引いて「✅ 10/5 完了」のように残ります。済んだ日を開けば、その日に済んだことが分かります。使い方は自由帳「💼 業務モードの使い方」に' }
+    ]
+  },
   {
     ver: 'v0.54.4', date: '2026-10-05',
     items: [
@@ -74570,6 +74601,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }
      } catch(e) {
        ng('ST-409: 例外', e.message);
+     }
+
+     // ===== ST-410: 済んだ案件は消さない・見ている日を基準に出し分ける（v0.54.5〜） =====
+     // 背景：「30日で消える」は指示していなかった。普通の予定と同じく、取り消し線で残す。
+     var _st410backup = allTasks.slice();
+     try {
+       if (typeof _gyomuOpenOn !== 'function' || typeof _gyomuShownClosed !== 'function') {
+         ng('ST-410: 処理が見つからない', '');
+       } else {
+         var _st410iso = function(y, m, dd) { return new Date(y, m - 1, dd, 12).toISOString(); };
+         allTasks.push({ id: 'st410-old', kind: 'gyomu', buyer: '甲', createdAt: _st410iso(2025, 1, 1), closed: true, closedAt: _st410iso(2025, 2, 1), steps1: {} });
+         allTasks.push({ id: 'st410-c', kind: 'gyomu', buyer: '乙', createdAt: _st410iso(2026, 9, 1), closed: true, closedAt: _st410iso(2026, 10, 5), steps1: {} });
+         allTasks.push({ id: 'st410-n', kind: 'gyomu', buyer: '丙', createdAt: _st410iso(2026, 10, 6), steps1: {} });
+         var _ids = function(list) { return list.map(function(c) { return c.id; }).filter(function(id) { return /^st410-/.test(id); }).sort().join(','); };
+         (_ids(_gyomuShownClosed('gyomu', '2027-12-31')) === 'st410-c,st410-old')
+           ? ok('ST-410·①: 済んだ案件は、何年たっても消えずに残る')
+           : ng('ST-410·①: 済んだ案件が消えた', _ids(_gyomuShownClosed('gyomu', '2027-12-31')));
+         (_ids(_gyomuOpenOn('gyomu', '2026-10-04')) === 'st410-c' && _ids(_gyomuShownClosed('gyomu', '2026-10-05')).indexOf('st410-c') !== -1)
+           ? ok('ST-410·②: 済む前の日は進行中、済んだ日からは済んだ案件として出る。作る前の日には出ない')
+           : ng('ST-410·②: 見ている日での出し分けが違う', _ids(_gyomuOpenOn('gyomu', '2026-10-04')));
+       }
+     } catch(e) {
+       ng('ST-410: 例外', e.message);
+     } finally {
+       allTasks = _st410backup;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
