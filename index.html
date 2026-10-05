@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.51.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.51.6 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.51.3';
+    const APP_VERSION = 'v0.51.6';
   const APP_LAST_UPDATED = '2026-10-05'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14811,7 +14811,9 @@ function renderTodoList() {
     // 案件はボックス番号（例 B20430）と買主（余裕があれば売主）で見分ける。金消日・決済日・完了予定日を持つ。
     // 工程は2段：1段目（決済まで）と2段目（完了分）。2段目の最後（依頼＝チェック者に回す）が済んだら完了して閉じる。
     // 予定（task）とは別の種類（kind:'toki'）にして、月間・検索・ほかの日次の枠には混ざらないようにする。
-    var TOKI_STEPS_1 = ['物', '入', '押', '申', '依', 'カク', '組', '決', '金'];
+    // v0.51.4: 【権威】2026-10-05、実際の流れは「物・入・押・カク・依・金・決・組・申・完」との指摘。並びを合わせる。
+    // 済んだかどうかは工程の名前で持っているので、並びを変えても、これまでの✓はそのまま残る。
+    var TOKI_STEPS_1 = ['物', '入', '押', 'カク', '依', '金', '決', '組', '申'];
     var TOKI_STEPS_2 = ['謄本', '印字', '送付状', '法務局からの返却', '組み立て', 'カク', '依頼'];
     window.TOKI_STEPS_1 = TOKI_STEPS_1; window.TOKI_STEPS_2 = TOKI_STEPS_2;
     // v0.51.1: 【権威】2026-10-04、「金消、金がなくね？」との指摘。設計では「金消日が空なら［金］を出さない」と
@@ -14833,6 +14835,13 @@ function renderTodoList() {
       return g || tokiTantou(c);
     }
     function tokiIsSelf(name) { return String(name || '').trim() === TOKI_SELF; }
+    // v0.51.4: 名前に「様」を付ける。もともと「様」「さん」などで終わっていれば、重ねない（「市川様様」を防ぐ）
+    function tokiSama(name) {
+      var n = String(name || '').trim();
+      if (!n) return '';
+      return /(様|さま|さん|殿|御中)$/.test(n) ? n : n + '様';
+    }
+    window.tokiSama = tokiSama;
     window.tokiTantou = tokiTantou; window.tokiGoer = tokiGoer;
     // 前に入れた名前（担当者・行く人）を、選べるように集める
     function tokiKnownPeople() {
@@ -14949,12 +14958,12 @@ function renderTodoList() {
           return tokiIsSelf(g) ? '<span style="color:#6741d9;font-weight:700;">（自分が行く）</span>' : '（行く：' + esc(g) + '）';
         };
         var dates = [c.kinshoDate ? _tokiDateLabel('金消', c.kinshoDate, today) + goerTag('kinsho') : '',
-                     _tokiDateLabel('決済', c.kessaiDate, today) + (c.kessaiDate ? goerTag('kessai') : ''),
+                     c.kessaiDate ? _tokiDateLabel('決済', c.kessaiDate, today) + goerTag('kessai') : '<span style="color:#999;">決済 未定</span>',
                      _tokiDateLabel('完了予定', c.kanryoDate, today)]
           .filter(function(x) { return !!x; }).join('　｜　');
         return '<div style="padding:7px 8px;margin:0 0 6px;border-radius:8px;background:' + (al.length ? '#fff4e6' : '#f6f8fc') + ';border-left:4px solid ' + (al.length ? '#e8590c' : '#5b8def') + ';">' +
-          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;"><b>' + esc(c.box || '') + '</b>　' + esc(c.buyer || '') + '様' +
-            (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(c.seller) + '様）</span>' : '') +
+          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;"><b>' + esc(c.box || '') + '</b>　' + esc(tokiSama(c.buyer)) +
+            (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(tokiSama(c.seller)) + '）</span>' : '') +
             (!tokiIsSelf(tokiTantou(c)) ? '<span style="color:#555;font-size:0.85em;">　担当 ' + esc(tokiTantou(c)) + '</span>' : '') + '</div>' +
           (dates ? '<div style="font-size:0.75em;color:#666;margin-top:2px;">' + dates + '</div>' : '') +
           (al.length ? '<div style="font-size:0.75em;color:#d9480f;font-weight:700;margin-top:2px;">⚠️ ' + al.join('・') + '</div>' : '') +
@@ -14993,7 +15002,7 @@ function renderTodoList() {
       el.innerHTML = '<div style="padding:8px 12px 4px;border-bottom:1px solid #eee;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;">' +
           '<span style="font-size:0.85em;font-weight:700;color:#6741d9;">📝 この日の登記' + (cases.length ? '（' + cases.length + '件）' : '') + '</span>' +
-          '<button onclick="openTokiCaseEditor(null, { kessaiDate: \'' + esc(ymd) + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #6741d9;background:#fff;color:#6741d9;font-size:0.8em;cursor:pointer;">＋ 登記の案件（この日を決済日に）</button></div>' +
+          '<button onclick="openTokiCaseEditor()" style="padding:4px 10px;border-radius:7px;border:1px solid #6741d9;background:#fff;color:#6741d9;font-size:0.8em;cursor:pointer;">＋ 登記の案件を作る</button></div>' +
         cases.map(function(c) { return '<div style="font-size:0.72em;color:#6741d9;font-weight:700;">' + esc(ids[c.id].join('・')) + '</div>' + _tokiCaseRowHtml(c, today); }).join('') +
       '</div>';
       el.style.display = 'block';
@@ -15027,7 +15036,8 @@ function renderTodoList() {
         field('担当者（空なら自分）', 'tokiTantou', c && c.tantou, 'text', '例：Aさん') +
         field('金消日', 'tokiKinsho', c && c.kinshoDate, 'date') +
         field('金消に行く人（空なら担当者）', 'tokiKinshoGoer', c && c.kinshoGoer, 'text', '例：自分') +
-        field('決済日（必須）', 'tokiKessai', (c && c.kessaiDate) || prefill.kessaiDate, 'date') +
+        // v0.51.6: 【権威】2026-10-05、依頼の時点では決済日が決まっていない案件の方が断然多い、との指摘。必須にしない。
+        field('決済日（決まったら）', 'tokiKessai', (c && c.kessaiDate) || prefill.kessaiDate, 'date') +
         field('決済に行く人（空なら担当者）', 'tokiKessaiGoer', c && c.kessaiGoer, 'text', '例：自分') +
         '<datalist id="tokiPeopleList">' + tokiKnownPeople().map(function(n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
         field('完了予定日', 'tokiKanryo', c && c.kanryoDate, 'date') +
@@ -15047,7 +15057,7 @@ function renderTodoList() {
       document.getElementById('tokiSaveBtn').onclick = function() {
         var v = function(id) { return String(document.getElementById(id).value || '').trim(); };
         var box = v('tokiBox').toUpperCase(), buyer = v('tokiBuyer'), kessai = v('tokiKessai');
-        if (!box || !buyer || !kessai) { hint.textContent = 'ボックス番号・買主・決済日は必須です'; return; }
+        if (!box || !buyer) { hint.textContent = 'ボックス番号と買主は必須です'; return; }
         var dup = getTokiCases(true).filter(function(t) { return t.box === box && (!c || t.id !== c.id) && !t.closed; })[0];
         if (dup && !document.getElementById('tokiSaveBtn').dataset.dupOk) {
           hint.textContent = '同じボックス番号（' + box + '）の案件がすでにあります。それでも保存するときは、もう一度「保存」を押してください';
@@ -15078,7 +15088,7 @@ function renderTodoList() {
           ov.remove(); _tokiRefreshAll();
         };
         if (typeof showChoiceModal === 'function') {
-          showChoiceModal({ title: '案件を削除', desc: (c.box || '') + '（' + (c.buyer || '') + '様）を削除します。',
+          showChoiceModal({ title: '案件を削除', desc: (c.box || '') + '（' + tokiSama(c.buyer) + '）を削除します。',
             buttons: [ { label: '削除する', style: 'danger', dangerConfirm: false, onClick: go }, { label: 'やめる', style: 'cancel' } ] });
         } else { go(); }
       };
@@ -15098,7 +15108,7 @@ function renderTodoList() {
         list.map(function(c) {
           var dd = String(c.closedAt || '').slice(0, 10);
           return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:0.88em;">' +
-            '<span><b>' + esc(c.box || '') + '</b>　' + esc(c.buyer || '') + '様<span style="color:#999;font-size:0.85em;">　完了 ' + esc(dd) + '</span></span>' +
+            '<span><b>' + esc(c.box || '') + '</b>　' + esc(tokiSama(c.buyer)) + '<span style="color:#999;font-size:0.85em;">　完了 ' + esc(dd) + '</span></span>' +
             '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',2,\'' + esc(TOKI_STEPS_2[TOKI_STEPS_2.length - 1]) + '\');document.getElementById(\'tokiClosedOverlay\').remove();" style="padding:3px 8px;border:1px solid #ccd;border-radius:6px;background:#fff;font-size:0.8em;">戻す</button></div>';
         }).join('') +
         '<button onclick="document.getElementById(\'tokiClosedOverlay\').remove()" style="margin-top:10px;width:100%;padding:9px;border:1px solid #ccd;border-radius:9px;background:#fff;">閉じる</button></div>';
@@ -17371,7 +17381,7 @@ function myDeckApply(idx) {
             _tkDiv.className = 'monthly-toki-mark';
             _tkDiv.style.cssText = 'font-size:10px;font-weight:700;color:#6741d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto;margin-left:3px;';
             _tkDiv.textContent = _tkMarks.map(function(m) { return m.icon + m.label + m.box + ((m.label !== '完' && m.self) ? '★' : ''); }).join(' ');   // v0.51.3: 自分が行く日に★
-            _tkDiv.title = _tkMarks.map(function(m) { return m.label + '　' + m.box + '　' + m.buyer + '様' + (m.label !== '完' ? '　行く：' + m.goer : ''); }).join('\n');
+            _tkDiv.title = _tkMarks.map(function(m) { return m.label + '　' + m.box + '　' + tokiSama(m.buyer) + (m.label !== '完' ? '　行く：' + m.goer : ''); }).join('\n');
             dayRow.appendChild(_tkDiv);
           }
         }
@@ -50916,7 +50926,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.51.3', date: '2026-10-05',
+    ver: 'v0.51.6', date: '2026-10-05',
     items: [
       { icon:'🛠', t:'（管理者向け）仕事の案件を管理する機能を足しました',
         before:'ふだん使う方には関係のない変更です',
@@ -73786,6 +73796,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st406k1 && _st406k2)
            ? ok('ST-406·⑥: ［金］は金消日で決まる（入っていれば出る・空なら出ない）')
            : ng('ST-406·⑥: ［金］の出方が違う', JSON.stringify([_st406k1, _st406k2]));
+         // v0.51.6: 決済日が未定の案件は、日付の決まった案件の後ろに並ぶ
+         var _st406u = sortTokiCases([{ box: 'U', kessaiDate: '' }, { box: 'D', kessaiDate: '2026-12-01' }], _t).map(function(x) { return x.box; }).join(',');
+         (_st406u === 'D,U')
+           ? ok('ST-406·⑩: 決済日が未定の案件も作れ、日付の決まった案件の後ろに並ぶ')
+           : ng('ST-406·⑩: 未定の案件の並びが違う', _st406u);
+         // v0.51.4: 工程の並びと「様」
+         (TOKI_STEPS_1.join('') === '物入押カク依金決組申' && tokiSama('市川') === '市川様' && tokiSama('市川様') === '市川様' && tokiSama('星加さん') === '星加さん')
+           ? ok('ST-406·⑨: 工程は実際の流れの順。名前に「様」を重ねない')
+           : ng('ST-406·⑨: 並びか「様」の付け方が違う', TOKI_STEPS_1.join(''));
          // v0.51.3: 担当者と行く人
          var _st406g = { tantou: 'Aさん', kinshoGoer: '自分', kessaiGoer: '' };
          (tokiTantou(_st406g) === 'Aさん' && tokiGoer(_st406g, 'kinsho') === '自分' && tokiGoer(_st406g, 'kessai') === 'Aさん' && tokiTantou({}) === '自分')
