@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.52.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.52.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.52.0';
+    const APP_VERSION = 'v0.52.1';
   const APP_LAST_UPDATED = '2026-10-05'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14966,6 +14966,24 @@ function renderTodoList() {
       _tokiRefreshAll();
     }
     window.moveTokiCase = moveTokiCase;
+    // v0.52.1: 矢印で1つ上・1つ下へ（スマホ用）
+    function moveTokiCaseBy(caseId, delta) {
+      var today = getLocalDateStr(new Date());
+      var list = sortTokiCases(getTokiCases(false), today);
+      var i = list.findIndex(function(c) { return c.id === caseId; });
+      var j = i + delta;
+      if (i < 0 || j < 0 || j >= list.length) return;
+      var t = list[i]; list[i] = list[j]; list[j] = t;
+      var now = new Date().toISOString();
+      list.forEach(function(c, k) { if (c.order !== k) { c.order = k; c.updatedAt = now; } });
+      saveAllTasks();
+      _tokiRefreshAll();
+    }
+    window.moveTokiCaseBy = moveTokiCaseBy;
+    function _tokiIsTouch() {
+      try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (e) { return false; }
+    }
+    window._tokiIsTouch = _tokiIsTouch;
     function _bindTokiDnD(el) {
       [].forEach.call(el.querySelectorAll('.toki-case-row'), function(row) {
         row.addEventListener('dragstart', function(e) { e.dataTransfer.setData('text/plain', row.getAttribute('data-toki-id')); row.style.opacity = '0.5'; });
@@ -15015,6 +15033,9 @@ function renderTodoList() {
             (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(tokiSama(c.seller)) + '）</span>' : '') +
             (!tokiIsSelf(tokiTantou(c)) ? '<span style="color:#555;font-size:0.85em;">　担当 ' + esc(tokiTantou(c)) + '</span>' : '') + '</div>' +
           '<span style="white-space:nowrap;">' +
+            // v0.52.1: 【権威】2026-10-05、スマホは矢印で並べ替え。指で操作する端末だけに出す（パソコンはドラッグ＆ドロップ）
+            (_tokiIsTouch() ? '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',-1)" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
+                              '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',1)" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">↓</button>' : '') +
             '<button onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" title="直す" style="border:none;background:none;cursor:pointer;font-size:1em;padding:0 4px;">✏️</button>' +
             '<button onclick="deleteTokiCase(\'' + esc(c.id) + '\')" title="削除" style="border:none;background:none;cursor:pointer;font-size:1.05em;color:#999;padding:0 4px;">×</button>' +
           '</span></div>' +
@@ -51073,7 +51094,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.52.0', date: '2026-10-05',
+    ver: 'v0.52.1', date: '2026-10-05',
     items: [
       { icon:'🛠', t:'（管理者向け）仕事の案件を管理する機能を整えました',
         before:'ふだん使う方には関係のない変更です',
@@ -73955,6 +73976,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st406o === 'Y,X')
            ? ok('ST-406·⑬: 手で並べ替えたら、日付よりその順を優先する')
            : ng('ST-406·⑬: 手で並べた順にならない', _st406o);
+         // v0.52.1: 矢印で並べ替え
+         var _st406save2 = window.saveAllTasks; window.saveAllTasks = function(){};
+         var _st406r = _tokiRefreshAll; window._tokiRefreshAll = function(){};
+         var _st406ids = sortTokiCases(getTokiCases(false), _t).map(function(x) { return x.id; });
+         moveTokiCaseBy(_st406ids[1], -1);
+         var _st406after = sortTokiCases(getTokiCases(false), _t).map(function(x) { return x.id; });
+         window._tokiRefreshAll = _st406r; window.saveAllTasks = _st406save2;
+         (_st406after[0] === _st406ids[1] && _st406after[1] === _st406ids[0])
+           ? ok('ST-406·⑭: 矢印（↑）で1つ上へ動き、その順を覚える')
+           : ng('ST-406·⑭: 矢印で動かない', JSON.stringify([_st406ids, _st406after]));
          // v0.51.6: 決済日が未定の案件は、日付の決まった案件の後ろに並ぶ
          var _st406u = sortTokiCases([{ box: 'U', kessaiDate: '' }, { box: 'D', kessaiDate: '2026-12-01' }], _t).map(function(x) { return x.box; }).join(',');
          (_st406u === 'D,U')
