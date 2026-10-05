@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.54.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.54.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.54.2';
+    const APP_VERSION = 'v0.54.4';
   const APP_LAST_UPDATED = '2026-10-05'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10846,7 +10846,7 @@ function _showInviteWelcome() {
         <div id="gyomuSettingsDetail">
           <label style="display:block;font-size:0.8em;color:#555;margin:6px 0 2px;">工程（「、」で区切って、並べたい順に）</label>
           <input id="gyomuStepsInput" type="text" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;">
-          <div style="font-size:0.72em;color:#999;margin-top:2px;">最後の工程が済むと、案件は完了して「済んだ案件」に移ります。名前を変えた工程の✓は外れます（並べ替えだけなら残ります）。</div>
+          <div style="font-size:0.72em;color:#999;margin-top:2px;">最後の工程が済むと、案件は完了します。同じ名前の工程を2回入れてもかまいません（例：確認、作業、確認）。名前を変えた工程の✓は外れます（並べ替えだけなら残ります）。</div>
           <label style="display:block;font-size:0.8em;color:#555;margin:8px 0 2px;">大事な日の名前（3つ）</label>
           <div style="display:flex;gap:6px;">
             <input id="gyomuMilestone0" type="text" autocomplete="off" style="flex:1;min-width:0;padding:8px;border:1px solid #ccd;border-radius:8px;font-size:16px;">
@@ -14848,8 +14848,9 @@ function renderTodoList() {
     // カク・依が2回出てくる。✓は工程の名前で覚えるので、2回目は中では「カク2」「依2」とし、画面には「カク」「依」と出す。
     var TOKI_STEPS_1 = ['物', '入', '押', 'カク', '依', '金', '設受', '設組', 'カク2', '依2', '当日謄本', '決', '組', '申'];
     var TOKI_STEP_LABELS = { 'カク2': 'カク', '依2': '依' };
-    function tokiStepLabel(st) { return TOKI_STEP_LABELS[st] || st; }
-    window.tokiStepLabel = tokiStepLabel;
+    // v0.54.3: 【権威】2026-10-05、1回目のカク・依は「金消前チェック」、2回目は「決済前チェック」というコンセプト、との説明。
+    // 作る画面の「要る工程」で、どちらのチェックかが分かるようにする（一覧のボタンは短いまま）
+    var TOKI_STEP_EDITOR_LABELS = { 'カク': 'カク（金消前チェック）', '依': '依（金消前チェック）', 'カク2': 'カク（決済前チェック）', '依2': '依（決済前チェック）' };
     // あとから足した工程と、足した版の番号。前からある案件（要る工程を選んだときに、まだ無かった）にも出す
     var TOKI_STEPS_ADDED_LATER = { '当日謄本': 3, 'カク2': 4, '依2': 4 };
     var TOKI_STEPS_2 = ['謄本', '印字', '送付状', '法務局からの返却', '組み立て', 'カク', '依頼'];
@@ -14863,11 +14864,11 @@ function renderTodoList() {
     //   overdueIfNot＝日付を過ぎてもこの工程が済んでいなければ目立たせる。
     // 工程（stages）：段ごとの工程。fadeUntil＝この工程が済むまで薄く出す。closeOn＝この工程が済んだら案件を閉じる。
     var GYOMU_TEMPLATE_TOKI = {
-      id: 'toki', kind: 'toki', name: '登記', adminOnly: true, icon: '📝',
+      id: 'toki', kind: 'toki', name: '登記', adminOnly: true, icon: '📝', stepLabels: TOKI_STEP_LABELS,
       panelTitle: '📝 登記の案件', newButton: '＋ 登記の案件',
       editorTitleNew: '登記の案件を作る', editorTitleEdit: '登記の案件を直す',
       numberLabel: 'ボックス番号', numberPrefix: 'B', numberPlaceholder: '12345（頭のBは自動で付きます）',
-      titleParse: true,   // 業務アプリの案件タイトルを貼り付けると、事案内容・買主・物件に分ける
+      titleParse: true, titleKeyword: '物件',   // 業務アプリの案件タイトルを貼り付けると、事案内容・買主・物件に分ける
       fields: {
         buyer:  { label: '買主', placeholder: '辻　／　案件タイトルを貼り付けると自動で分けます' },
         jian:   { label: '事案内容', placeholder: 'マンション' },
@@ -14897,8 +14898,15 @@ function renderTodoList() {
     function gyomuSettings() {
       var g = (allSettings && allSettings.gyomu) || {};
       var steps = (Array.isArray(g.steps) ? g.steps : []).map(function(s) { return String(s || '').trim(); }).filter(function(s) { return !!s; });
+      // v0.54.3: 同じ名前の工程を2回入れてよい（登記の「カク」と同じ）。✓は中の名前で覚えるので、2回目以降は「確認2」のように分ける
+      var count = {}, keys = [], labels = {};
+      (steps.length ? steps : GYOMU_DEFAULT_STEPS).forEach(function(n) {
+        count[n] = (count[n] || 0) + 1;
+        var k = count[n] === 1 ? n : n + count[n];
+        keys.push(k); if (k !== n) labels[k] = n;
+      });
       return {
-        steps: steps.length ? steps : GYOMU_DEFAULT_STEPS.slice(),
+        steps: keys, stepLabels: labels, stepNames: steps.length ? steps : GYOMU_DEFAULT_STEPS.slice(),
         milestoneNames: [0, 1, 2].map(function(i) { return String(((g.milestoneNames || [])[i]) || '').trim() || GYOMU_DEFAULT_MILESTONES[i]; }),
         numberPrefix: String(g.numberPrefix || '').trim()
       };
@@ -14909,13 +14917,13 @@ function renderTodoList() {
       // 欄の名前：「期日」「締切日」のように「日」で終わる名前には「の日」を付けない
       var dayLabel = function(n) { return /日$/.test(n) ? n : n + 'の日'; };
       return {
-        id: 'ippan', kind: 'gyomu', name: '一般', adminOnly: false, icon: '💼',
+        id: 'ippan', kind: 'gyomu', name: '一般', adminOnly: false, icon: '💼', stepLabels: s.stepLabels,
         panelTitle: '💼 業務の案件', newButton: '＋ 案件', editorTitleNew: '案件を作る', editorTitleEdit: '案件を直す',
         numberLabel: '案件番号', numberPrefix: s.numberPrefix, numberRequired: false,
         numberPlaceholder: s.numberPrefix ? '001（頭の' + s.numberPrefix + 'は自動で付きます）' : 'A-001（なくてもかまいません）',
-        titleParse: false,
+        titleParse: true, titleKeyword: '場所',   // v0.54.3: 「内容：お客さま（場所：…）」を貼ると分ける
         fields: {
-          buyer:  { label: 'お客さま', placeholder: '山田' },
+          buyer:  { label: 'お客さま', placeholder: '山田　／　「内容：お客さま（場所：…）」を貼ると分けます' },
           jian:   { label: '内容', placeholder: 'ホームページ制作' },
           bukken: { label: '場所', placeholder: '千葉市稲毛区' }
         },
@@ -15027,7 +15035,7 @@ function renderTodoList() {
       var box = document.getElementById('gyomuSettingsBox'); if (box) box.style.display = gyomuAvailable() ? 'block' : 'none';
       var tg = document.getElementById('gyomuModeToggle'); if (tg) tg.checked = isGyomuModeOn();
       var det = document.getElementById('gyomuSettingsDetail'); if (det) det.style.display = isGyomuModeOn() ? 'block' : 'none';
-      var st = document.getElementById('gyomuStepsInput'); if (st) st.value = s.steps.join('、');
+      var st = document.getElementById('gyomuStepsInput'); if (st) st.value = s.stepNames.join('、');
       [0, 1, 2].forEach(function(i) { var e = document.getElementById('gyomuMilestone' + i); if (e) e.value = s.milestoneNames[i]; });
       var px = document.getElementById('gyomuPrefixInput'); if (px) px.value = s.numberPrefix;
     }
@@ -15036,7 +15044,6 @@ function renderTodoList() {
       opts = opts || {};
       var raw = String((document.getElementById('gyomuStepsInput') || {}).value || '');
       var steps = raw.split(/[、,，\s]+/).map(function(s) { return s.trim(); }).filter(function(s) { return !!s; });
-      var seen = {}; steps = steps.filter(function(s) { if (seen[s]) return false; seen[s] = 1; return true; });   // 同じ名前は1つに
       if (!steps.length) { if (typeof showToast === 'function') showToast('⚠️ 工程を1つ以上入れてください'); return; }
       var names = [0, 1, 2].map(function(i) { return String((document.getElementById('gyomuMilestone' + i) || {}).value || '').trim(); });
       var prefix = String((document.getElementById('gyomuPrefixInput') || {}).value || '').trim();
@@ -15158,8 +15165,13 @@ function renderTodoList() {
           return '<button onclick="setGyomuTab(\'' + t.id + '\')" style="flex:1;padding:6px 4px;border:none;background:none;cursor:pointer;font-size:0.82em;font-weight:700;' +
             'color:' + (on ? '#2f6fed' : '#999') + ';border-bottom:3px solid ' + (on ? '#2f6fed' : 'transparent') + ';">' + t.panelTitle + '（' + n + '）</button>';
         };
-        head = '<div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:6px;border-bottom:1px solid #e6e9f0;">' +
-          tab(GYOMU_TEMPLATE_TOKI) + tab(gyomuTemplateIppan()) + '<span style="padding-bottom:4px;">' + newBtn + '</span></div>';
+        // v0.54.4: 【権威】2026-10-05、業務の「＋」が見つからない、との指摘。選んでいない方の「＋」も、つまみの下に並べる
+        var plus = function(t) {
+          return '<button onclick="openTokiCaseEditor(null, { tplId: \'' + t.id + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;white-space:nowrap;">' + t.newButton.replace('＋ 登記の案件', '＋ 登記') .replace('＋ 案件', '＋ 業務') + '</button>';
+        };
+        head = '<div style="display:flex;align-items:flex-end;gap:4px;border-bottom:1px solid #e6e9f0;">' +
+          tab(GYOMU_TEMPLATE_TOKI) + tab(gyomuTemplateIppan()) + '</div>' +
+          '<div style="display:flex;justify-content:flex-end;gap:6px;margin:6px 0;">' + plus(GYOMU_TEMPLATE_TOKI) + plus(gyomuTemplateIppan()) + '</div>';
       } else {
         head = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
           '<span style="font-size:0.85em;font-weight:700;color:#333;">' + tpl.panelTitle + '（' + list.length + '件）</span>' + newBtn + '</div>';
@@ -15252,7 +15264,7 @@ function renderTodoList() {
       var chip = function(c, row, step, done, faint) {
         return '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',' + row + ',\'' + esc(step) + '\')" style="padding:2px 7px;margin:2px 2px 0 0;border-radius:6px;font-size:0.78em;cursor:pointer;' +
           (done ? 'background:#2f9e44;color:#fff;border:1px solid #2f9e44;' : 'background:#fff;color:' + (faint ? '#bbb' : '#444') + ';border:1px solid ' + (faint ? '#e3e3e3' : '#ccd') + ';') + '">' +
-          esc(tokiStepLabel(step)) + (done ? '✓' : '') + '</button>';   // v0.54.2: 2回目のカク・依も「カク」「依」と出す
+          esc((tpl.stepLabels && tpl.stepLabels[step]) || step) + (done ? '✓' : '') + '</button>';   // v0.54.2: 2回目のカク・依も「カク」「依」と出す（v0.54.3: ひな形ごと）
       };
         var al = c.closed ? [] : tokiAlerts(c, today);   // v0.53.4: 済んだ案件は目立たせない
 
@@ -15370,10 +15382,12 @@ function renderTodoList() {
     // v0.52.0: 【権威】2026-10-05、業務アプリ（権力）の案件タイトルに「マンション：辻修治様・下山直人様（物件：シヤルム稲毛Ｆ３０５）」
     // のように書いて一目で分かるようにしている。ファイルは「泳ぐ」（先生や他の人の所へ行く）ので、これがあると「これ何だっけ」が減る。
     // 買主の欄に貼り付ければ、事案内容・買主・物件に自動で分ける。
-    function parseTokiTitle(text) {
+    function parseTokiTitle(text, keyword) {
       var s = String(text || '').trim();
       if (!s) return null;
-      var m = s.match(/^(?:([^：:（(]+?)\s*[：:])?\s*([^（(]+?)\s*(?:[（(]\s*物件\s*[：:]\s*(.+?)\s*[）)])?\s*$/);
+      // v0.54.3: 括弧の中の言葉を選べるように（登記＝物件、業務＝場所）
+      var kw = String(keyword || '物件').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var m = s.match(new RegExp('^(?:([^：:（(]+?)\\s*[：:])?\\s*([^（(]+?)\\s*(?:[（(]\\s*' + kw + '\\s*[：:]\\s*(.+?)\\s*[）)])?\\s*$'));
       if (!m) return null;
       var hasStructure = !!(m[1] || m[3]);
       if (!hasStructure) return null;   // ただの名前なら、分けない
@@ -15392,16 +15406,19 @@ function renderTodoList() {
       var linkedMs = tpl.milestones.filter(function(ms) { return !!ms.linkedStep; });
       var linkedSteps = linkedMs.map(function(ms) { return ms.linkedStep; });
       var optGroups = tpl.optionalGroups || [];
+      var stepLabelOf = function(st) { return (tpl.stepLabels && tpl.stepLabels[st]) || st; };
       var groupSteps = [].concat.apply([], optGroups.map(function(g) { return g.steps; }));
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
       var en1 = (c && c.enabled1) || TOKI_STEPS_1;
       var ov = document.createElement('div');
+      // v0.54.4: 画面の隅の丸いボタン（＋・◎：手前の順番 99990）より手前に出す。以前は 9000 で、下の「閉じる」に重なっていた
       ov.id = 'tokiCaseOverlay';
-      ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:14px;';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:100000;display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box;';
       var field = function(label, id, val, type, ph) {
         return '<label style="display:block;font-size:0.8em;color:#555;margin:8px 0 2px;">' + label + '</label>' +
           '<input id="' + id + '" class="toki-input" type="' + (type || 'text') + '" value="' + esc(val || '') + '" placeholder="' + esc(ph || '') + '" autocomplete="off" ' +
-          'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;">';
+          // v0.54.4: スマホで日付・時刻の欄が右にはみ出していた。幅を枠の中に収める
+          'style="display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;background:#fff;-webkit-appearance:none;appearance:none;min-height:40px;">';
       };
       // v0.52.2: 【権威】2026-10-05、金消・決済は、時間・場所・地図・行き方・事務所発まで決まって初めて固まる、との指摘
       var planFields = function(kind, name, c) {
@@ -15413,7 +15430,7 @@ function renderTodoList() {
           field(name + 'の場所', 'toki' + K + 'Place', g('Place'), 'text', '千葉銀行 稲毛支店') +
           field(name + 'の地図（GoogleマップのURL）', 'toki' + K + 'Map', g('Map'), 'url', 'https://maps.app.goo.gl/…') +
           '<label style="display:block;font-size:0.8em;color:#555;margin:8px 0 2px;">行き方</label>' +
-          '<select id="toki' + K + 'Means" class="toki-input" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;background:#fff;">' +
+          '<select id="toki' + K + 'Means" class="toki-input" style="display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;background:#fff;">' +
             ['', '車', '電車', 'その他'].map(function(m) { return '<option value="' + m + '"' + (means === m ? ' selected' : '') + '>' + (m || '未定') + '</option>'; }).join('') +
           '</select>' +
           field(tpl.departFieldLabel, 'toki' + K + 'Depart', g('Depart'), 'time') +
@@ -15424,8 +15441,12 @@ function renderTodoList() {
         return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:0.8em;color:#555;margin-top:4px;"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
       };
       ov.innerHTML = '<style>.toki-input::placeholder{color:#cfcfcf;}</style>' +
-        '<form onsubmit="return false;" autocomplete="off" style="background:#fff;border-radius:14px;max-width:440px;width:100%;max-height:90vh;overflow:auto;padding:16px 16px 14px;">' +
-        '<div style="font-weight:700;margin-bottom:4px;">' + tpl.icon + ' ' + (c ? tpl.editorTitleEdit : tpl.editorTitleNew) + '</div>' +
+        '<form onsubmit="return false;" autocomplete="off" style="background:#fff;border-radius:14px;max-width:440px;width:100%;max-height:92vh;max-height:92dvh;overflow-y:auto;overflow-x:hidden;padding:0 16px;box-sizing:border-box;-webkit-overflow-scrolling:touch;">' +
+        // v0.54.4: 【権威】2026-10-05、スマホで作る画面が画面いっぱいになり、閉じるボタンにたどり着けなかった（緊急）。
+        // 見出しと×を上に固定し、保存・閉じるを下に固定する。どこまで動かしても、閉じられる・保存できる。
+        '<div style="position:sticky;top:0;z-index:3;background:#fff;display:flex;justify-content:space-between;align-items:center;padding:12px 0 8px;border-bottom:1px solid #f0f0f0;">' +
+          '<span style="font-weight:700;">' + tpl.icon + ' ' + (c ? tpl.editorTitleEdit : tpl.editorTitleNew) + '</span>' +
+          '<button type="button" id="tokiCloseX" aria-label="閉じる" style="border:none;background:#f1f3f5;border-radius:50%;width:34px;height:34px;font-size:1.1em;color:#555;cursor:pointer;flex:none;">×</button></div>' +
         // v0.53.0: 欄・節目はひな形から組み立てる
         field(tpl.numberLabel + (tpl.numberRequired ? '（必須）' : ''), 'tokiBox', c && c.box, 'text', tpl.numberPlaceholder) +
         field(tpl.fields.buyer.label + '（必須）', 'tokiBuyer', c && c.buyer, 'text', tpl.fields.buyer.placeholder) +
@@ -15445,19 +15466,22 @@ function renderTodoList() {
         '<div style="font-size:0.8em;color:#555;margin:10px 0 2px;">' + tpl.stagesLabel +
           linkedMs.map(function(ms) { return '<span style="color:#999;font-size:0.9em;">　※［' + ms.linkedStep + '］は、' + ms.dateLabel + 'を入れると出ます</span>'; }).join('') + '</div><div>' +
           tpl.stages[0].steps.filter(function(st) { return linkedSteps.indexOf(st) === -1 && groupSteps.indexOf(st) === -1; }).map(function(st) {
-            return '<label style="display:inline-flex;align-items:center;gap:3px;margin:2px 8px 2px 0;font-size:0.85em;"><input type="checkbox" data-toki-step="' + esc(st) + '"' + (en1.indexOf(st) !== -1 || (tpl.id === 'toki' && TOKI_STEPS_ADDED_LATER[st] && !(c && c.enabledVer >= TOKI_STEPS_ADDED_LATER[st])) ? ' checked' : '') + '>' + esc(tokiStepLabel(st)) + (TOKI_STEP_LABELS[st] ? '<span style="font-size:0.75em;color:#999;">（2回目）</span>' : '') + '</label>';
+            return '<label style="display:inline-flex;align-items:center;gap:3px;margin:2px 8px 2px 0;font-size:0.85em;"><input type="checkbox" data-toki-step="' + esc(st) + '"' + (en1.indexOf(st) !== -1 || (tpl.id === 'toki' && TOKI_STEPS_ADDED_LATER[st] && !(c && c.enabledVer >= TOKI_STEPS_ADDED_LATER[st])) ? ' checked' : '') + '>' + esc(tpl.id === 'toki' && TOKI_STEP_EDITOR_LABELS[st] ? TOKI_STEP_EDITOR_LABELS[st] : stepLabelOf(st)) + '</label>';
           }).join('') + '</div>' +
         optGroups.map(function(g) { return '<div>' + check('tokiGroupNone_' + g.key, g.noneLabel, c && c[g.key + 'None']) + '</div>'; }).join('') +
         // v0.53.4: 【権威】2026-10-05、注意事項を文字で書ける備考欄がほしい、との指摘
         '<label style="display:block;font-size:0.8em;color:#555;margin:10px 0 2px;">備考（注意事項など）</label>' +
-        '<textarea id="tokiBikou" rows="3" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;font-family:inherit;">' + esc((c && c.bikou) || '') + '</textarea>' +
+        '<textarea id="tokiBikou" rows="3" style="display:block;width:100%;max-width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;font-family:inherit;">' + esc((c && c.bikou) || '') + '</textarea>' +
         '<div id="tokiHint" style="min-height:1.3em;font-size:0.8em;color:#c07a2a;margin:6px 0;"></div>' +
-        '<div style="display:flex;gap:8px;">' +
+        '<div style="position:sticky;bottom:0;z-index:3;background:#fff;display:flex;gap:8px;padding:10px 0 12px;border-top:1px solid #f0f0f0;margin-top:4px;">' +
           '<button id="tokiSaveBtn" type="submit" style="flex:2;padding:10px;border:none;border-radius:9px;background:#2f6fed;color:#fff;font-weight:700;">保存</button>' +
           (c ? '<button id="tokiDeleteBtn" type="button" style="flex:1;padding:10px;border:1px solid #f3c4c4;border-radius:9px;background:#fff;color:#c0392b;">削除</button>' : '') +
           '<button type="button" onclick="document.getElementById(\'tokiCaseOverlay\').remove()" style="flex:1;padding:10px;border:1px solid #ccd;border-radius:9px;background:#fff;">閉じる</button>' +
         '</div></form>';
       document.body.appendChild(ov);
+      // v0.54.4: ×とEscで閉じる
+      document.getElementById('tokiCloseX').onclick = function() { ov.remove(); };
+      ov.addEventListener('keydown', function(e) { if (e.key === 'Escape') ov.remove(); });
       ['tokiTantou', 'tokiKinshoGoer', 'tokiKessaiGoer'].forEach(function(id) { var e = document.getElementById(id); if (e) e.setAttribute('list', 'tokiPeopleList'); });
       var $ = function(id) { return document.getElementById(id); };
       var hint = $('tokiHint');
@@ -15478,12 +15502,12 @@ function renderTodoList() {
       // 買主に貼り付けたら、事案内容・買主・物件に分ける
       var tryParse = function() {
         if (!tpl.titleParse) return;
-        var r = parseTokiTitle($('tokiBuyer').value);
+        var r = parseTokiTitle($('tokiBuyer').value, tpl.titleKeyword);
         if (!r) return;
         $('tokiBuyer').value = r.buyer;
         if (r.jian) $('tokiJian').value = r.jian;
         if (r.bukken) $('tokiBukken').value = r.bukken;
-        $('tokiParseHint').textContent = '✓ 貼り付けた内容を、事案内容・買主・物件に分けて入れました';
+        $('tokiParseHint').textContent = '✓ 貼り付けた内容を、' + tpl.fields.jian.label + '・' + tpl.fields.buyer.label + '・' + tpl.fields.bukken.label + 'に分けて入れました';
       };
       $('tokiBuyer').addEventListener('paste', function() { setTimeout(tryParse, 0); });
       $('tokiBuyer').addEventListener('blur', tryParse);
@@ -15589,7 +15613,7 @@ function renderTodoList() {
         .sort(function(a, b) { return String(b.closedAt || '').localeCompare(String(a.closedAt || '')); });
       var ov = document.createElement('div');
       ov.id = 'tokiClosedOverlay';
-      ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:14px;';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:100000;display:flex;align-items:center;justify-content:center;padding:14px;';
       ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
       ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;max-height:80vh;overflow:auto;padding:16px;">' +
         '<div style="font-weight:700;margin-bottom:8px;">✅ 済んだ案件（' + list.length + '件）</div>' +
@@ -51455,6 +51479,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.54.4', date: '2026-10-05',
+    items: [
+      { icon:'🛠', t:'業務モードの、案件を作る画面を直しました',
+        before:'スマホで画面いっぱいになり、閉じるボタンにたどり着けないことがありました',
+        after:'上に「×」、下に「保存」「閉じる」をいつも出すようにしました。日付と時刻の欄がはみ出すのも直しました' }
+    ]
+  },
+  {
+    ver: 'v0.54.3', date: '2026-10-05',
+    items: [
+      { icon:'💼', t:'業務モードを使いやすくしました',
+        before:'同じ名前の工程は1つにまとめられ、2回入れられませんでした',
+        after:'「確認、作業、確認」のように、同じ名前の工程を2回入れられます。また、お客さまの欄に「内容：お客さま（場所：…）」を貼り付けると、内容・お客さま・場所に分けて入ります' }
+    ]
+  },
+  {
     ver: 'v0.54.2', date: '2026-10-05',
     items: [
       { icon:'🛠', t:'（管理者向け）仕事の案件の工程を足しました',
@@ -55478,7 +55518,7 @@ async function openCalendarLedger(calendarId) {
   var o = _buildLedgerOverview(d, getLocalDateStr(new Date()));
   var ov = document.createElement('div');
   ov.id = 'calendarLedgerOverlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:12px;';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
   ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
   ov.innerHTML = '<div style="background:#111827;color:#ddd;border-radius:14px;max-width:460px;width:100%;max-height:86vh;overflow:auto;padding:16px;">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
@@ -55497,7 +55537,7 @@ async function openLedgerPrivacyModal() {
   var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
   var ov = document.createElement('div');
   ov.id = 'ledgerPrivacyOverlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(20,24,36,0.5);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px;';
   ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
   var rows = ms.length ? ms.map(function(r) {
     var lb = getCalendarRoleLabels(r.cal);
@@ -74378,7 +74418,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? ok('ST-406·⑩: 決済日が未定の案件も作れ、日付の決まった案件の後ろに並ぶ')
            : ng('ST-406·⑩: 未定の案件の並びが違う', _st406u);
          // v0.51.4: 工程の並びと「様」
-         (TOKI_STEPS_1.map(tokiStepLabel).join('') === '物入押カク依金設受設組カク依当日謄本決組申' && TOKI_STEPS_1.length === new Set(TOKI_STEPS_1).size && tokiSama('市川') === '市川様' && tokiSama('市川様') === '市川様' && tokiSama('星加さん') === '星加さん')
+         (TOKI_STEPS_1.map(function(s) { return TOKI_STEP_LABELS[s] || s; }).join('') === '物入押カク依金設受設組カク依当日謄本決組申' && TOKI_STEPS_1.length === new Set(TOKI_STEPS_1).size && tokiSama('市川') === '市川様' && tokiSama('市川様') === '市川様' && tokiSama('星加さん') === '星加さん')
            ? ok('ST-406·⑨: 工程は実際の流れの順。名前に「様」を重ねない')
            : ng('ST-406·⑨: 並びか「様」の付け方が違う', TOKI_STEPS_1.join(''));
          // v0.51.3: 担当者と行く人
@@ -74482,6 +74522,14 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (_st408hidden)
            ? ok('ST-408·⑥: 公開の鍵を開けるまでは、管理者でない人には業務モードが出ない')
            : ng('ST-408·⑥: 公開前なのに見える', '');
+         allSettings.gyomu = { steps: ['確認', '作業', '確認'], milestoneNames: [], numberPrefix: '' };
+         var _st408d = gyomuTemplateIppan();
+         var _st408p = parseTokiTitle('サイト制作：山田様（場所：千葉市）', '場所') || {};
+         (_st408d.stages[0].steps.join(',') === '確認,作業,確認2' && _st408d.stepLabels['確認2'] === '確認' && _st408d.closeOn.step === '確認2' &&
+          _st408p.jian === 'サイト制作' && _st408p.buyer === '山田様' && _st408p.bukken === '千葉市')
+           ? ok('ST-408·⑦: 同じ名前の工程を2回入れられ、「内容：お客さま（場所：…）」を貼ると分ける')
+           : ng('ST-408·⑦: 2回目の工程か、貼り付けの分け方が違う', _st408d.stages[0].steps.join(','));
+         allSettings.gyomu = { steps: ['見積', '制作', '納品済み'], milestoneNames: ['締切', '', ''], numberPrefix: 'W' };
          (_st408t.stages[0].steps.join(',') === '見積,制作,納品済み' && _st408t.closeOn.step === '納品済み' && _st408t.milestones[0].name === '締切' && _st408t.milestones[1].name === '打ち合わせ' && tokiNormalizeBox('12', _st408t.numberPrefix) === 'W12')
            ? ok('ST-408·⑤: 工程・大事な日の名前・番号の頭の文字を、自分の仕事に合わせて変えられる')
            : ng('ST-408·⑤: 設定がひな形に効いていない', JSON.stringify(_st408t.stages[0].steps));
