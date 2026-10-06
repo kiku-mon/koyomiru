@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.6 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.5';
+    const APP_VERSION = 'v0.55.6';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15023,6 +15023,34 @@ function renderTodoList() {
       var up = ds.filter(function(x) { return x >= todayYmd; });
       return up.length ? up[0] : (ds.length ? ds[ds.length - 1] : '9999-12-31');
     }
+    // ===== v0.55.6: 「今日はもう終わり」 =====
+    // 【権威】2026-10-06、今日はもうやることが無い案件に、完了と同じ取り消し線を出したい。ただし明日も期間中なら復活する、との要望。
+    // ・印は案件の中に日付ごとに持つ（dayDone[日付]）。ほかの日には印が無いので、翌日は自動で元に戻る。
+    // ・完了（closed）とは別。工程の✓とも連動させない（「今日やることが無い」と「工程が進んだ」は別の話）。
+    // ・見え方：取り消し線・1行にたたむ・列のいちばん下へ。ただし⚠️は残す（明日以降の危険の知らせなので）。
+    // ・手で並べた順番（order）は書き換えない。下へ回すのは描くときだけ。
+    function tokiDayDone(c, ymd) {
+      return !!(c && !c.closed && c.dayDone && typeof c.dayDone === 'object' && c.dayDone[ymd] === true);
+    }
+    window.tokiDayDone = tokiDayDone;
+    function toggleTokiDayDone(caseId, ymd) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))) return;
+      var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
+      if (!c || (c.kind !== 'toki' && c.kind !== 'gyomu') || c.closed) return;
+      var m = Object.assign({}, (c.dayDone && typeof c.dayDone === 'object') ? c.dayDone : {});
+      if (m[ymd] === true) delete m[ymd]; else m[ymd] = true;
+      c.dayDone = m;
+      c.updatedAt = new Date().toISOString();   // 第61条
+      saveAllTasks();
+      _tokiRefreshAll();
+    }
+    window.toggleTokiDayDone = toggleTokiDayDone;
+    // 終わった案件を下へ回す（それぞれの中の順番はそのまま）
+    function tokiDoneLast(list, ymd) {
+      return list.filter(function(c) { return !tokiDayDone(c, ymd); }).concat(list.filter(function(c) { return tokiDayDone(c, ymd); }));
+    }
+    window.tokiDoneLast = tokiDoneLast;
+    // ===== END v0.55.6 =====
     function sortTokiCases(list, todayYmd) {
       // v0.52.0: 【権威】2026-10-05、優先順位はしょっちゅう入れ替わるので、ドラッグ＆ドロップで並べたい（必須）。
       // 一度でも手で並べたら（全件に順番がある）その順。まだなら、次に来る日の順。
@@ -15117,6 +15145,7 @@ function renderTodoList() {
       var quadMode = /Quad$/.test(elId);
       if (quadMode) { list = list.filter(function(c) { return gyomuQuadSlotOf(c, today) === 'slot1'; }); el.setAttribute('data-quad-slot', 'slot1'); }
       else el.removeAttribute('data-quad-slot');
+      list = tokiDoneLast(list, today);   // v0.55.6: 今日はもう終わりの案件は下へ
       var closedAll = _gyomuShownClosed(tpl.kind, today);
       var showAll = !!window['_gyomuShowAllClosed_' + tpl.kind];
       var closedShown = showAll ? closedAll : closedAll.slice(0, GYOMU_CLOSED_FIRST_SHOW);
@@ -15215,6 +15244,7 @@ function renderTodoList() {
         if (!box) { box = document.createElement('div'); box.id = 'gyomuQuadCol_' + slot; col.insertBefore(box, col.children[2] || null); }
         var cases = [];
         tpls.forEach(function(t) { cases = cases.concat(sortTokiCases(_gyomuOpenOn(t.kind, day), day).filter(function(c) { return gyomuQuadSlotOf(c, day) === slot; })); });
+        cases = tokiDoneLast(cases, day);   // v0.55.6
         box.setAttribute('data-quad-slot', slot);
         box.innerHTML = cases.length ? '<div style="padding:2px 4px;">' + cases.map(function(c) {
           var c2 = c.closed ? Object.assign({}, c, { closed: false }) : c;
@@ -15223,6 +15253,7 @@ function renderTodoList() {
         box.style.display = cases.length ? 'block' : 'none';
         _bindTokiDnD(box);
       });
+      if (typeof placeQuadCaseBoxes === 'function') placeQuadCaseBoxes();   // v0.55.6: 予定と案件の上下
     }
     // ===== END v0.55.1 =====
     function setGyomuTab(id) {
@@ -15326,7 +15357,8 @@ function renderTodoList() {
     }
     function _tokiCaseRowHtml(c, today, rowOpts) {
       rowOpts = rowOpts || {};
-      var collapsed = !!_tokiCollapsedMap()[c.id];
+      var dayDone = tokiDayDone(c, today);   // v0.55.6: 今日はもう終わり
+      var collapsed = dayDone || !!_tokiCollapsedMap()[c.id];
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
       var chip = function(c, row, step, done, faint) {
         return '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',' + row + ',\'' + esc(step) + '\')" style="padding:2px 7px;margin:2px 2px 0 0;border-radius:6px;font-size:0.78em;cursor:pointer;' +
@@ -15365,8 +15397,8 @@ function renderTodoList() {
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">' +
           // v0.55.2: 【権威】2026-10-06、カードが大きい。そのときは役目を終えるので1枚ずつ折りたためるように、ただし気づきにくいのは困る、との指摘。
           // ▾／▸で開閉（カードごと・その端末で覚える）。たたんでも、次の節目・工程の進み・次の工程・⚠️とオレンジの色は残す。
-          '<button onclick="toggleTokiCaseCollapsed(\'' + esc(c.id) + '\')" title="' + (collapsed ? '開く' : 'たたむ') + '" aria-expanded="' + !collapsed + '" style="border:none;background:none;cursor:pointer;color:#888;font-size:0.9em;padding:0 2px;flex:none;">' + (collapsed ? '▸' : '▾') + '</button>' +
-          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (collapsed ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' : '') + (c.closed ? 'text-decoration:line-through;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
+          (dayDone ? '' : '<button onclick="toggleTokiCaseCollapsed(\'' + esc(c.id) + '\')" title="' + (collapsed ? '開く' : 'たたむ') + '" aria-expanded="' + !collapsed + '" style="border:none;background:none;cursor:pointer;color:#888;font-size:0.9em;padding:0 2px;flex:none;">' + (collapsed ? '▸' : '▾') + '</button>') +
+          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (collapsed ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' : '') + (c.closed || dayDone ? 'text-decoration:line-through;' : '') + (dayDone ? 'color:#999;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
             (c.jian ? esc(c.jian) + '：' : '') + esc(tokiSama(c.buyer)) +
             (c.bukken ? '<span style="color:#555;">（物件：' + esc(c.bukken) + '）</span>' : '') +
             (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(tokiSama(c.seller)) + '）</span>' : '') +
@@ -15381,6 +15413,8 @@ function renderTodoList() {
             })() : '') +
             (_tokiIsTouch() ? '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',-1)" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
                               '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',1)" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">↓</button>' : '') +
+            // v0.55.6: 今日はもう終わり（押すと取り消し線。もう一度押すと戻る。翌日は自動で戻る）
+            (c.closed ? '' : '<button onclick="toggleTokiDayDone(\'' + esc(c.id) + '\',\'' + esc(today) + '\')" class="toki-daydone-btn" title="' + (dayDone ? '今日はもう終わり、を取り消す' : '今日はもう終わり') + '" style="border:1px solid ' + (dayDone ? '#2f9e44' : '#ccd') + ';background:' + (dayDone ? '#2f9e44' : '#fff') + ';color:' + (dayDone ? '#fff' : '#555') + ';border-radius:6px;cursor:pointer;font-size:0.72em;padding:1px 6px;margin-right:2px;">' + (dayDone ? '今日✓' : '今日おわり') + '</button>') +
             '<button onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" title="直す" style="border:none;background:none;cursor:pointer;font-size:1em;padding:0 4px;">✏️</button>' +
             '<button onclick="deleteTokiCase(\'' + esc(c.id) + '\')" title="削除" style="border:none;background:none;cursor:pointer;font-size:1.05em;color:#999;padding:0 4px;">×</button>' +
           '</span></div>' +
@@ -15436,6 +15470,7 @@ function renderTodoList() {
       // 日次と同じく、その日に進行中の案件をすべて並べる。その日に節目がある案件を先に、見出し（金消・決済など）付きで。
       var cases = sortTokiCases(_gyomuOpenOn(tpl.kind, ymd), ymd);
       cases = cases.filter(function(c) { return ids[c.id]; }).concat(cases.filter(function(c) { return !ids[c.id]; }));
+      cases = tokiDoneLast(cases, ymd);   // v0.55.6
       // v0.54.7: 【権威】2026-10-05、月間でほかの予定を入れようとすると、登記の案件が上に居座って邪魔、との指摘。
       // 見出しだけを出して初めは閉じておく。押すと開く（開いた・閉じたは覚える）。閉じていても件数と⚠️は見出しに出す。
       var openKey = 'koyomiru_sidebar_open_' + tpl.id, isOpen = false;
@@ -40593,7 +40628,49 @@ function renderDashboardView() {
           renderDailySpanStrip('dailySpanStripQuad', targetDate);
         }
       } catch (eStrip) {}
+      try { placeQuadCaseBoxes(); } catch (ePl) {}   // v0.55.6
     }
+    // ===== v0.55.6: 魚の目の列で、予定と案件のどちらを上にするか =====
+    function quadCasesShown() {
+      try { return gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI) || gyomuTemplateVisible(gyomuTemplateIppan()); } catch (e) { return false; }
+    }
+    window.quadCasesShown = quadCasesShown;
+    function quadTasksFirst(slot) {
+      var m = allSettings.ui && allSettings.ui.quadTasksFirst;
+      return !!(m && typeof m === 'object' && m[slot] === true);   // 第42条：既定は「案件が上」（今まで通り）
+    }
+    window.quadTasksFirst = quadTasksFirst;
+    function toggleQuadTasksFirst(slot) {
+      if (['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1) return;
+      if (!allSettings.ui) allSettings.ui = {};
+      var m = Object.assign({}, (allSettings.ui.quadTasksFirst && typeof allSettings.ui.quadTasksFirst === 'object') ? allSettings.ui.quadTasksFirst : {});
+      if (m[slot] === true) delete m[slot]; else m[slot] = true;
+      allSettings.ui.quadTasksFirst = m;
+      saveAllSettings();
+      renderQuadView();
+    }
+    window.toggleQuadTasksFirst = toggleQuadTasksFirst;
+    // 各列の案件の箱を、予定の一覧の前（案件が上）か後ろ（予定が上）に置き直す。描くたびに呼ぶ
+    function placeQuadCaseBoxes() {
+      var body = document.getElementById('quadViewBody');
+      if (!body) return;
+      ['slot1', 'slot2', 'slot3', 'slot4'].forEach(function(slot, i) {
+        var col = body.children[i];
+        if (!col) return;
+        var list = col.querySelector(':scope > .quad-task-list');
+        if (!list) return;
+        var ids = slot === 'slot1' ? ['tokiPanelQuad', 'gyomuPanelQuad'] : ['gyomuQuadCol_' + slot];
+        var boxes = ids.map(function(id) { return document.getElementById(id); }).filter(function(b) { return b && b.parentNode === col; });
+        if (quadTasksFirst(slot)) {
+          var after = list;
+          boxes.forEach(function(b) { col.insertBefore(b, after.nextSibling); after = b; });
+        } else {
+          boxes.forEach(function(b) { col.insertBefore(b, list); });
+        }
+      });
+    }
+    window.placeQuadCaseBoxes = placeQuadCaseBoxes;
+    // ===== END v0.55.6 =====
     function _buildQuadSlot(col, tasks) {
       var div = document.createElement('div');
       div.style.cssText = 'background:' + col.color + ';border-radius:8px;padding:6px;min-height:200px;display:flex;flex-direction:column;';
@@ -40639,6 +40716,20 @@ function renderDashboardView() {
       var header = document.createElement('div');
       header.style.cssText = 'font-size:0.75em;font-weight:700;color:#444;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid rgba(0,0,0,0.1);';
       header.textContent = col.emoji + ' ' + col.label;
+      // v0.55.6: 【権威】2026-10-06、魚の目で FAX・TEL などの予定を、登記の案件のカードより上にしたい、それが実務の流れ、との要望。
+      // 列ごとに「予定が上／案件が上」を切り替える（選択「A」）。案件を使っている人にだけ出す。
+      if (typeof quadCasesShown === 'function' && quadCasesShown()) {
+        header.style.display = 'flex'; header.style.justifyContent = 'space-between'; header.style.alignItems = 'center';
+        var _swap = document.createElement('button');
+        _swap.type = 'button';
+        _swap.className = 'quad-order-swap';
+        _swap.setAttribute('data-quad-swap', col.key);
+        _swap.textContent = '⇅';
+        _swap.title = quadTasksFirst(col.key) ? '案件を上にする' : '予定を上にする';
+        _swap.style.cssText = 'border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:1em;padding:0 6px;line-height:1.4;color:#555;';
+        _swap.onclick = function(e) { e.stopPropagation(); toggleQuadTasksFirst(col.key); };
+        header.appendChild(_swap);
+      }
       div.appendChild(header);
       // タスク一覧
       // 新規タスク入力欄（ヘッダー直後・上部）
@@ -40711,6 +40802,7 @@ function renderDashboardView() {
       div.appendChild(inputRow);
       // タスク一覧（既存li UIに近づける）
       var taskList = document.createElement('div');
+      taskList.className = 'quad-task-list';   // v0.55.6: 案件の箱を、この前か後ろに置く目印
       taskList.style.cssText = 'flex:1;';
       tasks.forEach(function(t) {
         var item = document.createElement('div');
@@ -51909,6 +52001,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.6', date: '2026-10-06',
+    items: [
+      { icon:'🐟', t:'魚の目で、予定を案件のカードより上にできるようにしました',
+        before:'魚の目の各列では、案件のカードがいつも予定より上に出ていました',
+        after:'列の見出しの右の「⇅」で、予定と案件のどちらを上にするかを列ごとに切り替えられます' },
+      { icon:'💼', t:'案件に「今日おわり」を付けられるようにしました',
+        before:'その日にもうやることが無い案件も、ほかの案件と同じように出ていました',
+        after:'カードの「今日おわり」を押すと、その日だけ取り消し線を引いて1行にたたみ、列のいちばん下に回します（⚠️は残ります）。次の日は自動で元に戻ります。もう一度押すと取り消せます' }
+    ]
+  },
   {
     ver: 'v0.55.5', date: '2026-10-06',
     items: [
@@ -75321,6 +75424,101 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          });
        }, function(e) { window.showChoiceModal = savedModal; throw e; });
      });
+
+     // ===== ST-419: 魚の目の列で、予定と案件のどちらを上にするか（v0.55.6〜） =====
+     // 【権威】2026-10-06、FAX・TEL などの予定を、登記の案件のカードより上にしたい、との要望（選択「A」：列ごとの切り替え）。
+     var _st419tasks = allTasks.slice();
+     var _st419flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st419ui = allSettings.ui && allSettings.ui.quadTasksFirst ? JSON.parse(JSON.stringify(allSettings.ui.quadTasksFirst)) : undefined;
+     var _st419save = window.saveAllSettings, _st419saveT = window.saveAllTasks, _st419date = currentDailyDate;
+     try {
+       window.saveAllSettings = function() {}; window.saveAllTasks = function() {};
+       var _st419d = getLocalDateStr(new Date());
+       currentDailyDate = _st419d;
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { gyomuMode: true });
+       if (!allSettings.ui) allSettings.ui = {};
+       allSettings.ui.quadTasksFirst = {};
+       var _st419q = {}; _st419q[_st419d] = 'slot2';
+       allTasks.push({ id: 'st419-case', kind: 'gyomu', buyer: '山田太郎', createdAt: new Date(Date.now() - 86400000).toISOString(), quadSlots: _st419q, steps1: {} });
+       allTasks.push({ id: 'st419-task', kind: 'task', text: 'FAX', date: _st419d, section: 1, timeSlot: 'slot2', displayScope: 'daily_only', createdAt: new Date().toISOString() });
+       var _st419order = function() {
+         var col = document.getElementById('quadViewBody').children[1];
+         var kids = [].slice.call(col.children);
+         return { box: kids.indexOf(document.getElementById('gyomuQuadCol_slot2')), list: kids.indexOf(col.querySelector(':scope > .quad-task-list')),
+                  swap: !!col.querySelector('[data-quad-swap="slot2"]'), caseShown: !!col.querySelector('[data-toki-id="st419-case"]') };
+       };
+       renderQuadView();
+       var _st419a = _st419order();
+       toggleQuadTasksFirst('slot2');
+       var _st419b = _st419order();
+       var _st419other = quadTasksFirst('slot3');
+       toggleQuadTasksFirst('slot2');
+       var _st419c = _st419order();
+       (_st419a.caseShown && _st419a.swap && _st419a.box >= 0 && _st419a.box < _st419a.list &&
+        _st419b.box > _st419b.list && !_st419other && _st419c.box < _st419c.list)
+         ? ok('ST-419·①: 列の⇅で、予定と案件の上下が入れ替わる（ほかの列は変わらない。もう一度押すと戻る）')
+         : ng('ST-419·①: 予定と案件の上下が入れ替わらない', JSON.stringify([_st419a, _st419b, _st419c]));
+     } catch(e) {
+       ng('ST-419: 例外', e.message);
+     } finally {
+       window.saveAllSettings = _st419save; window.saveAllTasks = _st419saveT;
+       allTasks = _st419tasks; allSettings.flags = _st419flags; currentDailyDate = _st419date;
+       if (_st419ui === undefined) { if (allSettings.ui) delete allSettings.ui.quadTasksFirst; } else allSettings.ui.quadTasksFirst = _st419ui;
+       try { renderQuadView(); } catch (eR) {}
+     }
+
+     // ===== ST-420: 「今日はもう終わり」（v0.55.6〜） =====
+     // 【権威】2026-10-06、今日はもうやることが無い案件に取り消し線を出したい。明日も期間中なら復活する、との要望。
+     var _st420tasks = allTasks.slice();
+     var _st420flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st420save = window.saveAllTasks, _st420saveS = window.saveAllSettings, _st420date = currentDailyDate;
+     try {
+       window.saveAllTasks = function() {}; window.saveAllSettings = function() {};
+       // ① 印は日付ごと。翌日は付いていない。済んだ案件には付けない。手で並べた順番は変えない
+       var _st420c = { id: 'st420-a', kind: 'toki', box: 'B1', buyer: '甲', kessaiDate: '2026-10-09', steps1: { '物': true }, order: 5, createdAt: '2026-10-01T00:00:00Z' };
+       var _st420x = { id: 'st420-x', kind: 'toki', closed: true, closedAt: '2026-10-02T00:00:00Z', order: 6, createdAt: '2026-10-01T00:00:00Z' };
+       allTasks.push(_st420c, _st420x);
+       toggleTokiDayDone('st420-a', '2026-10-06');
+       toggleTokiDayDone('st420-x', '2026-10-06');
+       var _st420one = tokiDayDone(_st420c, '2026-10-06') && !tokiDayDone(_st420c, '2026-10-07') && !_st420x.dayDone && _st420c.order === 5;
+       toggleTokiDayDone('st420-a', '2026-10-06');
+       var _st420undo = !tokiDayDone(_st420c, '2026-10-06');
+       (_st420one && _st420undo)
+         ? ok('ST-420·①: 「今日はもう終わり」はその日だけの印（翌日は元どおり・押し直すと取り消し・済んだ案件には付かない・並び順は変えない）')
+         : ng('ST-420·①: 印の付き方が違う', JSON.stringify([_st420one, _st420undo, _st420c.dayDone, _st420x.dayDone]));
+       // ② 見え方：取り消し線・1行・⚠️は残す。翌日の画面では普通に出る
+       toggleTokiDayDone('st420-a', '2026-10-06');
+       var _st420h = _tokiCaseRowHtml(_st420c, '2026-10-06');
+       var _st420h2 = _tokiCaseRowHtml(_st420c, '2026-10-07');
+       (_st420h.indexOf('line-through') !== -1 && _st420h.indexOf('今日✓') !== -1 && _st420h.indexOf('⚠️') !== -1 && _st420h.indexOf('▾') === -1 &&
+        _st420h2.indexOf('今日おわり') !== -1 && _st420h2.indexOf('今日✓') === -1)
+         ? ok('ST-420·②: 終わった日は取り消し線で1行にたたみ、⚠️は残す。ほかの日は普通に出る')
+         : ng('ST-420·②: 見え方が違う', '');
+       // ③ 繋がっているか（第76条）：魚の目でボタンを押すと、その案件が列の下へ回る
+       var _st420d = getLocalDateStr(new Date());
+       currentDailyDate = _st420d; window._gyomuViewDate = _st420d;
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { gyomuMode: true });
+       var _st420q = {}; _st420q[_st420d] = 'slot2';
+       var _st420y = new Date(Date.now() - 86400000).toISOString();
+       allTasks.push({ id: 'st420-p', kind: 'gyomu', buyer: '山田太郎', order: 0, createdAt: _st420y, quadSlots: _st420q, steps1: {} },
+                     { id: 'st420-r', kind: 'gyomu', buyer: '佐藤花子', order: 1, createdAt: _st420y, quadSlots: _st420q, steps1: {} });
+       renderQuadView();
+       var _st420ids = function() { return [].map.call(document.querySelectorAll('#gyomuQuadCol_slot2 .toki-case-row'), function(r) { return r.getAttribute('data-toki-id'); }).join(','); };
+       var _st420before = _st420ids();
+       var _st420btn = document.querySelector('#gyomuQuadCol_slot2 [data-toki-id="st420-p"] .toki-daydone-btn');
+       if (_st420btn) _st420btn.click();
+       var _st420after = _st420ids();
+       var _st420p = allTasks.filter(function(t) { return t.id === 'st420-p'; })[0];
+       (_st420before === 'st420-p,st420-r' && _st420after === 'st420-r,st420-p' && _st420p.order === 0 && tokiDayDone(_st420p, _st420d))
+         ? ok('ST-420·③: 魚の目で「今日おわり」を押すと、その案件が列のいちばん下へ回る（手で並べた順番は書き換えない）')
+         : ng('ST-420·③: 押しても下へ回らない', _st420before + ' → ' + _st420after);
+     } catch(e) {
+       ng('ST-420: 例外', e.message);
+     } finally {
+       window.saveAllTasks = _st420save; window.saveAllSettings = _st420saveS;
+       allTasks = _st420tasks; allSettings.flags = _st420flags; currentDailyDate = _st420date;
+       try { renderQuadView(); } catch (eR) {}
+     }
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
