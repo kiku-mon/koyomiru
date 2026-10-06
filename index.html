@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.6 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.7 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.6';
+    const APP_VERSION = 'v0.55.7';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15391,7 +15391,7 @@ function renderTodoList() {
           return _tokiDateLabel(ms.name, dt, today) + (ms.plan ? plan(k) + goerTag(k) : '');
         }).filter(function(x) { return !!x; }).join('　｜　');
         // v0.53.4: 【権威】2026-10-05、済んだ案件を隠すな、普通の予定と同じく取り消し線を引いて残せ、との指摘
-        return '<div class="toki-case-row' + (c.closed ? ' toki-case-closed' : '') + '"' + (c.closed ? '' : ' draggable="true"') + ' data-toki-id="' + esc(c.id) + '" style="padding:7px 8px;margin:0 0 6px;border-radius:8px;' + (c.closed ? 'opacity:0.55;' : 'cursor:grab;') + 'background:' + (al.length ? '#fff4e6' : '#f6f8fc') + ';border-left:4px solid ' + (c.closed ? '#adb5bd' : al.length ? '#e8590c' : '#5b8def') + ';">' +
+        return '<div class="toki-case-row' + (c.closed ? ' toki-case-closed' : '') + '"' + (c.closed ? '' : ' draggable="true"') + ' data-toki-id="' + esc(c.id) + '" style="padding:7px 8px;margin:0 0 6px;border-radius:8px;' + (c.closed ? 'opacity:0.55;' : 'cursor:grab;') + 'background:' + (dayDone ? '#f1f3f5' : al.length ? '#fff4e6' : '#f6f8fc') + ';border-left:4px solid ' + (c.closed ? '#adb5bd' : al.length ? '#e8590c' : dayDone ? '#adb5bd' : '#5b8def') + ';">' +
           // v0.51.7: 【権威】2026-10-05、登記は直したり消したりできないのか、との指摘。番号を押せば直せたが、
           // 普通の予定のような ✏️ と × が無く、分からなかった。普通の予定と同じ形で、右上に付ける。
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">' +
@@ -40661,6 +40661,10 @@ function renderDashboardView() {
         if (!list) return;
         var ids = slot === 'slot1' ? ['tokiPanelQuad', 'gyomuPanelQuad'] : ['gyomuQuadCol_' + slot];
         var boxes = ids.map(function(id) { return document.getElementById(id); }).filter(function(b) { return b && b.parentNode === col; });
+        // v0.55.7: 【権威】2026-10-06、予定を上にすると案件が列のいちばん下まで押し出される、との指摘。
+        // 予定の一覧が列の残りの高さを全部使う（flex:1）ため、その後ろの案件が下に追いやられていた。
+        // 予定が上のときは、一覧を中身の高さだけにして、案件をすぐ下に続ける。
+        list.style.flex = quadTasksFirst(slot) ? '0 0 auto' : '1';
         if (quadTasksFirst(slot)) {
           var after = list;
           boxes.forEach(function(b) { col.insertBefore(b, after.nextSibling); after = b; });
@@ -52001,6 +52005,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.7', date: '2026-10-06',
+    items: [
+      { icon:'🐟', t:'魚の目で予定を上にしたとき、案件が列の下まで離れないようにしました',
+        before:'予定を上にすると、案件のカードが列のいちばん下まで押し出されていました',
+        after:'案件のカードは、最後の予定のすぐ下に続きます' },
+      { icon:'💼', t:'「今日✓」の案件を、灰色で見分けやすくしました',
+        before:'「今日✓」の案件も、進行中の案件と同じ青い色のままでした',
+        after:'「今日✓」の案件は、地も左の線も灰色になります。⚠️のある案件は、左の線だけオレンジのまま残します' }
+    ]
+  },
   {
     ver: 'v0.55.6', date: '2026-10-06',
     items: [
@@ -75451,11 +75466,26 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st419a = _st419order();
        toggleQuadTasksFirst('slot2');
        var _st419b = _st419order();
+       // v0.55.7: 予定が上のとき、案件は予定のすぐ下に続く（列のいちばん下まで押し出されない）
+       var _st419col = document.getElementById('quadViewBody').children[1];
+       // テストの間は魚の目の画面が隠れていて高さが測れないので、測るときだけ見える状態にして、測り終えたら戻す
+       var _st419shown = [], _st419n = _st419col;
+       while (_st419n && _st419n !== document.body) {
+         if (getComputedStyle(_st419n).display === 'none') { _st419shown.push([_st419n, _st419n.style.display]); _st419n.style.display = _st419n.id === 'quadViewBody' ? 'grid' : 'block'; }
+         _st419n = _st419n.parentElement;
+       }
+       var _st419mh = _st419col.style.minHeight;
+       _st419col.style.minHeight = '600px';
+       var _st419last = _st419col.querySelector(':scope > .quad-task-list').lastElementChild;   // 最後の予定と案件の間を測る（一覧そのものが伸びると、一覧と案件の間は0のままなので）
+       var _st419gap = _st419last ? document.getElementById('gyomuQuadCol_slot2').getBoundingClientRect().top - _st419last.getBoundingClientRect().bottom : 999;
+       _st419col.style.minHeight = _st419mh;
+       _st419shown.forEach(function(x) { x[0].style.display = x[1]; });
+       _st419b.gap = Math.round(_st419gap);
        var _st419other = quadTasksFirst('slot3');
        toggleQuadTasksFirst('slot2');
        var _st419c = _st419order();
        (_st419a.caseShown && _st419a.swap && _st419a.box >= 0 && _st419a.box < _st419a.list &&
-        _st419b.box > _st419b.list && !_st419other && _st419c.box < _st419c.list)
+        _st419b.box > _st419b.list && _st419b.gap < 40 && !_st419other && _st419c.box < _st419c.list)
          ? ok('ST-419·①: 列の⇅で、予定と案件の上下が入れ替わる（ほかの列は変わらない。もう一度押すと戻る）')
          : ng('ST-419·①: 予定と案件の上下が入れ替わらない', JSON.stringify([_st419a, _st419b, _st419c]));
      } catch(e) {
@@ -75491,8 +75521,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st420h = _tokiCaseRowHtml(_st420c, '2026-10-06');
        var _st420h2 = _tokiCaseRowHtml(_st420c, '2026-10-07');
        (_st420h.indexOf('line-through') !== -1 && _st420h.indexOf('今日✓') !== -1 && _st420h.indexOf('⚠️') !== -1 && _st420h.indexOf('▾') === -1 &&
-        _st420h2.indexOf('今日おわり') !== -1 && _st420h2.indexOf('今日✓') === -1)
-         ? ok('ST-420·②: 終わった日は取り消し線で1行にたたみ、⚠️は残す。ほかの日は普通に出る')
+        _st420h2.indexOf('今日おわり') !== -1 && _st420h2.indexOf('今日✓') === -1 &&
+        _st420h.indexOf('#f1f3f5') !== -1 && _st420h.indexOf('#e8590c') !== -1 && _st420h2.indexOf('#f1f3f5') === -1)   // v0.55.7: 今日✓は灰色の地。⚠️があれば左線はオレンジのまま
+         ? ok('ST-420·②: 終わった日は取り消し線・灰色の地で1行にたたみ、⚠️（オレンジの左線）は残す。ほかの日は普通に出る')
          : ng('ST-420·②: 見え方が違う', '');
        // ③ 繋がっているか（第76条）：魚の目でボタンを押すと、その案件が列の下へ回る
        var _st420d = getLocalDateStr(new Date());
