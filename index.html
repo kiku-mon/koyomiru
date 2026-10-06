@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.2';
+    const APP_VERSION = 'v0.55.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15245,7 +15245,7 @@ function renderTodoList() {
     window.gyomuQuadSlotOf = gyomuQuadSlotOf;
     function setGyomuQuadSlot(caseId, slot) {
       var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
-      if (!c || ['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1) return;
+      if (!c || (c.kind !== 'toki' && c.kind !== 'gyomu') || ['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1) return;   // v0.55.3: 案件だけ
       var ymd = window._gyomuViewDate || getLocalDateStr(new Date());
       if (gyomuQuadSlotOf(c, ymd) === slot && c.quadSlots && c.quadSlots[ymd] === slot) return;
       c.quadSlots = Object.assign({}, c.quadSlots || {});
@@ -15288,7 +15288,7 @@ function renderTodoList() {
       if (!dragId || !targetId || dragId === targetId) return;
       var today = getLocalDateStr(new Date());
       var dragged = allTasks.filter(function(t) { return t && t.id === dragId; })[0];
-      if (!dragged) return;
+      if (!dragged || (dragged.kind !== 'toki' && dragged.kind !== 'gyomu')) return;   // v0.55.3: 案件だけ並べ替える
       var list = sortTokiCases(getTokiCases(false, dragged.kind), today);
       var from = list.findIndex(function(c) { return c.id === dragId; });
       if (from < 0) return;
@@ -15330,11 +15330,16 @@ function renderTodoList() {
           row.style.opacity = '0.5';
         });
         row.addEventListener('dragend', function() { row.style.opacity = ''; });
-        row.addEventListener('dragover', function(e) { e.preventDefault(); row.style.borderTop = '3px solid #5b8def'; });
+        // v0.55.3: 【権威】2026-10-06、魚の目でメールや業務確認（普通の予定）が動かせなくなった、との指摘。
+        // 案件のカードの上に普通の予定を落とすと、ここで受け取って列に渡していなかった。案件のときだけ受け取る。
+        var _isCaseDrag = function(e) { try { return [].indexOf.call(e.dataTransfer.types || [], 'application/x-koyomiru-case') !== -1; } catch (eT) { return false; } };
+        row.addEventListener('dragover', function(e) { if (!_isCaseDrag(e)) return; e.preventDefault(); row.style.borderTop = '3px solid #5b8def'; });
         row.addEventListener('dragleave', function() { row.style.borderTop = ''; });
         row.addEventListener('drop', function(e) {
-          e.preventDefault(); e.stopPropagation(); row.style.borderTop = '';
-          var dragId = e.dataTransfer.getData('text/plain');
+          row.style.borderTop = '';
+          if (!_isCaseDrag(e)) return;   // 普通の予定は、そのまま列に渡す（列の受け取りが動かす）
+          e.preventDefault(); e.stopPropagation();
+          var dragId = e.dataTransfer.getData('application/x-koyomiru-case') || e.dataTransfer.getData('text/plain');
           // v0.55.1: 魚の目では、落とした行のある列に置いてから、並べ替える
           var slot = el.getAttribute('data-quad-slot');
           if (slot && typeof setGyomuQuadSlot === 'function') setGyomuQuadSlot(dragId, slot);
@@ -51858,7 +51863,7 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.55.2', date: '2026-10-06',
+    ver: 'v0.55.3', date: '2026-10-06',
     items: [
       { icon:'💼', t:'案件のカードを1枚ずつ折りたためるようにしました',
         before:'案件のカードが大きく、たくさんあると見通しが悪くなっていました',
