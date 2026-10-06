@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.10 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.11 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.10';
+    const APP_VERSION = 'v0.55.11';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15044,9 +15044,9 @@ function renderTodoList() {
         m[ymd] = true;
         // v0.55.10: 押したときは下へ回す（その日の魚の目の位置の書き留めも外す）。そのあとは手で自由に動かせる
         sink[ymd] = true;
-        if (c.quadOrderKeys && typeof c.quadOrderKeys === 'object' && c.quadOrderKeys[ymd] !== undefined) {
-          c.quadOrderKeys = Object.assign({}, c.quadOrderKeys); delete c.quadOrderKeys[ymd];
-        }
+        ['quadOrderKeys', 'matrixOrderKeys'].forEach(function(kf) {   // v0.55.11: 魚の目とマトリクスの両方
+          if (c[kf] && typeof c[kf] === 'object' && c[kf][ymd] !== undefined) { c[kf] = Object.assign({}, c[kf]); delete c[kf][ymd]; }
+        });
       }
       c.dayDone = m;
       c.dayDoneSink = sink;
@@ -15072,6 +15072,228 @@ function renderTodoList() {
     }
     window.tokiDoneLast = tokiDoneLast;
     // ===== END v0.55.6 =====
+    // v0.55.11: 【第74条】起動時の最初の描画（renderAllSections）で使うので、ここ（それより前に読まれる場所）に置く。
+    // 以前は魚の目の処理の近く（後ろの方の中括弧の中）に置いていて、起動時に「まだ無い」で描画が失敗した。
+    // ===== v0.55.11: 予定と案件を1本に並べる計算（魚の目とマトリクスで共通・第71条④） =====
+    // 【権威】2026-10-06、日次のマトリクスでも、魚の目と同じように予定と案件を混ぜて並べたい、との要望。
+    // 並べる場所ごとに「場面（ctx）」を作って渡す。場面には、その場所の予定・案件、位置を書き留める欄の名前、
+    // 初めの並び（予定が上か）、動かしたときに予定・案件をその場所に移す処理を持たせる。
+    //   魚の目：位置は quadOrderKeys[日付]（列ごとに意味を持つ）
+    //   マトリクス：位置は matrixOrderKeys[日付]（緊急かつ重要の一覧の中）
+    // 予定の順は崩さず（象限ごとに並べた順のまま）、その間に案件を差し込む（第35条：描く並びと計算の並びを同じにする）。
+    function mixedKeyOn(c, keyField, ymd) {
+      var m = c && c[keyField], v = (m && typeof m === 'object') ? m[ymd] : null;
+      return (typeof v === 'number' && isFinite(v)) ? v : null;
+    }
+    window.mixedKeyOn = mixedKeyOn;
+    // 並び：[{ type:'task'|'case', item, pos, sunk }]。押した直後の今日✓（印あり・位置の書き留め無し）は最後
+    function mixedRows(ctx, ymd) {
+      var kf = ctx.keyField;
+      var isSunk = function(c) { return tokiDaySunk(c, ymd) && mixedKeyOn(c, kf, ymd) === null; };
+      var active = ctx.cases.filter(function(c) { return !isSunk(c); });
+      var done = ctx.cases.filter(isSunk);
+      var tRows = ctx.tasks.map(function(t) { return { type: 'task', item: t, pos: _taskSortKey(t) }; });
+      var keys = tRows.map(function(r) { return r.pos; });
+      var minT = keys.length ? Math.min.apply(null, keys) : 0, maxT = keys.length ? Math.max.apply(null, keys) : 0;
+      var n = active.length;
+      var cRows = active.map(function(c, i) {
+        var k = mixedKeyOn(c, kf, ymd);
+        if (k === null) k = ctx.tasksFirst ? maxT + 1 + i : minT - (n - i);   // 手で動かしていない日は初めの並び
+        return { type: 'case', item: c, pos: k, i: i };
+      }).sort(function(a, b) { return a.pos - b.pos || a.i - b.i; });
+      var out = [], ci = 0;
+      tRows.forEach(function(tr) {
+        while (ci < cRows.length && cRows[ci].pos < tr.pos) out.push(cRows[ci++]);
+        out.push(tr);
+      });
+      while (ci < cRows.length) out.push(cRows[ci++]);
+      var last = out.length ? Math.max.apply(null, out.map(function(r) { return r.pos; })) : 0;
+      return out.concat(done.map(function(c, i) { return { type: 'case', item: c, pos: last + 1 + i, sunk: true }; }));
+    }
+    window.mixedRows = mixedRows;
+    // 落とした位置に動かす。targetId の前（after=false）か後ろ（after=true）。targetId が無ければ最後（第36条）
+    function mixedDropMove(ctx, dragId, targetId, after, ymd) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))) return false;
+      var dragged = allTasks.filter(function(t) { return t && t.id === dragId; })[0];
+      if (!dragged) return false;
+      var isCase = dragged.kind === 'toki' || dragged.kind === 'gyomu';
+      if (isCase && dragged.closed) return false;   // 済んだ案件は並べ替えない
+      if (isCase && ctx.casesNotMixed) {            // 案件を混ぜない場所（魚の目のプライベートの列）
+        if (typeof ctx.onCaseElsewhere === 'function') ctx.onCaseElsewhere(dragged);
+        return true;
+      }
+      if (!isCase && (dragged.kind || 'task') !== 'task') return false;   // 予定と案件のほかは動かさない
+      var kf = ctx.keyField, now = new Date().toISOString();
+      var rows = mixedRows(ctx, ymd);   // 今日✓も含めて、全部が並べ替えの相手になる
+      // その場所の案件の位置を書き留める（予定が動いても、案件が回り込まないように）。「下へ」の印も外す（手で並べた順を優先）
+      rows.forEach(function(r) {
+        if (r.type !== 'case') return;
+        _tokiUnsink(r.item, ymd, now);
+        if (r.item.id === dragId || mixedKeyOn(r.item, kf, ymd) !== null) return;
+        r.item[kf] = Object.assign({}, r.item[kf] || {}); r.item[kf][ymd] = r.pos;
+        r.item.updatedAt = now;   // 第61条
+      });
+      if (isCase) _tokiUnsink(dragged, ymd, now);
+      var list = rows.filter(function(r) { return r.item.id !== dragId; });
+      var ti = targetId ? list.findIndex(function(r) { return r.item.id === targetId; }) : -1;
+      var ins = ti < 0 ? list.length : (after ? ti + 1 : ti);
+      var prev = list[ins - 1], next = list[ins];
+      var key = (!prev && !next) ? 0 : !prev ? next.pos - 1 : !next ? prev.pos + 1 : (prev.pos + next.pos) / 2;
+      if (isCase) {
+        if (typeof ctx.placeCase === 'function') ctx.placeCase(dragged);
+        dragged[kf] = Object.assign({}, dragged[kf] || {}); dragged[kf][ymd] = key;
+      } else {
+        if (typeof ctx.placeTask === 'function') ctx.placeTask(dragged);
+        dragged.orderKey = key;
+      }
+      dragged.updatedAt = now;   // 第61条
+      saveAllTasks();
+      return true;
+    }
+    window.mixedDropMove = mixedDropMove;
+    // スマホの ↑↓：その場所の中で1つ上・下へ
+    function mixedMoveBy(ctx, id, delta, ymd) {
+      var rows = mixedRows(ctx, ymd);
+      var i = rows.findIndex(function(r) { return r.item.id === id; }), j = i + delta;
+      if (i < 0 || j < 0 || j >= rows.length) return false;
+      return mixedDropMove(ctx, id, rows[j].item.id, delta > 0, ymd);
+    }
+    window.mixedMoveBy = mixedMoveBy;
+    // ドラッグで運ばれてきたものの ID（魚の目は ID そのまま、マトリクスの予定は JSON に入っている）
+    function _dragIdFrom(e) {
+      var id = '';
+      try { id = e.dataTransfer.getData('application/x-koyomiru-case'); } catch (eC) {}
+      if (id) return id;
+      var raw = '';
+      try { raw = e.dataTransfer.getData('text/plain') || ''; } catch (eT) {}
+      if (raw.charAt(0) === '{') { try { var o = JSON.parse(raw); return (o && typeof o.taskId === 'string') ? o.taskId : ''; } catch (eJ) { return ''; } }
+      return raw;
+    }
+    window._dragIdFrom = _dragIdFrom;
+    // 行に落としたときの受け取り（予定・案件の両方）。上半分なら前、下半分なら後ろ（第36条）。onDrop(運ばれてきたID, 後ろか)
+    function _mixBindRowDrop(el, targetId, onDrop) {
+      var isAfter = function(e) { var r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
+      el.addEventListener('dragover', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        var a = targetId ? isAfter(e) : true;
+        el.style.borderTop = a ? '' : '2px solid #4facfe';
+        el.style.borderBottom = a ? '2px solid #4facfe' : '';
+      });
+      el.addEventListener('dragleave', function() { el.style.borderTop = ''; el.style.borderBottom = ''; });
+      el.addEventListener('drop', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        el.style.borderTop = ''; el.style.borderBottom = '';
+        var fromId = _dragIdFrom(e);
+        if (!fromId || fromId === targetId) return;
+        onDrop(fromId, targetId ? isAfter(e) : true);
+      });
+    }
+    window._mixBindRowDrop = _mixBindRowDrop;
+    // --- 魚の目の場面 ---
+    function quadCaseKeyOn(c, ymd) { return mixedKeyOn(c, 'quadOrderKeys', ymd); }
+    window.quadCaseKeyOn = quadCaseKeyOn;
+    function _quadCtx(slot, ymd) {
+      return {
+        tasks: quadTasksInSlot(slot, ymd), cases: quadCasesInSlot(slot, ymd), keyField: 'quadOrderKeys', tasksFirst: quadTasksFirst(slot),
+        casesNotMixed: slot === 'slot1',   // プライベートの列は箱なので、置き場所だけ変える
+        onCaseElsewhere: function(c) { if (typeof setGyomuQuadSlot === 'function') setGyomuQuadSlot(c.id, slot); },
+        placeTask: function(t) { t.timeSlot = slot; },
+        placeCase: function(c) { c.quadSlots = Object.assign({}, c.quadSlots || {}); c.quadSlots[ymd] = slot; }
+      };
+    }
+    function quadColumnRows(slot, ymd) { return mixedRows(_quadCtx(slot, ymd), ymd); }
+    window.quadColumnRows = quadColumnRows;
+    function quadDropMove(dragId, targetId, after, slot, ymd) {
+      if (['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1) return false;
+      return mixedDropMove(_quadCtx(slot, ymd), dragId, targetId, after, ymd);
+    }
+    window.quadDropMove = quadDropMove;
+    function quadMoveBy(id, delta, slot, ymd) {
+      if (mixedMoveBy(_quadCtx(slot, ymd), id, delta, ymd)) renderQuadView();
+    }
+    window.quadMoveBy = quadMoveBy;
+    function _quadBindRowDrop(el, targetId, slot, day) {
+      _mixBindRowDrop(el, targetId, function(fromId, after) { if (quadDropMove(fromId, targetId, after, slot, day)) renderQuadView(); });
+    }
+    window._quadBindRowDrop = _quadBindRowDrop;
+    // --- マトリクス（緊急かつ重要）の場面（v0.55.11） ---
+    // 案件を使っている人（登記・業務モードがオン）のときだけ混ぜる。使っていない人は、今までの作りのまま。
+    // v0.55.11: 起動時の最初の描画（renderAllSections）より前に読まれる場所に置く（第74条）。後ろの方の関数に頼らない
+    function matrixMixOn() {
+      try { return gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI) || gyomuTemplateVisible(gyomuTemplateIppan()); } catch (e) { return false; }
+    }
+    window.matrixMixOn = matrixMixOn;
+    // 緊急かつ重要に出す案件のひな形（箱と同じ：両方使う人は、つまみで選んでいる方だけ）
+    function _matrixTemplatesShown() {
+      var tpls = [GYOMU_TEMPLATE_TOKI, gyomuTemplateIppan()].filter(gyomuTemplateVisible);
+      if (tpls.length < 2) return tpls;
+      var sel = 'toki';
+      try { sel = localStorage.getItem('koyomiru_gyomu_tab') === 'ippan' ? 'ippan' : 'toki'; } catch (e) {}
+      return tpls.filter(function(t) { return t.id === sel; });
+    }
+    function _matrixCtx(ymd) {
+      var cases = [];
+      _matrixTemplatesShown().forEach(function(t) { cases = cases.concat(sortTokiCases(_gyomuOpenOn(t.kind, ymd), ymd)); });
+      return {
+        tasks: (getDailyTasks(ymd) || {})[1] || [], cases: cases, keyField: 'matrixOrderKeys', tasksFirst: false,
+        placeTask: function(t) { t.section = 1; },   // ほかの象限から運ばれてきた予定は、緊急かつ重要へ
+        placeCase: function() {}
+      };
+    }
+    function matrixRows(ymd) { return mixedRows(_matrixCtx(ymd), ymd); }
+    window.matrixRows = matrixRows;
+    function matrixDropMove(dragId, targetId, after, ymd) { return mixedDropMove(_matrixCtx(ymd), dragId, targetId, after, ymd); }
+    window.matrixDropMove = matrixDropMove;
+    function _matrixRedraw(ymd) {
+      if (typeof renderAllSections === 'function') renderAllSections(ymd);   // ほかの象限から運ばれてきたときも、両方を描き直す
+    }
+    function matrixMoveBy(id, delta, ymd) { if (mixedMoveBy(_matrixCtx(ymd), id, delta, ymd)) _matrixRedraw(ymd); }
+    window.matrixMoveBy = matrixMoveBy;
+    function _matrixBindRowDrop(el, targetId, ymd) {
+      _mixBindRowDrop(el, targetId, function(fromId, after) { if (matrixDropMove(fromId, targetId, after, ymd)) _matrixRedraw(ymd); });
+    }
+    window._matrixBindRowDrop = _matrixBindRowDrop;
+    // 案件の行（li で包む。一覧 ul の中に入れるため）
+    function _matrixCaseLi(c, ymd, closedRow) {
+      var li = document.createElement('li');
+      li.className = 'toki-case-li';
+      li.style.cssText = 'list-style:none;padding:0;margin:0;background:none;border:none;';
+      li.setAttribute('data-toki-li', c.id);
+      li.innerHTML = closedRow ? _tokiCaseRowHtml(c, ymd) : _tokiCaseRowHtml(c, ymd, { matrixMix: true });
+      if (closedRow) { _mixBindRowDrop(li, null, function(fromId) { if (matrixDropMove(fromId, null, true, ymd)) _matrixRedraw(ymd); }); return li; }
+      li.addEventListener('dragstart', function(e) {
+        // マトリクスの予定と同じ形（JSON）にそろえ、案件の印も付ける。ほかの象限の処理は、案件を受け取らない
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', JSON.stringify({ taskId: c.id, section: 1, isCase: true }));
+        try { e.dataTransfer.setData('application/x-koyomiru-case', c.id); } catch (eD) {}
+        li.classList.add('dragging');
+      });
+      li.addEventListener('dragend', function() {
+        li.classList.remove('dragging');
+        document.querySelectorAll('.section').forEach(function(sec) { sec.classList.remove('drag-over-section'); });
+      });
+      _matrixBindRowDrop(li, c.id, ymd);
+      return li;
+    }
+    // 済んだ案件（✅完了）は一覧のいちばん下。たくさんあるときは「もっと見る」
+    function _matrixClosedLis(ymd) {
+      var out = [];
+      _matrixTemplatesShown().forEach(function(t) {
+        var all = _gyomuShownClosed(t.kind, ymd), showAll = !!window['_gyomuShowAllClosed_' + t.kind];
+        var shown = showAll ? all : all.slice(0, GYOMU_CLOSED_FIRST_SHOW);
+        shown.forEach(function(c) { out.push(_matrixCaseLi(c, ymd, true)); });
+        if (all.length > shown.length) {
+          var li = document.createElement('li');
+          li.style.cssText = 'list-style:none;text-align:center;padding:2px 0;';
+          var b = document.createElement('button');
+          b.textContent = '済んだ案件をもっと見る（残り' + (all.length - shown.length) + '件）';   // 箱のときと同じ言い方
+          b.style.cssText = 'padding:4px 10px;border:1px solid #ddd;border-radius:7px;background:#fff;color:#777;font-size:0.75em;cursor:pointer;';
+          b.onclick = function() { if (typeof gyomuShowAllClosed === 'function') gyomuShowAllClosed(t.kind); };
+          li.appendChild(b); out.push(li);
+        }
+      });
+      return out;
+    }
     function sortTokiCases(list, todayYmd) {
       // v0.52.0: 【権威】2026-10-05、優先順位はしょっちゅう入れ替わるので、ドラッグ＆ドロップで並べたい（必須）。
       // 一度でも手で並べたら（全件に順番がある）その順。まだなら、次に来る日の順。
@@ -15174,6 +15396,9 @@ function renderTodoList() {
       // 済む前の日を見ているときは、その日の時点では進行中だったので、取り消し線を引かない
       var rows = list.map(function(c) { return _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, today, { quad: quadMode }); }).join('') +
         closedShown.map(function(c) { return _tokiCaseRowHtml(c, today); }).join('');
+      // v0.55.11: マトリクスで予定と案件を混ぜているときは、案件の行は一覧（list1）に描く。箱は見出し・つまみ・＋ボタンだけ
+      var mixMatrix = /Matrix$/.test(elId) && matrixMixOn();
+      if (mixMatrix) { rows = ''; restN = 0; }
       var newBtn = '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:3px 9px;border-radius:6px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;white-space:nowrap;">' + tpl.newButton + '</button>';
       var head;
       if (withTabs) {
@@ -15196,7 +15421,7 @@ function renderTodoList() {
           '<span style="font-size:0.85em;font-weight:700;color:#333;">' + tpl.panelTitle + '（' + list.length + '件）</span>' + newBtn + '</div>';
       }
       el.innerHTML = '<div style="padding:4px 6px 2px;">' + head +
-        (rows || '<div style="font-size:0.8em;color:#999;padding:4px 0 8px;">案件はまだありません</div>') +
+        (rows || (mixMatrix ? '' : '<div style="font-size:0.8em;color:#999;padding:4px 0 8px;">案件はまだありません</div>')) +
         (restN > 0 ? '<div style="text-align:center;"><button onclick="gyomuShowAllClosed(\'' + tpl.kind + '\')" style="padding:4px 10px;border:1px solid #ddd;border-radius:7px;background:#fff;color:#777;font-size:0.75em;cursor:pointer;">済んだ案件をもっと見る（残り' + restN + '件）</button></div>' : '') +
         '</div>';
       el.style.display = 'block';
@@ -15209,6 +15434,9 @@ function renderTodoList() {
       var day = window._gyomuViewDate || getLocalDateStr(new Date());
       // v0.55.8: 午前・午後・夕方の案件は、予定と同じ並びの中に描く（renderQuadView）。魚の目が描かれていれば、まるごと描き直す。
       // renderQuadView の中から呼ばれたとき（プライベートの列の箱を描くとき）は、ここでは描き直さない
+      // v0.55.11: マトリクスで混ぜているときは、緊急かつ重要の一覧ごと描き直す（その中から箱の見出しも描かれる）
+      if (suffix === 'Matrix' && !window._matrixListRendering && typeof matrixMixOn === 'function' && matrixMixOn() &&
+          document.getElementById('list1') && typeof renderTasks === 'function') { renderTasks(1, day); return; }
       if (suffix === 'Quad' && !window._quadViewRendering) {
         var _qb = document.getElementById('quadViewBody');
         if (_qb && _qb.children.length && typeof renderQuadView === 'function') { renderQuadView(); return; }
@@ -15373,6 +15601,7 @@ function renderTodoList() {
       // v0.55.8: 魚の目の午前・午後・夕方の列では、↑↓はその日の列の中で動かす（予定とも入れ替わる）。ほかの場所では全部の日で共通の順番
       var _qs = rowOpts.quadSlot && rowOpts.quadSlot !== 'slot1' ? rowOpts.quadSlot : '';
       var _mvCall = function(d) {
+        if (rowOpts.matrixMix) return "matrixMoveBy('" + esc(c.id) + "'," + d + ",'" + esc(today) + "')";   // v0.55.11
         return _qs ? "quadMoveBy('" + esc(c.id) + "'," + d + ",'" + _qs + "','" + esc(today) + "')"
                    : "moveTokiCaseBy('" + esc(c.id) + "'," + d + ")";
       };
@@ -28560,10 +28789,15 @@ function saveMsbEdit() {
       // マスターデータからタスクを取得
       const targetDate = dateStr || getLocalDateStr(new Date());
       if (sectionNum === 1 && typeof renderDailySpanStrip === 'function') renderDailySpanStrip('dailySpanStripMatrix', targetDate);   // v0.49.10
-      if (sectionNum === 1 && typeof renderGyomuPanels === 'function') renderGyomuPanels('Matrix', targetDate);   // v0.51.0: 登記モード／v0.53.1: 業務モード／v0.53.4: 見ている日を基準に
+      if (sectionNum === 1 && typeof renderGyomuPanels === 'function') {   // v0.51.0: 登記モード／v0.53.1: 業務モード／v0.53.4: 見ている日を基準に
+        window._matrixListRendering = true;   // v0.55.11
+        try { renderGyomuPanels('Matrix', targetDate); } finally { window._matrixListRendering = false; }
+      }
       const dailyTasks = getDailyTasks(targetDate);
       const sectionTasks = dailyTasks[sectionNum];
-      sectionTasks.forEach((task, index) => {
+      // v0.55.11: 緊急かつ重要では、案件を使っている人だけ、予定と案件を1本の並びで出す（matrixMixOn）
+      const _mix = sectionNum === 1 && matrixMixOn();
+      const _makeTaskLi = (task, index) => {
         const li = document.createElement('li');
         li.className = 'task-item' + (task.completed ? ' completed' : '');
         li.dataset.taskId = task.id;  // IDを保存
@@ -28598,6 +28832,9 @@ function saveMsbEdit() {
             section.classList.remove('drag-over-section');
           });
         });
+        // v0.55.11: 予定と案件を混ぜて並べるときは、共通の受け取り（上半分なら前、下半分なら後ろ）を使う
+        if (_mix) _matrixBindRowDrop(li, task.id, targetDate);
+        else {
         // ドラッグオーバー
         li.addEventListener('dragover', (e) => {
           e.preventDefault();
@@ -28628,6 +28865,9 @@ function saveMsbEdit() {
           try {
             const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
             const taskId = dragData.taskId;
+            // v0.55.11: 案件は予定ではない。象限の番号や位置を書き込まない（処理の側でも確かめる・第71条）
+            const _dragged = allTasks.find(x => x && x.id === taskId);
+            if (!_dragged || _dragged.kind === 'toki' || _dragged.kind === 'gyomu') return;
             const fromSection = dragData.section;
             const toSection = parseInt(li.dataset.section);
             const dropIndex = parseInt(li.dataset.index);
@@ -28664,6 +28904,7 @@ function saveMsbEdit() {
             console.error('ドロップエラー:', err);
           }
         });
+        }
         const textSpan = document.createElement('span');
         textSpan.className = 'task-text';
         // 時間があれば表示
@@ -28729,8 +28970,16 @@ function saveMsbEdit() {
         li.appendChild(escapeBtn);
         li.appendChild(scheduleBtn);
         li.appendChild(deleteBtn);
-        list.appendChild(li);
+        return li;
+      };
+      if (!_mix) { sectionTasks.forEach((task, index) => { list.appendChild(_makeTaskLi(task, index)); }); return; }
+      // v0.55.11: 予定と案件を1本の並びで出す。済んだ案件（✅完了）はいちばん下
+      let _ti = 0;
+      matrixRows(targetDate).forEach((r) => {
+        if (r.type === 'task') { list.appendChild(_makeTaskLi(r.item, _ti++)); return; }
+        list.appendChild(_matrixCaseLi(r.item, targetDate, false));
       });
+      _matrixClosedLis(targetDate).forEach((li) => list.appendChild(li));
     }
     // 象限へのドロップを設定（初期化時に一度だけ呼ぶ）
     function setupAllSectionDrops() {
@@ -28768,6 +29017,8 @@ function saveMsbEdit() {
                   // v0.45.2056: 象限だけを変える操作。位置は動かさない。
                   // ここで番号を振り直すと、月間で見ている位置まで動いてしまう。
                   const _mv = allTasks.find(x => x.id === taskId);
+                  // v0.55.11: 案件は予定ではない。象限の番号を書き込まない（処理の側でも確かめる・第71条）
+                  if (!_mv || _mv.kind === 'toki' || _mv.kind === 'gyomu') return;
                   const _keep = (_mv && typeof _mv.orderKey === 'number')
                     ? _mv.orderKey : (_mv ? _taskSortKey(_mv) : 0);
                   // マスターデータのsectionを更新（位置はそのまま）
@@ -40621,84 +40872,6 @@ function renderDashboardView() {
       return out;
     }
     window.quadCasesInSlot = quadCasesInSlot;
-    function quadCaseKeyOn(c, ymd) {
-      var m = c && c.quadOrderKeys, v = (m && typeof m === 'object') ? m[ymd] : null;
-      return (typeof v === 'number' && isFinite(v)) ? v : null;
-    }
-    window.quadCaseKeyOn = quadCaseKeyOn;
-    // 列の並び：[{ type:'task'|'case', item, pos, done }]。今日✓の案件は最後
-    function quadColumnRows(slot, ymd) {
-      var tasks = quadTasksInSlot(slot, ymd), cases = quadCasesInSlot(slot, ymd);
-      // v0.55.10: 下へ回すのは、押した直後（印あり・その日の位置の書き留め無し）の今日✓だけ。ほかは並びの中で自由に動く
-      var isSunk = function(c) { return tokiDaySunk(c, ymd) && quadCaseKeyOn(c, ymd) === null; };
-      var active = cases.filter(function(c) { return !isSunk(c); });
-      var done = cases.filter(isSunk);
-      var tRows = tasks.map(function(t) { return { type: 'task', item: t, pos: _taskSortKey(t) }; });
-      var keys = tRows.map(function(r) { return r.pos; });
-      var minT = keys.length ? Math.min.apply(null, keys) : 0, maxT = keys.length ? Math.max.apply(null, keys) : 0;
-      var tf = quadTasksFirst(slot), n = active.length;
-      var cRows = active.map(function(c, i) {
-        var k = quadCaseKeyOn(c, ymd);
-        if (k === null) k = tf ? maxT + 1 + i : minT - (n - i);   // 手で動かしていない日は ⇅ の向き
-        return { type: 'case', item: c, pos: k, i: i };
-      }).sort(function(a, b) { return a.pos - b.pos || a.i - b.i; });
-      // 予定の順は崩さず、案件をその位置で差し込む
-      var out = [], ci = 0;
-      tRows.forEach(function(tr) {
-        while (ci < cRows.length && cRows[ci].pos < tr.pos) out.push(cRows[ci++]);
-        out.push(tr);
-      });
-      while (ci < cRows.length) out.push(cRows[ci++]);
-      var last = out.length ? Math.max.apply(null, out.map(function(r) { return r.pos; })) : 0;
-      return out.concat(done.map(function(c, i) { return { type: 'case', item: c, pos: last + 1 + i, sunk: true }; }));
-    }
-    window.quadColumnRows = quadColumnRows;
-    // 落とした位置に動かす。targetId の前（after=false）か後ろ（after=true）。targetId が無ければ列の最後（第36条）
-    function quadDropMove(dragId, targetId, after, slot, ymd) {
-      if (['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1 || !/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))) return false;
-      var dragged = allTasks.filter(function(t) { return t && t.id === dragId; })[0];
-      if (!dragged) return false;
-      var isCase = dragged.kind === 'toki' || dragged.kind === 'gyomu';
-      if (isCase && (dragged.closed || slot === 'slot1')) {   // プライベートの列は箱なので、置き場所だけ変える
-        if (!dragged.closed && typeof setGyomuQuadSlot === 'function') setGyomuQuadSlot(dragId, slot);
-        return true;
-      }
-      var now = new Date().toISOString();
-      var rows = quadColumnRows(slot, ymd);   // v0.55.10: 今日✓も含めて、全部が並べ替えの相手になる
-      // その列の案件の位置を書き留める（予定が動いても、案件が回り込まないように）。「下へ」の印も外す（手で並べた順を優先）
-      rows.forEach(function(r) {
-        if (r.type !== 'case') return;
-        _tokiUnsink(r.item, ymd, now);
-        if (r.item.id === dragId || quadCaseKeyOn(r.item, ymd) !== null) return;
-        r.item.quadOrderKeys = Object.assign({}, r.item.quadOrderKeys || {}); r.item.quadOrderKeys[ymd] = r.pos;
-        r.item.updatedAt = now;   // 第61条
-      });
-      _tokiUnsink(dragged, ymd, now);
-      var list = rows.filter(function(r) { return r.item.id !== dragId; });
-      var ti = targetId ? list.findIndex(function(r) { return r.item.id === targetId; }) : -1;
-      var ins = ti < 0 ? list.length : (after ? ti + 1 : ti);
-      var prev = list[ins - 1], next = list[ins];
-      var key = (!prev && !next) ? 0 : !prev ? next.pos - 1 : !next ? prev.pos + 1 : (prev.pos + next.pos) / 2;
-      if (isCase) {
-        dragged.quadSlots = Object.assign({}, dragged.quadSlots || {}); dragged.quadSlots[ymd] = slot;
-        dragged.quadOrderKeys = Object.assign({}, dragged.quadOrderKeys || {}); dragged.quadOrderKeys[ymd] = key;
-      } else {
-        dragged.timeSlot = slot;
-        dragged.orderKey = key;
-      }
-      dragged.updatedAt = now;   // 第61条
-      saveAllTasks();
-      return true;
-    }
-    window.quadDropMove = quadDropMove;
-    // スマホの ↑↓：その日の列の中で1つ上・下へ
-    function quadMoveBy(id, delta, slot, ymd) {
-      var rows = quadColumnRows(slot, ymd);   // v0.55.10: 今日✓も含めて動かせる
-      var i = rows.findIndex(function(r) { return r.item.id === id; }), j = i + delta;
-      if (i < 0 || j < 0 || j >= rows.length) return;
-      if (quadDropMove(id, rows[j].item.id, delta > 0, slot, ymd)) renderQuadView();
-    }
-    window.quadMoveBy = quadMoveBy;
     // ===== END v0.55.8（計算） =====
     function renderQuadView() {
       var body = document.getElementById('quadViewBody');
@@ -41004,26 +41177,6 @@ function renderDashboardView() {
       div.appendChild(taskList);
       return div;
     }
-    // v0.55.8: 行に落としたときの受け取り（予定・案件の両方）。上半分なら前、下半分なら後ろ（第36条）
-    function _quadBindRowDrop(el, targetId, slot, day) {
-      var isAfter = function(e) { var r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
-      el.addEventListener('dragover', function(e) {
-        e.preventDefault(); e.stopPropagation();
-        var a = targetId ? isAfter(e) : true;
-        el.style.borderTop = a ? '' : '2px solid #4facfe';
-        el.style.borderBottom = a ? '2px solid #4facfe' : '';
-      });
-      el.addEventListener('dragleave', function() { el.style.borderTop = ''; el.style.borderBottom = ''; });
-      el.addEventListener('drop', function(e) {
-        e.preventDefault(); e.stopPropagation();
-        el.style.borderTop = ''; el.style.borderBottom = '';
-        var fromId = '';
-        try { fromId = e.dataTransfer.getData('application/x-koyomiru-case') || e.dataTransfer.getData('text/plain'); } catch (eG) {}
-        if (!fromId || fromId === targetId) return;
-        if (quadDropMove(fromId, targetId, targetId ? isAfter(e) : true, slot, day)) renderQuadView();
-      });
-    }
-    window._quadBindRowDrop = _quadBindRowDrop;
     window.renderQuadView = renderQuadView;
 
     // ===== スマホナビ配置切り替え =====
@@ -52119,6 +52272,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.11', date: '2026-10-06',
+    items: [
+      { icon:'🗺️', t:'日次のマトリクスでも、予定と案件を混ぜて並べられるようにしました',
+        before:'「緊急かつ重要」では、案件がいつも予定より上にまとまっていて、案件と案件の間に予定を入れられませんでした',
+        after:'魚の目と同じように、ドラッグ（スマホは↑↓）で予定と案件を自由に入れ替えられます。並べた順はその日だけです。済んだ案件は一覧のいちばん下に出ます' }
+    ]
+  },
   {
     ver: 'v0.55.10', date: '2026-10-06',
     items: [
@@ -75861,6 +76022,105 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st423tasks; allSettings.flags = _st423flags; currentDailyDate = _st423date; window._gyomuViewDate = _st423vd;
        if (_st423ui === undefined) { if (allSettings.ui) delete allSettings.ui.quadTasksFirst; } else allSettings.ui.quadTasksFirst = _st423ui;
        try { renderQuadView(); } catch (eR) {}
+     }
+
+     // ===== ST-424: 日次のマトリクスでも、予定と案件を混ぜて並べる（v0.55.11〜） =====
+     // 【権威】2026-10-06、日次のマトリクスでも、魚の目と同じように予定と案件を混ぜて並べたい、との要望。
+     var _st424tasks = allTasks.slice();
+     var _st424flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st424save = window.saveAllSettings, _st424saveT = window.saveAllTasks, _st424date = currentDailyDate, _st424vd = window._gyomuViewDate;
+     var _st424shown = [];
+     try {
+       window.saveAllSettings = function() {}; window.saveAllTasks = function() {};
+       var _st424d = getLocalDateStr(new Date());
+       currentDailyDate = _st424d; window._gyomuViewDate = _st424d;
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { gyomuMode: true, tokiMode: false });
+       var _st424y = new Date(Date.now() - 86400000).toISOString();
+       allTasks.push({ id: 'st424-A', kind: 'gyomu', buyer: '山田太郎', order: 0, createdAt: _st424y, steps1: {} },
+                     { id: 'st424-B', kind: 'gyomu', buyer: '佐藤花子', order: 1, createdAt: _st424y, steps1: {} },
+                     { id: 'st424-X', kind: 'gyomu', buyer: '済んだ様', order: 2, createdAt: _st424y, closed: true, closedAt: _st424y, steps1: {} },
+                     { id: 'st424-F', kind: 'task', text: 'FAX', date: _st424d, section: 1, displayScope: 'daily_only', createdAt: _st424y },
+                     { id: 'st424-T', kind: 'task', text: 'TEL', date: _st424d, section: 1, displayScope: 'daily_only', createdAt: _st424y },
+                     { id: 'st424-S', kind: 'task', text: '重要な予定', date: _st424d, section: 2, displayScope: 'daily_only', createdAt: _st424y },
+                     { id: 'st424-R', kind: 'task', text: '③で落とす相手', date: _st424d, section: 2, displayScope: 'daily_only', createdAt: _st424y });
+       var _st424ids = function() { return matrixRows(_st424d).map(function(r) { return r.item.id.replace('st424-', ''); }).filter(function(x) { return /^[ABFTS]$/.test(x); }).join(','); };
+       // ① 計算：初めは案件が上。予定と案件を入れ替えられる。魚の目の位置・案件の共通の順番は変えない
+       var _st424s0 = _st424ids();
+       matrixDropMove('st424-F', 'st424-A', false, _st424d);
+       var _st424s1 = _st424ids();
+       matrixDropMove('st424-B', 'st424-T', true, _st424d);
+       var _st424s2 = _st424ids();
+       var _st424B = allTasks.filter(function(t) { return t.id === 'st424-B'; })[0];
+       (_st424s0 === 'A,B,F,T' && _st424s1 === 'F,A,B,T' && _st424s2 === 'F,A,T,B' && _st424B.order === 1 && quadCaseKeyOn(_st424B, _st424d) === null)
+         ? ok('ST-424·①: マトリクスの緊急かつ重要で、予定と案件を入れ替えられる（魚の目の並び・案件の共通の順番は変えない）')
+         : ng('ST-424·①: マトリクスの並びの計算が違う', [_st424s0, _st424s1, _st424s2].join(' / '));
+       // ② 繋がっているか（第76条）：画面を描き、本物のドラッグの出来事を送る。済んだ案件はいちばん下。見出しは箱に残る
+       renderAllSections(_st424d);
+       var _st424v = document.getElementById('list1');
+       while (_st424v && _st424v !== document.body) {   // 隠れていると行の高さが0で上半分・下半分を判定できないので、間だけ見せる
+         if (getComputedStyle(_st424v).display === 'none') { _st424shown.push([_st424v, _st424v.style.display]); _st424v.style.display = 'block'; }
+         _st424v = _st424v.parentElement;
+       }
+       var _st424dom = function() { return [].map.call(document.querySelectorAll('#list1 > li'), function(e) { return (e.getAttribute('data-toki-li') || e.getAttribute('data-task-id') || '?').replace('st424-', ''); }).filter(function(x) { return /^[ABFTSX]$/.test(x); }).join(','); };
+       var _st424drop = function(dragId, sel, lower, isCase) {
+         var el = document.querySelector(sel), r = el.getBoundingClientRect(), dt = new DataTransfer();
+         dt.setData('text/plain', JSON.stringify({ taskId: dragId, section: isCase ? 1 : 2, isCase: !!isCase }));
+         if (isCase) dt.setData('application/x-koyomiru-case', dragId);
+         el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: lower ? r.bottom - 1 : r.top + 1 }));
+       };
+       var _st424d0 = _st424dom();
+       var _st424head = (document.getElementById('gyomuPanelMatrix') || {}).textContent || '';
+       _st424drop('st424-S', '#list1 > li[data-toki-li="st424-A"]', true, false);   // 緊急でないが重要の予定を、案件Aの下半分へ
+       var _st424d1 = _st424dom();
+       var _st424S = allTasks.filter(function(t) { return t.id === 'st424-S'; })[0];
+       (_st424d0 === 'F,A,T,B,X' && _st424d1 === 'F,A,S,T,B,X' && _st424S.section === 1 && _st424head.indexOf('業務の案件') !== -1 &&
+        !document.querySelector('#gyomuPanelMatrix .toki-case-row'))
+         ? ok('ST-424·②: 画面でのドラッグで、ほかの象限の予定を案件の後ろに入れられる（済んだ案件は下・見出しは箱に残る）')
+         : ng('ST-424·②: マトリクスの画面の並びが違う', [_st424d0, _st424d1, _st424S.section].join(' / '));
+       // ③ 守り：案件をほかの象限の予定に落としても、象限の番号や位置を書き込まない（第71条）
+       var _st424A0 = JSON.stringify(allTasks.filter(function(t) { return t.id === 'st424-A'; })[0]);
+       var _st424sLi = document.querySelector('#list2 > li[data-task-id="st424-R"]');   // 落とす相手が無いと何も確かめられないので、無ければ失敗にする
+       if (!_st424sLi) ng('ST-424·③: 落とす相手の予定が見つからない', '');
+       else {
+         var _st424dt = new DataTransfer(); _st424dt.setData('text/plain', JSON.stringify({ taskId: 'st424-A', section: 1, isCase: true }));
+         var _st424fake = document.createElement('div'); _st424fake.className = 'dragging'; document.body.appendChild(_st424fake);
+         _st424sLi.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: _st424dt, clientY: 1 }));
+         document.getElementById('section2').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: _st424dt }));
+         _st424fake.remove();
+       }
+       var _st424A1 = JSON.stringify(allTasks.filter(function(t) { return t.id === 'st424-A'; })[0]);
+       (_st424A0 === _st424A1)
+         ? ok('ST-424·③: 案件をほかの象限に落としても、案件は変わらない（象限の番号・位置を書き込まない）')
+         : ng('ST-424·③: 案件がほかの象限の処理に書き換えられた', _st424A1);
+       // ④ スマホの ↑↓
+       matrixMoveBy('st424-B', -1, _st424d);   // F,A,S,T,B → F,A,S,B,T
+       var _st424m = _st424ids();
+       (_st424m === 'F,A,S,B,T')
+         ? ok('ST-424·④: スマホの↑↓で、緊急かつ重要の中を予定とも入れ替わって動く')
+         : ng('ST-424·④: ↑↓の動きが違う', _st424m);
+       // ⑥ 第74条：起動時の最初の描画（renderAllSections）で使うので、それより前に読まれる場所に置いてあること。
+       //    v0.55.11 の作りかけで、後ろの中括弧の中に置いて起動時に「まだ無い」で描画が失敗した。テストは起動の後に走るので、置き場所で確かめる
+       var _st424src = document.documentElement.outerHTML;
+       var _st424boot = _st424src.indexOf('renderAllSections((typeof currentDailyDate');
+       var _st424defs = ['    function matrixMixOn() {', '    function mixedRows(ctx, ymd) {', '    function matrixRows(ymd) {', '    function _matrixCaseLi(c, ymd, closedRow) {', '    function _matrixClosedLis(ymd) {', '    function _matrixBindRowDrop(el, targetId, ymd) {'];
+       var _st424late = _st424defs.filter(function(d) { var i = _st424src.indexOf(d); return i < 0 || _st424boot < 0 || i > _st424boot; });
+       (_st424late.length === 0)
+         ? ok('ST-424·⑥: マトリクスの並びの計算は、起動時の最初の描画より前に置いてある（第74条）')
+         : ng('ST-424·⑥: 起動時の最初の描画より後ろにある（起動時に描画が失敗する）', _st424late.join(' / '));
+       // ⑤ 案件を使っていない人は、今までの作りのまま（案件の行は出ない）
+       allSettings.flags.gyomuMode = false;
+       renderAllSections(_st424d);
+       var _st424plain = !document.querySelector('#list1 > li.toki-case-li') && !!document.querySelector('#list1 > li[data-task-id="st424-F"]');
+       (_st424plain)
+         ? ok('ST-424·⑤: 案件を使っていない人のマトリクスは、今までどおり予定だけ')
+         : ng('ST-424·⑤: 案件を使っていないのに、混ぜた並びになっている', '');
+     } catch(e) {
+       ng('ST-424: 例外', e.message);
+     } finally {
+       _st424shown.forEach(function(x) { x[0].style.display = x[1]; });
+       window.saveAllSettings = _st424save; window.saveAllTasks = _st424saveT;
+       allTasks = _st424tasks; allSettings.flags = _st424flags; currentDailyDate = _st424date; window._gyomuViewDate = _st424vd;
+       try { renderAllSections(currentDailyDate || getLocalDateStr(new Date())); } catch (eR) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
