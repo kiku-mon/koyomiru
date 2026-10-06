@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.9 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.8';
+    const APP_VERSION = 'v0.55.9';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -52087,6 +52087,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.9', date: '2026-10-06',
+    items: [
+      { icon:'🔄', t:'更新のお知らせの帯に、その版で変わったことを正しく出すようにしました',
+        before:'画面の下の「新しい版があります」の帯に、1つ前の版で変わったことが出ていました',
+        after:'帯には、これから読み込む新しい版で変わったことが出ます' }
+    ]
+  },
+  {
     ver: 'v0.55.8', date: '2026-10-06',
     items: [
       { icon:'🐟', t:'魚の目で、予定と案件を混ぜて並べられるようにしました',
@@ -54001,7 +54009,7 @@ function _checkForNewVersion(byHand) {
         // 第一・第二の数字（メジャー・マイナー）のどちらかが上がっていれば強制、
         // 第三の数字（パッチ）だけの違いなら、これまでどおり「あとで」を出す。
         var _forced = _isForcedVersionJump(APP_VERSION, m[1]);
-        _showNewVersionBar(m[1], _forced);
+        _showNewVersionBar(m[1], _forced, _newsTopFromHtml(html, m[1]));   // v0.55.9: 新しい版自身のお知らせを添える
       })
       .catch(function(e) {
         console.warn('[版] 確認できませんでした:', e && e.message);
@@ -54044,7 +54052,27 @@ function _isForcedVersionJump(fromVer, toVer) {
 }
 window._isForcedVersionJump = _isForcedVersionJump;
 
-function _showNewVersionBar(newVer, forced) {
+// v0.55.9: 【権威】2026-10-06、更新の帯に、今回のいちばんの直しが出ていないときがある、との指摘。
+// 帯の「何が変わったか」は、今動いている古い版の中のお知らせ（_NEWS_DATA の先頭）から取っていた。
+// 版の番号は新しい版から取っているのに、説明だけ1つ前の版のもので、いつも1版ずれていた。
+// 新しい版のファイルは版の番号を読むために丸ごと取ってきているので、その中のお知らせの先頭を読む。
+// 読めなければ、古い版の説明は出さない（間違った説明より、出さない方がよい）。
+function _newsTopFromHtml(html, ver) {
+  try {
+    var src = String(html || '');
+    var at = src.indexOf('var _NEWS_DATA = [');
+    if (at < 0) return null;
+    var head = src.indexOf("ver: '" + ver + "'", at);
+    if (head < 0 || head - at > 2000) return null;   // 先頭の版がその版でなければ読まない
+    var end = src.indexOf("\n    ver: '", head + 5);
+    var block = src.slice(head, end > 0 ? end : head + 6000);
+    var re = /icon:'((?:[^'\\]|\\.)*)',\s*t:'((?:[^'\\]|\\.)*)'/g, mm, items = [];
+    while ((mm = re.exec(block)) && items.length < 20) items.push({ icon: mm[1].slice(0, 8), t: mm[2].slice(0, 120) });
+    return items.length ? { items: items } : null;
+  } catch (e) { return null; }
+}
+window._newsTopFromHtml = _newsTopFromHtml;
+function _showNewVersionBar(newVer, forced, newsTop) {
   try {
     if (document.getElementById('koyomiruNewVerBar')) return;
     // v0.48.0: 【権威】2026-09-25、重大な更新（メジャー・マイナーが上がったもの）は
@@ -54063,7 +54091,7 @@ function _showNewVersionBar(newVer, forced) {
     // 一番上の1つだけを添える。読む理由があれば、押してもらえる。
     var _what = '';
     try {
-      var _top = (window._NEWS_DATA || [])[0];
+      var _top = newsTop;   // v0.55.9: 新しい版自身のお知らせ（手元の古い版のお知らせは使わない）
       var _it = _top && _top.items && _top.items[0];
       if (_it && _it.t) {
         _what = String(_it.icon || '') + ' ' + String(_it.t).replace(/[<>&"]/g, '');
@@ -75707,6 +75735,33 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st421tasks; allSettings.flags = _st421flags; currentDailyDate = _st421date;
        if (_st421ui === undefined) { if (allSettings.ui) delete allSettings.ui.quadTasksFirst; } else allSettings.ui.quadTasksFirst = _st421ui;
        try { renderQuadView(); } catch (eR) {}
+     }
+
+     // ===== ST-422: 更新の帯に、新しい版自身のお知らせを出す（v0.55.9〜） =====
+     // 【権威】2026-10-06、更新の帯に、今回のいちばんの直しが出ていないときがある、との指摘（いつも1つ前の版の説明が出ていた）。
+     try {
+       var _st422src = document.documentElement.outerHTML;
+       var _st422a = _newsTopFromHtml(_st422src, APP_VERSION);
+       var _st422b = _newsTopFromHtml(_st422src, 'v9.9.9');
+       var _st422local = (window._NEWS_DATA || [])[0];
+       (_st422a && _st422local && _st422a.items[0].t === _st422local.items[0].t && _st422a.items.length === _st422local.items.length && _st422b === null)
+         ? ok('ST-422·①: 取ってきた版のファイルから、その版のお知らせの先頭を読む（違う版のお知らせは読まない）')
+         : ng('ST-422·①: 版のファイルからお知らせを読めない', JSON.stringify([_st422a && _st422a.items.length, _st422b]));
+       var _st422old = document.getElementById('koyomiruNewVerBar'); if (_st422old) _st422old.remove();
+       var _st422dis = window._verDismissed;
+       _showNewVersionBar('vST422a', false, { items: [{ icon: '🐟', t: '新しい直し<b>' }, { icon: '💼', t: 'もう1つ' }] });
+       var _st422t1 = (document.getElementById('koyomiruNewVerBar') || {}).textContent || '';
+       var _st422e1 = document.getElementById('koyomiruNewVerBar'); if (_st422e1) _st422e1.remove();
+       _showNewVersionBar('vST422b', false, null);
+       var _st422t2 = (document.getElementById('koyomiruNewVerBar') || {}).textContent || '';
+       var _st422e2 = document.getElementById('koyomiruNewVerBar'); if (_st422e2) _st422e2.remove();
+       window._verDismissed = _st422dis;
+       (_st422t1.indexOf('新しい直しb') !== -1 && _st422t1.indexOf('ほか1件') !== -1 &&
+        _st422t2.indexOf('読み込み直すと最新になります') !== -1 && (!_st422local || _st422t2.indexOf(_st422local.items[0].t) === -1))
+         ? ok('ST-422·②: 帯には新しい版の説明を出す。読めなかったときは、手元の古い版の説明を出さない')
+         : ng('ST-422·②: 帯の説明が違う', _st422t1 + ' / ' + _st422t2);
+     } catch(e) {
+       ng('ST-422: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
