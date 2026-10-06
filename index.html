@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.9 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.10 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.9';
+    const APP_VERSION = 'v0.55.10';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15038,16 +15038,37 @@ function renderTodoList() {
       var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
       if (!c || (c.kind !== 'toki' && c.kind !== 'gyomu') || c.closed) return;
       var m = Object.assign({}, (c.dayDone && typeof c.dayDone === 'object') ? c.dayDone : {});
-      if (m[ymd] === true) delete m[ymd]; else m[ymd] = true;
+      var sink = Object.assign({}, (c.dayDoneSink && typeof c.dayDoneSink === 'object') ? c.dayDoneSink : {});
+      if (m[ymd] === true) { delete m[ymd]; delete sink[ymd]; }
+      else {
+        m[ymd] = true;
+        // v0.55.10: 押したときは下へ回す（その日の魚の目の位置の書き留めも外す）。そのあとは手で自由に動かせる
+        sink[ymd] = true;
+        if (c.quadOrderKeys && typeof c.quadOrderKeys === 'object' && c.quadOrderKeys[ymd] !== undefined) {
+          c.quadOrderKeys = Object.assign({}, c.quadOrderKeys); delete c.quadOrderKeys[ymd];
+        }
+      }
       c.dayDone = m;
+      c.dayDoneSink = sink;
       c.updatedAt = new Date().toISOString();   // 第61条
       saveAllTasks();
       _tokiRefreshAll();
     }
     window.toggleTokiDayDone = toggleTokiDayDone;
-    // 終わった案件を下へ回す（それぞれの中の順番はそのまま）
+    // v0.55.10: 【権威】2026-10-06、今日✓の案件が下に固定されて、ドラッグで動かせない。固定は嫌、フレキシブルが好き、との指摘。
+    // 「下へ」は押した直後だけ。手で並べ替えたら、この印（dayDoneSink）を外し、手で並べた順を優先する。
+    function tokiDaySunk(c, ymd) {
+      return tokiDayDone(c, ymd) && !!(c.dayDoneSink && typeof c.dayDoneSink === 'object' && c.dayDoneSink[ymd] === true);
+    }
+    window.tokiDaySunk = tokiDaySunk;
+    function _tokiUnsink(c, ymd, now) {
+      if (!c || !c.dayDoneSink || typeof c.dayDoneSink !== 'object' || c.dayDoneSink[ymd] !== true) return;
+      c.dayDoneSink = Object.assign({}, c.dayDoneSink); delete c.dayDoneSink[ymd];
+      c.updatedAt = now;   // 第61条
+    }
+    // 押した直後の今日✓の案件を下へ回す（それぞれの中の順番はそのまま）
     function tokiDoneLast(list, ymd) {
-      return list.filter(function(c) { return !tokiDayDone(c, ymd); }).concat(list.filter(function(c) { return tokiDayDone(c, ymd); }));
+      return list.filter(function(c) { return !tokiDaySunk(c, ymd); }).concat(list.filter(function(c) { return tokiDaySunk(c, ymd); }));
     }
     window.tokiDoneLast = tokiDoneLast;
     // ===== END v0.55.6 =====
@@ -15260,6 +15281,9 @@ function renderTodoList() {
       if (to < 0) return;
       list.splice(to, 0, moving);
       var now = new Date().toISOString();
+      // v0.55.10: 手で並べ替えたら、見ている日の「今日✓を下へ」の印を外し、並べた順を優先する
+      var _vd = window._gyomuViewDate || today;
+      list.forEach(function(c) { _tokiUnsink(c, _vd, now); });
       list.forEach(function(c, i) { if (c.order !== i) { c.order = i; c.updatedAt = now; } });
       saveAllTasks();
       _tokiRefreshAll();
@@ -15276,6 +15300,9 @@ function renderTodoList() {
       if (i < 0 || j < 0 || j >= list.length) return;
       var t = list[i]; list[i] = list[j]; list[j] = t;
       var now = new Date().toISOString();
+      // v0.55.10: 手で並べ替えたら、見ている日の「今日✓を下へ」の印を外し、並べた順を優先する
+      var _vd = window._gyomuViewDate || today;
+      list.forEach(function(c) { _tokiUnsink(c, _vd, now); });
       list.forEach(function(c, k) { if (c.order !== k) { c.order = k; c.updatedAt = now; } });
       saveAllTasks();
       _tokiRefreshAll();
@@ -40602,8 +40629,10 @@ function renderDashboardView() {
     // 列の並び：[{ type:'task'|'case', item, pos, done }]。今日✓の案件は最後
     function quadColumnRows(slot, ymd) {
       var tasks = quadTasksInSlot(slot, ymd), cases = quadCasesInSlot(slot, ymd);
-      var active = cases.filter(function(c) { return !tokiDayDone(c, ymd); });
-      var done = cases.filter(function(c) { return tokiDayDone(c, ymd); });
+      // v0.55.10: 下へ回すのは、押した直後（印あり・その日の位置の書き留め無し）の今日✓だけ。ほかは並びの中で自由に動く
+      var isSunk = function(c) { return tokiDaySunk(c, ymd) && quadCaseKeyOn(c, ymd) === null; };
+      var active = cases.filter(function(c) { return !isSunk(c); });
+      var done = cases.filter(isSunk);
       var tRows = tasks.map(function(t) { return { type: 'task', item: t, pos: _taskSortKey(t) }; });
       var keys = tRows.map(function(r) { return r.pos; });
       var minT = keys.length ? Math.min.apply(null, keys) : 0, maxT = keys.length ? Math.max.apply(null, keys) : 0;
@@ -40620,7 +40649,8 @@ function renderDashboardView() {
         out.push(tr);
       });
       while (ci < cRows.length) out.push(cRows[ci++]);
-      return out.concat(done.map(function(c) { return { type: 'case', item: c, pos: Infinity, done: true }; }));
+      var last = out.length ? Math.max.apply(null, out.map(function(r) { return r.pos; })) : 0;
+      return out.concat(done.map(function(c, i) { return { type: 'case', item: c, pos: last + 1 + i, sunk: true }; }));
     }
     window.quadColumnRows = quadColumnRows;
     // 落とした位置に動かす。targetId の前（after=false）か後ろ（after=true）。targetId が無ければ列の最後（第36条）
@@ -40634,13 +40664,16 @@ function renderDashboardView() {
         return true;
       }
       var now = new Date().toISOString();
-      var rows = quadColumnRows(slot, ymd).filter(function(r) { return !r.done; });
-      // その列の案件の位置を書き留める（予定が動いても、案件が回り込まないように）
+      var rows = quadColumnRows(slot, ymd);   // v0.55.10: 今日✓も含めて、全部が並べ替えの相手になる
+      // その列の案件の位置を書き留める（予定が動いても、案件が回り込まないように）。「下へ」の印も外す（手で並べた順を優先）
       rows.forEach(function(r) {
-        if (r.type !== 'case' || r.item.id === dragId || quadCaseKeyOn(r.item, ymd) !== null) return;
+        if (r.type !== 'case') return;
+        _tokiUnsink(r.item, ymd, now);
+        if (r.item.id === dragId || quadCaseKeyOn(r.item, ymd) !== null) return;
         r.item.quadOrderKeys = Object.assign({}, r.item.quadOrderKeys || {}); r.item.quadOrderKeys[ymd] = r.pos;
         r.item.updatedAt = now;   // 第61条
       });
+      _tokiUnsink(dragged, ymd, now);
       var list = rows.filter(function(r) { return r.item.id !== dragId; });
       var ti = targetId ? list.findIndex(function(r) { return r.item.id === targetId; }) : -1;
       var ins = ti < 0 ? list.length : (after ? ti + 1 : ti);
@@ -40660,7 +40693,7 @@ function renderDashboardView() {
     window.quadDropMove = quadDropMove;
     // スマホの ↑↓：その日の列の中で1つ上・下へ
     function quadMoveBy(id, delta, slot, ymd) {
-      var rows = quadColumnRows(slot, ymd).filter(function(r) { return !r.done; });
+      var rows = quadColumnRows(slot, ymd);   // v0.55.10: 今日✓も含めて動かせる
       var i = rows.findIndex(function(r) { return r.item.id === id; }), j = i + delta;
       if (i < 0 || j < 0 || j >= rows.length) return;
       if (quadDropMove(id, rows[j].item.id, delta > 0, slot, ymd)) renderQuadView();
@@ -40965,7 +40998,7 @@ function renderDashboardView() {
           row.style.opacity = '0.5';
         });
         row.addEventListener('dragend', function() { row.style.opacity = ''; });
-        _quadBindRowDrop(row, r.done ? null : c.id, col.key, day);   // 今日✓の行に落としたら、列の最後（今日✓より上）へ
+        _quadBindRowDrop(row, c.id, col.key, day);   // v0.55.10: 今日✓の行も、前後に落とせる
         taskList.appendChild(row);
       });
       div.appendChild(taskList);
@@ -52086,6 +52119,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.10', date: '2026-10-06',
+    items: [
+      { icon:'💼', t:'「今日✓」の案件も、ドラッグで自由に動かせるようにしました',
+        before:'「今日✓」の案件は列のいちばん下に固定され、ドラッグしても戻ってしまい、間に予定も入れられませんでした',
+        after:'「今日おわり」を押した直後は下に回りますが、そのあとはドラッグ（スマホは↑↓）で好きな場所に動かせます。押し直すと、また下に回ります' }
+    ]
+  },
   {
     ver: 'v0.55.9', date: '2026-10-06',
     items: [
@@ -75762,6 +75803,64 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-422·②: 帯の説明が違う', _st422t1 + ' / ' + _st422t2);
      } catch(e) {
        ng('ST-422: 例外', e.message);
+     }
+
+     // ===== ST-423: 今日✓の案件も自由に動かせる（v0.55.10〜） =====
+     // 【権威】2026-10-06、今日✓の案件が下に固定されてドラッグできない。固定は嫌、フレキシブルが好き、との指摘。
+     // 押したときだけ下へ回し、そのあとは手で並べた順を優先する。
+     var _st423tasks = allTasks.slice();
+     var _st423flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st423ui = allSettings.ui && allSettings.ui.quadTasksFirst ? JSON.parse(JSON.stringify(allSettings.ui.quadTasksFirst)) : undefined;
+     var _st423save = window.saveAllSettings, _st423saveT = window.saveAllTasks, _st423date = currentDailyDate, _st423vd = window._gyomuViewDate;
+     try {
+       window.saveAllSettings = function() {}; window.saveAllTasks = function() {};
+       var _st423d = getLocalDateStr(new Date());
+       currentDailyDate = _st423d; window._gyomuViewDate = _st423d;
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { gyomuMode: true });
+       if (!allSettings.ui) allSettings.ui = {};
+       allSettings.ui.quadTasksFirst = { slot2: true };
+       var _st423q = {}; _st423q[_st423d] = 'slot2';
+       var _st423y = new Date(Date.now() - 86400000).toISOString();
+       allTasks.push({ id: 'st423-A', kind: 'gyomu', buyer: '山田太郎', order: 0, createdAt: _st423y, quadSlots: JSON.parse(JSON.stringify(_st423q)), steps1: {} },
+                     { id: 'st423-B', kind: 'gyomu', buyer: '佐藤花子', order: 1, createdAt: _st423y, quadSlots: JSON.parse(JSON.stringify(_st423q)), steps1: {} },
+                     { id: 'st423-F', kind: 'task', text: 'FAX', date: _st423d, section: 1, timeSlot: 'slot2', displayScope: 'daily_only', createdAt: _st423y },
+                     { id: 'st423-T', kind: 'task', text: 'TEL', date: _st423d, section: 1, timeSlot: 'slot2', displayScope: 'daily_only', createdAt: _st423y });
+       var _st423ids = function() { return quadColumnRows('slot2', _st423d).map(function(r) { return r.item.id.replace('st423-', ''); }).join(','); };
+       toggleTokiDayDone('st423-A', _st423d); toggleTokiDayDone('st423-B', _st423d);
+       var _st423s0 = _st423ids();                                   // 押した直後は下：F,T,A,B
+       quadDropMove('st423-B', 'st423-F', false, 'slot2', _st423d);  // 今日✓のBを FAX の前へ
+       var _st423s1 = _st423ids();
+       quadDropMove('st423-T', 'st423-A', true, 'slot2', _st423d);   // TEL を今日✓のAの後ろへ
+       var _st423s2 = _st423ids();
+       var _st423B = allTasks.filter(function(t) { return t.id === 'st423-B'; })[0];
+       (_st423s0 === 'F,T,A,B' && _st423s1 === 'B,F,T,A' && _st423s2 === 'B,F,A,T' && tokiDayDone(_st423B, _st423d) && !tokiDaySunk(_st423B, _st423d))
+         ? ok('ST-423·①: 今日✓の案件も、押したあとは予定と自由に入れ替えられる（今日✓のまま）')
+         : ng('ST-423·①: 今日✓の案件が動かない', [_st423s0, _st423s1, _st423s2].join(' / '));
+       // ② 押し直す（取り消してもう一度押す）と、また下へ回る
+       toggleTokiDayDone('st423-B', _st423d); toggleTokiDayDone('st423-B', _st423d);
+       var _st423s3 = _st423ids();
+       (_st423s3.split(',').pop() === 'B')
+         ? ok('ST-423·②: 「今日おわり」を押し直すと、また列の下へ回る')
+         : ng('ST-423·②: 押し直しても下へ回らない', _st423s3);
+       // ③ 日次の欄でも、並べ替えたら固定が外れる（並べた順を優先）
+       allTasks.push({ id: 'st423-C', kind: 'gyomu', buyer: '鈴木一郎', order: 2, createdAt: _st423y, steps1: {} });
+       var _st423C = allTasks.filter(function(t) { return t.id === 'st423-C'; })[0];
+       toggleTokiDayDone('st423-C', _st423d);
+       var _st423panel = function() { return tokiDoneLast(sortTokiCases(_gyomuOpenOn('gyomu', _st423d), _st423d), _st423d).map(function(c) { return c.id.replace('st423-', ''); }).filter(function(x) { return /^[ABC]$/.test(x); }).join(','); };
+       var _st423p0 = _st423panel();
+       moveTokiCase('st423-C', 'st423-A');
+       var _st423p1 = _st423panel();
+       // 押した直後：A（魚の目で手で並べたので固定なし）・B・C（押した直後なので下）。C を A の前へ並べ替えると C・A・B
+       (_st423p0 === 'A,B,C' && _st423p1 === 'C,A,B' && !tokiDaySunk(_st423C, _st423d))
+         ? ok('ST-423·③: 日次の欄でも、今日✓の案件を並べ替えると、その位置に残る（固定しない）')
+         : ng('ST-423·③: 日次の欄で今日✓が固定されたまま', _st423p0 + ' → ' + _st423p1);
+     } catch(e) {
+       ng('ST-423: 例外', e.message);
+     } finally {
+       window.saveAllSettings = _st423save; window.saveAllTasks = _st423saveT;
+       allTasks = _st423tasks; allSettings.flags = _st423flags; currentDailyDate = _st423date; window._gyomuViewDate = _st423vd;
+       if (_st423ui === undefined) { if (allSettings.ui) delete allSettings.ui.quadTasksFirst; } else allSettings.ui.quadTasksFirst = _st423ui;
+       try { renderQuadView(); } catch (eR) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
