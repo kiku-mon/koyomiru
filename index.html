@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.5 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.4';
+    const APP_VERSION = 'v0.55.5';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -29685,6 +29685,51 @@ function saveMsbEdit() {
       }
     }
     // インポート：JSONファイルを読み込み
+    // ===== v0.55.5: 取り込みの「上書き」の守り =====
+    // 【権威】2026-10-06、発願だけのファイルなどを「上書き（推奨）」で取り込むと、ほかの予定が全部消える危険がある、との引き継ぎ。
+    // ・上書きできるのは、アプリの「書き出し」で作った丸ごとの控え（予定・設定・カレンダーの3つがそろったもの）だけ。
+    //   一部だけのファイルでは、上書きのボタンを出さず「足す」だけにする。
+    // ・丸ごとの控えでも、確認の画面に「今ある予定のうち何件が消えるか」を出す。
+    // ・ボタンを隠すだけでなく、上書きの処理そのものでも確かめる（第71条）。
+    function classifyImportFile(data) {
+      var missing = [];
+      if (!data || typeof data !== 'object') return { full: false, missing: ['tasks', 'settings', 'calendars'] };
+      if (!Array.isArray(data.tasks)) missing.push('tasks');
+      if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) missing.push('settings');
+      if (!Array.isArray(data.calendars)) missing.push('calendars');
+      return { full: missing.length === 0, missing: missing };
+    }
+    window.classifyImportFile = classifyImportFile;
+    // 上書きしたら消える、今ある記録の数（ファイルに同じIDが無いもの）
+    function countOverwriteLoss(currentTasks, fileTasks) {
+      var ids = {};
+      (fileTasks || []).forEach(function(t) { if (t && t.id) ids[t.id] = 1; });
+      return (currentTasks || []).filter(function(t) { return t && t.id && !ids[t.id]; }).length;
+    }
+    window.countOverwriteLoss = countOverwriteLoss;
+    // 取り込み方の選択肢を作る（画面に出すボタン）。一部だけのファイルなら上書きを入れない
+    function buildImportChoiceButtons(info, onOverwrite, onMerge, onCancel) {
+      var btns = [];
+      if (info.full) {
+        btns.push({
+          label: '🔄 上書きする（推奨）',
+          style: 'danger',
+          dangerConfirm: {
+            title: '⚠️ 本当に上書きしますか？',
+            desc: (info.loss > 0 ? '<strong style="color:#c0392b;">今ある記録のうち ' + info.loss + '件が消えます。</strong><br>' : '') +
+                  '現在のデータがすべて削除され、インポートファイルの内容で完全に置き換わります。<br>この操作は取り消せません（自動バックアップは保持されます）。',
+            yes: '上書きを実行',
+            no: 'やめる'
+          },
+          onClick: onOverwrite
+        });
+      }
+      btns.push({ label: info.full ? '➕ マージする（上級者向け）' : '➕ 足す（今のデータは残します）', style: 'primary', onClick: onMerge });
+      btns.push({ label: 'キャンセル', style: 'cancel', onClick: onCancel });
+      return btns;
+    }
+    window.buildImportChoiceButtons = buildImportChoiceButtons;
+
     function importData(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -30012,50 +30057,46 @@ function saveMsbEdit() {
           if (_statNote > 0)    _statSummary += '📝 ノート: ' + _statNote + '件　';
           _statSummary = _statSummary.trim() + '（合計' + _statTotal + '件）';
 
+          var _importInfo = classifyImportFile(data);
+          _importInfo.loss = _importInfo.full ? countOverwriteLoss(allTasks, fixedTasks) : 0;
+          var _importMerge = function() {
+            // 二重インポート検知（マージ時のみ意味あり）
+            if (_alreadyImported) {
+              var _prevDate = _importLog.find(function(e){ return e.fp === _importFingerprint; }).at || '不明';
+              showChoiceModal({
+                title: '⚠️ 二重インポート検知',
+                desc: 'このエクスポートデータは ' + _prevDate + ' にマージ済みです。<br>重複データが混入する可能性があります。<br>本当に続けますか？',
+                buttons: [
+                  { label: '続行してマージする', style: 'primary', onClick: function(){ _doImport(); } },
+                  { label: 'キャンセル（推奨）', style: 'cancel', onClick: function(){ event.target.value = ''; } }
+                ]
+              });
+              return;
+            }
+            _doImport();
+          };
           showChoiceModal({
             title: '📥 インポート方法を選んでください',
-            desc: _statSummary + '<br><br>'
-                + '<strong style="color:#2563eb;">🔄 上書き（推奨）</strong>: 現在のデータを全て消して、ファイルの内容に置き換えます。バックアップ復元・端末乗り換えに最適。<br><br>'
-                + '<strong style="color:#666;">➕ マージ（上級者）</strong>: 既存データを残して新規分のみ追加。同名データ増殖のリスクあり。',
-            buttons: [
-              {
-                label: '🔄 上書きする（推奨）',
-                style: 'danger',
-                dangerConfirm: {
-                  title: '⚠️ 本当に上書きしますか？',
-                  desc: '現在のデータがすべて削除され、インポートファイルの内容で完全に置き換わります。<br>この操作は取り消せません（自動バックアップは保持されます）。',
-                  yes: '上書きを実行',
-                  no: 'やめる'
-                },
-                onClick: function() { _doOverwriteImport(); }
-              },
-              {
-                label: '➕ マージする（上級者向け）',
-                style: 'primary',
-                onClick: function() {
-                  // 二重インポート検知（マージ時のみ意味あり）
-                  if (_alreadyImported) {
-                    var _prevDate = _importLog.find(function(e){ return e.fp === _importFingerprint; }).at || '不明';
-                    showChoiceModal({
-                      title: '⚠️ 二重インポート検知',
-                      desc: 'このエクスポートデータは ' + _prevDate + ' にマージ済みです。<br>重複データが混入する可能性があります。<br>本当に続けますか？',
-                      buttons: [
-                        { label: '続行してマージする', style: 'primary', onClick: function(){ _doImport(); } },
-                        { label: 'キャンセル（推奨）', style: 'cancel', onClick: function(){ event.target.value = ''; } }
-                      ]
-                    });
-                    return;
-                  }
-                  _doImport();
-                }
-              },
-              { label: 'キャンセル', style: 'cancel', onClick: function(){ event.target.value = ''; } }
-            ]
+            desc: _statSummary + '<br><br>' + (_importInfo.full
+                ? '<strong style="color:#2563eb;">🔄 上書き（推奨）</strong>: 現在のデータを全て消して、ファイルの内容に置き換えます。バックアップ復元・端末乗り換えに最適。<br><br>'
+                  + '<strong style="color:#666;">➕ マージ（上級者）</strong>: 既存データを残して新規分のみ追加。同名データ増殖のリスクあり。'
+                : '<strong style="color:#2563eb;">このファイルには、一部のデータしか入っていません。</strong><br>'
+                  + 'そのため上書きは選べません。今のデータは残したまま、ファイルの分を足します。'),
+            buttons: buildImportChoiceButtons(_importInfo,
+              function() { _doOverwriteImport(); },
+              _importMerge,
+              function() { event.target.value = ''; })
           });
           // 既存処理はダイアログ選択後の関数定義として残す
           // 旧フロー（_alreadyImported分岐）は上記onClick内に統合済み
           // 以下、_doImport と _doOverwriteImport の関数定義に進む
           function _doOverwriteImport() {
+            // v0.55.5: 一部だけのファイルでは上書きしない（ボタンを隠すだけでなく、処理でも止める・第71条）
+            if (!classifyImportFile(data).full) {
+              showToast('⚠️ このファイルには一部のデータしか入っていないため、上書きできません', { type: 'warn', duration: 4000 });
+              event.target.value = '';
+              return;
+            }
             // v0.45.647〜: 上書きインポート
             // 既存allTasksを完全置換する。calendars/settings/tokuPoints等も上書き。
             // 自動バックアップ（毎日生成）はlocalStorage上に残るので最終ライン保護はある。
@@ -51868,6 +51909,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.5', date: '2026-10-06',
+    items: [
+      { icon:'🛡️', t:'取り込みで、うっかり予定が消えないようにしました',
+        before:'一部のデータしか入っていないファイルでも「上書き（推奨）」が選べ、押すと今ある予定が全部消えていました',
+        after:'一部だけのファイルでは上書きを選べず、「足す」だけになります。丸ごとの控えを上書きするときは、今ある記録のうち何件が消えるかを確認の画面に出します' }
+    ]
+  },
   {
     ver: 'v0.55.4', date: '2026-10-06',
     items: [
@@ -75227,6 +75276,52 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        try { closeHotsuganModal(); renderHotsuganList(); } catch (eR) {}
      }
 
+     // ===== ST-418: 取り込みの「上書き」の守り（v0.55.5〜） =====
+     // 【権威】2026-10-06、一部だけのファイルを「上書き（推奨）」で取り込むと、ほかの予定が全部消える危険がある、との引き継ぎ。
+     try {
+       var _st418full = { tasks: [{ id: 'a' }], settings: {}, calendars: [] };
+       var _st418c = [classifyImportFile(_st418full).full, classifyImportFile({ tasks: [{ id: 'a' }] }).full,
+         classifyImportFile({ tasks: [], settings: {} }).full, classifyImportFile({ tasks: [], settings: [], calendars: [] }).full,
+         classifyImportFile({ allTasks: [], allSettings: {}, calendars: [] }).full, classifyImportFile(null).full];
+       (_st418c.join(',') === 'true,false,false,false,false,false')
+         ? ok('ST-418·①: 丸ごとの控え（予定・設定・カレンダー）だけを上書きできるファイルとみなす')
+         : ng('ST-418·①: ファイルの見分け方が違う', _st418c.join(','));
+       var _st418bp = buildImportChoiceButtons({ full: false }, null, null, null).map(function(b) { return b.label; }).join('|');
+       var _st418bf = buildImportChoiceButtons({ full: true, loss: 3 }, null, null, null);
+       (_st418bp.indexOf('上書き') === -1 && _st418bf[0].label.indexOf('上書き') !== -1 && _st418bf[0].dangerConfirm.desc.indexOf('3件が消えます') !== -1 &&
+        countOverwriteLoss([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [{ id: 'a' }]) === 2)
+         ? ok('ST-418·②: 一部だけのファイルには上書きのボタンを出さない。丸ごとの控えでは、消える件数を確認の画面に出す')
+         : ng('ST-418·②: ボタンの作り方か、消える件数が違う', _st418bp);
+     } catch(e) {
+       ng('ST-418: 例外', e.message);
+     }
+     // ③ 繋がっているか（第76条）：本物の取り込み処理に、一部だけのファイルと丸ごとの控えを読ませ、出るボタンを確かめる
+     enqueueSmokeAsyncTest('ST-418·③', function() {
+       var savedModal = window.showChoiceModal;
+       var feed = function(obj) {
+         return new Promise(function(resolve) {
+           var timer = setTimeout(function() { resolve(null); }, 3000);
+           window.showChoiceModal = function(opt) { clearTimeout(timer); resolve(opt); };
+           var f = new File([JSON.stringify(obj)], 'st418.json', { type: 'application/json' });
+           importData({ target: { files: [f], value: '' } });
+         });
+       };
+       var cals = (allSettings.calendar && allSettings.calendar.list) || [];
+       var oneTask = { id: 'st418-x', kind: 'hotsugan', raisan: 'ためし', createdAt: '2026-01-01T00:00:00Z' };
+       return feed({ tasks: [oneTask] }).then(function(optPartial) {
+         return feed({ tasks: [oneTask], settings: {}, calendars: cals }).then(function(optFull) {
+           window.showChoiceModal = savedModal;
+           var lp = optPartial ? optPartial.buttons.map(function(b) { return b.label; }).join('|') : '(画面が出ない)';
+           var lf = optFull ? optFull.buttons.map(function(b) { return b.label; }).join('|') : '(画面が出ない)';
+           var lossShown = optFull && optFull.buttons[0].dangerConfirm && optFull.buttons[0].dangerConfirm.desc.indexOf('件が消えます') !== -1;
+           (optPartial && lp.indexOf('上書き') === -1 && lp.indexOf('足す') !== -1 && optFull && lf.indexOf('上書き') !== -1 &&
+            (allTasks.length === 0 || lossShown))
+             ? ok('ST-418·③: 取り込みの処理で、一部だけのファイルは「足す」だけ、丸ごとの控えは上書きも選べる（消える件数つき）')
+             : ng('ST-418·③: 取り込みの画面の選択肢が違う', lp + ' / ' + lf);
+         });
+       }, function(e) { window.showChoiceModal = savedModal; throw e; });
+     });
+
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
      // 後から結果が返るテストはキューに並んでいるので、1本ずつ順番に走らせ、
@@ -76355,7 +76450,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          }
          var _f = window._inviteRemainText;
          var _now = Date.now();
-         var _iso = new Date(_now + 47 * 60000).toISOString();
+         // v0.55.5: 47分ちょうどだと、3回の計算の間に時計が1ミリ秒進むだけで「46分」に切り捨てられ、たまに落ちた。分の真ん中にずらす
+         var _iso = new Date(_now + 47 * 60000 + 30000).toISOString();
          var _a = _f(_iso);                                        // ISO
          var _b = _f(_iso.replace('T', ' ').replace('Z', '+00'));  // 空白区切り・時差2桁
          var _c = _f(_iso.replace('Z', '+00:00'));                 // 時差4桁
