@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.54.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,8 +255,8 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.54.8';
-  const APP_LAST_UPDATED = '2026-10-05'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.55.1';
+  const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -7517,11 +7517,11 @@ function _showInviteWelcome() {
       <div style="padding:14px 16px;">
         <input type="hidden" id="hotsuganEditId" value="">
 
-        <!-- 発願の欄1（reizan）：見出し・説明・例の文字は、発願の型（applyHotsuganTemplate）で差し替える -->
+        <!-- 発願の欄1（raisan：らいさん）：見出し・説明・例の文字は、発願の型（applyHotsuganTemplate）で差し替える -->
         <div style="margin-bottom:12px;">
-          <div style="font-size:0.75em;font-weight:700;color:#8b6914;margin-bottom:2px;" id="hsTitle_reizan">🌟 敬う心</div>
-          <div style="font-size:0.68em;color:#b09060;margin-bottom:4px;" id="hsSub_reizan">大切にしている存在（神仏・ご先祖・自然など）への敬い</div>
-          <textarea id="hotsuganReizan" rows="3" placeholder="〇〇さま、いつも見守ってくださりありがとうございます…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #d4b896;border-radius:8px;background:#fff9f0;font-size:0.82em;color:#4a3820;resize:vertical;font-family:inherit;"></textarea>
+          <div style="font-size:0.75em;font-weight:700;color:#8b6914;margin-bottom:2px;" id="hsTitle_raisan">🌟 敬う心</div>
+          <div style="font-size:0.68em;color:#b09060;margin-bottom:4px;" id="hsSub_raisan">大切にしている存在（神仏・ご先祖・自然など）への敬い</div>
+          <textarea id="hotsuganRaisan" rows="3" placeholder="〇〇さま、いつも見守ってくださりありがとうございます…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #d4b896;border-radius:8px;background:#fff9f0;font-size:0.82em;color:#4a3820;resize:vertical;font-family:inherit;"></textarea>
         </div>
 
         <!-- 発願の欄2（sensei）：見出し・説明・例の文字は、発願の型（applyHotsuganTemplate）で差し替える -->
@@ -15004,7 +15004,7 @@ function renderTodoList() {
     function tokiSama(name) {
       var n = String(name || '').trim();
       if (!n) return '';
-      return /(様|さま|さん|殿|御中)$/.test(n) ? n : n + '様';
+      return /(様|さま|さん|殿|御中|[）)])$/.test(n) ? n : n + '様';   // v0.55.0: 「）」で終わるときも付けない
     }
     window.tokiSama = tokiSama;
     window.tokiTantou = tokiTantou; window.tokiGoer = tokiGoer;
@@ -15166,12 +15166,16 @@ function renderTodoList() {
       // v0.53.4: 【権威】2026-10-05、明日の画面を開いたら明日の様子が見たい、との指摘。見ている日を基準にする
       var today = viewYmd || getLocalDateStr(new Date());
       var list = sortTokiCases(_gyomuOpenOn(tpl.kind, today), today);
+      // v0.55.1: 魚の目では、プライベートの列に置いた案件だけをここに出す（午前・午後・夕方は、それぞれの列に出す）
+      var quadMode = /Quad$/.test(elId);
+      if (quadMode) { list = list.filter(function(c) { return gyomuQuadSlotOf(c, today) === 'slot1'; }); el.setAttribute('data-quad-slot', 'slot1'); }
+      else el.removeAttribute('data-quad-slot');
       var closedAll = _gyomuShownClosed(tpl.kind, today);
       var showAll = !!window['_gyomuShowAllClosed_' + tpl.kind];
       var closedShown = showAll ? closedAll : closedAll.slice(0, GYOMU_CLOSED_FIRST_SHOW);
       var restN = closedAll.length - closedShown.length;
       // 済む前の日を見ているときは、その日の時点では進行中だったので、取り消し線を引かない
-      var rows = list.map(function(c) { return _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, today); }).join('') +
+      var rows = list.map(function(c) { return _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, today, { quad: quadMode }); }).join('') +
         closedShown.map(function(c) { return _tokiCaseRowHtml(c, today); }).join('');
       var newBtn = '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:3px 9px;border-radius:6px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;white-space:nowrap;">' + tpl.newButton + '</button>';
       var head;
@@ -15206,6 +15210,7 @@ function renderTodoList() {
     function renderGyomuPanels(suffix, viewYmd) {
       if (viewYmd) window._gyomuViewDate = viewYmd;
       var day = window._gyomuViewDate || getLocalDateStr(new Date());
+      if (suffix === 'Quad') { try { _renderGyomuQuadColumns(day); } catch (eQ) {} }   // v0.55.1
       var both = gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI) && gyomuTemplateVisible(gyomuTemplateIppan());
       if (!both) {
         renderTokiPanel('tokiPanel' + suffix, 'toki', day);
@@ -15219,6 +15224,60 @@ function renderTodoList() {
       if (other) { other.style.display = 'none'; other.innerHTML = ''; }
     }
     window.renderGyomuPanels = renderGyomuPanels;
+    // ===== v0.55.1: 魚の目で、案件を午前・午後・夕方の列に置く =====
+    // 【権威】2026-10-06、魚の目で案件が全部プライベートに入ってしまう、午前などにドラッグ＆ドロップしたい、との要望。
+    // 置き場所は日ごとに覚える（quadSlots[日付]）。置いていない日は、その日の段取りの時刻で自動で置く
+    // （12時前＝午前、17時前＝午後、それ以降＝夕方）。時刻も無ければプライベート。手で置いた方を優先する。
+    function gyomuQuadSlotOf(c, ymd) {
+      var m = c && c.quadSlots && c.quadSlots[ymd];
+      if (m) return m;
+      if (!c || c.closed) return 'slot1';
+      var tpl = gyomuTemplateOf(c), best = '';
+      tpl.milestones.forEach(function(ms) {
+        if (!ms.plan || c[ms.key + 'Date'] !== ymd || gyomuMilestoneIsNone(c, ms) || gyomuMilestoneIsAuto(c, ms)) return;
+        var t = String(c[ms.key + 'Time'] || '');
+        if (/^\d{1,2}:\d{2}$/.test(t) && (!best || t < best)) best = t;
+      });
+      if (!best) return 'slot1';
+      var h = parseInt(best, 10);
+      return h < 12 ? 'slot2' : h < 17 ? 'slot3' : 'slot4';
+    }
+    window.gyomuQuadSlotOf = gyomuQuadSlotOf;
+    function setGyomuQuadSlot(caseId, slot) {
+      var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
+      if (!c || ['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1) return;
+      var ymd = window._gyomuViewDate || getLocalDateStr(new Date());
+      if (gyomuQuadSlotOf(c, ymd) === slot && c.quadSlots && c.quadSlots[ymd] === slot) return;
+      c.quadSlots = Object.assign({}, c.quadSlots || {});
+      c.quadSlots[ymd] = slot;
+      c.updatedAt = new Date().toISOString();
+      saveAllTasks();
+      renderGyomuPanels('Quad');
+    }
+    window.setGyomuQuadSlot = setGyomuQuadSlot;
+    // 午前・午後・夕方の列に、その列に置いた案件を出す
+    function _renderGyomuQuadColumns(day) {
+      var body = document.getElementById('quadViewBody');
+      if (!body || !body.children.length) return;
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
+      var tpls = [GYOMU_TEMPLATE_TOKI, gyomuTemplateIppan()].filter(gyomuTemplateVisible);
+      ['slot2', 'slot3', 'slot4'].forEach(function(slot, i) {
+        var col = body.children[i + 1];
+        if (!col) return;
+        var box = document.getElementById('gyomuQuadCol_' + slot);
+        if (!box) { box = document.createElement('div'); box.id = 'gyomuQuadCol_' + slot; col.insertBefore(box, col.children[2] || null); }
+        var cases = [];
+        tpls.forEach(function(t) { cases = cases.concat(sortTokiCases(_gyomuOpenOn(t.kind, day), day).filter(function(c) { return gyomuQuadSlotOf(c, day) === slot; })); });
+        box.setAttribute('data-quad-slot', slot);
+        box.innerHTML = cases.length ? '<div style="padding:2px 4px;">' + cases.map(function(c) {
+          var c2 = c.closed ? Object.assign({}, c, { closed: false }) : c;
+          return _tokiCaseRowHtml(c2, day, { quad: true });
+        }).join('') + '</div>' : '';
+        box.style.display = cases.length ? 'block' : 'none';
+        _bindTokiDnD(box);
+      });
+    }
+    // ===== END v0.55.1 =====
     function setGyomuTab(id) {
       try { localStorage.setItem('koyomiru_gyomu_tab', id === 'ippan' ? 'ippan' : 'toki'); } catch (e) {}
       renderGyomuPanels('Matrix'); renderGyomuPanels('Quad');
@@ -15265,19 +15324,28 @@ function renderTodoList() {
     window._tokiIsTouch = _tokiIsTouch;
     function _bindTokiDnD(el) {
       [].forEach.call(el.querySelectorAll('.toki-case-row'), function(row) {
-        row.addEventListener('dragstart', function(e) { e.dataTransfer.setData('text/plain', row.getAttribute('data-toki-id')); row.style.opacity = '0.5'; });
+        row.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('text/plain', row.getAttribute('data-toki-id'));
+          try { e.dataTransfer.setData('application/x-koyomiru-case', row.getAttribute('data-toki-id')); } catch (eD) {}   // v0.55.1
+          row.style.opacity = '0.5';
+        });
         row.addEventListener('dragend', function() { row.style.opacity = ''; });
         row.addEventListener('dragover', function(e) { e.preventDefault(); row.style.borderTop = '3px solid #5b8def'; });
         row.addEventListener('dragleave', function() { row.style.borderTop = ''; });
         row.addEventListener('drop', function(e) {
-          e.preventDefault(); row.style.borderTop = '';
-          moveTokiCase(e.dataTransfer.getData('text/plain'), row.getAttribute('data-toki-id'));
+          e.preventDefault(); e.stopPropagation(); row.style.borderTop = '';
+          var dragId = e.dataTransfer.getData('text/plain');
+          // v0.55.1: 魚の目では、落とした行のある列に置いてから、並べ替える
+          var slot = el.getAttribute('data-quad-slot');
+          if (slot && typeof setGyomuQuadSlot === 'function') setGyomuQuadSlot(dragId, slot);
+          moveTokiCase(dragId, row.getAttribute('data-toki-id'));
         });
       });
     }
     window._bindTokiDnD = _bindTokiDnD;
     // v0.51.2: 案件1件ぶんの見え方（日次と月間の日の欄で使い回す）
-    function _tokiCaseRowHtml(c, today) {
+    function _tokiCaseRowHtml(c, today, rowOpts) {
+      rowOpts = rowOpts || {};
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
       var chip = function(c, row, step, done, faint) {
         return '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',' + row + ',\'' + esc(step) + '\')" style="padding:2px 7px;margin:2px 2px 0 0;border-radius:6px;font-size:0.78em;cursor:pointer;' +
@@ -15321,6 +15389,12 @@ function renderTodoList() {
             (!tokiIsSelf(tokiTantou(c)) ? '<span style="color:#555;font-size:0.85em;">　担当 ' + esc(tokiTantou(c)) + '</span>' : '') + '</div>' +
           '<span style="white-space:nowrap;">' +
             // v0.52.1: 【権威】2026-10-05、スマホは矢印で並べ替え。指で操作する端末だけに出す（パソコンはドラッグ＆ドロップ）
+            // v0.55.1: スマホの魚の目では、置き場所（プラ・午前・午後・夕方）を切り替えられる
+            (rowOpts.quad && _tokiIsTouch() ? (function() {
+              var cur = gyomuQuadSlotOf(c, today);
+              return '<select onchange="setGyomuQuadSlot(\'' + esc(c.id) + '\', this.value)" title="置き場所" style="font-size:0.75em;padding:1px 2px;margin-right:4px;border:1px solid #ccd;border-radius:6px;">' +
+                getQuadSlots().map(function(s) { return '<option value="' + s.key + '"' + (s.key === cur ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('') + '</select>';
+            })() : '') +
             (_tokiIsTouch() ? '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',-1)" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
                               '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',1)" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">↓</button>' : '') +
             '<button onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" title="直す" style="border:none;background:none;cursor:pointer;font-size:1em;padding:0 4px;">✏️</button>' +
@@ -15371,7 +15445,10 @@ function renderTodoList() {
         if (m.plan) nm += m.self ? '（自分が行く）' : '（行く：' + m.goer + '）';
         ids[m.id] = (ids[m.id] || []).concat(nm);
       });
-      var cases = getTokiCases(false, tpl.kind).filter(function(c) { return ids[c.id]; });
+      // v0.55.0: 【権威】2026-10-06、節目の無い日に「0件」と出るのは変（進行中の案件はある）、との指摘。
+      // 日次と同じく、その日に進行中の案件をすべて並べる。その日に節目がある案件を先に、見出し（金消・決済など）付きで。
+      var cases = sortTokiCases(_gyomuOpenOn(tpl.kind, ymd), ymd);
+      cases = cases.filter(function(c) { return ids[c.id]; }).concat(cases.filter(function(c) { return !ids[c.id]; }));
       // v0.54.7: 【権威】2026-10-05、月間でほかの予定を入れようとすると、登記の案件が上に居座って邪魔、との指摘。
       // 見出しだけを出して初めは閉じておく。押すと開く（開いた・閉じたは覚える）。閉じていても件数と⚠️は見出しに出す。
       var openKey = 'koyomiru_sidebar_open_' + tpl.id, isOpen = false;
@@ -15380,10 +15457,11 @@ function renderTodoList() {
       el.innerHTML = '<div style="padding:6px 12px;border-bottom:1px solid #eee;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">' +
           '<button onclick="toggleTokiSidebar(\'' + tpl.id + '\')" aria-expanded="' + isOpen + '" style="flex:1;min-width:0;text-align:left;border:none;background:none;padding:4px 0;cursor:pointer;font-size:0.85em;font-weight:700;color:#6741d9;">' +
-            (isOpen ? '▼ ' : '▶ ') + (tpl.id === 'ippan' ? '💼 この日の業務の案件' : '📝 この日の登記の案件') + '（' + cases.length + '件）' +
+            (isOpen ? '▼ ' : '▶ ') + (tpl.id === 'ippan' ? '💼 この日の業務の案件' : '📝 この日の登記の案件') + '（進行中 ' + cases.length + '件' +
+            (Object.keys(ids).length ? '・この日の節目 ' + Object.keys(ids).length + '件' : '') + '）' +
             (warnN ? '<span style="color:#d9480f;">　⚠️' + warnN + '</span>' : '') + '</button>' +
           '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #6741d9;background:#fff;color:#6741d9;font-size:0.8em;cursor:pointer;white-space:nowrap;">' + tpl.newButton + '</button></div>' +
-        (isOpen ? '<div style="margin-top:4px;">' + cases.map(function(c) { return '<div style="font-size:0.72em;color:#6741d9;font-weight:700;">' + esc(ids[c.id].join('・')) + '</div>' + _tokiCaseRowHtml(c, ymd); }).join('') + '</div>' : '') +
+        (isOpen ? '<div style="margin-top:4px;">' + cases.map(function(c) { return (ids[c.id] ? '<div style="font-size:0.72em;color:#6741d9;font-weight:700;">' + esc(ids[c.id].join('・')) + '</div>' : '') + _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, ymd); }).join('') + '</div>' : '') +
       '</div>';
       el.style.display = 'block';
     }
@@ -27396,7 +27474,7 @@ function saveMsbEdit() {
     // ・新しいIDを付ける（元のIDのままだと、配布データの回収の処理 mig_remove_leaked_hotsugan_v1 に消されることがある）
     // ・同じ発願を2回取り込まない（元のIDを importedFrom に控える。中身が同じものも、すでにあるとみなす）
     // ・取り込んだ発願は、あなたの保存場所に入る。こよみるのコードには一切入れない（前回の漏れの原因）
-    var HOTSUGAN_FIELDS = ['reizan', 'sensei', 'kansha', 'kaika', 'vision', 'seichou', 'shojin', 'kodo'];
+    var HOTSUGAN_FIELDS = ['raisan', 'sensei', 'kansha', 'kaika', 'vision', 'seichou', 'shojin', 'kodo'];
     // zip の中の .json を1つ読み出す（ブラウザに元から付いている展開の仕組みを使う。外から道具を読み込まない）
     async function _readJsonFromZip(buf) {
       var dv = new DataView(buf), n = buf.byteLength, eocd = -1;
@@ -27427,14 +27505,16 @@ function saveMsbEdit() {
     function planHotsuganImport(exported, existing) {
       var src = (exported && Array.isArray(exported.tasks)) ? exported.tasks : [];
       var found = src.filter(function(t) { return t && t.kind === 'hotsugan'; });
-      var sig = function(t) { return String(t.createdAt || '') + '|' + HOTSUGAN_FIELDS.map(function(f) { return String(t[f] || ''); }).join('|'); };
+      // v0.54.9: 1つ目の欄は raisan（らいさん）。やることクラフトや古いデータの reizan も同じ欄として読む
+      var val = function(t, f) { return f === 'raisan' ? (t.raisan != null ? t.raisan : t.reizan) : t[f]; };
+      var sig = function(t) { return String(t.createdAt || '') + '|' + HOTSUGAN_FIELDS.map(function(f) { return String(val(t, f) || ''); }).join('|'); };
       var have = {}; (existing || []).forEach(function(t) { if (t.importedFrom) have['id:' + t.importedFrom] = 1; have['sig:' + sig(t)] = 1; });
       var add = [], skip = 0;
       found.forEach(function(t) {
         if (have['id:' + t.id] || have['sig:' + sig(t)]) { skip++; return; }
         var o = { kind: 'hotsugan', date: /^\d{4}-\d{2}-\d{2}$/.test(String(t.date || '')) ? t.date : String(t.createdAt || '').slice(0, 10),
                   blueprintId: null, createdAt: t.createdAt || new Date().toISOString(), importedFrom: String(t.id || ''), importedSource: 'yarukotocraft' };
-        HOTSUGAN_FIELDS.forEach(function(f) { o[f] = typeof t[f] === 'string' ? t[f] : ''; });
+        HOTSUGAN_FIELDS.forEach(function(f) { var v = val(t, f); o[f] = typeof v === 'string' ? v : ''; });
         add.push(o); have['id:' + t.id] = 1; have['sig:' + sig(t)] = 1;
       });
       return { found: found.length, add: add, skip: skip };
@@ -27476,8 +27556,8 @@ function saveMsbEdit() {
     // 【権威】2026-10-05、発願の言葉（特定の信仰の言い方）がソースに書かれていて、エンジニアが見たら分かってしまう、との指摘。
     // ソースには宗派を問わない「一般」の言葉だけを置く。宗派ごとの型は、クラウドの表 koyomiru_hotsugan_templates に
     // データとして置き（管理者だけが書ける・公開した型は誰でも読める・下書きは管理者だけが読める）、選んだ型をあなたの設定に保存する。
-    var HOTSUGAN_KEYS = ['reizan', 'sensei', 'kansha', 'kaika', 'vision', 'seichou', 'shojin', 'kodo'];
-    var HOTSUGAN_GENERAL = { id: 'ippan', name: '一般（宗派を問わない）', data: { emptyText: '願いと誓いを書いてみましょう', sections: {"reizan": {"icon": "🌟", "title": "敬う心", "sub": "大切にしている存在（神仏・ご先祖・自然など）への敬い", "ph": "〇〇さま、いつも見守ってくださりありがとうございます…"}, "sensei": {"icon": "🙏", "title": "恩のある方へ", "sub": "恩師・導いてくださる方への感謝と誓い", "ph": "〇〇さん、いつも導いてくださりありがとうございます…"}, "kansha": {"icon": "🌸", "title": "感謝", "sub": "今与えられているものへの感謝", "ph": "今日も健康で仕事ができること、家族がいること…"}, "kaika": {"icon": "⚡", "title": "改める", "sub": "過ちを改め、よい方へ転じる誓い", "ph": "私はこれまで〇〇をしてきました。今ここに改め…"}, "vision": {"icon": "🌅", "title": "ビジョン", "sub": "未来の理想の姿を余すところなく描く", "ph": "5年後、私は…人々が笑顔で…"}, "seichou": {"icon": "🌱", "title": "成長の方向性", "sub": "そのために自分がどう育っていくか", "ph": "〇〇を身につけ、仕事と学びを通じて…"}, "shojin": {"icon": "📖", "title": "精進努力", "sub": "具体的な覚悟・余すところなく", "ph": "毎日必ず〇〇を…絶対に諦めない…"}, "kodo": {"icon": "🎯", "title": "具体的な行動", "sub": "今日・今週やること", "ph": "今日：〇〇　今週：〇〇…"}} } };
+    var HOTSUGAN_KEYS = ['raisan', 'sensei', 'kansha', 'kaika', 'vision', 'seichou', 'shojin', 'kodo'];
+    var HOTSUGAN_GENERAL = { id: 'ippan', name: '一般（宗派を問わない）', data: { emptyText: '願いと誓いを書いてみましょう', sections: {"raisan": {"icon": "🌟", "title": "敬う心", "sub": "大切にしている存在（神仏・ご先祖・自然など）への敬い", "ph": "〇〇さま、いつも見守ってくださりありがとうございます…"}, "sensei": {"icon": "🙏", "title": "恩のある方へ", "sub": "恩師・導いてくださる方への感謝と誓い", "ph": "〇〇さん、いつも導いてくださりありがとうございます…"}, "kansha": {"icon": "🌸", "title": "感謝", "sub": "今与えられているものへの感謝", "ph": "今日も健康で仕事ができること、家族がいること…"}, "kaika": {"icon": "⚡", "title": "改める", "sub": "過ちを改め、よい方へ転じる誓い", "ph": "私はこれまで〇〇をしてきました。今ここに改め…"}, "vision": {"icon": "🌅", "title": "ビジョン", "sub": "未来の理想の姿を余すところなく描く", "ph": "5年後、私は…人々が笑顔で…"}, "seichou": {"icon": "🌱", "title": "成長の方向性", "sub": "そのために自分がどう育っていくか", "ph": "〇〇を身につけ、仕事と学びを通じて…"}, "shojin": {"icon": "📖", "title": "精進努力", "sub": "具体的な覚悟・余すところなく", "ph": "毎日必ず〇〇を…絶対に諦めない…"}, "kodo": {"icon": "🎯", "title": "具体的な行動", "sub": "今日・今週やること", "ph": "今日：〇〇　今週：〇〇…"}} } };
     window.HOTSUGAN_GENERAL = HOTSUGAN_GENERAL;
     var HOTSUGAN_TPL_CACHE_KEY = 'koyomiru_hotsugan_templates_cache';
     function _hotsuganTemplatesCached() {
@@ -27505,7 +27585,7 @@ function saveMsbEdit() {
     function applyHotsuganTemplate() {
       var tpl = currentHotsuganTemplate(), sec = (tpl.data && tpl.data.sections) || {}, gen = HOTSUGAN_GENERAL.data.sections;
       HOTSUGAN_KEYS.forEach(function(k) {
-        var s = Object.assign({}, gen[k], sec[k] || {});
+        var s = Object.assign({}, gen[k], sec[k] || (k === 'raisan' ? sec.reizan : null) || {});   // 古い型（reizan）も読む
         var t = document.getElementById('hsTitle_' + k); if (t) t.textContent = (s.icon ? s.icon + ' ' : '') + (s.title || '');
         var u = document.getElementById('hsSub_' + k); if (u) u.textContent = s.sub || '';
         var ta = document.getElementById('hotsugan' + k.charAt(0).toUpperCase() + k.slice(1)); if (ta) ta.placeholder = s.ph || '';
@@ -27569,7 +27649,7 @@ function saveMsbEdit() {
               '<button onclick="window.deleteHotsugan(\'' + item.id + '\')" style="padding:4px 10px;background:#fce4ec;border:none;border-radius:6px;font-size:0.75em;color:#c0392b;cursor:pointer;">\u{1F5D1} \u524A\u9664</button>' +
             '</div>' +
           '</div>' +
-          (item.reizan  ? '<div style="' + _fs + 'color:#8b6914;font-style:italic;">\u2728 ' + _eh(item.reizan) + '</div>' : '') +
+          ((item.raisan || item.reizan) ? '<div style="' + _fs + 'color:#8b6914;font-style:italic;">\u2728 ' + _eh(item.raisan || item.reizan) + '</div>' : '') +
           (item.sensei  ? '<div style="' + _fs + 'color:#a07830;">\u{1F64F} ' + _eh(item.sensei) + '</div>' : '') +
           (item.kansha  ? '<div style="' + _fs + '">\u{1F338} ' + _eh(item.kansha) + '</div>' : '') +
           (item.kaika   ? '<div style="' + _fs + '">\u26A1 ' + _eh(item.kaika) + '</div>' : '') +
@@ -27597,7 +27677,7 @@ function saveMsbEdit() {
     }
 
     function _clearHotsuganForm() {
-      ['hotsuganReizan','hotsuganSensei','hotsuganKansha','hotsuganKaika',
+      ['hotsuganRaisan','hotsuganSensei','hotsuganKansha','hotsuganKaika',
        'hotsuganVision','hotsuganSeichou','hotsuganShojin','hotsuganKodo'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.value = '';
@@ -27612,7 +27692,7 @@ function saveMsbEdit() {
       var tmpl = allSettings && allSettings.prayer && allSettings.prayer.template;
       if (tmpl) {
         var _sv = function(elId, val) { var el = document.getElementById(elId); if (el && val) el.value = val; };
-        _sv('hotsuganReizan',  tmpl.reizan);
+        _sv('hotsuganRaisan',  tmpl.raisan || tmpl.reizan);
         _sv('hotsuganSensei',  tmpl.sensei);
         _sv('hotsuganKansha',  tmpl.kansha);
         _sv('hotsuganKaika',   tmpl.kaika);
@@ -27632,7 +27712,7 @@ function saveMsbEdit() {
       document.getElementById('hotsuganModalTitle').textContent = '\u270F\uFE0F \u767A\u9858\u3092\u7DE8\u96C6\u3059\u308B';
       document.getElementById('hotsuganEditId').value = id;
       var _sv = function(elId, val) { var el = document.getElementById(elId); if (el) el.value = val || ''; };
-      _sv('hotsuganReizan',  item.reizan);
+      _sv('hotsuganRaisan',  item.raisan != null ? item.raisan : item.reizan);
       _sv('hotsuganSensei',  item.sensei);
       _sv('hotsuganKansha',  item.kansha);
       _sv('hotsuganKaika',   item.kaika);
@@ -27652,7 +27732,7 @@ function saveMsbEdit() {
 
     function saveHotsugan() {
       var _gv = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
-      var reizan  = _gv('hotsuganReizan');
+      var raisan  = _gv('hotsuganRaisan');   // v0.54.9: raisan（らいさん）。以前は中で reizan と呼んでいた
       var sensei  = _gv('hotsuganSensei');
       var kansha  = _gv('hotsuganKansha');
       var kaika   = _gv('hotsuganKaika');
@@ -27661,7 +27741,7 @@ function saveMsbEdit() {
       var shojin  = _gv('hotsuganShojin');
       var kodo    = _gv('hotsuganKodo');
       var bpId    = _gv('hotsuganBlueprintId');
-      if (!reizan && !sensei && !kansha && !kaika && !vision && !seichou && !shojin && !kodo) {
+      if (!raisan && !sensei && !kansha && !kaika && !vision && !seichou && !shojin && !kodo) {
         if (typeof showToast === 'function') showToast('\u4F55\u304B\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044', { type: 'warn' });
         return;
       }
@@ -27670,7 +27750,7 @@ function saveMsbEdit() {
       if (editId) {
         var idx = allTasks.findIndex(function(t) { return t && t.id === editId; });
         if (idx >= 0) {
-          allTasks[idx].reizan  = reizan;
+          allTasks[idx].raisan  = raisan; delete allTasks[idx].reizan;
           allTasks[idx].sensei  = sensei;
           allTasks[idx].kansha  = kansha;
           allTasks[idx].kaika   = kaika;
@@ -27687,7 +27767,7 @@ function saveMsbEdit() {
         var newItem = {
           id: generateTaskId(),
           kind: 'hotsugan',
-          reizan:  reizan,
+          raisan:  raisan,
           sensei:  sensei,
           kansha:  kansha,
           kaika:   kaika,
@@ -31166,6 +31246,51 @@ window._repairCloudCalendarIds();
           allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); });
         }
       } catch(e) {}
+    });
+
+    addMigration('mig_hotsugan_reizan_to_raisan_v1', function() {
+      // v0.54.9: 【権威】2026-10-05、1つ目の欄は「らいさん（raisan）」が正しい、との指摘。中の名前が reizan（別の言葉に読める）だった。
+      // 保存済みの発願の reizan を raisan に移し替える（読むときは reizan も見るので、移し替えの前後で消えることはない）
+      var _raw = localStorage.getItem('allTasks');
+      var _list = [];
+      try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
+      if (!Array.isArray(_list)) return;
+      var _now = new Date().toISOString(), _n = 0;
+      _list.forEach(function(t) {
+        if (!t || t.kind !== 'hotsugan' || !Object.prototype.hasOwnProperty.call(t, 'reizan')) return;
+        if (t.raisan == null) t.raisan = t.reizan;
+        delete t.reizan; t.updatedAt = _now; _n++;
+      });
+      if (!_n) return;
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try {
+        if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) {
+          allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); });
+        }
+      } catch(e) {}
+      try { if (allSettings && allSettings.prayer && allSettings.prayer.template && allSettings.prayer.template.reizan != null) {
+        allSettings.prayer.template.raisan = allSettings.prayer.template.reizan; delete allSettings.prayer.template.reizan;
+      } } catch(e) {}
+    });
+
+    addMigration('mig_toki_split_title_v1', function() {
+      // v0.55.0: 【権威】2026-10-06、貼り付けの自動解析を作る前に入れた案件は、物件まで買主の欄に入ったままだった
+      // （「…（物件：…）様」と出ていた）。事案内容・物件が空で、買主の欄が案件タイトルの形なら、一度だけ分け直す。
+      var _raw = localStorage.getItem('allTasks');
+      var _list = [];
+      try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
+      if (!Array.isArray(_list) || typeof parseTokiTitle !== 'function') return;
+      var _now = new Date().toISOString(), _n = 0;
+      _list.forEach(function(t) {
+        if (!t || t.kind !== 'toki' || t.jian || t.bukken || !t.buyer) return;
+        var r = parseTokiTitle(t.buyer, '物件');
+        if (!r || !r.buyer) return;
+        t.buyer = r.buyer; if (r.jian) t.jian = r.jian; if (r.bukken) t.bukken = r.bukken;
+        t.updatedAt = _now; _n++;
+      });
+      if (!_n) return;
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try { if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) { allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); }); } } catch(e) {}
     });
 
     addMigration('mig_remove_leaked_hotsugan_v1', function() {
@@ -40240,7 +40365,7 @@ function renderDashboardView() {
       var latest = items[0]; // 最新（createdAt降順の先頭）
       if (!allSettings.prayer) allSettings.prayer = { enabled: false, deityName: '', template: null };
       allSettings.prayer.template = {
-        reizan:  latest.reizan  || '',
+        raisan:  latest.raisan || latest.reizan || '',
         sensei:  latest.sensei  || '',
         kansha:  latest.kansha  || '',
         kaika:   latest.kaika   || '',
@@ -40359,9 +40484,14 @@ function renderDashboardView() {
       div.addEventListener('drop', function(e) {
         e.preventDefault();
         div.style.outline = '';
+        // v0.55.1: 登記・業務の案件が落とされたときは、その日の置き場所だけを変える（並び順は動かさない）
+        var _caseId = '';
+        try { _caseId = e.dataTransfer.getData('application/x-koyomiru-case'); } catch (eC) {}
+        if (_caseId) { if (typeof setGyomuQuadSlot === 'function') setGyomuQuadSlot(_caseId, col.key); return; }
         var taskId = e.dataTransfer.getData('text/plain');
         var fromIdx = allTasks.findIndex(function(t) { return t.id === taskId; });
         if (fromIdx === -1) return;
+        if (allTasks[fromIdx].kind === 'toki' || allTasks[fromIdx].kind === 'gyomu') return;   // 念のため：案件を普通の予定として動かさない
         var moved = allTasks.splice(fromIdx, 1)[0];
         moved.timeSlot = col.key;
         // v0.45.1373: 【権威】2026-07-22、マトリクス（魚の目）タブでD&D移動しても
@@ -51662,7 +51792,23 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
-    ver: 'v0.54.8', date: '2026-10-05',
+    ver: 'v0.55.1', date: '2026-10-06',
+    items: [
+      { icon:'🐟', t:'魚の目で、案件を午前・午後・夕方に置けるようにしました',
+        before:'魚の目では、案件がすべていちばん左の列に入っていました',
+        after:'パソコンはドラッグ＆ドロップ、スマホは案件の「置き場所」で、午前・午後・夕方の列に置けます（日ごとに覚えます）。時刻の入った打ち合わせなどがある日は、その時刻に合わせて自動で置きます' }
+    ]
+  },
+  {
+    ver: 'v0.55.0', date: '2026-10-06',
+    items: [
+      { icon:'💼', t:'月間の日の欄に、その日に進行中の案件を出すようにしました',
+        before:'その日に期日や打ち合わせなどが無いと、「0件」と出ていました',
+        after:'その日に進行中の案件をすべて数えて並べます。その日に大事な日がある案件は、先に見出し付きで出ます' }
+    ]
+  },
+  {
+    ver: 'v0.54.9', date: '2026-10-05',
     items: [
       { icon:'🙏', t:'発願の「型」を選べるようにしました',
         before:'発願の画面の言葉は、1つの言い方に決まっていました',
@@ -74856,6 +75002,47 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-412·①: ソースに特定の言葉が残っている', _st412left.length + '件');
      } catch(e) {
        ng('ST-412: 例外', e.message);
+     }
+
+     // ===== ST-413: 礼賛の欄の名前は raisan（v0.54.9〜） =====
+     try {
+       var _st413p = planHotsuganImport({ tasks: [ { id: 'r1', kind: 'hotsugan', reizan: 'ふるい', createdAt: '2026-01-01T00:00:00Z' } ] }, []);
+       (HOTSUGAN_KEYS[0] === 'raisan' && HOTSUGAN_FIELDS[0] === 'raisan' && document.getElementById('hotsuganRaisan') && !document.getElementById('hotsuganReizan') &&
+        _st413p.add[0].raisan === 'ふるい' && !('reizan' in _st413p.add[0]))
+         ? ok('ST-413·①: 礼賛の欄は中でも raisan。古い形（reizan）は raisan として受け取る')
+         : ng('ST-413·①: 礼賛の欄の名前が違う', '');
+     } catch(e) {
+       ng('ST-413: 例外', e.message);
+     }
+
+     // ===== ST-414: 月間の日の欄は、その日に進行中の案件を数える（v0.55.0〜） =====
+     var _st414backup = allTasks.slice();
+     try {
+       allTasks.push({ id: 'st414-a', kind: 'gyomu', buyer: '甲', createdAt: new Date(2026, 8, 1, 9).toISOString(), steps1: {} });
+       allTasks.push({ id: 'st414-b', kind: 'gyomu', buyer: '乙', createdAt: new Date(2026, 9, 7, 9).toISOString(), steps1: {} });
+       var _st414on = _gyomuOpenOn('gyomu', '2026-10-06').map(function(c) { return c.id; }).filter(function(id) { return /^st414-/.test(id); });
+       (_st414on.join(',') === 'st414-a' && tokiSama('〇〇（仮）') === '〇〇（仮）')
+         ? ok('ST-414·①: 節目の無い日も、その日に進行中の案件を数える（作る前の日は数えない）。「）」で終わる名前に「様」を付けない')
+         : ng('ST-414·①: 進行中の数え方か「様」の付け方が違う', _st414on.join(','));
+     } catch(e) {
+       ng('ST-414: 例外', e.message);
+     } finally {
+       allTasks = _st414backup;
+     }
+
+     // ===== ST-415: 魚の目の置き場所（v0.55.1〜） =====
+     try {
+       var _st415a = { kinshoDate: '2026-10-06', kinshoTime: '14:00', steps1: {}, steps2: {} };
+       var _st415b = { kessaiDate: '2026-10-06', kessaiTime: '09:30', steps1: {}, steps2: {} };
+       var _st415c = { kessaiDate: '2026-10-06', kessaiTime: '18:00', quadSlots: { '2026-10-06': 'slot1' }, steps1: {}, steps2: {} };
+       var _st415d = { kessaiDate: '2026-10-06', kessaiTime: '09:30', kessaiAuto: true, steps1: {}, steps2: {} };
+       var _st415r = [gyomuQuadSlotOf(_st415a, '2026-10-06'), gyomuQuadSlotOf(_st415b, '2026-10-06'), gyomuQuadSlotOf(_st415c, '2026-10-06'),
+                      gyomuQuadSlotOf(_st415d, '2026-10-06'), gyomuQuadSlotOf(_st415a, '2026-10-07')].join(',');
+       (_st415r === 'slot3,slot2,slot1,slot1,slot1')
+         ? ok('ST-415·①: 魚の目の置き場所は、手で置いた方を優先し、無ければその日の段取りの時刻で午前・午後・夕方に（自動決済・別の日はプライベート）')
+         : ng('ST-415·①: 置き場所の決め方が違う', _st415r);
+     } catch(e) {
+       ng('ST-415: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
