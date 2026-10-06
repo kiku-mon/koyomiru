@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.7 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.8 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.7';
+    const APP_VERSION = 'v0.55.8';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15186,7 +15186,12 @@ function renderTodoList() {
     function renderGyomuPanels(suffix, viewYmd) {
       if (viewYmd) window._gyomuViewDate = viewYmd;
       var day = window._gyomuViewDate || getLocalDateStr(new Date());
-      if (suffix === 'Quad') { try { _renderGyomuQuadColumns(day); } catch (eQ) {} }   // v0.55.1
+      // v0.55.8: 午前・午後・夕方の案件は、予定と同じ並びの中に描く（renderQuadView）。魚の目が描かれていれば、まるごと描き直す。
+      // renderQuadView の中から呼ばれたとき（プライベートの列の箱を描くとき）は、ここでは描き直さない
+      if (suffix === 'Quad' && !window._quadViewRendering) {
+        var _qb = document.getElementById('quadViewBody');
+        if (_qb && _qb.children.length && typeof renderQuadView === 'function') { renderQuadView(); return; }
+      }
       var both = gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI) && gyomuTemplateVisible(gyomuTemplateIppan());
       if (!both) {
         renderTokiPanel('tokiPanel' + suffix, 'toki', day);
@@ -15226,35 +15231,15 @@ function renderTodoList() {
       if (gyomuQuadSlotOf(c, ymd) === slot && c.quadSlots && c.quadSlots[ymd] === slot) return;
       c.quadSlots = Object.assign({}, c.quadSlots || {});
       c.quadSlots[ymd] = slot;
+      // v0.55.8: 列を移したら、その日の位置の書き留めは消す（前の列の位置は、別の列では意味を持たない）。新しい列の ⇅ の向きに従う
+      if (c.quadOrderKeys && typeof c.quadOrderKeys === 'object' && c.quadOrderKeys[ymd] !== undefined) {
+        c.quadOrderKeys = Object.assign({}, c.quadOrderKeys); delete c.quadOrderKeys[ymd];
+      }
       c.updatedAt = new Date().toISOString();
       saveAllTasks();
       renderGyomuPanels('Quad');
     }
     window.setGyomuQuadSlot = setGyomuQuadSlot;
-    // 午前・午後・夕方の列に、その列に置いた案件を出す
-    function _renderGyomuQuadColumns(day) {
-      var body = document.getElementById('quadViewBody');
-      if (!body || !body.children.length) return;
-      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
-      var tpls = [GYOMU_TEMPLATE_TOKI, gyomuTemplateIppan()].filter(gyomuTemplateVisible);
-      ['slot2', 'slot3', 'slot4'].forEach(function(slot, i) {
-        var col = body.children[i + 1];
-        if (!col) return;
-        var box = document.getElementById('gyomuQuadCol_' + slot);
-        if (!box) { box = document.createElement('div'); box.id = 'gyomuQuadCol_' + slot; col.insertBefore(box, col.children[2] || null); }
-        var cases = [];
-        tpls.forEach(function(t) { cases = cases.concat(sortTokiCases(_gyomuOpenOn(t.kind, day), day).filter(function(c) { return gyomuQuadSlotOf(c, day) === slot; })); });
-        cases = tokiDoneLast(cases, day);   // v0.55.6
-        box.setAttribute('data-quad-slot', slot);
-        box.innerHTML = cases.length ? '<div style="padding:2px 4px;">' + cases.map(function(c) {
-          var c2 = c.closed ? Object.assign({}, c, { closed: false }) : c;
-          return _tokiCaseRowHtml(c2, day, { quad: true });
-        }).join('') + '</div>' : '';
-        box.style.display = cases.length ? 'block' : 'none';
-        _bindTokiDnD(box);
-      });
-      if (typeof placeQuadCaseBoxes === 'function') placeQuadCaseBoxes();   // v0.55.6: 予定と案件の上下
-    }
     // ===== END v0.55.1 =====
     function setGyomuTab(id) {
       try { localStorage.setItem('koyomiru_gyomu_tab', id === 'ippan' ? 'ippan' : 'toki'); } catch (e) {}
@@ -15358,6 +15343,12 @@ function renderTodoList() {
     function _tokiCaseRowHtml(c, today, rowOpts) {
       rowOpts = rowOpts || {};
       var dayDone = tokiDayDone(c, today);   // v0.55.6: 今日はもう終わり
+      // v0.55.8: 魚の目の午前・午後・夕方の列では、↑↓はその日の列の中で動かす（予定とも入れ替わる）。ほかの場所では全部の日で共通の順番
+      var _qs = rowOpts.quadSlot && rowOpts.quadSlot !== 'slot1' ? rowOpts.quadSlot : '';
+      var _mvCall = function(d) {
+        return _qs ? "quadMoveBy('" + esc(c.id) + "'," + d + ",'" + _qs + "','" + esc(today) + "')"
+                   : "moveTokiCaseBy('" + esc(c.id) + "'," + d + ")";
+      };
       var collapsed = dayDone || !!_tokiCollapsedMap()[c.id];
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
       var chip = function(c, row, step, done, faint) {
@@ -15411,8 +15402,8 @@ function renderTodoList() {
               return '<select onchange="setGyomuQuadSlot(\'' + esc(c.id) + '\', this.value)" title="置き場所" style="font-size:0.75em;padding:1px 2px;margin-right:4px;border:1px solid #ccd;border-radius:6px;">' +
                 getQuadSlots().map(function(s) { return '<option value="' + s.key + '"' + (s.key === cur ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('') + '</select>';
             })() : '') +
-            (_tokiIsTouch() ? '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',-1)" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
-                              '<button onclick="moveTokiCaseBy(\'' + esc(c.id) + '\',1)" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">↓</button>' : '') +
+            (_tokiIsTouch() ? '<button onclick="' + _mvCall(-1) + '" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
+                              '<button onclick="' + _mvCall(1) + '" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">↓</button>' : '') +
             // v0.55.6: 今日はもう終わり（押すと取り消し線。もう一度押すと戻る。翌日は自動で戻る）
             (c.closed ? '' : '<button onclick="toggleTokiDayDone(\'' + esc(c.id) + '\',\'' + esc(today) + '\')" class="toki-daydone-btn" title="' + (dayDone ? '今日はもう終わり、を取り消す' : '今日はもう終わり') + '" style="border:1px solid ' + (dayDone ? '#2f9e44' : '#ccd') + ';background:' + (dayDone ? '#2f9e44' : '#fff') + ';color:' + (dayDone ? '#fff' : '#555') + ';border-radius:6px;cursor:pointer;font-size:0.72em;padding:1px 6px;margin-right:2px;">' + (dayDone ? '今日✓' : '今日おわり') + '</button>') +
             '<button onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" title="直す" style="border:none;background:none;cursor:pointer;font-size:1em;padding:0 4px;">✏️</button>' +
@@ -40570,38 +40561,121 @@ function renderDashboardView() {
       }
       return QUAD_SLOT_DEFAULTS.map(function(d, i) { return _mk(i, d.label, d.emoji); });
     }
-    function renderQuadView() {
-      var body = document.getElementById('quadViewBody');
-      if (!body) return;
-      var targetDate = currentDailyDate || getLocalDateStr(new Date());
+    // ===== v0.55.8: 魚の目の午前・午後・夕方の列で、予定と案件を1本に並べる =====
+    // 【権威】2026-10-06、案件のカードと案件のカードの間に予定が入ることがある。案件も予定と同じように入れ替えたい、との要望。
+    // ・予定の順は今までどおり（象限ごとに並べてつなげた順）。その間に、案件を「その日の位置（quadOrderKeys[日付]）」で差し込む。
+    // ・手で動かしていない日は ⇅ の向き（予定が上／案件が上）で並べる。
+    // ・その日その列で一度でも並べ替えたら、その列の案件の位置を全部書き留める（予定が動いても案件が回り込まないように）。
+    // ・案件の「全部の日で共通の並び順（order）」と置き場所は書き換えない。今日✓の案件は、列のいちばん下のまま。
+    // ・プライベートの列は、案件の箱（つまみ・＋ボタン付き）のままにする。
+    // 予定の集め方（描く処理と並べ替えの処理で同じものを使う・第35条）
+    function quadTasksInSlot(slot, ymd) {
       // 第4条・第10条・第11条：getDailyTasks()経由で取得（displayScope/calendarIdチェックを保証）
-      // 第45条：独自フィルタで通り抜けるバグ（videoのundefined表示等）の根本原因を直す
-      var allDailyTasks = getDailyTasks(targetDate);
-      // getDailyTasksはsection 1〜4別のオブジェクトを返すので全結合してフィルタ
-      var tasks = [];
+      var allDailyTasks = getDailyTasks(ymd), out = [];
       [1,2,3,4].forEach(function(sec) {
         (allDailyTasks[sec] || []).forEach(function(t) {
           // scratch/zen/video/audio等のメディアレコードは魚の目に不要
           if (t.kind === 'scratch' || t.kind === 'zen' || t.kind === 'video' || t.kind === 'audio') return;
-          // 象限フィルタ
-          if (_quadSectionFilter && (t.section || 1) !== _quadSectionFilter) return;
-          tasks.push(t);
+          if (_quadSectionFilter && (t.section || 1) !== _quadSectionFilter) return;   // 象限フィルタ
+          // timeSlot未設定のタスクはslot1（左端）に入れる
+          if (slot === 'slot1' ? (t.timeSlot === 'slot1' || !t.timeSlot) : t.timeSlot === slot) out.push(t);
         });
       });
+      return out;
+    }
+    window.quadTasksInSlot = quadTasksInSlot;
+    // その列に置いた案件（プライベートの列は箱で出すので、ここでは数えない）
+    function quadCasesInSlot(slot, ymd) {
+      if (slot === 'slot1' || !quadCasesShown()) return [];
+      var out = [];
+      [GYOMU_TEMPLATE_TOKI, gyomuTemplateIppan()].filter(gyomuTemplateVisible).forEach(function(t) {
+        out = out.concat(sortTokiCases(_gyomuOpenOn(t.kind, ymd), ymd).filter(function(c) { return gyomuQuadSlotOf(c, ymd) === slot; }));
+      });
+      return out;
+    }
+    window.quadCasesInSlot = quadCasesInSlot;
+    function quadCaseKeyOn(c, ymd) {
+      var m = c && c.quadOrderKeys, v = (m && typeof m === 'object') ? m[ymd] : null;
+      return (typeof v === 'number' && isFinite(v)) ? v : null;
+    }
+    window.quadCaseKeyOn = quadCaseKeyOn;
+    // 列の並び：[{ type:'task'|'case', item, pos, done }]。今日✓の案件は最後
+    function quadColumnRows(slot, ymd) {
+      var tasks = quadTasksInSlot(slot, ymd), cases = quadCasesInSlot(slot, ymd);
+      var active = cases.filter(function(c) { return !tokiDayDone(c, ymd); });
+      var done = cases.filter(function(c) { return tokiDayDone(c, ymd); });
+      var tRows = tasks.map(function(t) { return { type: 'task', item: t, pos: _taskSortKey(t) }; });
+      var keys = tRows.map(function(r) { return r.pos; });
+      var minT = keys.length ? Math.min.apply(null, keys) : 0, maxT = keys.length ? Math.max.apply(null, keys) : 0;
+      var tf = quadTasksFirst(slot), n = active.length;
+      var cRows = active.map(function(c, i) {
+        var k = quadCaseKeyOn(c, ymd);
+        if (k === null) k = tf ? maxT + 1 + i : minT - (n - i);   // 手で動かしていない日は ⇅ の向き
+        return { type: 'case', item: c, pos: k, i: i };
+      }).sort(function(a, b) { return a.pos - b.pos || a.i - b.i; });
+      // 予定の順は崩さず、案件をその位置で差し込む
+      var out = [], ci = 0;
+      tRows.forEach(function(tr) {
+        while (ci < cRows.length && cRows[ci].pos < tr.pos) out.push(cRows[ci++]);
+        out.push(tr);
+      });
+      while (ci < cRows.length) out.push(cRows[ci++]);
+      return out.concat(done.map(function(c) { return { type: 'case', item: c, pos: Infinity, done: true }; }));
+    }
+    window.quadColumnRows = quadColumnRows;
+    // 落とした位置に動かす。targetId の前（after=false）か後ろ（after=true）。targetId が無ければ列の最後（第36条）
+    function quadDropMove(dragId, targetId, after, slot, ymd) {
+      if (['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1 || !/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))) return false;
+      var dragged = allTasks.filter(function(t) { return t && t.id === dragId; })[0];
+      if (!dragged) return false;
+      var isCase = dragged.kind === 'toki' || dragged.kind === 'gyomu';
+      if (isCase && (dragged.closed || slot === 'slot1')) {   // プライベートの列は箱なので、置き場所だけ変える
+        if (!dragged.closed && typeof setGyomuQuadSlot === 'function') setGyomuQuadSlot(dragId, slot);
+        return true;
+      }
+      var now = new Date().toISOString();
+      var rows = quadColumnRows(slot, ymd).filter(function(r) { return !r.done; });
+      // その列の案件の位置を書き留める（予定が動いても、案件が回り込まないように）
+      rows.forEach(function(r) {
+        if (r.type !== 'case' || r.item.id === dragId || quadCaseKeyOn(r.item, ymd) !== null) return;
+        r.item.quadOrderKeys = Object.assign({}, r.item.quadOrderKeys || {}); r.item.quadOrderKeys[ymd] = r.pos;
+        r.item.updatedAt = now;   // 第61条
+      });
+      var list = rows.filter(function(r) { return r.item.id !== dragId; });
+      var ti = targetId ? list.findIndex(function(r) { return r.item.id === targetId; }) : -1;
+      var ins = ti < 0 ? list.length : (after ? ti + 1 : ti);
+      var prev = list[ins - 1], next = list[ins];
+      var key = (!prev && !next) ? 0 : !prev ? next.pos - 1 : !next ? prev.pos + 1 : (prev.pos + next.pos) / 2;
+      if (isCase) {
+        dragged.quadSlots = Object.assign({}, dragged.quadSlots || {}); dragged.quadSlots[ymd] = slot;
+        dragged.quadOrderKeys = Object.assign({}, dragged.quadOrderKeys || {}); dragged.quadOrderKeys[ymd] = key;
+      } else {
+        dragged.timeSlot = slot;
+        dragged.orderKey = key;
+      }
+      dragged.updatedAt = now;   // 第61条
+      saveAllTasks();
+      return true;
+    }
+    window.quadDropMove = quadDropMove;
+    // スマホの ↑↓：その日の列の中で1つ上・下へ
+    function quadMoveBy(id, delta, slot, ymd) {
+      var rows = quadColumnRows(slot, ymd).filter(function(r) { return !r.done; });
+      var i = rows.findIndex(function(r) { return r.item.id === id; }), j = i + delta;
+      if (i < 0 || j < 0 || j >= rows.length) return;
+      if (quadDropMove(id, rows[j].item.id, delta > 0, slot, ymd)) renderQuadView();
+    }
+    window.quadMoveBy = quadMoveBy;
+    // ===== END v0.55.8（計算） =====
+    function renderQuadView() {
+      var body = document.getElementById('quadViewBody');
+      if (!body) return;
+      var targetDate = currentDailyDate || getLocalDateStr(new Date());
       var slots = getQuadSlots();
       body.innerHTML = '';
       body.style.gridTemplateColumns = 'repeat(4,1fr)';
       slots.forEach(function(col) {
-        // timeSlot未設定のタスクはslot1（左端）に入れる
-        var colTasks;
-        if (col.key === 'slot1') {
-          colTasks = tasks.filter(function(t) {
-            return t.timeSlot === 'slot1' || !t.timeSlot;
-          });
-        } else {
-          colTasks = tasks.filter(function(t) { return t.timeSlot === col.key; });
-        }
-        body.appendChild(_buildQuadSlot(col, colTasks));
+        body.appendChild(_buildQuadSlot(col, quadTasksInSlot(col.key, targetDate), targetDate));
       });
       // v0.49.11: 【権威】2026-10-02、魚の目の「期間中」の帯は4列にまたがる横長で、広い画面だと題と日付が
       // 左右に離れて見づらい、1つ目の列に入れてよい、との指示。列は毎回作り直すので、帯の入れ物も
@@ -40619,7 +40693,8 @@ function renderDashboardView() {
           _gyomuBox.id = 'gyomuPanelQuad';
           _gyomuBox.style.display = 'none';
           _firstCol.insertBefore(_gyomuBox, _tokiBox.nextSibling);
-          if (typeof renderGyomuPanels === 'function') renderGyomuPanels('Quad', targetDate);
+          window._quadViewRendering = true;   // v0.55.8
+          try { if (typeof renderGyomuPanels === 'function') renderGyomuPanels('Quad', targetDate); } finally { window._quadViewRendering = false; }
           var _stripBox = document.createElement('div');
           _stripBox.id = 'dailySpanStripQuad';
           _stripBox.style.display = 'none';
@@ -40654,12 +40729,13 @@ function renderDashboardView() {
     function placeQuadCaseBoxes() {
       var body = document.getElementById('quadViewBody');
       if (!body) return;
-      ['slot1', 'slot2', 'slot3', 'slot4'].forEach(function(slot, i) {
+      // v0.55.8: 午前・午後・夕方の案件は予定と同じ並びの中に描くので、箱があるのはプライベートの列だけ
+      ['slot1'].forEach(function(slot, i) {
         var col = body.children[i];
         if (!col) return;
         var list = col.querySelector(':scope > .quad-task-list');
         if (!list) return;
-        var ids = slot === 'slot1' ? ['tokiPanelQuad', 'gyomuPanelQuad'] : ['gyomuQuadCol_' + slot];
+        var ids = ['tokiPanelQuad', 'gyomuPanelQuad'];
         var boxes = ids.map(function(id) { return document.getElementById(id); }).filter(function(b) { return b && b.parentNode === col; });
         // v0.55.7: 【権威】2026-10-06、予定を上にすると案件が列のいちばん下まで押し出される、との指摘。
         // 予定の一覧が列の残りの高さを全部使う（flex:1）ため、その後ろの案件が下に追いやられていた。
@@ -40675,7 +40751,8 @@ function renderDashboardView() {
     }
     window.placeQuadCaseBoxes = placeQuadCaseBoxes;
     // ===== END v0.55.6 =====
-    function _buildQuadSlot(col, tasks) {
+    function _buildQuadSlot(col, tasks, day) {
+      day = day || currentDailyDate || getLocalDateStr(new Date());
       var div = document.createElement('div');
       div.style.cssText = 'background:' + col.color + ';border-radius:8px;padding:6px;min-height:200px;display:flex;flex-direction:column;';
       div.addEventListener('dragover', function(e) { e.preventDefault(); div.style.outline = '2px dashed #4facfe'; });
@@ -40808,7 +40885,8 @@ function renderDashboardView() {
       var taskList = document.createElement('div');
       taskList.className = 'quad-task-list';   // v0.55.6: 案件の箱を、この前か後ろに置く目印
       taskList.style.cssText = 'flex:1;';
-      tasks.forEach(function(t) {
+      // v0.55.8: 予定の行を1つ作る（並べるのは下でまとめて。案件の行と混ぜるため）
+      var _quadTaskItem = function(t) {
         var item = document.createElement('div');
         item.className = 'task-item' + (t.completed || t.done ? ' completed' : '');
         item.style.cssText = 'background:#fff;border-radius:6px;padding:5px 7px;margin-bottom:4px;font-size:0.78em;color:#333;border:1px solid rgba(0,0,0,0.07);display:flex;align-items:center;gap:4px;cursor:move;-webkit-user-select:none;user-select:none;';
@@ -40819,43 +40897,8 @@ function renderDashboardView() {
           item.style.opacity = '0.4';
         });
         item.addEventListener('dragend', function() { item.style.opacity = '1'; });
-        // 縦並び替え：タスク上にドロップで順序入れ替え
-        item.addEventListener('dragover', function(e) {
-          e.preventDefault(); e.stopPropagation();
-          item.style.borderTop = '2px solid #4facfe';
-        });
-        item.addEventListener('dragleave', function() { item.style.borderTop = ''; });
-        item.addEventListener('drop', function(e) {
-          e.preventDefault(); e.stopPropagation();
-          item.style.borderTop = '';
-          var fromId = e.dataTransfer.getData('text/plain');
-          var toId = t.id;
-          if (fromId === toId) return;
-          var fromIdx = allTasks.findIndex(function(x) { return x.id === fromId; });
-          var toIdx = allTasks.findIndex(function(x) { return x.id === toId; });
-          if (fromIdx === -1 || toIdx === -1) return;
-          var moved = allTasks.splice(fromIdx, 1)[0];
-          // スロットを移動先に合わせる
-          moved.timeSlot = t.timeSlot || 'slot1';
-          var newToIdx = allTasks.findIndex(function(x) { return x.id === toId; });
-          allTasks.splice(newToIdx, 0, moved);
-          // v0.45.2056: 象限ごとに 0,1,2… を振り直すのをやめる。
-          // その番号は他の象限と衝突し、月間からは使えなかった。
-          // 動かしたものだけに、その日の中での位置を書く。
-          // 動かしていない予定の位置は変えない。
-          var _dayList = allTasks
-            .filter(function(x) { return x.date === moved.date && (x.kind || 'task') === 'task' && !x.deleted; })
-            .sort(function(a, b) { return _taskSortKey(a) - _taskSortKey(b); });
-          var _tAt = _dayList.findIndex(function(x) { return x.id === toId; });
-          if (_tAt >= 0) {
-            var _above = _dayList[_tAt - 1];
-            var _below = _dayList[_tAt];
-            moved.orderKey = _makeOrderKey(_above, _below);
-          }
-          moved.updatedAt = new Date().toISOString();   // 第61条
-          saveAllTasks();
-          renderQuadView();
-        });
+        // 縦並び替え：行の上半分に落とせば前、下半分なら後ろ（第36条）。予定も案件も同じ処理で動かす（v0.55.8）
+        _quadBindRowDrop(item, t.id, col.key, day);
         // カレンダー記号
         var _sym = (typeof getCalendarSymbol === 'function') ? getCalendarSymbol(t.calendarId) : '';
         // 本能アイコン
@@ -40905,11 +40948,49 @@ function renderDashboardView() {
         delBtn.style.cssText = 'cursor:pointer;color:#aaa;font-size:1em;flex-shrink:0;';
         delBtn.onclick = function(e) { e.stopPropagation(); if (typeof deleteTaskById === 'function') { deleteTaskById(t.id); renderQuadView(); } };
         item.appendChild(delBtn);
-        taskList.appendChild(item);
+        return item;
+      };
+      // v0.55.8: 午前・午後・夕方の列は、予定と案件を1本の並びで出す（プライベートの列は予定だけ。案件は上の箱）
+      var _rows = (col.key !== 'slot1' && quadCasesShown()) ? quadColumnRows(col.key, day)
+        : tasks.map(function(t) { return { type: 'task', item: t }; });
+      _rows.forEach(function(r) {
+        if (r.type === 'task') { taskList.appendChild(_quadTaskItem(r.item)); return; }
+        var c = r.item, w = document.createElement('div');
+        w.innerHTML = _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, day, { quad: true, quadSlot: col.key });
+        var row = w.firstElementChild;
+        if (!row) return;
+        row.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('text/plain', c.id);
+          try { e.dataTransfer.setData('application/x-koyomiru-case', c.id); } catch (eD) {}
+          row.style.opacity = '0.5';
+        });
+        row.addEventListener('dragend', function() { row.style.opacity = ''; });
+        _quadBindRowDrop(row, r.done ? null : c.id, col.key, day);   // 今日✓の行に落としたら、列の最後（今日✓より上）へ
+        taskList.appendChild(row);
       });
       div.appendChild(taskList);
       return div;
     }
+    // v0.55.8: 行に落としたときの受け取り（予定・案件の両方）。上半分なら前、下半分なら後ろ（第36条）
+    function _quadBindRowDrop(el, targetId, slot, day) {
+      var isAfter = function(e) { var r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
+      el.addEventListener('dragover', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        var a = targetId ? isAfter(e) : true;
+        el.style.borderTop = a ? '' : '2px solid #4facfe';
+        el.style.borderBottom = a ? '2px solid #4facfe' : '';
+      });
+      el.addEventListener('dragleave', function() { el.style.borderTop = ''; el.style.borderBottom = ''; });
+      el.addEventListener('drop', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        el.style.borderTop = ''; el.style.borderBottom = '';
+        var fromId = '';
+        try { fromId = e.dataTransfer.getData('application/x-koyomiru-case') || e.dataTransfer.getData('text/plain'); } catch (eG) {}
+        if (!fromId || fromId === targetId) return;
+        if (quadDropMove(fromId, targetId, targetId ? isAfter(e) : true, slot, day)) renderQuadView();
+      });
+    }
+    window._quadBindRowDrop = _quadBindRowDrop;
     window.renderQuadView = renderQuadView;
 
     // ===== スマホナビ配置切り替え =====
@@ -52005,6 +52086,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.8', date: '2026-10-06',
+    items: [
+      { icon:'🐟', t:'魚の目で、予定と案件を混ぜて並べられるようにしました',
+        before:'午前・午後・夕方の列では、案件は案件、予定は予定でまとまって並び、案件と案件の間に予定を入れられませんでした',
+        after:'予定も案件も、ドラッグ（スマホは↑↓）で自由に入れ替えられます。行の上半分に落とせば前、下半分なら後ろに入ります。並べた順はその日だけで、次の日は「⇅」の向きから始まります' }
+    ]
+  },
   {
     ver: 'v0.55.7', date: '2026-10-06',
     items: [
@@ -75440,8 +75529,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        }, function(e) { window.showChoiceModal = savedModal; throw e; });
      });
 
-     // ===== ST-419: 魚の目の列で、予定と案件のどちらを上にするか（v0.55.6〜） =====
+     // ===== ST-419: 魚の目の列で、予定と案件のどちらを上にするか（v0.55.6〜・v0.55.8で1本の並びに） =====
      // 【権威】2026-10-06、FAX・TEL などの予定を、登記の案件のカードより上にしたい、との要望（選択「A」：列ごとの切り替え）。
+     // v0.55.8から、午前・午後・夕方の案件は予定と同じ並びの中に出る。⇅ は「手で動かしていない日の初めの並び」。
      var _st419tasks = allTasks.slice();
      var _st419flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
      var _st419ui = allSettings.ui && allSettings.ui.quadTasksFirst ? JSON.parse(JSON.stringify(allSettings.ui.quadTasksFirst)) : undefined;
@@ -75458,34 +75548,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks.push({ id: 'st419-task', kind: 'task', text: 'FAX', date: _st419d, section: 1, timeSlot: 'slot2', displayScope: 'daily_only', createdAt: new Date().toISOString() });
        var _st419order = function() {
          var col = document.getElementById('quadViewBody').children[1];
-         var kids = [].slice.call(col.children);
-         return { box: kids.indexOf(document.getElementById('gyomuQuadCol_slot2')), list: kids.indexOf(col.querySelector(':scope > .quad-task-list')),
-                  swap: !!col.querySelector('[data-quad-swap="slot2"]'), caseShown: !!col.querySelector('[data-toki-id="st419-case"]') };
+         var ids = [].map.call(col.querySelectorAll(':scope > .quad-task-list > *'), function(el) { return el.getAttribute('data-toki-id') || el.getAttribute('data-task-id') || '?'; });
+         return { ids: ids.join(','), swap: !!col.querySelector('[data-quad-swap="slot2"]') };
        };
        renderQuadView();
        var _st419a = _st419order();
        toggleQuadTasksFirst('slot2');
        var _st419b = _st419order();
-       // v0.55.7: 予定が上のとき、案件は予定のすぐ下に続く（列のいちばん下まで押し出されない）
-       var _st419col = document.getElementById('quadViewBody').children[1];
-       // テストの間は魚の目の画面が隠れていて高さが測れないので、測るときだけ見える状態にして、測り終えたら戻す
-       var _st419shown = [], _st419n = _st419col;
-       while (_st419n && _st419n !== document.body) {
-         if (getComputedStyle(_st419n).display === 'none') { _st419shown.push([_st419n, _st419n.style.display]); _st419n.style.display = _st419n.id === 'quadViewBody' ? 'grid' : 'block'; }
-         _st419n = _st419n.parentElement;
-       }
-       var _st419mh = _st419col.style.minHeight;
-       _st419col.style.minHeight = '600px';
-       var _st419last = _st419col.querySelector(':scope > .quad-task-list').lastElementChild;   // 最後の予定と案件の間を測る（一覧そのものが伸びると、一覧と案件の間は0のままなので）
-       var _st419gap = _st419last ? document.getElementById('gyomuQuadCol_slot2').getBoundingClientRect().top - _st419last.getBoundingClientRect().bottom : 999;
-       _st419col.style.minHeight = _st419mh;
-       _st419shown.forEach(function(x) { x[0].style.display = x[1]; });
-       _st419b.gap = Math.round(_st419gap);
        var _st419other = quadTasksFirst('slot3');
        toggleQuadTasksFirst('slot2');
        var _st419c = _st419order();
-       (_st419a.caseShown && _st419a.swap && _st419a.box >= 0 && _st419a.box < _st419a.list &&
-        _st419b.box > _st419b.list && _st419b.gap < 40 && !_st419other && _st419c.box < _st419c.list)
+       (_st419a.swap && _st419a.ids === 'st419-case,st419-task' && _st419b.ids === 'st419-task,st419-case' && !_st419other && _st419c.ids === 'st419-case,st419-task')
          ? ok('ST-419·①: 列の⇅で、予定と案件の上下が入れ替わる（ほかの列は変わらない。もう一度押すと戻る）')
          : ng('ST-419·①: 予定と案件の上下が入れ替わらない', JSON.stringify([_st419a, _st419b, _st419c]));
      } catch(e) {
@@ -75534,9 +75607,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks.push({ id: 'st420-p', kind: 'gyomu', buyer: '山田太郎', order: 0, createdAt: _st420y, quadSlots: _st420q, steps1: {} },
                      { id: 'st420-r', kind: 'gyomu', buyer: '佐藤花子', order: 1, createdAt: _st420y, quadSlots: _st420q, steps1: {} });
        renderQuadView();
-       var _st420ids = function() { return [].map.call(document.querySelectorAll('#gyomuQuadCol_slot2 .toki-case-row'), function(r) { return r.getAttribute('data-toki-id'); }).join(','); };
+       var _st420ids = function() { return [].map.call(document.getElementById('quadViewBody').children[1].querySelectorAll('.toki-case-row'), function(r) { return r.getAttribute('data-toki-id'); }).join(','); };
        var _st420before = _st420ids();
-       var _st420btn = document.querySelector('#gyomuQuadCol_slot2 [data-toki-id="st420-p"] .toki-daydone-btn');
+       var _st420btn = document.getElementById('quadViewBody').children[1].querySelector('[data-toki-id="st420-p"] .toki-daydone-btn');
        if (_st420btn) _st420btn.click();
        var _st420after = _st420ids();
        var _st420p = allTasks.filter(function(t) { return t.id === 'st420-p'; })[0];
@@ -75548,6 +75621,91 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        window.saveAllTasks = _st420save; window.saveAllSettings = _st420saveS;
        allTasks = _st420tasks; allSettings.flags = _st420flags; currentDailyDate = _st420date;
+       try { renderQuadView(); } catch (eR) {}
+     }
+
+     // ===== ST-421: 魚の目の午前・午後・夕方で、予定と案件を混ぜて並べる（v0.55.8〜） =====
+     // 【権威】2026-10-06、案件のカードと案件のカードの間に予定が入ることがある。案件も予定と同じように入れ替えたい、との要望。
+     var _st421tasks = allTasks.slice();
+     var _st421flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st421ui = allSettings.ui && allSettings.ui.quadTasksFirst ? JSON.parse(JSON.stringify(allSettings.ui.quadTasksFirst)) : undefined;
+     var _st421save = window.saveAllSettings, _st421saveT = window.saveAllTasks, _st421date = currentDailyDate;
+     try {
+       window.saveAllSettings = function() {}; window.saveAllTasks = function() {};
+       var _st421d = getLocalDateStr(new Date());
+       var _st421n = getLocalDateStr(new Date(Date.now() + 86400000));
+       currentDailyDate = _st421d;
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { gyomuMode: true });
+       if (!allSettings.ui) allSettings.ui = {};
+       allSettings.ui.quadTasksFirst = {};
+       var _st421q = {}; _st421q[_st421d] = 'slot2'; _st421q[_st421n] = 'slot2';
+       var _st421y = new Date(Date.now() - 86400000).toISOString();
+       allTasks.push({ id: 'st421-A', kind: 'gyomu', buyer: '山田太郎', order: 0, createdAt: _st421y, quadSlots: JSON.parse(JSON.stringify(_st421q)), steps1: {} },
+                     { id: 'st421-B', kind: 'gyomu', buyer: '佐藤花子', order: 1, createdAt: _st421y, quadSlots: JSON.parse(JSON.stringify(_st421q)), steps1: {} },
+                     { id: 'st421-F', kind: 'task', text: 'FAX', date: _st421d, section: 1, timeSlot: 'slot2', displayScope: 'daily_only', createdAt: _st421y },
+                     { id: 'st421-T', kind: 'task', text: 'TEL', date: _st421d, section: 1, timeSlot: 'slot2', displayScope: 'daily_only', createdAt: _st421y });
+       var _st421ids = function() { return quadColumnRows('slot2', _st421d).map(function(r) { return r.item.id.replace('st421-', ''); }).join(','); };
+       // ① 並びの計算：予定の間に案件、案件の間に予定を入れられる。案件の共通の順番と置き場所は変えない。翌日は ⇅ の向きに戻る
+       var _st421s = _st421ids();
+       quadDropMove('st421-T', 'st421-A', true, 'slot2', _st421d);
+       var _st421s1 = _st421ids();
+       quadDropMove('st421-B', 'st421-F', false, 'slot2', _st421d);
+       var _st421s2 = _st421ids();
+       var _st421A = allTasks.filter(function(t) { return t.id === 'st421-A'; })[0];
+       var _st421B = allTasks.filter(function(t) { return t.id === 'st421-B'; })[0];
+       (_st421s === 'A,B,F,T' && _st421s1 === 'A,T,B,F' && _st421s2 === 'A,T,B,F' &&
+        _st421A.order === 0 && _st421B.order === 1 && _st421B.quadSlots[_st421n] === 'slot2' && quadCaseKeyOn(_st421B, _st421n) === null &&
+        quadColumnRows('slot2', _st421n).map(function(r) { return r.item.id; }).join(',') === 'st421-A,st421-B')
+         ? ok('ST-421·①: 予定の間に案件、案件の間に予定を入れられる（その日だけ。案件の共通の順番・翌日の置き場所は変えない）')
+         : ng('ST-421·①: 並びの計算が違う', [_st421s, _st421s1, _st421s2].join(' / '));
+       // ② 繋がっているか（第76条）：本物のドラッグの出来事を画面に送る。行の上半分に落とせば前、下半分なら後ろ（第36条）
+       renderQuadView();
+       // テストの間は魚の目の画面が隠れていて行の高さが0になり、上半分・下半分を判定できないので、落とす間だけ見える状態にする（後で戻す）
+       var _st421shown = [], _st421v = document.getElementById('quadViewBody');
+       while (_st421v && _st421v !== document.body) {
+         if (getComputedStyle(_st421v).display === 'none') { _st421shown.push([_st421v, _st421v.style.display]); _st421v.style.display = _st421v.id === 'quadViewBody' ? 'grid' : 'block'; }
+         _st421v = _st421v.parentElement;
+       }
+       var _st421col = document.getElementById('quadViewBody').children[1];
+       var _st421dom = function() { return [].map.call(_st421col.querySelectorAll(':scope > .quad-task-list > *'), function(el) { return (el.getAttribute('data-toki-id') || el.getAttribute('data-task-id') || '?').replace('st421-', ''); }).join(','); };
+       var _st421dom0 = _st421dom();
+       var _st421drop = function(dragId, targetSel, lower) {
+         var el = _st421col.querySelector(targetSel), r = el.getBoundingClientRect();
+         var dt = new DataTransfer(); dt.setData('text/plain', dragId);
+         if (/^st421-[AB]$/.test(dragId)) dt.setData('application/x-koyomiru-case', dragId);
+         el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: lower ? r.bottom - 1 : r.top + 1 }));
+         _st421col = document.getElementById('quadViewBody').children[1];
+       };
+       _st421drop('st421-F', '[data-toki-id="st421-A"]', false);   // FAX を案件Aの上半分へ → Aの前
+       var _st421dom1 = _st421dom();
+       _st421drop('st421-A', '[data-task-id="st421-T"]', true);    // 案件Aを TEL の下半分へ → TELの後ろ
+       var _st421dom2 = _st421dom();
+       _st421shown.forEach(function(x) { x[0].style.display = x[1]; });
+       (_st421dom0 === 'A,T,B,F' && _st421dom1 === 'F,A,T,B' && _st421dom2 === 'F,T,A,B')
+         ? ok('ST-421·②: 画面でのドラッグで、上半分なら前・下半分なら後ろに入る（予定と案件のどちらを動かしても）')
+         : ng('ST-421·②: 画面でのドラッグの入り方が違う', [_st421dom0, _st421dom1, _st421dom2].join(' / '));
+       // ②b スマホの ↑↓：その日の列の中で1つ上・下へ（予定とも入れ替わる）
+       quadMoveBy('st421-A', -1, 'slot2', _st421d);   // F,T,A,B → F,A,T,B
+       var _st421m1 = _st421ids();
+       quadMoveBy('st421-F', 1, 'slot2', _st421d);    // F,A,T,B → A,F,T,B
+       var _st421m2 = _st421ids();
+       quadMoveBy('st421-B', 1, 'slot2', _st421d);    // いちばん下は動かない
+       var _st421m3 = _st421ids();
+       (_st421m1 === 'F,A,T,B' && _st421m2 === 'A,F,T,B' && _st421m3 === 'A,F,T,B')
+         ? ok('ST-421·②b: スマホの↑↓で、その日の列の中を1つずつ動く（予定とも入れ替わる・端では止まる）')
+         : ng('ST-421·②b: ↑↓の動きが違う', [_st421m1, _st421m2, _st421m3].join(' / '));
+       // ③ 列を移したら、その日の位置の書き留めは消え、新しい列の ⇅ の向きに従う
+       setGyomuQuadSlot('st421-A', 'slot3');
+       _st421A = allTasks.filter(function(t) { return t.id === 'st421-A'; })[0];
+       (quadCaseKeyOn(_st421A, _st421d) === null && gyomuQuadSlotOf(_st421A, _st421d) === 'slot3')
+         ? ok('ST-421·③: 案件を別の列に移すと、その日の位置は新しい列の初めの並びに戻る')
+         : ng('ST-421·③: 列を移したときの位置が残っている', JSON.stringify(_st421A.quadOrderKeys));
+     } catch(e) {
+       ng('ST-421: 例外', e.message);
+     } finally {
+       window.saveAllSettings = _st421save; window.saveAllTasks = _st421saveT;
+       allTasks = _st421tasks; allSettings.flags = _st421flags; currentDailyDate = _st421date;
+       if (_st421ui === undefined) { if (allSettings.ui) delete allSettings.ui.quadTasksFirst; } else allSettings.ui.quadTasksFirst = _st421ui;
        try { renderQuadView(); } catch (eR) {}
      }
 
