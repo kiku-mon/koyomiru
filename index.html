@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.1';
+    const APP_VERSION = 'v0.55.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15344,8 +15344,37 @@ function renderTodoList() {
     }
     window._bindTokiDnD = _bindTokiDnD;
     // v0.51.2: 案件1件ぶんの見え方（日次と月間の日の欄で使い回す）
+    // v0.55.2: カードを たたんでいるか（その端末で覚える。同期しない見た目の好み）
+    function _tokiCollapsedMap() { try { return JSON.parse(localStorage.getItem('koyomiru_case_collapsed') || '{}') || {}; } catch (e) { return {}; } }
+    function toggleTokiCaseCollapsed(id) {
+      var m = _tokiCollapsedMap();
+      if (m[id]) delete m[id]; else m[id] = 1;
+      try { localStorage.setItem('koyomiru_case_collapsed', JSON.stringify(m)); } catch (e) {}
+      _tokiRefreshAll();
+    }
+    window.toggleTokiCaseCollapsed = toggleTokiCaseCollapsed;
+    // たたんだときの1行：次の節目・工程の進み・次の工程・備考の印
+    function _tokiCollapsedSummaryHtml(c, today, tpl, esc) {
+      var next = null;
+      tpl.milestones.forEach(function(ms) {
+        var dt = c[ms.key + 'Date'];
+        if (!dt || gyomuMilestoneIsNone(c, ms) || dt < today) return;
+        if (!next || dt < next.dt) next = { dt: dt, name: ms.name };
+      });
+      var total = 0, doneN = 0, nextStep = '';
+      tpl.stages.forEach(function(sg, i) {
+        var steps = i === 0 ? tokiStepsFor(c) : sg.steps, dn = c[sg.key] || {};
+        steps.forEach(function(st) { total++; if (dn[st]) doneN++; else if (!nextStep) nextStep = (tpl.stepLabels && tpl.stepLabels[st]) || st; });
+      });
+      var parts = [];
+      if (next) parts.push(_tokiDateLabel(next.name, next.dt, today));
+      parts.push('工程 ' + doneN + '/' + total + (nextStep ? '・次は［' + esc(nextStep) + '］' : ''));
+      if (c.bikou) parts.push('📌');
+      return '<div style="font-size:0.75em;color:#666;margin-top:2px;">' + parts.join('　｜　') + '</div>';
+    }
     function _tokiCaseRowHtml(c, today, rowOpts) {
       rowOpts = rowOpts || {};
+      var collapsed = !!_tokiCollapsedMap()[c.id];
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
       var chip = function(c, row, step, done, faint) {
         return '<button onclick="toggleTokiStep(\'' + esc(c.id) + '\',' + row + ',\'' + esc(step) + '\')" style="padding:2px 7px;margin:2px 2px 0 0;border-radius:6px;font-size:0.78em;cursor:pointer;' +
@@ -15382,7 +15411,10 @@ function renderTodoList() {
           // v0.51.7: 【権威】2026-10-05、登記は直したり消したりできないのか、との指摘。番号を押せば直せたが、
           // 普通の予定のような ✏️ と × が無く、分からなかった。普通の予定と同じ形で、右上に付ける。
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">' +
-          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (c.closed ? 'text-decoration:line-through;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
+          // v0.55.2: 【権威】2026-10-06、カードが大きい。そのときは役目を終えるので1枚ずつ折りたためるように、ただし気づきにくいのは困る、との指摘。
+          // ▾／▸で開閉（カードごと・その端末で覚える）。たたんでも、次の節目・工程の進み・次の工程・⚠️とオレンジの色は残す。
+          '<button onclick="toggleTokiCaseCollapsed(\'' + esc(c.id) + '\')" title="' + (collapsed ? '開く' : 'たたむ') + '" aria-expanded="' + !collapsed + '" style="border:none;background:none;cursor:pointer;color:#888;font-size:0.9em;padding:0 2px;flex:none;">' + (collapsed ? '▸' : '▾') + '</button>' +
+          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (collapsed ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' : '') + (c.closed ? 'text-decoration:line-through;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
             (c.jian ? esc(c.jian) + '：' : '') + esc(tokiSama(c.buyer)) +
             (c.bukken ? '<span style="color:#555;">（物件：' + esc(c.bukken) + '）</span>' : '') +
             (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(tokiSama(c.seller)) + '）</span>' : '') +
@@ -15400,6 +15432,9 @@ function renderTodoList() {
             '<button onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" title="直す" style="border:none;background:none;cursor:pointer;font-size:1em;padding:0 4px;">✏️</button>' +
             '<button onclick="deleteTokiCase(\'' + esc(c.id) + '\')" title="削除" style="border:none;background:none;cursor:pointer;font-size:1.05em;color:#999;padding:0 4px;">×</button>' +
           '</span></div>' +
+          (collapsed ? _tokiCollapsedSummaryHtml(c, today, tpl, esc) +
+            (al.length ? '<div style="font-size:0.75em;color:#d9480f;font-weight:700;margin-top:2px;">⚠️ ' + al.join('・') + '</div>' : '') + '</div>' : '') +
+          (collapsed ? '' : (
           (dates ? '<div style="font-size:0.75em;color:#666;margin-top:2px;">' + dates + '</div>' : '') +
           (al.length ? '<div style="font-size:0.75em;color:#d9480f;font-weight:700;margin-top:2px;">⚠️ ' + al.join('・') + '</div>' : '') +
           (c.bikou ? '<div style="font-size:0.75em;color:#5c4400;background:#fff9db;border-radius:5px;padding:3px 6px;margin-top:3px;white-space:pre-wrap;">📌 ' + esc(c.bikou) + '</div>' : '') +
@@ -15414,7 +15449,7 @@ function renderTodoList() {
               (sg.name ? '<span style="font-size:0.72em;color:' + (faint ? '#bbb' : '#666') + ';margin-right:3px;">' + sg.name + '</span>' : '') +
               steps.map(function(st) { return chip(c, row, st, !!done[st], faint); }).join('') + '</div>';
           }).join('') +
-        '</div>';
+        '</div>'));
     }
     window._tokiCaseRowHtml = _tokiCaseRowHtml;
 
@@ -15496,13 +15531,16 @@ function renderTodoList() {
       if (!s) return null;
       // v0.54.3: 括弧の中の言葉を選べるように（登記＝物件、業務＝場所）
       var kw = String(keyword || '物件').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      var m = s.match(new RegExp('^(?:([^：:（(]+?)\\s*[：:])?\\s*([^（(]+?)\\s*(?:[（(]\\s*' + kw + '\\s*[：:]\\s*(.+?)\\s*[）)])?\\s*$'));
+      // v0.55.2: 物件のかっこの後ろに続く文（「※建物移転の有無確認中。」「〇〇支店にて決済。」など）は、備考として返す
+      var m = s.match(new RegExp('^(?:([^：:（(]+?)\\s*[：:])?\\s*([^（(]+)(?:[（(]\\s*' + kw + '\\s*[：:]\\s*(.+?)\\s*[）)])?\\s*(.*)$'));   // 名前は、かっこの手前まで全部
       if (!m) return null;
       var hasStructure = !!(m[1] || m[3]);
       if (!hasStructure) return null;   // ただの名前なら、分けない
       var bukken = String(m[3] || '').trim();
       try { bukken = bukken.normalize('NFKC'); } catch (e) {}
-      return { jian: String(m[1] || '').trim(), buyer: String(m[2] || '').trim(), bukken: bukken };
+      var note = String(m[4] || '').trim();
+      if (note && !m[3]) return null;   // 物件のかっこが無いのに後ろに文がある形は、分けない（名前の一部かもしれない）
+      return { jian: String(m[1] || '').trim(), buyer: String(m[2] || '').trim(), bukken: bukken, note: note };
     }
     window.parseTokiTitle = parseTokiTitle;
     // 案件を作る・直す（v0.52.0: 事案内容・物件・金消なし・決済の時間と場所・自動決済。Enterで次の欄へ。例の文字は薄く）
@@ -15616,6 +15654,7 @@ function renderTodoList() {
         $('tokiBuyer').value = r.buyer;
         if (r.jian) $('tokiJian').value = r.jian;
         if (r.bukken) $('tokiBukken').value = r.bukken;
+        if (r.note && $('tokiBikou') && $('tokiBikou').value.indexOf(r.note) === -1) $('tokiBikou').value = ($('tokiBikou').value ? $('tokiBikou').value + '\n' : '') + r.note;   // v0.55.2
         $('tokiParseHint').textContent = '✓ 貼り付けた内容を、' + tpl.fields.jian.label + '・' + tpl.fields.buyer.label + '・' + tpl.fields.bukken.label + 'に分けて入れました';
       };
       $('tokiBuyer').addEventListener('paste', function() { setTimeout(tryParse, 0); });
@@ -31287,6 +31326,33 @@ window._repairCloudCalendarIds();
         if (!r || !r.buyer) return;
         t.buyer = r.buyer; if (r.jian) t.jian = r.jian; if (r.bukken) t.bukken = r.bukken;
         t.updatedAt = _now; _n++;
+      });
+      if (!_n) return;
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try { if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) { allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); }); } } catch(e) {}
+    });
+
+    addMigration('mig_toki_split_title_v2', function() {
+      // v0.55.2: 【権威】2026-10-06、物件のかっこの後ろに文が続くタイトル（※建物移転の有無確認中。など）は分けられず、
+      // 最後に「様」が付いていた。後ろの文は備考に入れて分け直す。頭のBが無い番号（20434）にもBを付ける。
+      var _raw = localStorage.getItem('allTasks');
+      var _list = [];
+      try { _list = _raw ? JSON.parse(_raw) : []; } catch(e) { return; }
+      if (!Array.isArray(_list) || typeof parseTokiTitle !== 'function') return;
+      var _now = new Date().toISOString(), _n = 0;
+      _list.forEach(function(t) {
+        if (!t || t.kind !== 'toki') return;
+        var changed = false;
+        if (t.box && /^\d/.test(String(t.box)) && typeof tokiNormalizeBox === 'function') { t.box = tokiNormalizeBox(t.box, 'B'); changed = true; }
+        if (!t.jian && !t.bukken && t.buyer) {
+          var r = parseTokiTitle(t.buyer, '物件');
+          if (r && r.buyer) {
+            t.buyer = r.buyer; if (r.jian) t.jian = r.jian; if (r.bukken) t.bukken = r.bukken;
+            if (r.note && String(t.bikou || '').indexOf(r.note) === -1) t.bikou = (t.bikou ? t.bikou + '\n' : '') + r.note;
+            changed = true;
+          }
+        }
+        if (changed) { t.updatedAt = _now; _n++; }
       });
       if (!_n) return;
       localStorage.setItem('allTasks', JSON.stringify(_list));
@@ -51791,6 +51857,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.2', date: '2026-10-06',
+    items: [
+      { icon:'💼', t:'案件のカードを1枚ずつ折りたためるようにしました',
+        before:'案件のカードが大きく、たくさんあると見通しが悪くなっていました',
+        after:'カードの左上の ▾ でたためます。たたんでも、次の大事な日・工程の進み（3/14など）・次の工程・⚠️は1行に残ります。日次・魚の目・月間で使えます' }
+    ]
+  },
   {
     ver: 'v0.55.1', date: '2026-10-06',
     items: [
@@ -75043,6 +75117,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-415·①: 置き場所の決め方が違う', _st415r);
      } catch(e) {
        ng('ST-415: 例外', e.message);
+     }
+
+     // ===== ST-416: カードの折りたたみと、かっこの後ろの文（v0.55.2〜） =====
+     try {
+       var _st416c = { id: 'st416', box: 'B1', buyer: '甲', kessaiDate: '2026-10-09', steps1: { '物': true }, steps2: {}, bikou: 'メモ' };
+       var _st416m = _tokiCollapsedMap(); var _st416had = !!_st416m.st416;
+       _st416m.st416 = 1; try { localStorage.setItem('koyomiru_case_collapsed', JSON.stringify(_st416m)); } catch (eS) {}
+       var _st416h = _tokiCaseRowHtml(_st416c, '2026-10-06');
+       delete _st416m.st416; if (_st416had) _st416m.st416 = 1; try { localStorage.setItem('koyomiru_case_collapsed', JSON.stringify(_st416m)); } catch (eS2) {}
+       var _st416p = parseTokiTitle('土地決済：甲様（物件：乙）※確認中。', '物件') || {};
+       (_st416h.indexOf('▸') !== -1 && _st416h.indexOf('工程 1/') !== -1 && _st416h.indexOf('決済の段取りが未確定') !== -1 && _st416h.indexOf('>物<') === -1 &&
+        _st416p.buyer === '甲様' && _st416p.bukken === '乙' && _st416p.note === '※確認中。')
+         ? ok('ST-416·①: たたんだカードは1行（次の節目・工程の進み・⚠️は残す）。物件のかっこの後ろの文は備考へ')
+         : ng('ST-416·①: 折りたたみか、かっこの後ろの文の扱いが違う', JSON.stringify(_st416p));
+     } catch(e) {
+       ng('ST-416: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
