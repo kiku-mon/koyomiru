@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.21 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.22 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.21';
+    const APP_VERSION = 'v0.55.22';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14867,9 +14867,11 @@ function renderTodoList() {
         // 電話で「誰々の案件」と聞かれたとき、検索でどの関係の案件かまで分かるように。作る画面では開け閉めできる囲みにまとめる（more）
         buyerAgent:  { label: '買側仲介', short: '買側仲介', placeholder: '〇〇不動産 山田様', more: true },
         sellerAgent: { label: '売側仲介', short: '売側仲介', placeholder: '〇〇不動産 佐藤様', more: true },
-        builder:     { label: '建物業者他', short: '建物業者他', placeholder: '〇〇ホーム 鈴木様', more: true },
-        bankContact: { label: '銀行の担当者', short: '銀行', placeholder: '〇〇銀行 〇〇支店 田中様', more: true }
+        builder:     { label: '建物業者他', short: '建物業者他', placeholder: '〇〇ホーム 鈴木様', more: true }
       },
+      // v0.55.22: 【権威】2026-10-07、銀行の担当者は手続きごとに何人もいる（設定の銀行・抹消の銀行、まれに債務引受・極度額増額）。
+      // 枠が1つでは困る、との指摘。1行＝手続き＋担当者の一覧にして、何人でも足せるようにする（選択「B」）
+      bankContacts: true,
       stagesLabel: '要る工程（決済まで）',
       departFieldLabel: '事務所を出る時刻', departShort: '事務所発', tantouPlaceholder: '鈴木さん', numberRequired: true,
       stages: [
@@ -16106,7 +16108,30 @@ function renderTodoList() {
     // ・探す欄：案件依頼者・買主・売主・ボックス番号・事案内容・物件・備考・担当者・行く人
     // ・揺れに強く：全角半角・大文字小文字・空白や区切り・「様」「さん」など・「株式会社／(株)／㈱」・カタカナとひらがなを気にしない
     // v0.55.21: そのほかの関係者の欄（登記：買側仲介・売側仲介・建物業者他・銀行の担当者）
-    var GYOMU_RELATION_KEYS = ['buyerAgent', 'sellerAgent', 'builder', 'bankContact'];
+    var GYOMU_RELATION_KEYS = ['buyerAgent', 'sellerAgent', 'builder'];
+    // v0.55.22: 銀行の担当者の一覧。手続きは選ぶ（抹消は根抵当権抹消なども含めて「抹消」）
+    var TOKI_BANK_ROLES = ['設定', '抹消', '債務引受', '極度額増額', 'その他'];
+    // 銀行の担当者の一覧を読む。前の版の1つの欄（bankContact）に書いたものは、手続き未選択の1行として読む（消えない）
+    function bankContactsOf(c) {
+      var list = (c && Array.isArray(c.bankContacts)) ? c.bankContacts.filter(function(b) { return b && String(b.name || '').trim(); }) : [];
+      if (!list.length && c && String(c.bankContact || '').trim()) list = [{ role: '', name: String(c.bankContact).trim() }];
+      return list.map(function(b) { return { role: TOKI_BANK_ROLES.indexOf(b.role) !== -1 ? b.role : '', name: String(b.name || '').trim() }; });
+    }
+    window.bankContactsOf = bankContactsOf;
+    function bankContactLabel(b) { return '銀行' + (b && b.role ? '（' + b.role + '）' : ''); }
+    window.bankContactLabel = bankContactLabel;
+    function _tokiBankRowHtml(b, esc) {
+      var st = 'box-sizing:border-box;padding:8px 8px;border:1px solid #ccd;border-radius:8px;font-size:16px;background:#fff;min-width:0;';
+      return '<div class="toki-bank-row" style="display:flex;gap:6px;align-items:center;margin-top:6px;">' +
+        '<select class="toki-bank-role" style="' + st + 'flex:0 0 auto;max-width:42%;">' +
+          '<option value="">手続きを選ぶ</option>' +
+          TOKI_BANK_ROLES.map(function(r) { return '<option value="' + esc(r) + '"' + (b.role === r ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') +
+        '</select>' +
+        '<input class="toki-bank-name" type="text" autocomplete="off" value="' + esc(b.name || '') + '" placeholder="〇〇銀行 〇〇支店 田中様" style="' + st + 'flex:1 1 auto;width:100%;">' +
+        '<button type="button" class="toki-bank-del" title="この行を消す" style="border:none;background:none;color:#999;font-size:1.1em;cursor:pointer;padding:0 4px;flex:0 0 auto;">×</button>' +
+      '</div>';
+    }
+    window._tokiBankRowHtml = _tokiBankRowHtml;
     function gyomuMoreFieldKeys(tpl) {
       return Object.keys((tpl && tpl.fields) || {}).filter(function(k) { return tpl.fields[k] && tpl.fields[k].more; });
     }
@@ -16134,6 +16159,7 @@ function renderTodoList() {
         if (!gyomuTemplateVisible(gyomuTemplateOf(c))) return false;   // 見えないひな形の案件は出さない（第71条）
         return [c.requester, c.buyer, c.seller, c.box, c.jian, c.bukken, c.bikou, tokiTantou(c), c.kinshoGoer, c.kessaiGoer]
           .concat(GYOMU_RELATION_KEYS.map(function(k) { return c[k]; }))   // v0.55.21: そのほかの関係者
+          .concat(bankContactsOf(c).map(function(b) { return b.name; }))   // v0.55.22: 銀行の担当者の一覧
           .some(function(v) { return v && caseSearchNorm(v).indexOf(qn) !== -1; });
       });
       // 進行中を先に（決済の近い順）、済んだものは後ろ（新しく済んだ順）
@@ -16178,6 +16204,10 @@ function renderTodoList() {
               return k === 'requester' || (qn && caseSearchNorm(c[k]).indexOf(qn) !== -1);
             }).map(function(k) {
               return '<div style="font-size:0.78em;color:#555;margin-top:2px;">' + esc(gyomuFieldShort(tplC, k)) + ' ' + esc(c[k]) + '</div>';
+            }).join('') +
+            // v0.55.22: 銀行の担当者は、当たった行を手続きつきで（例：銀行（抹消） 〇〇銀行 田中様）
+            bankContactsOf(c).filter(function(b) { return qn && caseSearchNorm(b.name).indexOf(qn) !== -1; }).map(function(b) {
+              return '<div style="font-size:0.78em;color:#555;margin-top:2px;">' + esc(bankContactLabel(b)) + ' ' + esc(b.name) + '</div>';
             }).join('');
           })() +
           '<div style="display:flex;gap:8px;align-items:center;margin-top:4px;font-size:0.78em;">' +
@@ -16255,11 +16285,19 @@ function renderTodoList() {
         // v0.55.21: そのほかの関係者（開け閉めできる囲み。どれかに書いてあれば開いて出す）
         (function() {
           var mk = gyomuMoreFieldKeys(tpl);
-          if (!mk.length) return '';
-          var anyFilled = mk.some(function(f) { return c && String(c[f] || '').trim(); });
+          if (!mk.length && !tpl.bankContacts) return '';
+          var banks = tpl.bankContacts ? bankContactsOf(c) : [];
+          var anyFilled = mk.some(function(f) { return c && String(c[f] || '').trim(); }) || banks.length > 0;
+          var names = mk.map(function(f) { return tpl.fields[f].short || tpl.fields[f].label; }).concat(tpl.bankContacts ? ['銀行'] : []);
           return '<details id="tokiMoreFields"' + (anyFilled ? ' open' : '') + ' style="margin:10px 0 2px;border:1px solid #eee;border-radius:8px;padding:4px 10px 8px;">' +
-            '<summary style="cursor:pointer;font-size:0.82em;color:#555;padding:4px 0;">👥 そのほかの関係者（' + esc(mk.map(function(f) { return tpl.fields[f].short || tpl.fields[f].label; }).join('・')) + '）</summary>' +
+            '<summary style="cursor:pointer;font-size:0.82em;color:#555;padding:4px 0;">👥 そのほかの関係者（' + esc(names.join('・')) + '）</summary>' +
             mk.map(function(f) { return field(tpl.fields[f].label, 'toki' + capKey(f), c && c[f], 'text', tpl.fields[f].placeholder); }).join('') +
+            // v0.55.22: 銀行の担当者の一覧（1行＝手続き＋担当者。何人でも足せる）
+            (tpl.bankContacts ?
+              '<label style="display:block;font-size:0.8em;color:#555;margin:8px 0 2px;">銀行の担当者（手続きごとに）</label>' +
+              '<div id="tokiBankList">' + (banks.length ? banks : [{ role: '', name: '' }]).map(function(b) { return _tokiBankRowHtml(b, esc); }).join('') + '</div>' +
+              '<button type="button" id="tokiBankAdd" style="margin-top:6px;padding:6px 10px;border:1px dashed #9db4d6;border-radius:8px;background:#fff;color:#4a6fa5;font-size:0.8em;cursor:pointer;">＋ 銀行の担当者を足す</button>'
+            : '') +
           '</details>';
         })() +
         field('担当者（空なら自分）', 'tokiTantou', c && c.tantou, 'text', tpl.tantouPlaceholder) +
@@ -16307,6 +16345,21 @@ function renderTodoList() {
       });
       // ボックス番号：頭にB
       $('tokiBox').addEventListener('blur', function() { this.value = tokiNormalizeBox(this.value, tpl.numberPrefix); });
+      // v0.55.22: 銀行の担当者の行を足す・消す（行が無くなったら、空の1行を残す）
+      if ($('tokiBankAdd')) {
+        var _escB = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+        $('tokiBankAdd').addEventListener('click', function() {
+          $('tokiBankList').insertAdjacentHTML('beforeend', _tokiBankRowHtml({ role: '', name: '' }, _escB));
+          var rows = $('tokiBankList').querySelectorAll('.toki-bank-row');
+          var last = rows[rows.length - 1].querySelector('.toki-bank-role'); if (last) last.focus();
+        });
+        $('tokiBankList').addEventListener('click', function(e) {
+          var del = e.target.closest && e.target.closest('.toki-bank-del');
+          if (!del) return;
+          del.closest('.toki-bank-row').remove();
+          if (!$('tokiBankList').querySelector('.toki-bank-row')) $('tokiBankList').insertAdjacentHTML('beforeend', _tokiBankRowHtml({ role: '', name: '' }, _escB));
+        });
+      }
       // 買主に貼り付けたら、事案内容・買主・物件に分ける
       var tryParse = function() {
         if (!tpl.titleParse) return;
@@ -16356,6 +16409,12 @@ function renderTodoList() {
           steps1: {}, steps2: {}, closed: false, createdAt: now };
         target.box = box; target.buyer = buyer; target.seller = tpl.fields.seller ? v('tokiSeller') : '';
         ['jian', 'bukken', 'requester'].concat(gyomuMoreFieldKeys(tpl)).forEach(function(f) { target[f] = tpl.fields[f] ? v('toki' + capKey(f)) : ''; });   // v0.55.20: 案件依頼者・v0.55.21: そのほかの関係者
+        if (tpl.bankContacts) {   // v0.55.22: 銀行の担当者の一覧（前の版の1つの欄 bankContact は、一覧へ移したので消す）
+          target.bankContacts = [].map.call(ov.querySelectorAll('#tokiBankList .toki-bank-row'), function(r) {
+            return { role: (r.querySelector('.toki-bank-role') || {}).value || '', name: String((r.querySelector('.toki-bank-name') || {}).value || '').trim() };
+          }).filter(function(b) { return b.name; }).map(function(b) { return { role: TOKI_BANK_ROLES.indexOf(b.role) !== -1 ? b.role : '', name: b.name }; });
+          delete target.bankContact;
+        }
         if (!tpl.fields.seller) target.seller = '';
         target.tantou = v('tokiTantou');
         // v0.53.0: 節目はひな形から（なし・立会なしなら段取りを空にする）。地図は https のURLだけ受け付ける
@@ -52751,6 +52810,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.22', date: '2026-10-07',
+    items: [
+      { icon:'👥', t:'案件の関係者の欄を、実務に合わせて増やせるようにしました',
+        before:'関係者の欄は、種類ごとに1人分しかありませんでした',
+        after:'手続きごとに何人でも足せる欄にしました。検索では、どの手続きの関係者として登録されているかも出ます' }
+    ]
+  },
+  {
     ver: 'v0.55.21', date: '2026-10-07',
     items: [
       { icon:'👥', t:'案件に、関係する人の欄を足しました',
@@ -77026,11 +77093,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true, gyomuMode: true });
        var _st432y = '2026-10-01T00:00:00Z';
        allTasks.push(
-         { id: 'st432-a', kind: 'toki', box: 'B41', buyer: '山田太郎様', requester: 'サンプル不動産 北川様', bankContact: 'サンプル銀行 千葉支店 田中様', buyerAgent: '買側不動産 高橋様', steps1: {}, createdAt: _st432y },
+         { id: 'st432-a', kind: 'toki', box: 'B41', buyer: '山田太郎様', requester: 'サンプル不動産 北川様', bankContacts: [{ role: '設定', name: 'サンプル銀行 千葉支店 田中様' }], buyerAgent: '買側不動産 高橋様', steps1: {}, createdAt: _st432y },   // v0.55.22: 銀行は一覧
          { id: 'st432-b', kind: 'gyomu', box: 'A-1', jian: 'サイト制作', buyer: '佐藤商店様', bukken: '千葉市', requester: 'サンプル株式会社 鈴木様', steps1: {}, createdAt: _st432y });
        var _st432tp = GYOMU_TEMPLATE_TOKI, _st432gp = gyomuTemplateIppan();
        // ① ひな形の欄：登記は「そのほかの関係者」4つ、業務は「窓口の方」
-       (gyomuMoreFieldKeys(_st432tp).join(',') === 'buyerAgent,sellerAgent,builder,bankContact' && gyomuFieldShort(_st432tp, 'bankContact') === '銀行' &&
+       (gyomuMoreFieldKeys(_st432tp).join(',') === 'buyerAgent,sellerAgent,builder' && _st432tp.bankContacts === true &&   // v0.55.22: 銀行は一覧（bankContacts）
         _st432gp.fields.requester && _st432gp.fields.requester.label === '窓口の方' && gyomuFieldShort(_st432gp, 'requester') === '窓口' && gyomuMoreFieldKeys(_st432gp).length === 0)
          ? ok('ST-432·①: 登記に買側仲介・売側仲介・建物業者他・銀行の担当者、業務に「窓口の方」の欄がある')
          : ng('ST-432·①: 関係者の欄が違う', gyomuMoreFieldKeys(_st432tp).join(','));
@@ -77040,7 +77107,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _renderCaseSearchHits(_st432box, searchTokiCases('田中').filter(function(c) { return /^st432-/.test(c.id); }), '田中');
        var _st432txt = _st432box.textContent;
        (_st432ids('田中') === 'st432-a' && _st432ids('高橋') === 'st432-a' && _st432ids('鈴木') === 'st432-b' &&
-        _st432txt.indexOf('銀行 サンプル銀行 千葉支店 田中様') !== -1 && _st432txt.indexOf('依頼 サンプル不動産 北川様') !== -1 && _st432txt.indexOf('買側仲介') === -1)
+        _st432txt.indexOf('銀行（設定） サンプル銀行 千葉支店 田中様') !== -1 && _st432txt.indexOf('依頼 サンプル不動産 北川様') !== -1 && _st432txt.indexOf('買側仲介') === -1)
          ? ok('ST-432·②: そのほかの関係者でも探せて、結果に当たった関係（例：銀行 〇〇）が出る（当たっていない関係は出さない）')
          : ng('ST-432·②: 関係者の検索が違う', _st432txt);
        // ③ カード：業務は「窓口」「場所」、登記は「依頼」「物件」
@@ -77057,6 +77124,48 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-432: 例外', e.message);
      } finally {
        allTasks = _st432tasks; allSettings.flags = _st432flags;
+     }
+
+     // ===== ST-433: 銀行の担当者は、手続きごとに何人でも（v0.55.22〜） =====
+     // 【権威】2026-10-07、銀行の担当者は設定・抹消（まれに債務引受・極度額増額）と手続きごとに何人もいる。枠1つでは困る、との指摘（選択「B」）。名前はすべて架空
+     var _st433tasks = allTasks.slice();
+     var _st433flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st433saveT = window.saveAllTasks, _st433toast = window.showToast;
+     try {
+       window.saveAllTasks = function() {}; window.showToast = function() {};
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       var _st433y = '2026-10-01T00:00:00Z';
+       allTasks.push({ id: 'st433-old', kind: 'toki', box: 'B51', buyer: '鈴木一郎様', bankContact: '旧欄の銀行 佐々木様', steps1: {}, createdAt: _st433y });
+       // ① 読み方：前の版の1つの欄は、手続き未選択の1行として読む。知らない手続きの名前は未選択に
+       var _st433r = bankContactsOf(allTasks.filter(function(t) { return t.id === 'st433-old'; })[0]);
+       var _st433r2 = bankContactsOf({ bankContacts: [{ role: '抹消', name: 'A銀行 田中様' }, { role: 'でたらめ', name: 'B銀行 高橋様' }, { role: '設定', name: '' }] });
+       (_st433r.length === 1 && _st433r[0].role === '' && _st433r[0].name === '旧欄の銀行 佐々木様' &&
+        _st433r2.length === 2 && _st433r2[0].role === '抹消' && _st433r2[1].role === '' && bankContactLabel(_st433r2[0]) === '銀行（抹消）')
+         ? ok('ST-433·①: 銀行の担当者の一覧を読む（前の版の1つの欄も消えずに読める・空の行は数えない）')
+         : ng('ST-433·①: 銀行の担当者の読み方が違う', JSON.stringify([_st433r, _st433r2]));
+       // ② 繋がっているか（第76条）：作る画面で行を足して保存すると一覧になり、前の版の1つの欄は一覧へ移る。検索に手続きつきで出る
+       if (gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) {
+         openTokiCaseEditor('st433-old');
+         document.getElementById('tokiBankAdd').click();
+         var _st433rows = document.querySelectorAll('#tokiBankList .toki-bank-row');
+         _st433rows[1].querySelector('.toki-bank-role').value = '抹消';
+         _st433rows[1].querySelector('.toki-bank-name').value = '別の銀行 本店 高橋様';
+         document.getElementById('tokiBankAdd').click();   // 空の行は保存しない
+         document.getElementById('tokiSaveBtn').click();
+         var _st433ov = document.getElementById('tokiCaseOverlay'); if (_st433ov) _st433ov.remove();
+         var _st433c = allTasks.filter(function(t) { return t.id === 'st433-old'; })[0];
+         var _st433box = document.createElement('div');
+         _renderCaseSearchHits(_st433box, searchTokiCases('高橋').filter(function(c) { return c.id === 'st433-old'; }), '高橋');
+         (JSON.stringify(_st433c.bankContacts) === JSON.stringify([{ role: '', name: '旧欄の銀行 佐々木様' }, { role: '抹消', name: '別の銀行 本店 高橋様' }]) &&
+          !('bankContact' in _st433c) && _st433box.textContent.indexOf('銀行（抹消） 別の銀行 本店 高橋様') !== -1 && _st433box.textContent.indexOf('佐々木') === -1)
+           ? ok('ST-433·②: 作る画面で行を足して保存できる（空の行は保存しない・前の版の欄は一覧へ移る）。検索には当たった行が手続きつきで出る')
+           : ng('ST-433·②: 銀行の担当者の保存・検索が違う', JSON.stringify(_st433c.bankContacts) + ' / ' + _st433box.textContent.slice(0, 120));
+       } else ng('ST-433·②: 登記の作る画面を開けない（管理者でない環境）', '');
+     } catch(e) {
+       ng('ST-433: 例外', e.message);
+     } finally {
+       window.saveAllTasks = _st433saveT; window.showToast = _st433toast;
+       allTasks = _st433tasks; allSettings.flags = _st433flags;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
