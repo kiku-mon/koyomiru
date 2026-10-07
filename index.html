@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.16 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.17 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.16';
+    const APP_VERSION = 'v0.55.17';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15875,9 +15875,9 @@ function renderTodoList() {
           // ▾／▸で開閉（カードごと・その端末で覚える）。たたんでも、次の節目・工程の進み・次の工程・⚠️とオレンジの色は残す。
           (dayDone ? '' : '<button onclick="toggleTokiCaseCollapsed(\'' + esc(c.id) + '\')" title="' + (collapsed ? '開く' : 'たたむ') + '" aria-expanded="' + !collapsed + '" style="border:none;background:none;cursor:pointer;color:#888;font-size:0.9em;padding:0 2px;flex:none;">' + (collapsed ? '▸' : '▾') + '</button>') +
           '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (collapsed ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' : '') + (c.closed || dayDone ? 'text-decoration:line-through;' : '') + (dayDone ? 'color:#999;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
-            (c.jian ? esc(c.jian) + '：' : '') + esc(tokiSama(c.buyer)) +
+            // v0.55.17: タイトルの書き方どおり「事案：買主・売主（物件：…）」で出す（同じ側の2人以上は「、」）
+            (c.jian ? esc(c.jian) + '：' : '') + esc(tokiSamaList(c.buyer)) + (c.seller ? '・' + esc(tokiSamaList(c.seller)) : '') +
             (c.bukken ? '<span style="color:#555;">（物件：' + esc(c.bukken) + '）</span>' : '') +
-            (c.seller ? '<span style="color:#888;font-size:0.9em;">（売主 ' + esc(tokiSama(c.seller)) + '）</span>' : '') +
             (!tokiIsSelf(tokiTantou(c)) ? '<span style="color:#555;font-size:0.85em;">　担当 ' + esc(tokiTantou(c)) + '</span>' : '') + '</div>' +
           '<span style="white-space:nowrap;">' +
             // v0.52.1: 【権威】2026-10-05、スマホは矢印で並べ替え。指で操作する端末だけに出す（パソコンはドラッグ＆ドロップ）
@@ -15992,23 +15992,64 @@ function renderTodoList() {
     // v0.52.0: 【権威】2026-10-05、業務アプリ（権力）の案件タイトルに「マンション：山田太郎様・山田花子様（物件：サンプルマンション１０１）」
     // のように書いて一目で分かるようにしている。ファイルは「泳ぐ」（先生や他の人の所へ行く）ので、これがあると「これ何だっけ」が減る。
     // 買主の欄に貼り付ければ、事案内容・買主・物件に自動で分ける。
-    function parseTokiTitle(text, keyword) {
+    // v0.55.17: 【権威】2026-10-07、案件タイトルを「事案：買主・売主（物件：…）後ろの文」と書いている。買主と売主は「・」、
+    // 同じ側に2人以上いるときは「、」で分けている（例：買主A、買主B・売主）。買主の欄に貼り付ければ、売主まで精密に読み取ってほしい、との要望。
+    // 以前の読み取りの穴：①買主と売主を分けず、かっこの手前を全部買主に入れていた ②最初に出てきたかっこを物件のかっこと思い込み、
+    // 「（株）」やお名前の後ろのローマ字のかっこがあると、読み取りが止まっていた。
+    // 決まり：
+    //  ・物件のかっこは「（物件：」の言葉で探し、閉じかっこは入れ子を数えて探す（物件の中の「（仮）」なども正しく閉じる）
+    //  ・事案は、先頭から最初の「：」まで（そこに「様」などが入っていれば、事案ではなく名前）
+    //  ・買主と売主の区切りは、「様・さま・殿・御中・さん」のすぐ後ろの「・」だけ（後ろにかっこが付いていてもよい）。
+    //    名前の中の「・」（外国の方のお名前など）では分けない。売主の欄があるひな形（opts.splitSeller）のときだけ分ける
+    //  ・同じ側の2人以上は「、」のまま1つの欄に入れる
+    var TOKI_HONORIFIC_END_RE = /(様|さま|殿|御中|さん)\s*([（(][^（）()]*[）)])?\s*$/;
+    function tokiSplitParties(names) {
+      var out = [], cur = '';
+      for (var i = 0; i < names.length; i++) {
+        var ch = names.charAt(i);
+        if ((ch === '・' || ch === '･') && TOKI_HONORIFIC_END_RE.test(cur)) { out.push(cur.trim()); cur = ''; continue; }
+        cur += ch;
+      }
+      out.push(cur.trim());
+      return out.filter(function(x) { return x; });
+    }
+    window.tokiSplitParties = tokiSplitParties;
+    function parseTokiTitle(text, keyword, opts) {
       var s = String(text || '').trim();
       if (!s) return null;
       // v0.54.3: 括弧の中の言葉を選べるように（登記＝物件、業務＝場所）
       var kw = String(keyword || '物件').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // v0.55.2: 物件のかっこの後ろに続く文（「※建物移転の有無確認中。」「〇〇支店にて決済。」など）は、備考として返す
-      var m = s.match(new RegExp('^(?:([^：:（(]+?)\\s*[：:])?\\s*([^（(]+)(?:[（(]\\s*' + kw + '\\s*[：:]\\s*(.+?)\\s*[）)])?\\s*(.*)$'));   // 名前は、かっこの手前まで全部
-      if (!m) return null;
-      var hasStructure = !!(m[1] || m[3]);
-      if (!hasStructure) return null;   // ただの名前なら、分けない
-      var bukken = String(m[3] || '').trim();
-      try { bukken = bukken.normalize('NFKC'); } catch (e) {}
-      var note = String(m[4] || '').trim();
-      if (note && !m[3]) return null;   // 物件のかっこが無いのに後ろに文がある形は、分けない（名前の一部かもしれない）
-      return { jian: String(m[1] || '').trim(), buyer: String(m[2] || '').trim(), bukken: bukken, note: note };
+      var mb = new RegExp('[（(]\\s*' + kw + '\\s*[：:]\\s*').exec(s);
+      var head = mb ? s.slice(0, mb.index) : s, bukken = '', note = '';
+      if (mb) {
+        var depth = 0, end = -1;
+        for (var i = mb.index; i < s.length; i++) {
+          var ch = s.charAt(i);
+          if (ch === '（' || ch === '(') depth++;
+          else if ((ch === '）' || ch === ')') && --depth === 0) { end = i; break; }
+        }
+        bukken = s.slice(mb.index + mb[0].length, end < 0 ? s.length : end).trim();
+        note = end < 0 ? '' : s.slice(end + 1).trim();   // v0.55.2: 物件のかっこの後ろの文は、備考として返す
+        try { bukken = bukken.normalize('NFKC'); } catch (e) {}
+      }
+      var names = head.trim(), jian = '';
+      var mj = /^([^：:（(]{1,30}?)\s*[：:]\s*/.exec(names);
+      if (mj && !/(様|さま|殿|御中|さん)/.test(mj[1])) { jian = mj[1].trim(); names = names.slice(mj[0].length).trim(); }
+      if (!jian && !mb) return null;   // ただの名前なら、分けない
+      var buyer = names, seller = '';
+      if (opts && opts.splitSeller) {
+        var parts = tokiSplitParties(names);
+        buyer = parts[0] || '';
+        seller = parts.slice(1).join('・');
+      }
+      return { jian: jian, buyer: buyer, seller: seller, bukken: bukken, note: note };
     }
     window.parseTokiTitle = parseTokiTitle;
+    // 「、」で並んだ名前それぞれに「様」を付ける（もう付いていれば付けない）
+    function tokiSamaList(names) {
+      return String(names || '').split(/\s*[、，,]\s*/).filter(function(x) { return x; }).map(tokiSama).join('、');
+    }
+    window.tokiSamaList = tokiSamaList;
     // 案件を作る・直す（v0.52.0: 事案内容・物件・金消なし・決済の時間と場所・自動決済。Enterで次の欄へ。例の文字は薄く）
     function openTokiCaseEditor(caseId, prefill) {
       prefill = prefill || {};
@@ -16115,13 +16156,15 @@ function renderTodoList() {
       // 買主に貼り付けたら、事案内容・買主・物件に分ける
       var tryParse = function() {
         if (!tpl.titleParse) return;
-        var r = parseTokiTitle($('tokiBuyer').value, tpl.titleKeyword);
+        var r = parseTokiTitle($('tokiBuyer').value, tpl.titleKeyword, { splitSeller: !!(tpl.fields.seller && $('tokiSeller')) });
         if (!r) return;
         $('tokiBuyer').value = r.buyer;
+        if (r.seller && $('tokiSeller')) $('tokiSeller').value = r.seller;   // v0.55.17: 売主も分けて入れる
         if (r.jian) $('tokiJian').value = r.jian;
         if (r.bukken) $('tokiBukken').value = r.bukken;
         if (r.note && $('tokiBikou') && $('tokiBikou').value.indexOf(r.note) === -1) $('tokiBikou').value = ($('tokiBikou').value ? $('tokiBikou').value + '\n' : '') + r.note;   // v0.55.2
-        $('tokiParseHint').textContent = '✓ 貼り付けた内容を、' + tpl.fields.jian.label + '・' + tpl.fields.buyer.label + '・' + tpl.fields.bukken.label + 'に分けて入れました';
+        $('tokiParseHint').textContent = '✓ 貼り付けた内容を、' + tpl.fields.jian.label + '・' + tpl.fields.buyer.label +
+          (r.seller && tpl.fields.seller ? '・' + tpl.fields.seller.label : '') + '・' + tpl.fields.bukken.label + (r.note ? '・備考' : '') + 'に分けて入れました';
       };
       $('tokiBuyer').addEventListener('paste', function() { setTimeout(tryParse, 0); });
       $('tokiBuyer').addEventListener('blur', tryParse);
@@ -52552,6 +52595,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.17', date: '2026-10-07',
+    items: [
+      { icon:'📋', t:'案件の名前を貼り付けたとき、売主まで分けて入れるようにしました',
+        before:'「事案：買主・売主（物件：…）」を貼り付けると、買主と売主がまとめて買主の欄に入っていました。名前に「（株）」などのかっこがあると、分けられないこともありました',
+        after:'「様」の後ろの「・」で買主と売主を分け、同じ側の2人以上は「、」のまま入ります。名前のかっこや、物件の中のかっこがあっても読み取れます' }
+    ]
+  },
+  {
     ver: 'v0.55.16', date: '2026-10-07',
     items: [
       { icon:'🔧', t:'月間の升目でも、時刻の無い予定どうしの間に入れられるようにしました',
@@ -76617,6 +76668,58 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-428·①: その日の並びの値の作り方が違う', JSON.stringify([_st428ok1, _st428ok2, _st428ok3, _st428k, _st428k2]));
      } catch(e) {
        ng('ST-428: 例外', e.message);
+     }
+
+     // ===== ST-429: 案件タイトルの読み取り（買主・売主まで）（v0.55.17〜） =====
+     // 【権威】2026-10-07、「事案：買主・売主（物件：…）後ろの文」。買主と売主は「・」、同じ側の2人以上は「、」。売主まで精密に読み取ってほしい、との要望。
+     // 名前・物件はすべて架空（ソースに実名を書かない）
+     try {
+       var _st429 = function(t) { return parseTokiTitle(t, '物件', { splitSeller: true }) || {}; };
+       var _st429a = _st429('土地決済：山田太郎様・佐藤花子様（物件：サンプル町24-13）※住変あり。');
+       var _st429b = _st429('中古住宅：山田太郎様、山田花子様・佐藤一郎様、佐藤二郎様（物件：サンプル町1-2）');
+       var _st429c = _st429('住変：鈴木一郎様・（株）サンプル住宅様（物件：サンプル町4）');
+       var _st429d = _st429('土地決済：ジョン・スミス様（JOHN SMITH）・佐藤花子様（物件：サンプル町6）');
+       var _st429e = _st429('マンション：山田太郎様（物件：サンプルマンション（仮）１０１）');
+       var _st429ok =
+         _st429a.jian === '土地決済' && _st429a.buyer === '山田太郎様' && _st429a.seller === '佐藤花子様' && _st429a.bukken === 'サンプル町24-13' && _st429a.note === '※住変あり。' &&
+         _st429b.buyer === '山田太郎様、山田花子様' && _st429b.seller === '佐藤一郎様、佐藤二郎様' &&
+         _st429c.seller === '（株）サンプル住宅様' && _st429c.bukken === 'サンプル町4' &&
+         _st429d.buyer === 'ジョン・スミス様（JOHN SMITH）' && _st429d.seller === '佐藤花子様' &&
+         _st429e.seller === '' && _st429e.bukken === 'サンプルマンション(仮)101' &&
+         parseTokiTitle('山田太郎様・佐藤花子様', '物件', { splitSeller: true }) === null &&
+         (parseTokiTitle('サイト制作：山田様・佐藤様（場所：千葉市）', '場所') || {}).buyer === '山田様・佐藤様';
+       (_st429ok)
+         ? ok('ST-429·①: 買主・売主（「様」の後ろの「・」で分ける）・複数は「、」・（株）やローマ字のかっこ・物件の中のかっこも読み取る')
+         : ng('ST-429·①: タイトルの読み取りが違う', JSON.stringify([_st429a, _st429b, _st429c, _st429d, _st429e]));
+       // ② カードの題は、タイトルの書き方どおり「事案：買主・売主（物件：…）」
+       var _st429h = _tokiCaseRowHtml({ id: 'st429', kind: 'toki', box: 'B1', jian: '土地決済', buyer: '山田太郎様、山田花子様', seller: '佐藤一郎', bukken: 'サンプル町', steps1: {} }, '2026-10-07');
+       (_st429h.indexOf('土地決済：山田太郎様、山田花子様・佐藤一郎様') !== -1 && _st429h.indexOf('（売主 ') === -1)
+         ? ok('ST-429·②: カードの題は「事案：買主・売主（物件：…）」の形（名前に「様」が無ければ付ける）')
+         : ng('ST-429·②: カードの題の形が違う', '');
+     } catch(e) {
+       ng('ST-429: 例外', e.message);
+     }
+     // ③ 繋がっているか（第76条）：作る画面の買主の欄に貼り付けると、買主・売主・事案内容・物件・備考に入る
+     try {
+       var _st429flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       if (gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) {
+         openTokiCaseEditor(null, { tplId: 'toki' });
+         var _st429i = document.getElementById('tokiBuyer');
+         _st429i.value = '土地決済：山田太郎様、山田花子様・（株）サンプル住宅様（物件：サンプル町24-13）※住変あり。';
+         _st429i.dispatchEvent(new Event('blur'));
+         var _st429v = function(id) { var el = document.getElementById(id); return el ? el.value : '(なし)'; };
+         var _st429r = [_st429v('tokiBuyer'), _st429v('tokiSeller'), _st429v('tokiJian'), _st429v('tokiBukken'), _st429v('tokiBikou')];
+         var _st429ov = document.getElementById('tokiCaseOverlay'); if (_st429ov) _st429ov.remove();
+         (_st429r.join('|') === '山田太郎様、山田花子様|（株）サンプル住宅様|土地決済|サンプル町24-13|※住変あり。')
+           ? ok('ST-429·③: 作る画面の買主の欄に貼り付けると、買主・売主・事案内容・物件・備考に分かれて入る')
+           : ng('ST-429·③: 作る画面での分け方が違う', _st429r.join(' | '));
+       } else {
+         ng('ST-429·③: 登記の作る画面を開けない（管理者でない環境）', '');
+       }
+       allSettings.flags = _st429flags;
+     } catch(e) {
+       ng('ST-429·③: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
