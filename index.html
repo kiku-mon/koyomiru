@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.15 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.16 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.15';
+    const APP_VERSION = 'v0.55.16';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14775,13 +14775,24 @@ function renderTodoList() {
 
     // 動かした先に入る数を作る。前後の中間を取るので、番号を振り直さずに済む。
     // 振り直すと、動かしていない予定の位置まで動いてしまう。
-    function _makeOrderKey(prevTask, nextTask) {
-      if (!prevTask && !nextTask) return 0;
-      if (!prevTask) return _taskSortKey(nextTask) - 1;
-      if (!nextTask) return _taskSortKey(prevTask) + 1;
-      return (_taskSortKey(prevTask) + _taskSortKey(nextTask)) / 2;
+    // v0.55.16: 以前の _makeOrderKey（前後の中間を取るだけ）は、同じ値どうしの間に入れられなかったので、
+    // 下の _dayOrderKeyAt に置き換えて消した（第31条）。
+    // v0.55.16: 【権威】2026-10-07、時刻の無い予定どうしの間に入らない穴を、案件を混ぜない並べ替え（月間の升目・マトリクス）でも直す。
+    // その日の予定を並べた一覧（_taskSortKey 順）と、入れる位置 ins から値を作る。
+    // 前後が同じ値（または逆転）のときだけ、そのかたまりに今の並び順のまま少しずつ違う値を振ってから、間の値を取る。
+    // 振る処理は、混ぜた並びと同じもの（_mixSpreadTies）を使う（第71条④）。
+    function _dayOrderKeyAt(list, ins) {
+      var rows = (list || []).map(function(t) { return { type: 'task', item: t, pos: _taskSortKey(t) }; });
+      if (ins < 0) ins = 0;
+      if (ins > rows.length) ins = rows.length;
+      if (rows[ins - 1] && rows[ins] && !(rows[ins - 1].pos < rows[ins].pos)) _mixSpreadTies(rows, ins, 'orderKey', '', new Date().toISOString());
+      var prev = rows[ins - 1], next = rows[ins];
+      if (!prev && !next) return 0;
+      if (!prev) return next.pos - 1;
+      if (!next) return prev.pos + 1;
+      return (prev.pos + next.pos) / 2;
     }
-    window._makeOrderKey = _makeOrderKey;
+    window._dayOrderKeyAt = _dayOrderKeyAt;
 
     // ===== v0.49.10: 何日かにまたがる予定の「つづきの日」 =====
     // 【権威】2026-10-02、10/1〜10/31の予定が、今日（10/2）の日次のマトリクスにも魚の目にも出ない、
@@ -18909,9 +18920,8 @@ function myDeckApply(idx) {
                 .sort((a, b) => _taskSortKey(a) - _taskSortKey(b));
               if (_anchorId) {
                 const _ai = _dayAll.findIndex(x => x.id === _anchorId);
-                _newKey = _before
-                  ? _makeOrderKey(_dayAll[_ai - 1], _dayAll[_ai])
-                  : _makeOrderKey(_dayAll[_ai], _dayAll[_ai + 1]);
+                // v0.55.16: 同じ値どうしの間にも入れられるように（_dayOrderKeyAt）
+                _newKey = _dayOrderKeyAt(_dayAll, _before ? _ai : _ai + 1);
               } else if (_dayAll.length === 0) {
                 _newKey = 0;
               }
@@ -29161,13 +29171,12 @@ function saveMsbEdit() {
             .sort((a, b) => _taskSortKey(a) - _taskSortKey(b));
           const _anchor = targetTasks[dropIndex];
           let newOrder;
+          // v0.55.16: 同じ値どうしの間にも入れられるように（_dayOrderKeyAt）
           if (!_anchor) {
-            newOrder = _makeOrderKey(_dayAll[_dayAll.length - 1], null);
+            newOrder = _dayOrderKeyAt(_dayAll, _dayAll.length);
           } else {
             const _ai = _dayAll.findIndex(x => x.id === _anchor.id);
-            newOrder = insertBefore
-              ? _makeOrderKey(_dayAll[_ai - 1], _dayAll[_ai])
-              : _makeOrderKey(_dayAll[_ai], _dayAll[_ai + 1]);
+            newOrder = _dayOrderKeyAt(_dayAll, insertBefore ? _ai : _ai + 1);
           }
           // マスターデータを更新（section と その日の中での位置）
           updateTask(taskId, { section: toSection, orderKey: newOrder });
@@ -52542,6 +52551,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.16', date: '2026-10-07',
+    items: [
+      { icon:'🔧', t:'月間の升目でも、時刻の無い予定どうしの間に入れられるようにしました',
+        before:'月間の升目や、案件を使っていないときの日次のマトリクスでは、時刻の無い予定どうしの間に動かしても、元の位置に戻ることがありました',
+        after:'どこで並べ替えても、どの予定の間にも入れられます' }
+    ]
+  },
   {
     ver: 'v0.55.15', date: '2026-10-07',
     items: [
@@ -76580,6 +76597,27 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-427·③: 指でのドラッグの動きが違う', got.join(','));
        });
      });
+
+     // ===== ST-428: 案件を混ぜない並べ替え（月間の升目・マトリクス）でも、同じ値どうしの間に入れられる（v0.55.16〜） =====
+     // 【権威】2026-10-07、時刻の無い予定どうしの間に入らない穴を、混ぜた並び以外でも直す、との指示（「やれ」）。
+     try {
+       var _st428 = function(id, k) { var t = { id: id, kind: 'task', text: id, date: '2026-10-07' }; if (k !== undefined) t.orderKey = k; return t; };
+       // ① どれも2000（時刻なし）。F と T の間（ins=1）に入れる値は、F より大きく T より小さい。動かしていない2つの順は変わらない
+       var _st428a = [_st428('F'), _st428('T'), _st428('G')];
+       var _st428k = _dayOrderKeyAt(_st428a, 1);
+       var _st428ok1 = _taskSortKey(_st428a[0]) < _st428k && _st428k < _taskSortKey(_st428a[1]) && _taskSortKey(_st428a[1]) <= _taskSortKey(_st428a[2]);
+       // ② 値が違うところでは、ほかの予定の値は書き換えない
+       var _st428b = [_st428('A', 100), _st428('B', 200), _st428('C', 300)];
+       var _st428k2 = _dayOrderKeyAt(_st428b, 2);
+       var _st428ok2 = _st428k2 === 250 && _st428b[0].orderKey === 100 && _st428b[1].orderKey === 200 && _st428b[2].orderKey === 300;
+       // ③ 先頭・最後・空
+       var _st428ok3 = _dayOrderKeyAt(_st428b, 0) === 99 && _dayOrderKeyAt(_st428b, 3) === 301 && _dayOrderKeyAt([], 0) === 0;
+       (_st428ok1 && _st428ok2 && _st428ok3 && typeof window._makeOrderKey === 'undefined')
+         ? ok('ST-428·①: 同じ値どうしの間にも入る値を作る（違う値のところは書き換えない・古い付け方は消した）')
+         : ng('ST-428·①: その日の並びの値の作り方が違う', JSON.stringify([_st428ok1, _st428ok2, _st428ok3, _st428k, _st428k2]));
+     } catch(e) {
+       ng('ST-428: 例外', e.message);
+     }
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
