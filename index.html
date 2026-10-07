@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.17 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.18 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.17';
+    const APP_VERSION = 'v0.55.18';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10025,6 +10025,8 @@ function _showInviteWelcome() {
     <input type="checkbox" id="tokiModeToggle" onchange="setTokiMode(this.checked)" style="width:18px;height:18px;"> 📝 登記モードを使う
   </label>
   <div style="font-size:0.75em;color:#9aa6b8;margin-top:4px;line-height:1.6;">日次のマトリクスと魚の目に、登記の案件（ボックス番号・金消・決済・完了予定・工程）を出します。管理者モードのときだけ出ます。</div>
+  <!-- v0.55.18: すでに保存してある案件の売主を、まとめて分け直す（一覧で確かめてから） -->
+  <button onclick="tokiSellerSplitRun()" style="width:100%;margin-top:10px;padding:9px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;font-size:0.9em;cursor:pointer;">✂️ 売主を分け直す（買主の欄にまとめて入っている案件）</button>
 </div>
 <div id="adminVisitStatsArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
           <div style="font-size:0.82em;font-weight:700;color:#8ec5ff;margin-bottom:8px;">📊 訪問統計（直近14日）</div>
@@ -16050,6 +16052,56 @@ function renderTodoList() {
       return String(names || '').split(/\s*[、，,]\s*/).filter(function(x) { return x; }).map(tokiSama).join('、');
     }
     window.tokiSamaList = tokiSamaList;
+    // ===== v0.55.18: すでに保存してある案件の売主を、まとめて分け直す =====
+    // 【権威】2026-10-07、v0.55.17 より前に貼り付けた案件は、買主の欄に「買主・売主」がまとめて入ったまま。まとめて分け直してほしい、との指示。
+    // ・対象：売主の欄があるひな形（登記）の案件で、売主の欄が空のもの。買主の欄を、貼り付けと同じ決まり（様の後ろの「・」）で分けて、2つ以上に分かれるものだけ
+    // ・売主がすでに入っている案件は触らない（手で入れた中身を上書きしない・第84条）
+    // ・いきなり書き換えない。どの案件がどう分かれるかを一覧で見せ、確かめてから書き換える
+    // ・済んだ案件も含める。書き換えたら更新の時刻を付け、ほかの端末にもそろえる（第61条）
+    function tokiSellerSplitPlan() {
+      return allTasks.filter(function(c) {
+        if (!c || c.deleted || (c.kind !== 'toki' && c.kind !== 'gyomu')) return false;
+        var tpl = gyomuTemplateOf(c);
+        return !!(tpl && tpl.fields && tpl.fields.seller) && !String(c.seller || '').trim();
+      }).map(function(c) {
+        var orig = String(c.buyer || '').trim(), parts = tokiSplitParties(orig);
+        return parts.length >= 2 ? { c: c, orig: orig, buyer: parts[0], seller: parts.slice(1).join('・') } : null;
+      }).filter(function(p) { return p; });
+    }
+    window.tokiSellerSplitPlan = tokiSellerSplitPlan;
+    function tokiSellerSplitRun() {
+      if (!gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) return;   // 登記を使っている人だけ（処理の側でも確かめる・第71条）
+      var plan = tokiSellerSplitPlan();
+      if (!plan.length) { if (typeof showToast === 'function') showToast('分け直す案件はありません（売主が空で、買主の欄に「様・」の区切りがあるものが対象です）'); return; }
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+      var SHOW = 30;
+      var list = plan.slice(0, SHOW).map(function(p) {
+        return '<div style="text-align:left;font-size:0.85em;margin:3px 0;">' + esc(p.c.box || '') + '　買主「' + esc(p.buyer) + '」／売主「' + esc(p.seller) + '」</div>';
+      }).join('') + (plan.length > SHOW ? '<div style="font-size:0.85em;color:#888;">ほか ' + (plan.length - SHOW) + '件</div>' : '');
+      var apply = function() {
+        var now = new Date().toISOString(), n = 0;
+        plan.forEach(function(p) {
+          var c = p.c;
+          // 一覧を見ている間に、同期などで中身が変わっていたら触らない
+          if (String(c.seller || '').trim() || String(c.buyer || '').trim() !== p.orig) return;
+          c.buyer = p.buyer; c.seller = p.seller; c.updatedAt = now; n++;
+        });
+        if (n) saveAllTasks();
+        _tokiRefreshAll();
+        if (typeof showToast === 'function') showToast('✓ ' + n + '件の売主を分け直しました');
+      };
+      if (typeof showChoiceModal !== 'function') return;
+      showChoiceModal({
+        title: '売主を分け直す（' + plan.length + '件）',
+        desc: '買主の欄にまとめて入っている名前を、「様」の後ろの「・」で買主と売主に分けます。売主がすでに入っている案件は触りません。<br><br>' + list,
+        buttons: [
+          { label: '分け直す', style: 'primary', onClick: apply },
+          { label: 'やめる', style: 'cancel' }
+        ]
+      });
+    }
+    window.tokiSellerSplitRun = tokiSellerSplitRun;
+    // ===== END v0.55.18 =====
     // 案件を作る・直す（v0.52.0: 事案内容・物件・金消なし・決済の時間と場所・自動決済。Enterで次の欄へ。例の文字は薄く）
     function openTokiCaseEditor(caseId, prefill) {
       prefill = prefill || {};
@@ -52595,6 +52647,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.18', date: '2026-10-07',
+    items: [
+      { icon:'✂️', t:'前に保存した案件の売主を、まとめて分け直せるようにしました',
+        before:'前に貼り付けた案件は、買主の欄に買主と売主がまとめて入ったままでした',
+        after:'「売主を分け直す」を押すと、どの案件がどう分かれるかを一覧で見せ、確かめてから分けます。売主がすでに入っている案件は触りません' }
+    ]
+  },
+  {
     ver: 'v0.55.17', date: '2026-10-07',
     items: [
       { icon:'📋', t:'案件の名前を貼り付けたとき、売主まで分けて入れるようにしました',
@@ -76720,6 +76780,47 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allSettings.flags = _st429flags;
      } catch(e) {
        ng('ST-429·③: 例外', e.message);
+     }
+
+     // ===== ST-430: すでに保存してある案件の売主を、まとめて分け直す（v0.55.18〜） =====
+     // 【権威】2026-10-07、買主の欄に「買主・売主」がまとめて入ったままの案件を、まとめて分け直してほしい、との指示。名前はすべて架空
+     var _st430tasks = allTasks.slice(), _st430saveT = window.saveAllTasks, _st430modal = window.showChoiceModal, _st430toast = window.showToast;
+     var _st430flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     try {
+       window.saveAllTasks = function() {}; window.showToast = function() {};
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true, gyomuMode: true });
+       var _st430y = '2026-10-01T00:00:00Z';
+       allTasks.push(
+         { id: 'st430-a', kind: 'toki', box: 'B1', buyer: '山田太郎様・佐藤花子様', seller: '', steps1: {}, createdAt: _st430y, updatedAt: _st430y },
+         { id: 'st430-b', kind: 'toki', box: 'B2', buyer: '山田太郎様、山田花子様・（株）サンプル住宅様', steps1: {}, createdAt: _st430y, closed: true },
+         { id: 'st430-c', kind: 'toki', box: 'B3', buyer: '鈴木一郎様・佐藤二郎様', seller: '手で入れた売主様', steps1: {}, createdAt: _st430y },
+         { id: 'st430-d', kind: 'toki', box: 'B4', buyer: 'ジョン・スミス', steps1: {}, createdAt: _st430y },
+         { id: 'st430-e', kind: 'gyomu', box: 'G1', buyer: '山田様・佐藤様', steps1: {}, createdAt: _st430y });
+       var _st430g = function(id) { return allTasks.filter(function(t) { return t.id === id; })[0]; };
+       // ① 対象の見分け：売主が空で「様・」の区切りがある登記の案件だけ（済んだ案件も含む）
+       var _st430plan = tokiSellerSplitPlan().map(function(p) { return p.c.id; }).filter(function(id) { return /^st430-/.test(id); }).sort().join(',');
+       (_st430plan === 'st430-a,st430-b')
+         ? ok('ST-430·①: 分け直す対象は、売主が空で「様・」の区切りがある登記の案件だけ（売主入り・区切り無し・売主の欄の無い業務は触らない）')
+         : ng('ST-430·①: 分け直す対象の見分けが違う', _st430plan);
+       // ② 「やめる」では何も変わらない／「分け直す」で書き換わる
+       var _st430opt = null;
+       window.showChoiceModal = function(o) { _st430opt = o; };
+       tokiSellerSplitRun();
+       var _st430same = _st430g('st430-a').buyer === '山田太郎様・佐藤花子様' && !_st430g('st430-a').seller;   // まだ押していない
+       if (_st430opt) _st430opt.buttons[0].onClick();
+       var _st430a = _st430g('st430-a'), _st430b = _st430g('st430-b'), _st430c = _st430g('st430-c'), _st430d = _st430g('st430-d'), _st430e = _st430g('st430-e');
+       (_st430opt && _st430same && /^売主を分け直す/.test(_st430opt.title) &&
+        _st430a.buyer === '山田太郎様' && _st430a.seller === '佐藤花子様' && _st430a.updatedAt !== _st430y &&
+        _st430b.buyer === '山田太郎様、山田花子様' && _st430b.seller === '（株）サンプル住宅様' &&
+        _st430c.buyer === '鈴木一郎様・佐藤二郎様' && _st430c.seller === '手で入れた売主様' &&
+        _st430d.buyer === 'ジョン・スミス' && !_st430d.seller && _st430e.buyer === '山田様・佐藤様' && !_st430e.seller)
+         ? ok('ST-430·②: 一覧で確かめてから書き換える。分けた案件には更新の時刻が付き、ほかの案件は変わらない')
+         : ng('ST-430·②: 分け直しの書き換えが違う', JSON.stringify([_st430a, _st430b, _st430c]));
+     } catch(e) {
+       ng('ST-430: 例外', e.message);
+     } finally {
+       window.saveAllTasks = _st430saveT; window.showChoiceModal = _st430modal; window.showToast = _st430toast;
+       allTasks = _st430tasks; allSettings.flags = _st430flags;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
