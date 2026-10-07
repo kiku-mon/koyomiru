@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.11 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.15 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.11';
+    const APP_VERSION = 'v0.55.15';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -3386,7 +3386,7 @@ function _showInviteWelcome() {
     body.kb-open .monthly-sidebar.open .monthly-sidebar-sekki {
       display: none;
     }
-    body.kb-open .monthly-sidebar.open .monthly-sidebar-tasks {
+    body.kb-open .monthly-sidebar.open .msb-scroll {   /* v0.55.13: 予定の一覧から入れ物へ */
       min-height: 0;
       max-height: 22vh;
     }
@@ -3765,14 +3765,24 @@ function _showInviteWelcome() {
       letter-spacing: .05em;
     }
     .monthly-sidebar-save:hover { opacity: .88; }
-    .monthly-sidebar-tasks {
+    /* v0.55.13: スクロールは、案件と予定の一覧を包む入れ物（.msb-scroll）が受け持つ。
+       以前は予定の一覧だけがスクロールし、上の登記の案件は動かなかった。案件が背を伸ばすと一覧の取り分が無くなり、
+       なぞった動きは後ろのカレンダーへ抜けていた。
+       overscroll-behavior: contain … 端まで行っても、動きを後ろの月間カレンダーへ渡さない。 */
+    /* v0.55.15: 指で持ち上げる行。長押しで文字選びやメニューが出ると、持ち上げられないため */
+    [data-mix-id] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    .msb-scroll {
       flex: 1;
       overflow-y: auto;
-      padding: 8px 0;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
       /* v0.45.1971: min-height:0 だと、コメントが開いたときに
          予定の一覧が高さゼロまで潰れる。予定こそ主役なので、
-         最低でも画面の4分の1は必ず残す。 */
+         最低でも画面の4分の1は必ず残す。（v0.55.13 で予定の一覧から入れ物へ移した） */
       min-height: 25%;
+    }
+    .monthly-sidebar-tasks {
+      padding: 8px 0;
     }
     .monthly-sidebar-task-item {
       min-height: 56px;
@@ -3835,7 +3845,7 @@ function _showInviteWelcome() {
        書いている最中は一覧より入力欄が主役なので、一覧を縮めてよい。
        ただし日付と暦は残す。どの日に何を書いているのか分からないまま
        書かせるのは筋が通らない。キーボードのときと同じ考え方。 */
-    body.msb-editing .monthly-sidebar-tasks {
+    body.msb-editing .msb-scroll {   /* v0.55.13: 予定の一覧から入れ物へ */
       flex: 0 0 auto;
       max-height: 16vh;
       min-height: 0;
@@ -8118,9 +8128,15 @@ function _showInviteWelcome() {
       <!-- v0.45.1593: 旧・簡易入力は編集フォームに統合したため撤去（第31条）。
            入口が2つあると「時刻が書けない方」に当たった人が二度手間になる。 -->
       <!-- v0.51.2: 登記モード（管理者だけ）。月間の日の欄に、その日の登記と「＋ 登記の案件」を出す -->
+      <!-- v0.55.13: 【権威】2026-10-07、スマホの月間で日を開くと、登記の案件が開いて画面いっぱいになり、上下になぞっても
+           後ろのカレンダーが動くだけで、下の予定（メール・業務確認など）が見られない、との指摘。
+           スクロールできたのは予定の一覧だけで、案件の部分は動かず、案件が背を伸ばすと一覧の取り分が無くなっていた。
+           案件と予定の一覧を1つのスクロールにまとめる（ボトムシートの定石：スクロールする場所を1つにする）。 -->
+      <div class="msb-scroll" id="monthlySidebarScroll">
       <div id="monthlySidebarToki" style="display:none;"></div>
       <div id="monthlySidebarGyomu" style="display:none;"></div>
       <div class="monthly-sidebar-tasks" id="monthlySidebarTasks"></div>
+      </div>
       <!-- v0.45.1566: 予定ごとのコメント。予定を選ぶと、その予定の会話がここに出る。 -->
       <!-- v0.45.1583: 参加表明。コメントの上に置く。「誰が来るか」が先で、話はその後。 -->
       <!-- v0.45.1971: 【権威】2026-09-02、操作中にコメント欄が
@@ -15027,7 +15043,8 @@ function renderTodoList() {
     // 【権威】2026-10-06、今日はもうやることが無い案件に、完了と同じ取り消し線を出したい。ただし明日も期間中なら復活する、との要望。
     // ・印は案件の中に日付ごとに持つ（dayDone[日付]）。ほかの日には印が無いので、翌日は自動で元に戻る。
     // ・完了（closed）とは別。工程の✓とも連動させない（「今日やることが無い」と「工程が進んだ」は別の話）。
-    // ・見え方：取り消し線・1行にたたむ・列のいちばん下へ。ただし⚠️は残す（明日以降の危険の知らせなので）。
+    // ・見え方：取り消し線・灰色・1行にたたむ。ただし⚠️は残す（明日以降の危険の知らせなので）。
+    // ・押した直後は下へ回す。そのあとは手で自由に並べられる（v0.55.10・下の tokiDaySunk）。
     // ・手で並べた順番（order）は書き換えない。下へ回すのは描くときだけ。
     function tokiDayDone(c, ymd) {
       return !!(c && !c.closed && c.dayDone && typeof c.dayDone === 'object' && c.dayDone[ymd] === true);
@@ -15074,12 +15091,139 @@ function renderTodoList() {
     // ===== END v0.55.6 =====
     // v0.55.11: 【第74条】起動時の最初の描画（renderAllSections）で使うので、ここ（それより前に読まれる場所）に置く。
     // 以前は魚の目の処理の近く（後ろの方の中括弧の中）に置いていて、起動時に「まだ無い」で描画が失敗した。
+    // ===== v0.55.15: スマホの指でのドラッグ（長押しで持ち上げて動かす） =====
+    // 【権威】2026-10-07、スマホでも矢印とともにドラッグで入れ替えたい。その方がちゃんとしたサービスに近い、との要望。
+    // 魚の目・マトリクス・月間の日の欄の「予定と案件の混ぜた並び」で共通に使う（1つの道具・第71条④）。
+    // 定石：長押し（約0.35秒、ほぼ動かさない）で持ち上げる。すぐ動かしたら普通のスクロール。
+    //   持ち上げたらスクロールを止め、指の位置に入る場所を線で示す（上半分なら前、下半分なら後ろ・第36条）。
+    //   画面の上下の端に寄せると自動でスクロール。ボタンなどの上では持ち上げない。離した直後の「押した」扱いは打ち消す。
+    // 行の印：動かせる行に data-mix-id（その行のID）、動かせないが落とし先になる行（済んだもの）に data-mix-fixed。
+    var TOUCH_SORT_HOLD_MS = 350, TOUCH_SORT_SLOP_PX = 8, TOUCH_SORT_EDGE_PX = 48;
+    function _isPhoneTouch() {
+      try { return !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches); } catch (e) { return false; }
+    }
+    // 指の高さ y で、どの行の前か後ろかを決める（行の位置で判定。重なった画面に左右されない）。持ち上げている行は除く
+    function _touchSortHit(container, y, dragRow) {
+      var rows = [].filter.call(container.querySelectorAll(':scope > [data-mix-id], :scope > [data-mix-fixed]'), function(r) { return r !== dragRow; });
+      if (!rows.length) return null;
+      for (var i = 0; i < rows.length; i++) {
+        var rc = rows[i].getBoundingClientRect();
+        if (y < rc.top + rc.height / 2) return { row: rows[i], after: false };
+      }
+      return { row: rows[rows.length - 1], after: true };
+    }
+    window._touchSortHit = _touchSortHit;
+    // 落とし先の行から、渡す相手のID（動かせない行なら null＝並びの最後）
+    function _touchSortTargetId(hit) {
+      if (!hit || !hit.row) return null;
+      return hit.row.hasAttribute('data-mix-fixed') ? null : hit.row.getAttribute('data-mix-id');
+    }
+    window._touchSortTargetId = _touchSortTargetId;
+    function _scrollParentOf(el) {
+      for (var n = el && el.parentElement; n && n !== document.body; n = n.parentElement) {
+        var oy = getComputedStyle(n).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+      }
+      return document.scrollingElement || document.documentElement;
+    }
+    // container の直下の行を、指で並べ替えられるようにする。onDrop(運ぶID, 相手のID or null, 後ろか)。描くたびに呼んでよい
+    function _touchSortBind(container, onDrop) {
+      if (!container) return;
+      container._touchSortOnDrop = onDrop;   // 描き直しで落とした後の処理が変わっても、最新を使う
+      // スマホでは、パソコン用のドラッグの印を外す（iPhone が自前のドラッグを始めると、こちらの処理が途中で切られる）
+      if (_isPhoneTouch()) [].forEach.call(container.querySelectorAll('[draggable="true"]'), function(d) { d.removeAttribute('draggable'); });
+      if (container._touchSortBound) return;
+      container._touchSortBound = true;
+      var st = null;
+      var clearMark = function() {
+        if (st && st.mark) { st.mark.style.borderTop = st.markBT; st.mark.style.borderBottom = st.markBB; st.mark = null; }
+      };
+      var finish = function() {
+        if (!st) return;
+        clearTimeout(st.timer);
+        if (st.raf) cancelAnimationFrame(st.raf);
+        clearMark();
+        if (st.row) { st.row.style.opacity = st.op; st.row.style.boxShadow = st.bs; st.row.style.transform = st.tf; }
+        document.removeEventListener('touchmove', onMove, { passive: false });
+        document.removeEventListener('touchend', onEnd);
+        document.removeEventListener('touchcancel', onCancel);
+        st = null;
+      };
+      var mark = function(y) {
+        var hit = _touchSortHit(container, y, st.row);
+        clearMark();
+        st.hit = hit;
+        if (!hit) return;
+        st.mark = hit.row; st.markBT = hit.row.style.borderTop; st.markBB = hit.row.style.borderBottom;
+        if (hit.after) hit.row.style.borderBottom = '3px solid #4facfe'; else hit.row.style.borderTop = '3px solid #4facfe';
+      };
+      var autoScroll = function() {
+        if (!st || !st.active) return;
+        var sp = st.scroller, top, bottom;
+        if (sp === document.scrollingElement || sp === document.documentElement) { top = 0; bottom = window.innerHeight; }
+        else { var r = sp.getBoundingClientRect(); top = r.top; bottom = r.bottom; }
+        var dy = st.y < top + TOUCH_SORT_EDGE_PX ? -12 : st.y > bottom - TOUCH_SORT_EDGE_PX ? 12 : 0;
+        if (dy) { sp.scrollTop += dy; mark(st.y); }
+        st.raf = requestAnimationFrame(autoScroll);
+      };
+      var activate = function() {
+        if (!st) return;
+        st.active = true;
+        st.op = st.row.style.opacity; st.bs = st.row.style.boxShadow; st.tf = st.row.style.transform;
+        st.row.style.opacity = '0.6'; st.row.style.boxShadow = '0 6px 18px rgba(0,0,0,.25)'; st.row.style.transform = 'scale(1.02)';
+        try { if (navigator.vibrate) navigator.vibrate(15); } catch (eV) {}
+        st.scroller = _scrollParentOf(container);
+        mark(st.y);
+        st.raf = requestAnimationFrame(autoScroll);
+      };
+      var onMove = function(e) {
+        if (!st) return;
+        var t = e.touches[0]; if (!t) return;
+        if (!st.active) {
+          // 持ち上がる前に動いたら、スクロールのつもり。持ち上げない
+          if (Math.abs(t.clientX - st.x0) > TOUCH_SORT_SLOP_PX || Math.abs(t.clientY - st.y0) > TOUCH_SORT_SLOP_PX) finish();
+          return;
+        }
+        e.preventDefault();   // 持ち上げている間はスクロールさせない
+        st.y = t.clientY;
+        mark(st.y);
+      };
+      var onEnd = function() {
+        if (!st) return;
+        var wasActive = st.active, id = st.id, hit = st.hit;
+        finish();
+        if (!wasActive) return;
+        // 離した直後の「押した」扱いを打ち消す（予定の編集などが開かないように）
+        var killClick = function(ev) { ev.stopPropagation(); ev.preventDefault(); };
+        document.addEventListener('click', killClick, true);
+        setTimeout(function() { document.removeEventListener('click', killClick, true); }, 400);
+        var tid = _touchSortTargetId(hit);
+        if (!hit || tid === id) return;
+        if (typeof container._touchSortOnDrop === 'function') container._touchSortOnDrop(id, tid, tid === null ? true : hit.after);
+      };
+      var onCancel = function() { finish(); };
+      container.addEventListener('touchstart', function(e) {
+        if (st || !e.touches || e.touches.length !== 1) return;
+        var tg = e.target;
+        if (tg.closest && tg.closest('button, a, input, select, textarea, label, [contenteditable="true"]')) return;   // ボタンなどの上では持ち上げない
+        var row = tg.closest && tg.closest('[data-mix-id]');
+        if (!row || row.parentElement !== container) return;
+        var t = e.touches[0];
+        st = { row: row, id: row.getAttribute('data-mix-id'), x0: t.clientX, y0: t.clientY, y: t.clientY, active: false, hit: null };
+        st.timer = setTimeout(activate, TOUCH_SORT_HOLD_MS);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+        document.addEventListener('touchcancel', onCancel);
+      }, { passive: true });
+    }
+    window._touchSortBind = _touchSortBind;
+    // ===== END v0.55.15 =====
     // ===== v0.55.11: 予定と案件を1本に並べる計算（魚の目とマトリクスで共通・第71条④） =====
     // 【権威】2026-10-06、日次のマトリクスでも、魚の目と同じように予定と案件を混ぜて並べたい、との要望。
     // 並べる場所ごとに「場面（ctx）」を作って渡す。場面には、その場所の予定・案件、位置を書き留める欄の名前、
     // 初めの並び（予定が上か）、動かしたときに予定・案件をその場所に移す処理を持たせる。
     //   魚の目：位置は quadOrderKeys[日付]（列ごとに意味を持つ）
-    //   マトリクス：位置は matrixOrderKeys[日付]（緊急かつ重要の一覧の中）
+    //   マトリクス・月間の日の欄：位置は matrixOrderKeys[日付]（どちらも「その日の予定と案件の並び」なので共通・v0.55.14）
     // 予定の順は崩さず（象限ごとに並べた順のまま）、その間に案件を差し込む（第35条：描く並びと計算の並びを同じにする）。
     function mixedKeyOn(c, keyField, ymd) {
       var m = c && c[keyField], v = (m && typeof m === 'object') ? m[ymd] : null;
@@ -15137,6 +15281,11 @@ function renderTodoList() {
       var list = rows.filter(function(r) { return r.item.id !== dragId; });
       var ti = targetId ? list.findIndex(function(r) { return r.item.id === targetId; }) : -1;
       var ins = ti < 0 ? list.length : (after ? ti + 1 : ti);
+      // v0.55.15: 【権威】2026-10-07、時刻の無い予定どうし（位置がどれも2000）の間に入れようとしても動かなかった。
+      // 前後の中間を取る作りなので、同じ値どうしの間は、中間もまた同じ値になる。
+      // 同じ値（または逆転）が並んでいる所に入れるときだけ、そのかたまりに、今の並び順のまま少しずつ違う値を振る。
+      // 全部は振り直さない（動かしていない予定の位置まで変わるため）。
+      if (list[ins - 1] && list[ins] && !(list[ins - 1].pos < list[ins].pos)) _mixSpreadTies(list, ins, kf, ymd, now);
       var prev = list[ins - 1], next = list[ins];
       var key = (!prev && !next) ? 0 : !prev ? next.pos - 1 : !next ? prev.pos + 1 : (prev.pos + next.pos) / 2;
       if (isCase) {
@@ -15151,6 +15300,23 @@ function renderTodoList() {
       return true;
     }
     window.mixedDropMove = mixedDropMove;
+    // 同じ値のかたまり（ins の前後）に、今の並び順のまま、下の値と上の値の間で等しい間隔の値を振る
+    function _mixSpreadTies(list, ins, kf, ymd, now) {
+      var v = list[ins - 1].pos, a = ins - 1, b = ins;
+      while (a > 0 && list[a - 1].pos >= v) a--;            // かたまりの始まり（同じ値・逆転を含む）
+      while (b < list.length && list[b].pos <= v) b++;       // かたまりの終わりの次
+      var lo = a > 0 ? list[a - 1].pos : v - 1;              // かたまりの下の値（無ければ少し下）
+      var hi = b < list.length ? list[b].pos : v + 1;        // かたまりの上の値（無ければ少し上）
+      if (!(hi > lo)) { lo = v - 1; hi = v + 1; }
+      var n = b - a, step = (hi - lo) / (n + 1);
+      for (var i = a; i < b; i++) {
+        var r = list[i], np = lo + step * (i - a + 1);
+        r.pos = np;
+        if (r.type === 'case') { r.item[kf] = Object.assign({}, r.item[kf] || {}); r.item[kf][ymd] = np; }
+        else r.item.orderKey = np;
+        r.item.updatedAt = now;   // 第61条
+      }
+    }
     // スマホの ↑↓：その場所の中で1つ上・下へ
     function mixedMoveBy(ctx, id, delta, ymd) {
       var rows = mixedRows(ctx, ymd);
@@ -15218,11 +15384,12 @@ function renderTodoList() {
     window._quadBindRowDrop = _quadBindRowDrop;
     // --- マトリクス（緊急かつ重要）の場面（v0.55.11） ---
     // 案件を使っている人（登記・業務モードがオン）のときだけ混ぜる。使っていない人は、今までの作りのまま。
+    // 登記か業務の案件が見えるか（魚の目・マトリクスで、予定と案件を混ぜて並べるかどうかの判定。1か所にまとめる・第71条④）
     // v0.55.11: 起動時の最初の描画（renderAllSections）より前に読まれる場所に置く（第74条）。後ろの方の関数に頼らない
-    function matrixMixOn() {
+    function gyomuCasesShown() {
       try { return gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI) || gyomuTemplateVisible(gyomuTemplateIppan()); } catch (e) { return false; }
     }
-    window.matrixMixOn = matrixMixOn;
+    window.gyomuCasesShown = gyomuCasesShown;
     // 緊急かつ重要に出す案件のひな形（箱と同じ：両方使う人は、つまみで選んでいる方だけ）
     function _matrixTemplatesShown() {
       var tpls = [GYOMU_TEMPLATE_TOKI, gyomuTemplateIppan()].filter(gyomuTemplateVisible);
@@ -15253,6 +15420,55 @@ function renderTodoList() {
       _mixBindRowDrop(el, targetId, function(fromId, after) { if (matrixDropMove(fromId, targetId, after, ymd)) _matrixRedraw(ymd); });
     }
     window._matrixBindRowDrop = _matrixBindRowDrop;
+    // --- 月間の日の欄の場面（v0.55.14） ---
+    // 【権威】2026-10-07、月間の日の欄で、登記は登記・予定は予定に分かれている。同じ所に置き、スマホは矢印かドラッグで入れ替えたい、との指摘。
+    // ・開いている方（登記／業務の見出しの ▼）の案件だけを、予定と1本の並びに混ぜる。閉じている方は見出しだけ（v0.54.7 の「初めは閉じる」を守る）。
+    // ・位置は日次のマトリクスと共通（matrixOrderKeys）。どちらも「その日の予定と案件の並び」なので、片方で並べればもう片方にも出る。
+    // ・予定は升目と同じ基準（_taskSortKey）で並べる。済んだ予定はいちばん下。
+    function _monthCasesOpen(ymd) {
+      var out = [];
+      [GYOMU_TEMPLATE_TOKI, gyomuTemplateIppan()].filter(gyomuTemplateVisible).forEach(function(tpl) {
+        var isOpen = false;
+        try { isOpen = localStorage.getItem('koyomiru_sidebar_open_' + tpl.id) === '1'; } catch (e) {}
+        if (!isOpen) return;
+        // 日の欄の並び：その日に節目がある案件を先に（v0.55.0）
+        var ids = {}; tokiMarksOnDate(ymd).forEach(function(m) { ids[m.id] = 1; });
+        var cases = sortTokiCases(_gyomuOpenOn(tpl.kind, ymd), ymd);
+        out = out.concat(cases.filter(function(c) { return ids[c.id]; }), cases.filter(function(c) { return !ids[c.id]; }));
+      });
+      return out;
+    }
+    // その日の予定（日の欄に出すもの・済んでいないもの）。描く処理と同じものを使う（第35条）
+    function _monthTasksOf(ymd) {
+      var tomb;
+      try { tomb = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]')); } catch (e) { tomb = new Set(); }
+      return allTasks.filter(function(t) {
+        if (!t || t.deleted || !isTaskOnDate(t, ymd) || (t.kind || 'task') !== 'task' || tomb.has(t.id)) return false;
+        if (!window._sidebarShowAllCalendars && typeof isCalendarVisible === 'function' && !isCalendarVisible(t.calendarId)) return false;
+        return true;
+      });
+    }
+    window._monthTasksOf = _monthTasksOf;
+    function _monthCtx(ymd) {
+      var undone = _monthTasksOf(ymd).filter(function(t) { return !(t.completed || t.done); })
+        .sort(function(a, b) { return _taskSortKey(a) - _taskSortKey(b); });
+      return { tasks: undone, cases: _monthCasesOpen(ymd), keyField: 'matrixOrderKeys', tasksFirst: false,
+               placeTask: function() {}, placeCase: function() {} };
+    }
+    function monthRows(ymd) { return mixedRows(_monthCtx(ymd), ymd); }
+    window.monthRows = monthRows;
+    function monthDropMove(dragId, targetId, after, ymd) { return mixedDropMove(_monthCtx(ymd), dragId, targetId, after, ymd); }
+    window.monthDropMove = monthDropMove;
+    function _monthRedraw() {
+      if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks();
+      if (typeof renderMonthlyView === 'function') renderMonthlyView();   // 升目の並びも同じ基準なので描き直す
+    }
+    function monthMoveBy(id, delta, ymd) { if (mixedMoveBy(_monthCtx(ymd), id, delta, ymd)) _monthRedraw(); }
+    window.monthMoveBy = monthMoveBy;
+    function _monthBindRowDrop(el, targetId, ymd) {
+      _mixBindRowDrop(el, targetId, function(fromId, after) { if (monthDropMove(fromId, targetId, after, ymd)) _monthRedraw(); });
+    }
+    window._monthBindRowDrop = _monthBindRowDrop;
     // 案件の行（li で包む。一覧 ul の中に入れるため）
     function _matrixCaseLi(c, ymd, closedRow) {
       var li = document.createElement('li');
@@ -15260,7 +15476,8 @@ function renderTodoList() {
       li.style.cssText = 'list-style:none;padding:0;margin:0;background:none;border:none;';
       li.setAttribute('data-toki-li', c.id);
       li.innerHTML = closedRow ? _tokiCaseRowHtml(c, ymd) : _tokiCaseRowHtml(c, ymd, { matrixMix: true });
-      if (closedRow) { _mixBindRowDrop(li, null, function(fromId) { if (matrixDropMove(fromId, null, true, ymd)) _matrixRedraw(ymd); }); return li; }
+      if (closedRow) { li.setAttribute('data-mix-fixed', '1'); _mixBindRowDrop(li, null, function(fromId) { if (matrixDropMove(fromId, null, true, ymd)) _matrixRedraw(ymd); }); return li; }
+      li.setAttribute('data-mix-id', c.id);   // v0.55.15: 指で動かす印
       li.addEventListener('dragstart', function(e) {
         // マトリクスの予定と同じ形（JSON）にそろえ、案件の印も付ける。ほかの象限の処理は、案件を受け取らない
         e.dataTransfer.effectAllowed = 'move';
@@ -15397,7 +15614,7 @@ function renderTodoList() {
       var rows = list.map(function(c) { return _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, today, { quad: quadMode }); }).join('') +
         closedShown.map(function(c) { return _tokiCaseRowHtml(c, today); }).join('');
       // v0.55.11: マトリクスで予定と案件を混ぜているときは、案件の行は一覧（list1）に描く。箱は見出し・つまみ・＋ボタンだけ
-      var mixMatrix = /Matrix$/.test(elId) && matrixMixOn();
+      var mixMatrix = /Matrix$/.test(elId) && gyomuCasesShown();
       if (mixMatrix) { rows = ''; restN = 0; }
       var newBtn = '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:3px 9px;border-radius:6px;border:1px solid #5b8def;background:#fff;color:#2f6fed;font-size:0.78em;cursor:pointer;white-space:nowrap;">' + tpl.newButton + '</button>';
       var head;
@@ -15435,7 +15652,7 @@ function renderTodoList() {
       // v0.55.8: 午前・午後・夕方の案件は、予定と同じ並びの中に描く（renderQuadView）。魚の目が描かれていれば、まるごと描き直す。
       // renderQuadView の中から呼ばれたとき（プライベートの列の箱を描くとき）は、ここでは描き直さない
       // v0.55.11: マトリクスで混ぜているときは、緊急かつ重要の一覧ごと描き直す（その中から箱の見出しも描かれる）
-      if (suffix === 'Matrix' && !window._matrixListRendering && typeof matrixMixOn === 'function' && matrixMixOn() &&
+      if (suffix === 'Matrix' && !window._matrixListRendering && gyomuCasesShown() &&
           document.getElementById('list1') && typeof renderTasks === 'function') { renderTasks(1, day); return; }
       if (suffix === 'Quad' && !window._quadViewRendering) {
         var _qb = document.getElementById('quadViewBody');
@@ -15602,6 +15819,7 @@ function renderTodoList() {
       var _qs = rowOpts.quadSlot && rowOpts.quadSlot !== 'slot1' ? rowOpts.quadSlot : '';
       var _mvCall = function(d) {
         if (rowOpts.matrixMix) return "matrixMoveBy('" + esc(c.id) + "'," + d + ",'" + esc(today) + "')";   // v0.55.11
+        if (rowOpts.monthMix) return "monthMoveBy('" + esc(c.id) + "'," + d + ",'" + esc(today) + "')";   // v0.55.14
         return _qs ? "quadMoveBy('" + esc(c.id) + "'," + d + ",'" + _qs + "','" + esc(today) + "')"
                    : "moveTokiCaseBy('" + esc(c.id) + "'," + d + ")";
       };
@@ -15730,7 +15948,8 @@ function renderTodoList() {
             (Object.keys(ids).length ? '・この日の節目 ' + Object.keys(ids).length + '件' : '') + '）' +
             (warnN ? '<span style="color:#d9480f;">　⚠️' + warnN + '</span>' : '') + '</button>' +
           '<button onclick="openTokiCaseEditor(null, { tplId: \'' + tpl.id + '\' })" style="padding:4px 10px;border-radius:7px;border:1px solid #6741d9;background:#fff;color:#6741d9;font-size:0.8em;cursor:pointer;white-space:nowrap;">' + tpl.newButton + '</button></div>' +
-        (isOpen ? '<div style="margin-top:4px;">' + cases.map(function(c) { return (ids[c.id] ? '<div style="font-size:0.72em;color:#6741d9;font-weight:700;">' + esc(ids[c.id].join('・')) + '</div>' : '') + _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, ymd); }).join('') + '</div>' : '') +
+        // v0.55.14: 開いているときの案件の行は、予定と同じ並び（monthlySidebarTasks）に描く。ここは見出しと＋ボタンだけ
+
       '</div>';
       el.style.display = 'block';
     }
@@ -15738,12 +15957,14 @@ function renderTodoList() {
     function toggleTokiSidebar(tplId) {
       var k = 'koyomiru_sidebar_open_' + tplId, now = false;
       try { now = localStorage.getItem(k) === '1'; localStorage.setItem(k, now ? '0' : '1'); } catch (e) {}
-      if (typeof _sidebarDateStr !== 'undefined' && _sidebarDateStr) renderTokiSidebar(_sidebarDateStr, tplId);
+      // v0.55.14: 開く・閉じるで、予定と混ぜる案件が変わるので、日の欄ごと描き直す
+      if (typeof _sidebarDateStr !== 'undefined' && _sidebarDateStr && typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks();
     }
     window.toggleTokiSidebar = toggleTokiSidebar;
     function _tokiRefreshAll() {
       renderGyomuPanels('Matrix'); renderGyomuPanels('Quad');   // v0.53.4: 見ている日のまま描き直す
-      if (typeof _sidebarDateStr !== 'undefined' && _sidebarDateStr) { renderTokiSidebar(_sidebarDateStr); renderTokiSidebar(_sidebarDateStr, 'ippan'); }
+      // v0.55.14: 日の欄は案件と予定が同じ並びなので、日の欄ごと描き直す（その中から見出しも描かれる）
+      if (typeof _sidebarDateStr !== 'undefined' && _sidebarDateStr && typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks();
       if (typeof currentView !== 'undefined' && currentView === 'monthly' && typeof renderMonthlyView === 'function') renderMonthlyView();
     }
     window._tokiRefreshAll = _tokiRefreshAll;
@@ -24936,21 +25157,34 @@ function renderMonthlySidebarTasks() {
           'style="width:100%;padding:13px;border:1px solid #f0c86a;border-radius:9px;background:#fffaf0;color:#8a6d1f;font-size:0.95em;font-weight:600;cursor:pointer;font-family:inherit;">' +
           '👁 表示していないカレンダーに ' + _hiddenCount + '件あります（押すと表示）</button></div>'
         : '';
-      if (!tasks.length) {
+      // v0.55.14: 予定と、開いている方の案件を1本の並びで出す。どちらも無いときだけ「ありません」
+      var _mixRows = (typeof monthRows === 'function') ? monthRows(_sidebarDateStr) : [];
+      var _caseRowsN = _mixRows.filter(function(r) { return r.type === 'case'; }).length;
+      if (!tasks.length && !_caseRowsN) {
         el.innerHTML = '<div class="monthly-sidebar-empty">\u30bf\u30b9\u30af\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093</div>' + _hiddenHtml;
         return;
       }
       el.innerHTML = '';
       // 未完了を上・完了を下にソート（completed優先で判定）
       var _isDone = function(t){ return !!(t.completed || t.done); };
-      var sorted = tasks.slice().sort(function(a,b){ return (_isDone(a)?1:0)-(_isDone(b)?1:0); });
-      sorted.forEach(function(t) {
+      // v0.55.14: 済んでいないものは升目と同じ基準（_taskSortKey）で並べる（以前は保存された順のままで、升目と食い違っていた）
+      var sorted = tasks.slice().sort(function(a,b){ return ((_isDone(a)?1:0)-(_isDone(b)?1:0)) || (_taskSortKey(a) - _taskSortKey(b)); });
+      var _ymdMsb = _sidebarDateStr;
+      var _makeItem = function(t) {
         var taskId = t.id;
         var done = _isDone(t);
         var item = document.createElement('div');
         item.className = 'monthly-sidebar-task-item';
         item.dataset.id = taskId;
         item.onclick = function(e) { e && e.stopPropagation(); };
+        // v0.55.14: 案件と同じ並びの中で動かせる（パソコンはドラッグ。上半分なら前、下半分なら後ろ・第36条）
+        if (!done) {
+          item.draggable = true;
+          item.addEventListener('dragstart', function(e) { e.dataTransfer.setData('text/plain', taskId); item.style.opacity = '0.4'; });
+          item.addEventListener('dragend', function() { item.style.opacity = ''; });
+        }
+        _monthBindRowDrop(item, done ? null : taskId, _ymdMsb);   // 済んだ予定に落としたら、並びの最後へ
+        if (done) item.setAttribute('data-mix-fixed', '1'); else item.setAttribute('data-mix-id', taskId);   // v0.55.15: 指で動かす印
         // チェックボタン
         var chk = document.createElement('div');
         chk.className = 'monthly-sidebar-task-check' + (done ? ' done' : '');
@@ -25243,11 +25477,53 @@ function renderMonthlySidebarTasks() {
         };
         item.appendChild(chk);
         item.appendChild(_body);   // v0.45.1564: 予定名＋メモを包んだ器を入れる
+        // v0.55.14: スマホは↑↓で、案件とも入れ替わって動く
+        if (!done && _tokiIsTouch()) {
+          var _arw = document.createElement('span');
+          _arw.style.cssText = 'display:flex;gap:4px;flex-shrink:0;align-items:center;';
+          [[-1, '↑', '上へ'], [1, '↓', '下へ']].forEach(function(d) {
+            var btn = document.createElement('button');
+            btn.textContent = d[1]; btn.title = d[2];
+            btn.style.cssText = 'border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;';
+            btn.onclick = function(e) { e && e.stopPropagation(); monthMoveBy(taskId, d[0], _ymdMsb); };
+            _arw.appendChild(btn);
+          });
+          item.appendChild(_arw);
+        }
         item.appendChild(cmtBtn);
         item.appendChild(detailBtn);
         item.appendChild(del);
-        el.appendChild(item);
+        return item;
+      };
+      // v0.55.14: 済んでいない予定と案件を1本の並びで、そのあと済んだ予定
+      var _marks = {};
+      tokiMarksOnDate(_ymdMsb).forEach(function(m) {
+        var nm = m.name;
+        if (m.plan) nm += m.self ? '（自分が行く）' : '（行く：' + m.goer + '）';
+        _marks[m.id] = (_marks[m.id] || []).concat(nm);
       });
+      var _escM = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+      _mixRows.forEach(function(r) {
+        if (r.type === 'task') { el.appendChild(_makeItem(r.item)); return; }
+        var c = r.item, wrap = document.createElement('div');
+        wrap.className = 'msb-case-wrap';
+        wrap.setAttribute('data-toki-wrap', c.id);
+        wrap.setAttribute('data-mix-id', c.id);   // v0.55.15: 指で動かす印
+        wrap.style.cssText = 'padding:2px 12px;';
+        wrap.innerHTML = (_marks[c.id] ? '<div style="font-size:0.72em;color:#6741d9;font-weight:700;">' + _escM(_marks[c.id].join('・')) + '</div>' : '') +
+          _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, _ymdMsb, { monthMix: true });
+        wrap.addEventListener('dragstart', function(e) {
+          e.dataTransfer.setData('text/plain', c.id);
+          try { e.dataTransfer.setData('application/x-koyomiru-case', c.id); } catch (eD) {}
+          wrap.style.opacity = '0.5';
+        });
+        wrap.addEventListener('dragend', function() { wrap.style.opacity = ''; });
+        _monthBindRowDrop(wrap, c.id, _ymdMsb);
+        el.appendChild(wrap);
+      });
+      sorted.filter(_isDone).forEach(function(t) { el.appendChild(_makeItem(t)); });
+      // v0.55.15: スマホは指でも動かせる（長押しで持ち上げる）
+      _touchSortBind(el, function(fromId, toId, after) { if (monthDropMove(fromId, toId, after, _sidebarDateStr)) _monthRedraw(); });
       // v0.45.1870: 【権威】2026-09-01、日付を押して開いても件数が出ない件。
       // 原因は置き場所だった。この処理が startSidebarInlineEdit（予定名を
       // タップして編集を始める関数）の中に紛れ込んでいた。
@@ -28795,8 +29071,8 @@ function saveMsbEdit() {
       }
       const dailyTasks = getDailyTasks(targetDate);
       const sectionTasks = dailyTasks[sectionNum];
-      // v0.55.11: 緊急かつ重要では、案件を使っている人だけ、予定と案件を1本の並びで出す（matrixMixOn）
-      const _mix = sectionNum === 1 && matrixMixOn();
+      // v0.55.11: 緊急かつ重要では、案件を使っている人だけ、予定と案件を1本の並びで出す（gyomuCasesShown）
+      const _mix = sectionNum === 1 && gyomuCasesShown();
       const _makeTaskLi = (task, index) => {
         const li = document.createElement('li');
         li.className = 'task-item' + (task.completed ? ' completed' : '');
@@ -28833,7 +29109,7 @@ function saveMsbEdit() {
           });
         });
         // v0.55.11: 予定と案件を混ぜて並べるときは、共通の受け取り（上半分なら前、下半分なら後ろ）を使う
-        if (_mix) _matrixBindRowDrop(li, task.id, targetDate);
+        if (_mix) { _matrixBindRowDrop(li, task.id, targetDate); li.setAttribute('data-mix-id', task.id); }   // v0.55.15: 指で動かす印
         else {
         // ドラッグオーバー
         li.addEventListener('dragover', (e) => {
@@ -28980,6 +29256,8 @@ function saveMsbEdit() {
         list.appendChild(_matrixCaseLi(r.item, targetDate, false));
       });
       _matrixClosedLis(targetDate).forEach((li) => list.appendChild(li));
+      // v0.55.15: スマホは指でも動かせる（長押しで持ち上げる）
+      _touchSortBind(list, function(fromId, toId, after) { if (matrixDropMove(fromId, toId, after, targetDate)) _matrixRedraw(targetDate); });
     }
     // 象限へのドロップを設定（初期化時に一度だけ呼ぶ）
     function setupAllSectionDrops() {
@@ -40864,7 +41142,7 @@ function renderDashboardView() {
     window.quadTasksInSlot = quadTasksInSlot;
     // その列に置いた案件（プライベートの列は箱で出すので、ここでは数えない）
     function quadCasesInSlot(slot, ymd) {
-      if (slot === 'slot1' || !quadCasesShown()) return [];
+      if (slot === 'slot1' || !gyomuCasesShown()) return [];
       var out = [];
       [GYOMU_TEMPLATE_TOKI, gyomuTemplateIppan()].filter(gyomuTemplateVisible).forEach(function(t) {
         out = out.concat(sortTokiCases(_gyomuOpenOn(t.kind, ymd), ymd).filter(function(c) { return gyomuQuadSlotOf(c, ymd) === slot; }));
@@ -40912,10 +41190,6 @@ function renderDashboardView() {
       try { placeQuadCaseBoxes(); } catch (ePl) {}   // v0.55.6
     }
     // ===== v0.55.6: 魚の目の列で、予定と案件のどちらを上にするか =====
-    function quadCasesShown() {
-      try { return gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI) || gyomuTemplateVisible(gyomuTemplateIppan()); } catch (e) { return false; }
-    }
-    window.quadCasesShown = quadCasesShown;
     function quadTasksFirst(slot) {
       var m = allSettings.ui && allSettings.ui.quadTasksFirst;
       return !!(m && typeof m === 'object' && m[slot] === true);   // 第42条：既定は「案件が上」（今まで通り）
@@ -40931,29 +41205,21 @@ function renderDashboardView() {
       renderQuadView();
     }
     window.toggleQuadTasksFirst = toggleQuadTasksFirst;
-    // 各列の案件の箱を、予定の一覧の前（案件が上）か後ろ（予定が上）に置き直す。描くたびに呼ぶ
+    // 魚の目のプライベートの列の案件の箱を、予定の一覧の前（案件が上）か後ろ（予定が上）に置き直す。描くたびに呼ぶ
+    // v0.55.8: 午前・午後・夕方の案件は予定と同じ並びの中に描くので、箱があるのはプライベートの列だけ
     function placeQuadCaseBoxes() {
       var body = document.getElementById('quadViewBody');
-      if (!body) return;
-      // v0.55.8: 午前・午後・夕方の案件は予定と同じ並びの中に描くので、箱があるのはプライベートの列だけ
-      ['slot1'].forEach(function(slot, i) {
-        var col = body.children[i];
-        if (!col) return;
-        var list = col.querySelector(':scope > .quad-task-list');
-        if (!list) return;
-        var ids = ['tokiPanelQuad', 'gyomuPanelQuad'];
-        var boxes = ids.map(function(id) { return document.getElementById(id); }).filter(function(b) { return b && b.parentNode === col; });
-        // v0.55.7: 【権威】2026-10-06、予定を上にすると案件が列のいちばん下まで押し出される、との指摘。
-        // 予定の一覧が列の残りの高さを全部使う（flex:1）ため、その後ろの案件が下に追いやられていた。
-        // 予定が上のときは、一覧を中身の高さだけにして、案件をすぐ下に続ける。
-        list.style.flex = quadTasksFirst(slot) ? '0 0 auto' : '1';
-        if (quadTasksFirst(slot)) {
-          var after = list;
-          boxes.forEach(function(b) { col.insertBefore(b, after.nextSibling); after = b; });
-        } else {
-          boxes.forEach(function(b) { col.insertBefore(b, list); });
-        }
-      });
+      var col = body && body.children[0];
+      var list = col && col.querySelector(':scope > .quad-task-list');
+      if (!list) return;
+      var boxes = ['tokiPanelQuad', 'gyomuPanelQuad'].map(function(id) { return document.getElementById(id); }).filter(function(b) { return b && b.parentNode === col; });
+      // v0.55.7: 【権威】2026-10-06、予定を上にすると案件が列のいちばん下まで押し出される、との指摘。
+      // 予定の一覧が列の残りの高さを全部使う（flex:1）ため、その後ろの案件が下に追いやられていた。
+      // 予定が上のときは、一覧を中身の高さだけにして、案件をすぐ下に続ける。
+      var tf = quadTasksFirst('slot1');
+      list.style.flex = tf ? '0 0 auto' : '1';
+      if (tf) { var after = list; boxes.forEach(function(b) { col.insertBefore(b, after.nextSibling); after = b; }); }
+      else boxes.forEach(function(b) { col.insertBefore(b, list); });
     }
     window.placeQuadCaseBoxes = placeQuadCaseBoxes;
     // ===== END v0.55.6 =====
@@ -41005,7 +41271,7 @@ function renderDashboardView() {
       header.textContent = col.emoji + ' ' + col.label;
       // v0.55.6: 【権威】2026-10-06、魚の目で FAX・TEL などの予定を、登記の案件のカードより上にしたい、それが実務の流れ、との要望。
       // 列ごとに「予定が上／案件が上」を切り替える（選択「A」）。案件を使っている人にだけ出す。
-      if (typeof quadCasesShown === 'function' && quadCasesShown()) {
+      if (gyomuCasesShown()) {
         header.style.display = 'flex'; header.style.justifyContent = 'space-between'; header.style.alignItems = 'center';
         var _swap = document.createElement('button');
         _swap.type = 'button';
@@ -41105,6 +41371,7 @@ function renderDashboardView() {
         item.addEventListener('dragend', function() { item.style.opacity = '1'; });
         // 縦並び替え：行の上半分に落とせば前、下半分なら後ろ（第36条）。予定も案件も同じ処理で動かす（v0.55.8）
         _quadBindRowDrop(item, t.id, col.key, day);
+        item.setAttribute('data-mix-id', t.id);   // v0.55.15: 指で動かす印
         // カレンダー記号
         var _sym = (typeof getCalendarSymbol === 'function') ? getCalendarSymbol(t.calendarId) : '';
         // 本能アイコン
@@ -41157,7 +41424,7 @@ function renderDashboardView() {
         return item;
       };
       // v0.55.8: 午前・午後・夕方の列は、予定と案件を1本の並びで出す（プライベートの列は予定だけ。案件は上の箱）
-      var _rows = (col.key !== 'slot1' && quadCasesShown()) ? quadColumnRows(col.key, day)
+      var _rows = (col.key !== 'slot1' && gyomuCasesShown()) ? quadColumnRows(col.key, day)
         : tasks.map(function(t) { return { type: 'task', item: t }; });
       _rows.forEach(function(r) {
         if (r.type === 'task') { taskList.appendChild(_quadTaskItem(r.item)); return; }
@@ -41172,8 +41439,11 @@ function renderDashboardView() {
         });
         row.addEventListener('dragend', function() { row.style.opacity = ''; });
         _quadBindRowDrop(row, c.id, col.key, day);   // v0.55.10: 今日✓の行も、前後に落とせる
+        row.setAttribute('data-mix-id', c.id);   // v0.55.15: 指で動かす印
         taskList.appendChild(row);
       });
+      // v0.55.15: スマホは指でも動かせる（長押しで持ち上げる）
+      _touchSortBind(taskList, function(fromId, toId, after) { if (quadDropMove(fromId, toId, after, col.key, day)) renderQuadView(); });
       div.appendChild(taskList);
       return div;
     }
@@ -52273,6 +52543,41 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.15', date: '2026-10-07',
+    items: [
+      { icon:'👆', t:'スマホでも、指でドラッグして入れ替えられるようにしました',
+        before:'スマホでは、予定と案件の入れ替えは↑↓だけでした',
+        after:'行を長押しすると持ち上がり、指で動かして入れ替えられます（月間の日の欄・日次のマトリクス・魚の目）。画面の上下の端に寄せると自動でスクロールします。↑↓もそのまま使えます' },
+      { icon:'🔧', t:'時刻の無い予定どうしの間に、入れられないことがあったのを直しました',
+        before:'時刻の無い予定どうし（メール・TELなど）の間に動かしても、元の位置に戻ることがありました',
+        after:'どの予定の間にも入れられます' }
+    ]
+  },
+  {
+    ver: 'v0.55.14', date: '2026-10-07',
+    items: [
+      { icon:'🌙', t:'月間の日の欄でも、予定と案件を混ぜて並べられるようにしました',
+        before:'日を開いたとき、案件は案件、予定は予定で分かれていて、入れ替えられませんでした',
+        after:'見出しを開いている方の案件が、予定と同じ並びに入ります。スマホは↑↓、パソコンはドラッグで入れ替えられます。並べた順は日次のマトリクスと共通です' }
+    ]
+  },
+  {
+    ver: 'v0.55.13', date: '2026-10-07',
+    items: [
+      { icon:'📱', t:'月間で日を開いたとき、案件が多くても下の予定まで読めるようにしました',
+        before:'スマホで日を開くと、案件で画面がいっぱいになり、なぞっても後ろのカレンダーが動くだけで、下の予定が見られませんでした',
+        after:'案件と予定を1つにまとめてスクロールできます。上から順に指1本で最後まで読めて、後ろのカレンダーは動きません' }
+    ]
+  },
+  {
+    ver: 'v0.55.12', date: '2026-10-06',
+    items: [
+      { icon:'🧹', t:'中の作りを整理しました',
+        before:'同じ判定が2か所に分かれていたり、使わなくなった作りの形が残っていたりしました',
+        after:'1か所にまとめて整理しました。見た目や使い方は変わりません' }
+    ]
+  },
+  {
     ver: 'v0.55.11', date: '2026-10-06',
     items: [
       { icon:'🗺️', t:'日次のマトリクスでも、予定と案件を混ぜて並べられるようにしました',
@@ -57496,7 +57801,7 @@ function _withScrollPreserved(fn) {
       var el = document.getElementById(id);
       if (el) _targets.push({ el: el, top: el.scrollTop, left: el.scrollLeft });
     });
-    document.querySelectorAll('.monthly-scroll-area, .monthly-sidebar-tasks').forEach(function(el) {
+    document.querySelectorAll('.monthly-scroll-area, .monthly-sidebar-tasks, .msb-scroll').forEach(function(el) {   // v0.55.13: 日の欄のスクロールは入れ物（.msb-scroll）
       _targets.push({ el: el, top: el.scrollTop, left: el.scrollLeft });
     });
   } catch(e) {}
@@ -66594,9 +66899,11 @@ window._stFnSrc = _stFnSrc;
        if (_growthSecT) {
          var _isAdminNow = !!(allSettings.flags && allSettings.flags.adminMode);
          var _isShown = _growthSecT.style.display !== 'none';
-         (_isAdminNow === _isShown)
-           ? ok('ST-114·②b: 成長の軸セクションが管理者モードと連動（admin=' + _isAdminNow + '）')
-           : ng('ST-114·②b: 成長の軸の表示が管理者モードと不一致', 'admin=' + _isAdminNow + ' 表示=' + _isShown);
+         // v0.55.11: 【第67条④】v0.47〜、設定の項目は分類ごとに開く作りになり、管理者でも「管理者」の分類を閉じていれば隠れる。
+         // このテストの目的（管理者でない人には必ず隠れていること）は変えず、管理者のときは隠れていても失敗にしない。
+         (!_isAdminNow ? !_isShown : true)
+           ? ok('ST-114·②b: 成長の軸は、管理者でない人には隠れている（admin=' + _isAdminNow + ' 表示=' + _isShown + '）')
+           : ng('ST-114·②b: 管理者でないのに成長の軸が見えている', 'admin=' + _isAdminNow + ' 表示=' + _isShown);
          var _togSrc = typeof toggleAdminMode === 'function' ? toggleAdminMode.toString() : '';
          _togSrc.indexOf('growthAxisSection') !== -1
            ? ok('ST-114·②c: toggleAdminModeに成長の軸の連動処理あり')
@@ -76102,7 +76409,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        //    v0.55.11 の作りかけで、後ろの中括弧の中に置いて起動時に「まだ無い」で描画が失敗した。テストは起動の後に走るので、置き場所で確かめる
        var _st424src = document.documentElement.outerHTML;
        var _st424boot = _st424src.indexOf('renderAllSections((typeof currentDailyDate');
-       var _st424defs = ['    function matrixMixOn() {', '    function mixedRows(ctx, ymd) {', '    function matrixRows(ymd) {', '    function _matrixCaseLi(c, ymd, closedRow) {', '    function _matrixClosedLis(ymd) {', '    function _matrixBindRowDrop(el, targetId, ymd) {'];
+       var _st424defs = ['    function gyomuCasesShown() {', '    function mixedRows(ctx, ymd) {', '    function matrixRows(ymd) {', '    function _matrixCaseLi(c, ymd, closedRow) {', '    function _matrixClosedLis(ymd) {', '    function _matrixBindRowDrop(el, targetId, ymd) {'];
        var _st424late = _st424defs.filter(function(d) { var i = _st424src.indexOf(d); return i < 0 || _st424boot < 0 || i > _st424boot; });
        (_st424late.length === 0)
          ? ok('ST-424·⑥: マトリクスの並びの計算は、起動時の最初の描画より前に置いてある（第74条）')
@@ -76122,6 +76429,157 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st424tasks; allSettings.flags = _st424flags; currentDailyDate = _st424date; window._gyomuViewDate = _st424vd;
        try { renderAllSections(currentDailyDate || getLocalDateStr(new Date())); } catch (eR) {}
      }
+
+     // ===== ST-425: 月間の日の欄は、案件と予定の一覧を1つのスクロールで読める（v0.55.13〜） =====
+     // 【権威】2026-10-07、スマホの月間で日を開くと、登記の案件で画面がいっぱいになり、なぞっても後ろのカレンダーが動くだけで、
+     // 下の予定が見られない、との指摘。スクロールできたのは予定の一覧だけだった。
+     try {
+       var _st425sc = document.getElementById('monthlySidebarScroll');
+       var _st425kids = _st425sc ? [].map.call(_st425sc.children, function(e) { return e.id; }).join(',') : '';
+       var _st425cs = _st425sc ? getComputedStyle(_st425sc) : null;
+       var _st425ts = getComputedStyle(document.getElementById('monthlySidebarTasks'));
+       (_st425kids === 'monthlySidebarToki,monthlySidebarGyomu,monthlySidebarTasks' && _st425cs &&
+        (_st425cs.overflowY === 'auto' || _st425cs.overflowY === 'scroll') && _st425cs.overscrollBehaviorY === 'contain' && _st425ts.overflowY === 'visible')
+         ? ok('ST-425·①: 登記・業務の案件と予定の一覧は、1つのスクロールの入れ物の中（端まで行っても後ろのカレンダーへ抜けない）')
+         : ng('ST-425·①: 日の欄のスクロールの作りが違う', _st425kids + ' / ' + (_st425cs ? _st425cs.overflowY + ' ' + _st425cs.overscrollBehaviorY : 'なし') + ' / 一覧=' + _st425ts.overflowY);
+       // ② 描き直しのとき読んでいた位置を戻す仕組みが、入れ物のスクロールも覚えている（第79条：同じことに関わる場所を全部）
+       var _st425src = typeof _withScrollPreserved === 'function' ? _withScrollPreserved.toString() : '';
+       // 説明書き（コメント）の文字に引っかからないよう、実際に器を選んでいる部分（querySelectorAll の中身）を見る
+       (/querySelectorAll\('[^']*\.msb-scroll[^']*'\)/.test(_st425src))
+         ? ok('ST-425·②: 描き直しの前後で、日の欄の入れ物の読んでいた位置を戻す')
+         : ng('ST-425·②: 日の欄の入れ物の位置を戻していない（描き直すたびに先頭へ飛ぶ）', '');
+     } catch(e) {
+       ng('ST-425: 例外', e.message);
+     }
+
+     // ===== ST-426: 月間の日の欄でも、予定と案件を1本の並びで入れ替える（v0.55.14〜） =====
+     // 【権威】2026-10-07、月間の日の欄で、登記は登記・予定は予定に分かれている。同じ所に置き、スマホは矢印かドラッグで入れ替えたい、との指摘。
+     var _st426tasks = allTasks.slice();
+     var _st426flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st426save = window.saveAllSettings, _st426saveT = window.saveAllTasks;
+     var _st426open = null, _st426sd = _sidebarDateStr, _st426mv = window.renderMonthlyView;
+     try { _st426open = localStorage.getItem('koyomiru_sidebar_open_ippan'); } catch (e) {}
+     try {
+       window.saveAllSettings = function() {}; window.saveAllTasks = function() {}; window.renderMonthlyView = function() {};
+       var _st426d = getLocalDateStr(new Date());
+       var _st426y = new Date(Date.now() - 86400000).toISOString();
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { gyomuMode: true, tokiMode: false });
+       try { localStorage.setItem('koyomiru_sidebar_open_ippan', '1'); } catch (e) {}
+       allTasks.push({ id: 'st426-A', kind: 'gyomu', buyer: '山田太郎', order: 0, createdAt: _st426y, steps1: {} },
+                     { id: 'st426-B', kind: 'gyomu', buyer: '佐藤花子', order: 1, createdAt: _st426y, steps1: {} },
+                     { id: 'st426-M', kind: 'task', text: 'メール', date: _st426d, section: 1, displayScope: 'both', createdAt: _st426y },   // 日次にも出る予定
+                     { id: 'st426-K', kind: 'task', text: '業務確認', date: _st426d, section: 2, createdAt: _st426y },
+                     { id: 'st426-Z', kind: 'task', text: '済んだ予定', date: _st426d, section: 1, createdAt: _st426y, done: true, completed: true });
+       _sidebarDateStr = _st426d;
+       var _st426dom = function() {
+         renderMonthlySidebarTasks();
+         return [].map.call(document.querySelectorAll('#monthlySidebarTasks > *'), function(e) { return (e.getAttribute('data-toki-wrap') || e.dataset.id || '?').replace('st426-', ''); })
+           .filter(function(x) { return /^[ABMKZ]$/.test(x); }).join(',');
+       };
+       // ① 画面：開いている方の案件と予定が1本の並び。済んだ予定は最後。見出しの箱に案件の行は描かない
+       var _st426s0 = _st426dom();
+       var _st426box = document.querySelectorAll('#monthlySidebarGyomu .toki-case-row').length;
+       (_st426s0 === 'A,B,M,K,Z' && _st426box === 0 && ((document.getElementById('monthlySidebarGyomu') || {}).textContent || '').indexOf('業務の案件') !== -1)
+         ? ok('ST-426·①: 日の欄で、開いている方の案件と予定が1本の並びに出る（済んだ予定は最後・見出しは上に残る）')
+         : ng('ST-426·①: 日の欄の並びが違う', _st426s0 + ' / 箱の中の行=' + _st426box);
+       // ② ↑↓とドラッグの計算：予定と案件が入れ替わる。並べた位置は日次のマトリクスと共通
+       monthMoveBy('st426-K', -1, _st426d); monthMoveBy('st426-K', -1, _st426d); monthMoveBy('st426-K', -1, _st426d);   // K を案件の上まで
+       var _st426s1 = _st426dom();
+       monthDropMove('st426-A', 'st426-M', true, _st426d);   // 案件A を メール の後ろへ
+       var _st426s2 = _st426dom();
+       var _st426A = allTasks.filter(function(t) { return t.id === 'st426-A'; })[0];
+       var _st426mx = matrixRows(_st426d).map(function(r) { return r.item.id.replace('st426-', ''); }).filter(function(x) { return /^[ABM]$/.test(x); }).join(',');
+       (_st426s1 === 'K,A,B,M,Z' && _st426s2 === 'K,B,M,A,Z' && _st426A.order === 0 && mixedKeyOn(_st426A, 'matrixOrderKeys', _st426d) !== null && _st426mx === 'B,M,A')
+         ? ok('ST-426·②: ↑↓とドラッグで予定と案件を入れ替えられ、その並びは日次のマトリクスにも出る（案件の共通の順番は変えない）')
+         : ng('ST-426·②: 日の欄の入れ替えが違う', [_st426s1, _st426s2, _st426mx].join(' / '));
+       // ③ 見出しを閉じると案件は並びから外れ、予定だけ。開くと戻る
+       toggleTokiSidebar('ippan');
+       var _st426s3 = _st426dom();
+       toggleTokiSidebar('ippan');
+       var _st426s4 = _st426dom();
+       (_st426s3 === 'K,M,Z' && _st426s4 === 'K,B,M,A,Z')
+         ? ok('ST-426·③: 見出しを閉じると案件は並びから外れ、開くと並べた位置で戻る')
+         : ng('ST-426·③: 見出しの開く・閉じるで並びが違う', _st426s3 + ' / ' + _st426s4);
+     } catch(e) {
+       ng('ST-426: 例外', e.message);
+     } finally {
+       window.saveAllSettings = _st426save; window.saveAllTasks = _st426saveT; window.renderMonthlyView = _st426mv;
+       allTasks = _st426tasks; allSettings.flags = _st426flags; _sidebarDateStr = _st426sd;
+       try { if (_st426open === null) localStorage.removeItem('koyomiru_sidebar_open_ippan'); else localStorage.setItem('koyomiru_sidebar_open_ippan', _st426open); } catch (e) {}
+       try { if (_sidebarDateStr) renderMonthlySidebarTasks(); } catch (eR) {}
+     }
+
+     // ===== ST-427: スマホの指でのドラッグ・同じ値どうしの間に入れる（v0.55.15〜） =====
+     // 【権威】2026-10-07、スマホでも矢印とともにドラッグで入れ替えたい、との要望。
+     // あわせて、時刻の無い予定どうし（位置がどれも2000）の間に入れても動かない穴を直した。
+     try {
+       // ① 落とし先の決め方：行の上半分なら前、下半分なら後ろ。動かせない行（済んだもの）なら並びの最後
+       var _st427box = document.createElement('div');
+       _st427box.style.cssText = 'position:fixed;left:0;top:0;width:200px;z-index:-1;';
+       _st427box.innerHTML = '<div data-mix-id="r1" style="height:40px;">一</div><div data-mix-id="r2" style="height:40px;">二</div><div data-mix-fixed="1" style="height:40px;">済</div>';
+       document.body.appendChild(_st427box);
+       // 高さ 10 → 一の前 ／ 50（二の上半分）→ 二の前 ／ 70（二の下半分）→ 次の行（済）の前＝動かせる行の最後 ／ 130（いちばん下より下）→ 済の後ろ＝最後
+       var _st427h1 = _touchSortHit(_st427box, 10, null), _st427h2 = _touchSortHit(_st427box, 50, null);
+       var _st427h3 = _touchSortHit(_st427box, 70, null), _st427h4 = _touchSortHit(_st427box, 130, null);
+       (_st427h1.row.getAttribute('data-mix-id') === 'r1' && !_st427h1.after && _st427h2.row.getAttribute('data-mix-id') === 'r2' && !_st427h2.after &&
+        _touchSortTargetId(_st427h3) === null && _touchSortTargetId(_st427h4) === null && _st427h4.after === true && _touchSortTargetId(_st427h1) === 'r1')
+         ? ok('ST-427·①: 指の位置から落とし先を決める（上半分なら前・済んだ行なら並びの最後）')
+         : ng('ST-427·①: 指の落とし先の決め方が違う', '');
+       _st427box.remove();
+       // ② 同じ値どうしの間に入れられる（時刻の無い予定・位置がどれも2000）
+       var _st427tasks = allTasks.slice(), _st427saveT = window.saveAllTasks;
+       try {
+         window.saveAllTasks = function() {};
+         var _st427d = getLocalDateStr(new Date()), _st427y = '2026-10-01T00:00:00Z';
+         allTasks.push({ id: 'st427-F', kind: 'task', text: 'FAX', date: _st427d, section: 1, displayScope: 'both', createdAt: _st427y },
+                       { id: 'st427-T', kind: 'task', text: 'TEL', date: _st427d, section: 1, displayScope: 'both', createdAt: _st427y },
+                       { id: 'st427-G', kind: 'task', text: '業務確認', date: _st427d, section: 1, displayScope: 'both', createdAt: _st427y });
+         var _st427ids = function() { return matrixRows(_st427d).map(function(r) { return r.item.id.replace('st427-', ''); }).filter(function(x) { return /^[FTG]$/.test(x); }).join(','); };
+         var _st427s0 = _st427ids();
+         // どれも位置は2000。「いちばん前・後ろ」ではなく、同じ値の「間」に入れる
+         matrixDropMove('st427-G', 'st427-F', true, _st427d);    // G を F と T の間へ
+         var _st427s1 = _st427ids();
+         matrixDropMove('st427-T', 'st427-F', true, _st427d);    // T を F と G の間へ
+         var _st427s2 = _st427ids();
+         (_st427s0 === 'F,T,G' && _st427s1 === 'F,G,T' && _st427s2 === 'F,T,G')
+           ? ok('ST-427·②: 時刻の無い予定どうし（同じ位置の値）の間にも入れられる')
+           : ng('ST-427·②: 同じ値どうしの間に入らない', [_st427s0, _st427s1, _st427s2].join(' / '));
+       } finally { window.saveAllTasks = _st427saveT; allTasks = _st427tasks; }
+     } catch(e) {
+       ng('ST-427: 例外', e.message);
+     }
+     // ③ 繋がっているか（第76条）：本物のタッチの出来事を送る。長押しで持ち上げて落とす／すぐ動かすと持ち上がらない／ボタンの上では持ち上がらない
+     enqueueSmokeAsyncTest('ST-427·③', function() {
+       var box = document.createElement('div');
+       box.style.cssText = 'position:fixed;left:0;top:0;width:200px;z-index:2147483647;background:#fff;';
+       box.innerHTML = '<div data-mix-id="r1" style="height:40px;">一</div><div data-mix-id="r2" style="height:40px;">二<button id="st427btn">押</button></div><div data-mix-id="r3" style="height:40px;">三</div>';
+       document.body.appendChild(box);
+       var got = [];
+       _touchSortBind(box, function(id, to, after) { got.push(id + '>' + to + (after ? '後' : '前')); });
+       var T = function(type, el, x, y) {
+         var t = new Touch({ identifier: 7, target: el, clientX: x, clientY: y });
+         var ev = new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] });
+         (type === 'touchstart' ? el : document).dispatchEvent(ev);
+       };
+       var wait = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+       var r1 = box.children[0], r3 = box.children[2], btn = document.getElementById('st427btn');
+       // 長押しして r1 を r3 の下半分へ
+       T('touchstart', r1, 10, 20);
+       return wait(450).then(function() {
+         T('touchmove', r1, 10, 60); T('touchmove', r1, 10, 112); T('touchend', r1, 10, 112);
+         // すぐ動かす（長押ししない）
+         T('touchstart', r3, 10, 100); T('touchmove', r3, 10, 60); T('touchend', r3, 10, 60);
+         // ボタンの上で長押し
+         T('touchstart', btn, 10, 60);
+         return wait(450);
+       }).then(function() {
+         T('touchmove', btn, 10, 10); T('touchend', btn, 10, 10);
+         box.remove();
+         (got.join(',') === 'r1>r3後')
+           ? ok('ST-427·③: 長押しで持ち上げて落とせる。すぐ動かしたり、ボタンの上だったりでは持ち上がらない')
+           : ng('ST-427·③: 指でのドラッグの動きが違う', got.join(','));
+       });
+     });
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
