@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.30 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.31 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.30';
+    const APP_VERSION = 'v0.55.31';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -16274,14 +16274,24 @@ function renderTodoList() {
     // ページの場所は法務局ごとに違う（千葉：kanryoyoteibi.htm、東京：kanryoyotei.htm）。確かめた2つだけ直接開き、
     // ほかは「〇〇 登記完了予定日」のネット検索を開く（決め打ちで間違った先へ飛ばさないため）。
     // 千葉は、ページに載っている本局・支局・出張所の名前だけを書いていても千葉と分かるようにする
-    var HOUMUKYOKU_KANRYO_PAGES = [
-      { url: 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm',
-        match: /千葉地方法務局|千葉法務局|(市川|柏|香取|木更津|佐倉|匝瑳|館山|船橋|松戸|茂原)支局|(市原|いすみ|東金|成田)出張所/ },
-      { url: 'https://houmukyoku.moj.go.jp/tokyo/static/kanryoyotei.htm', match: /東京法務局/ }
+    // v0.55.31: 【権威】2026-10-08、「千葉の本局は？船橋は？江戸川は？どのページが開くか出してみろ」との指摘で、実際に開いて確かめた。
+    //  ・千葉：1枚のページに本局・支局・出張所が並び、それぞれにしおり（#RANGE!A〇〇）がある。書いてある登記所の表まで直接飛ぶ。
+    //    しおりはページの行の位置なので、法務局がページの作りを変えると、近くの別の登記所の表に着くことがある。
+    //    そのときは、ページの上の「ご覧になりたい登記所」から選び直す（表の見出しに登記所の名前が出ているので見分けられる）
+    //  ・東京：kanryoyotei.htm は令和8年2〜3月の古い表のままで、新しい表は番号つきの別ページに出ている（決まった場所が無い）。
+    //    前の版はそこへ直接飛ばしていた＝古い予定を見せる誤り。東京とそれ以外は、検索を開く
+    var CHIBA_KANRYO_URL = 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm';
+    var CHIBA_KANRYO_ANCHORS = [   // 2026-10-08 のページで確かめたしおり
+      ['佐倉', 'A44'], ['茂原', 'A67'], ['松戸', 'A90'], ['柏', 'A113'], ['木更津', 'A136'], ['館山', 'A159'], ['匝瑳', 'A182'],
+      ['香取', 'A205'], ['船橋', 'A228'], ['市川', 'A251'], ['市原', 'A274'], ['東金', 'A297'], ['成田', 'A320'], ['いすみ', 'A343']
     ];
     function houmukyokuKanryoUrl(name) {
       var n = String(name || '').trim();
-      for (var i = 0; i < HOUMUKYOKU_KANRYO_PAGES.length; i++) if (n && HOUMUKYOKU_KANRYO_PAGES[i].match.test(n)) return HOUMUKYOKU_KANRYO_PAGES[i].url;
+      var hit = null;
+      CHIBA_KANRYO_ANCHORS.forEach(function(a) { if (!hit && n.indexOf(a[0]) !== -1) hit = a[1]; });
+      var isChiba = /千葉/.test(n) && !/東京/.test(n);
+      if (hit && !/東京/.test(n)) return CHIBA_KANRYO_URL + '#RANGE!' + hit;   // 支局・出張所の名前（「支局」を付けなくてもよい）
+      if (isChiba) return CHIBA_KANRYO_URL + '#RANGE!A21';                    // 千葉地方法務局・本局
       return 'https://www.google.com/search?q=' + encodeURIComponent((n ? n + ' ' : '法務局 ') + '登記完了予定日');
     }
     window.houmukyokuKanryoUrl = houmukyokuKanryoUrl;
@@ -53079,6 +53089,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.31', date: '2026-10-08',
+    items: [
+      { icon:'🔗', t:'完了予定日のページを、書いてある窓口の表まで直接開くようにしました',
+        before:'ページの入口が開くだけで、そこから窓口を選び直す必要がありました。古い表が開く場合もありました',
+        after:'書いてある窓口の表まで直接開きます。決まったページが無いところは、検索で新しいページを探します' }
+    ]
+  },
+  {
     ver: 'v0.55.30', date: '2026-10-08',
     items: [
       { icon:'🔗', t:'完了予定日を、役所の公開ページで確かめられるようにしました',
@@ -77852,14 +77870,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 【権威】2026-10-08、完了予定日は感覚で入れていた。法務局のページを見に行けるように、との相談
      var _st441open = window.open, _st441flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
      try {
-       var _st441u = houmukyokuKanryoUrl;
-       var _st441ok1 = _st441u('千葉地方法務局 船橋支局') === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' &&
-         _st441u('船橋支局') === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' && _st441u('成田出張所') === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' &&
-         _st441u('東京法務局 港出張所') === 'https://houmukyoku.moj.go.jp/tokyo/static/kanryoyotei.htm' &&
-         _st441u('さいたま地方法務局') === 'https://www.google.com/search?q=' + encodeURIComponent('さいたま地方法務局 登記完了予定日') &&
-         _st441u('') === 'https://www.google.com/search?q=' + encodeURIComponent('法務局 登記完了予定日');
+       var _st441u = houmukyokuKanryoUrl, _st441c = 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm#RANGE!';
+       var _st441g = function(q) { return 'https://www.google.com/search?q=' + encodeURIComponent(q); };
+       // v0.55.31: 千葉は登記所の表まで直接（「支局」を付けなくてもよい）。東京のページは古い表のままだったので、東京とそれ以外は検索
+       var _st441ok1 = _st441u('千葉地方法務局') === _st441c + 'A21' && _st441u('千葉地方法務局 本局') === _st441c + 'A21' &&
+         _st441u('千葉地方法務局 船橋支局') === _st441c + 'A228' && _st441u('船橋') === _st441c + 'A228' && _st441u('市川') === _st441c + 'A251' &&
+         _st441u('千葉地方法務局 市原出張所') === _st441c + 'A274' && _st441u('成田出張所') === _st441c + 'A320' &&
+         _st441u('東京法務局 江戸川出張所') === _st441g('東京法務局 江戸川出張所 登記完了予定日') &&
+         _st441u('さいたま地方法務局') === _st441g('さいたま地方法務局 登記完了予定日') && _st441u('') === _st441g('法務局 登記完了予定日');
        (_st441ok1)
-         ? ok('ST-441·①: 千葉（支局・出張所の名前だけでも）と東京は完了予定日のページへ、ほかは「〇〇 登記完了予定日」の検索へ')
+         ? ok('ST-441·①: 千葉は書いてある登記所の表まで直接（支局を付けなくてもよい）。東京とそれ以外は「〇〇 登記完了予定日」の検索')
          : ng('ST-441·①: 開く先が違う', _st441u('船橋支局') + ' / ' + _st441u('さいたま地方法務局'));
        // ② 繋がっているか（第76条）：作る画面の完了予定日の下のボタンを押すと、その時点の管轄法務局の欄で開く
        allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
@@ -77872,7 +77892,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st441after = _st441btn && _st441btn.previousElementSibling && /tokiKanryo/.test(_st441btn.previousElementSibling.id || '');
          if (_st441btn) _st441btn.click();
          var _st441ov = document.getElementById('tokiCaseOverlay'); if (_st441ov) _st441ov.remove();
-         (_st441got === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' && _st441after)
+         (_st441got === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm#RANGE!A251' && _st441after)
            ? ok('ST-441·②: 完了予定日の欄のすぐ下のボタンで、管轄法務局の完了予定日のページが開く')
            : ng('ST-441·②: ボタンで開く先か、ボタンの場所が違う', String(_st441got) + ' / 場所=' + _st441after);
        } else ng('ST-441·②: 登記の作る画面を開けない（管理者でない環境）', '');
