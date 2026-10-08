@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.29 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.30 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.29';
+    const APP_VERSION = 'v0.55.30';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14935,7 +14935,7 @@ function renderTodoList() {
         // v0.55.23: 【権威】2026-10-07、金消は「金消同席」と明示して迷わせない、との指示（設定はあるが金消同席は無い、もある）
         { key: 'kinsho', name: '金消同席', icon: '💴', mark: '金', plan: true, todayAlert: true, showUndecided: true, dateLabel: '金消同席日', noneOption: '金消同席なし', linkedStep: '金', overdueIfNot: { stage: 'steps1', step: '金' } },
         { key: 'kessai', name: '決済', icon: '🔑', mark: '決', plan: true, todayAlert: true, showUndecided: true, dateLabel: '決済日（決まったら）', autoOption: '自動決済（立会なし）', autoLabel: '自動決済', overdueIfNot: { stage: 'steps1', step: '決' } },
-        { key: 'kanryo', name: '完了予定', icon: '✅', mark: '完', plan: false, dateLabel: '完了予定日', todayAlert: false, overdueIfNot: { stage: 'steps2', step: '謄本' } }
+        { key: 'kanryo', name: '完了予定', icon: '✅', mark: '完', plan: false, dateLabel: '完了予定日', todayAlert: false, overdueIfNot: { stage: 'steps2', step: '謄本' }, lookupKanryo: true }
       ]
     };
     window.GYOMU_TEMPLATE_TOKI = GYOMU_TEMPLATE_TOKI;
@@ -16269,6 +16269,28 @@ function renderTodoList() {
       return f ? (f.short || f.label) : '';
     }
     window.gyomuFieldShort = gyomuFieldShort;
+    // ===== v0.55.30: 管轄法務局の「登記完了予定日」のページを開く =====
+    // 【権威】2026-10-08、完了予定日は感覚で決済日から1か月後を入れていた。法務局のページを見に行けるか、との相談。
+    // ページの場所は法務局ごとに違う（千葉：kanryoyoteibi.htm、東京：kanryoyotei.htm）。確かめた2つだけ直接開き、
+    // ほかは「〇〇 登記完了予定日」のネット検索を開く（決め打ちで間違った先へ飛ばさないため）。
+    // 千葉は、ページに載っている本局・支局・出張所の名前だけを書いていても千葉と分かるようにする
+    var HOUMUKYOKU_KANRYO_PAGES = [
+      { url: 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm',
+        match: /千葉地方法務局|千葉法務局|(市川|柏|香取|木更津|佐倉|匝瑳|館山|船橋|松戸|茂原)支局|(市原|いすみ|東金|成田)出張所/ },
+      { url: 'https://houmukyoku.moj.go.jp/tokyo/static/kanryoyotei.htm', match: /東京法務局/ }
+    ];
+    function houmukyokuKanryoUrl(name) {
+      var n = String(name || '').trim();
+      for (var i = 0; i < HOUMUKYOKU_KANRYO_PAGES.length; i++) if (n && HOUMUKYOKU_KANRYO_PAGES[i].match.test(n)) return HOUMUKYOKU_KANRYO_PAGES[i].url;
+      return 'https://www.google.com/search?q=' + encodeURIComponent((n ? n + ' ' : '法務局 ') + '登記完了予定日');
+    }
+    window.houmukyokuKanryoUrl = houmukyokuKanryoUrl;
+    function openHoumukyokuKanryo() {
+      var el = document.getElementById('tokiHoumukyoku');
+      window.open(houmukyokuKanryoUrl(el ? el.value : ''), '_blank', 'noopener');
+    }
+    window.openHoumukyokuKanryo = openHoumukyokuKanryo;
+    // ===== END v0.55.30 =====
     function caseSearchNorm(s) {
       var t = String(s || '');
       try { t = t.normalize('NFKC'); } catch (e) {}
@@ -16461,6 +16483,8 @@ function renderTodoList() {
         tpl.milestones.map(function(ms) {
           var K = capKey(ms.key);
           var dateAndPlan = field(ms.dateLabel, 'toki' + K, c && c[ms.key + 'Date'], 'date') +
+            // v0.55.30: 完了予定日の下に、管轄法務局の完了予定日のページを開くボタン（押した時点の管轄法務局の欄を見る）
+            (ms.lookupKanryo && tpl.fields.houmukyoku ? '<button type="button" id="tokiKanryoLookup" onclick="openHoumukyokuKanryo()" style="margin:-2px 0 8px;padding:5px 10px;border:1px solid #9db4d6;border-radius:8px;background:#fff;color:#1864ab;font-size:0.78em;cursor:pointer;">🔗 管轄法務局の完了予定日を見る</button>' : '') +
             (ms.noneOption ? check('toki' + K + 'None', ms.noneOption, c && c[ms.key + 'None']) : '') +
             (ms.autoOption ? check('toki' + K + 'Auto', ms.autoOption, c && c[ms.key + 'Auto']) : '') +
             (ms.plan ? '<div id="toki' + K + 'Where">' + planFields(ms.key, ms.name, c) + '</div>' : '');
@@ -53055,6 +53079,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.30', date: '2026-10-08',
+    items: [
+      { icon:'🔗', t:'完了予定日を、役所の公開ページで確かめられるようにしました',
+        before:'完了予定日は、感覚で入れるしかありませんでした',
+        after:'案件の画面の完了予定日の下のボタンから、公開されている完了予定日のページを開けます' }
+    ]
+  },
+  {
     ver: 'v0.55.29', date: '2026-10-08',
     items: [
       { icon:'🚦', t:'案件の形を「未確認・あり・なし」で決めるようにしました',
@@ -77814,6 +77846,40 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        window.saveAllTasks = _st440saveT; window.showToast = _st440toast;
        allTasks = _st440tasks; allSettings.flags = _st440flags;
+     }
+
+     // ===== ST-441: 管轄法務局の完了予定日のページを開く（v0.55.30〜） =====
+     // 【権威】2026-10-08、完了予定日は感覚で入れていた。法務局のページを見に行けるように、との相談
+     var _st441open = window.open, _st441flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     try {
+       var _st441u = houmukyokuKanryoUrl;
+       var _st441ok1 = _st441u('千葉地方法務局 船橋支局') === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' &&
+         _st441u('船橋支局') === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' && _st441u('成田出張所') === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' &&
+         _st441u('東京法務局 港出張所') === 'https://houmukyoku.moj.go.jp/tokyo/static/kanryoyotei.htm' &&
+         _st441u('さいたま地方法務局') === 'https://www.google.com/search?q=' + encodeURIComponent('さいたま地方法務局 登記完了予定日') &&
+         _st441u('') === 'https://www.google.com/search?q=' + encodeURIComponent('法務局 登記完了予定日');
+       (_st441ok1)
+         ? ok('ST-441·①: 千葉（支局・出張所の名前だけでも）と東京は完了予定日のページへ、ほかは「〇〇 登記完了予定日」の検索へ')
+         : ng('ST-441·①: 開く先が違う', _st441u('船橋支局') + ' / ' + _st441u('さいたま地方法務局'));
+       // ② 繋がっているか（第76条）：作る画面の完了予定日の下のボタンを押すと、その時点の管轄法務局の欄で開く
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       if (gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) {
+         var _st441got = null;
+         window.open = function(u) { _st441got = u; return null; };
+         openTokiCaseEditor(null, { tplId: 'toki' });
+         document.getElementById('tokiHoumukyoku').value = '千葉地方法務局 市川支局';
+         var _st441btn = document.getElementById('tokiKanryoLookup');
+         var _st441after = _st441btn && _st441btn.previousElementSibling && /tokiKanryo/.test(_st441btn.previousElementSibling.id || '');
+         if (_st441btn) _st441btn.click();
+         var _st441ov = document.getElementById('tokiCaseOverlay'); if (_st441ov) _st441ov.remove();
+         (_st441got === 'https://houmukyoku.moj.go.jp/chiba/static/kanryoyoteibi.htm' && _st441after)
+           ? ok('ST-441·②: 完了予定日の欄のすぐ下のボタンで、管轄法務局の完了予定日のページが開く')
+           : ng('ST-441·②: ボタンで開く先か、ボタンの場所が違う', String(_st441got) + ' / 場所=' + _st441after);
+       } else ng('ST-441·②: 登記の作る画面を開けない（管理者でない環境）', '');
+     } catch(e) {
+       ng('ST-441: 例外', e.message);
+     } finally {
+       window.open = _st441open; allSettings.flags = _st441flags;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
