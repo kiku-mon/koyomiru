@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.25 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.26 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.25';
+    const APP_VERSION = 'v0.55.26';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14245,7 +14245,7 @@ function renderTodoList() {
         var d = task.date || getLocalDateStr(new Date());
         var sec = task.section || 4;
         // currentDailyDateをセットしてから遷移
-        if (typeof currentDailyDate !== 'undefined') currentDailyDate = d;
+        if (typeof setDailyViewDate === 'function') setDailyViewDate(d); else if (typeof currentDailyDate !== 'undefined') currentDailyDate = d;   // v0.55.26
         switchView('daily');
         setTimeout(function(){
           if (typeof renderAllSections === 'function') renderAllSections(d);
@@ -17758,10 +17758,10 @@ function myDeckApply(idx) {
         stopConditionSaved = true;
       }
       // 前回の日次ビュー日付を復元
-      const savedDailyDate = localStorage.getItem('selectedDailyDate');
-      if (savedDailyDate) {
-        currentDailyDate = savedDailyDate;
-      }
+      // v0.55.26: 【権威】2026-10-08、日次（魚の目）を開いても今日が開かず、昨日になってしまう、との指摘。
+      // 見ている日を日付そのもので覚えていて、翌日の起動でもそこへ戻していた（今日を見ていた人には、昨日が開く）。
+      // 「いつ覚えたか」も覚え、同じ日のうちの起動（読み込み直しなど）だけ戻す。前の版の形（日付だけ）は、いつ覚えたか分からないので使わない
+      currentDailyDate = _dailyDateRestore();
     }
     // 日付表示
     function updateDate() {
@@ -19732,17 +19732,63 @@ function myDeckApply(idx) {
         todayBtn.style.pointerEvents = (dateStr === todayStr) ? 'none' : 'auto';
       }
     }
+    // ===== v0.55.26: 日次で見ている日 =====
+    // ・今日を見ているときは、日付を覚えない（null＝今日）。翌日になれば、新しい今日が開く
+    // ・今日以外を見ているときは、覚えた日（savedOn）も一緒に覚え、同じ日のうちの起動だけ戻す
+    // ・開いたまま0時をまたいだら、今日を見ていた画面は新しい今日に切り替える（別の日を見ている人の画面は動かさない）
+    var DAILY_DATE_KEY = 'selectedDailyDate';
+    function _dailyDateRestore() {
+      try {
+        var raw = localStorage.getItem(DAILY_DATE_KEY);
+        if (!raw || raw.charAt(0) !== '{') return null;   // 前の版の形（日付だけ）は使わない
+        var o = JSON.parse(raw), today = getLocalDateStr(new Date());
+        if (!o || o.savedOn !== today || !/^\d{4}-\d{2}-\d{2}$/.test(String(o.date || '')) || o.date === today) return null;
+        return o.date;
+      } catch (e) { return null; }
+    }
+    window._dailyDateRestore = _dailyDateRestore;
+    function setDailyViewDate(dateStr) {
+      var today = getLocalDateStr(new Date());
+      var d = (dateStr && dateStr !== today) ? dateStr : null;
+      currentDailyDate = d;
+      window._dailyLastToday = today;
+      if (window._isTesting) return d;   // テスト中は端末に覚えない（第7条）
+      try {
+        if (d) localStorage.setItem(DAILY_DATE_KEY, JSON.stringify({ date: d, savedOn: today }));
+        else localStorage.removeItem(DAILY_DATE_KEY);
+      } catch (e) {}
+      return d;
+    }
+    window.setDailyViewDate = setDailyViewDate;
+    // 日次の魚の目が開いていれば描き直す（日付を変えたとき、マトリクスだけでなく魚の目も追いつくように）
+    function _refreshDailyQuadIfShown() {
+      var qv = document.getElementById('quadView');
+      if (qv && getComputedStyle(qv).display !== 'none' && typeof renderQuadView === 'function') renderQuadView();
+    }
+    window._refreshDailyQuadIfShown = _refreshDailyQuadIfShown;
+    // 開いたまま日付をまたいだか。今日を見ていた画面（null か、前の今日）だけ、新しい今日へ
+    function _dailyRolloverCheck() {
+      var today = getLocalDateStr(new Date()), last = window._dailyLastToday;
+      if (!last) { window._dailyLastToday = today; return false; }
+      if (last === today) return false;
+      window._dailyLastToday = today;
+      if (currentDailyDate && currentDailyDate !== last) return false;   // 別の日を見ている人の画面は動かさない
+      if (typeof goToDailyToday === 'function') goToDailyToday();
+      return true;
+    }
+    window._dailyRolloverCheck = _dailyRolloverCheck;
+    window._dailyLastToday = getLocalDateStr(new Date());
+    setInterval(function() { try { _dailyRolloverCheck(); } catch (e) {} }, 60000);
+    document.addEventListener('visibilitychange', function() { if (!document.hidden) { try { _dailyRolloverCheck(); } catch (e) {} } });
+    window.addEventListener('focus', function() { try { _dailyRolloverCheck(); } catch (e) {} });
+    // ===== END v0.55.26 =====
     function changeDailyDate(delta) {
       var base = currentDailyDate || getLocalDateStr(new Date());
       var d = new Date(base.replace(/-/g, '/'));
       if (isNaN(d.getTime())) d = new Date();
       d.setDate(d.getDate() + delta);
       var newDate = getLocalDateStr(d);
-      currentDailyDate = newDate;
-      // v0.45.862〜：テスト中はlocalStorageを汚染しない（第7条遵守）
-      if (!window._isTesting) {
-        localStorage.setItem('selectedDailyDate', newDate);
-      }
+      setDailyViewDate(newDate);   // v0.55.26: 今日なら覚えない・今日以外は覚えた日と一緒に（テスト中は覚えない）
       // dateDisplay更新
       var weekdays = ['日', '月', '火', '水', '木', '金', '土'];
       var dateText = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + '（' + weekdays[d.getDay()] + '）';
@@ -19759,14 +19805,11 @@ function myDeckApply(idx) {
         renderTimelineView();
       } else {
         renderAllSections(newDate);
+        _refreshDailyQuadIfShown();   // v0.55.26: 魚の目も追いつく
       }
     }
     function goToDailyToday() {
-      currentDailyDate = null;
-      // v0.45.861〜：テスト中はlocalStorageを汚染しない（第7条遵守）
-      if (!window._isTesting) {
-        localStorage.removeItem('selectedDailyDate');
-      }
+      setDailyViewDate(null);   // v0.55.26
       var today = new Date();
       var todayStr = getLocalDateStr(today);
       var weekdays = ['日', '月', '火', '水', '木', '金', '土'];
@@ -19783,6 +19826,7 @@ function myDeckApply(idx) {
         renderTimelineView();
       } else {
         renderAllSections(todayStr);
+        _refreshDailyQuadIfShown();   // v0.55.26: 魚の目も追いつく
       }
     }
     // ===== 日次タイムラインビュー =====
@@ -39073,11 +39117,7 @@ function renderMonthlyMoneyLine() {
     // 特定の日付の日次ビューへ遷移
     function goToDailyView(dateStr, openTaskId = null) {
       // 日付を一時保存（日次ビューで使用）
-      // v0.45.862〜：テスト中はlocalStorageを汚染しない（第7条遵守）
-      if (!window._isTesting) {
-        localStorage.setItem('selectedDailyDate', dateStr);
-      }
-      currentDailyDate = dateStr;  // グローバル変数に保存
+      setDailyViewDate(dateStr);   // v0.55.26: 今日なら覚えない・今日以外は覚えた日と一緒に（テスト中は覚えない）
       // 日次ビューに切り替え
       switchView('daily');
       // 日付表示を更新
@@ -52892,6 +52932,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.26', date: '2026-10-08',
+    items: [
+      { icon:'📅', t:'日次を開くと、いつも今日が開くようにしました',
+        before:'前の日に見ていた日を覚えていて、次の日に開くと昨日が出ることがありました。開いたまま日付をまたいでも、昨日のままでした',
+        after:'今日を見ていれば、次の日は新しい今日が開きます。開いたまま0時をまたいだときも、今日に切り替わります（別の日をわざわざ見ているときは、そのままです）' },
+      { icon:'🐟', t:'魚の目で前日・翌日を押したとき、中身も切り替わるようにしました',
+        before:'上の日付だけが変わり、魚の目の中身は前の日のままでした',
+        after:'中身も、その日の予定と案件に切り替わります' }
+    ]
+  },
+  {
     ver: 'v0.55.25', date: '2026-10-07',
     items: [
       { icon:'🔢', t:'業務の案件番号の説明を、はっきりさせました',
@@ -63209,8 +63260,9 @@ window._stFnSrc = _stFnSrc;
 
        // 翌日移動テスト
        changeDailyDate(1);
-       currentDailyDate === _st32Today
-         ? ok('ST-41: 翌日移動→元の日付確認（' + currentDailyDate + '）')
+       // v0.55.26: 【第67条④】今日に戻ったときは、日付ではなく「今日」（null）として持つ（翌日に昨日が開く元になるため・2026-10-08 の指摘）
+       (currentDailyDate || getLocalDateStr(new Date())) === _st32Today
+         ? ok('ST-41: 翌日移動→元の日付確認（' + (currentDailyDate || '今日') + '）')
          : ng('ST-41: 翌日移動', currentDailyDate + '≠' + _st32Today);
 
        // 今日リセットテスト
@@ -77401,6 +77453,55 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-436: 例外', e.message);
      } finally {
        if (_st436g === undefined) delete allSettings.gyomu; else allSettings.gyomu = _st436g;
+     }
+
+     // ===== ST-437: 日次を開くと今日が開く（前に見ていた日に戻らない）・日付をまたいだら今日へ・魚の目も追いつく（v0.55.26〜） =====
+     // 【権威】2026-10-08、日次の魚の目を開いても今日が開かず、昨日になってしまう、との指摘
+     var _st437key = localStorage.getItem('selectedDailyDate');
+     var _st437cur = currentDailyDate, _st437last = window._dailyLastToday, _st437testing = window._isTesting;
+     try {
+       var _st437t = getLocalDateStr(new Date());
+       var _st437y = (function() { var d = new Date(); d.setDate(d.getDate() - 1); return getLocalDateStr(d); })();
+       var _st437n = (function() { var d = new Date(); d.setDate(d.getDate() + 3); return getLocalDateStr(d); })();
+       // ① 起動のときに戻すのは、今日のうちに覚えた「今日以外の日」だけ
+       var _st437r = function(v) { if (v === null) localStorage.removeItem('selectedDailyDate'); else localStorage.setItem('selectedDailyDate', v); return _dailyDateRestore(); };
+       var _st437a = _st437r(JSON.stringify({ date: _st437y, savedOn: _st437y }));   // 昨日のうちに昨日を見ていた
+       var _st437b = _st437r(_st437y);                                               // 前の版の形（日付だけ）
+       var _st437c = _st437r(JSON.stringify({ date: _st437n, savedOn: _st437t }));   // 今日のうちに3日後を見ていた
+       var _st437d = _st437r(JSON.stringify({ date: _st437t, savedOn: _st437t }));   // 今日を覚えていた
+       (_st437a === null && _st437b === null && _st437c === _st437n && _st437d === null)
+         ? ok('ST-437·①: 起動したとき、前の日に覚えた日には戻らず今日が開く（今日のうちに覚えた別の日だけ戻す）')
+         : ng('ST-437·①: 起動したときの日が違う', JSON.stringify([_st437a, _st437b, _st437c, _st437d]));
+       // ② 今日を指定して開いても、日付として覚えない（翌日に昨日が開く元になるため）
+       window._isTesting = false;
+       localStorage.removeItem('selectedDailyDate');
+       setDailyViewDate(_st437t);
+       var _st437e = localStorage.getItem('selectedDailyDate') === null && currentDailyDate === null;
+       setDailyViewDate(_st437n);
+       var _st437f = JSON.parse(localStorage.getItem('selectedDailyDate') || '{}');
+       window._isTesting = _st437testing;
+       (_st437e && _st437f.date === _st437n && _st437f.savedOn === _st437t)
+         ? ok('ST-437·②: 今日を開いたときは日付を覚えず、別の日を開いたときは覚えた日と一緒に覚える')
+         : ng('ST-437·②: 見ている日の覚え方が違う', JSON.stringify(_st437f));
+       // ③ 開いたまま0時をまたいだ：今日を見ていた画面だけ新しい今日へ。別の日を見ている画面は動かさない
+       currentDailyDate = null; window._dailyLastToday = _st437y;
+       var _st437g1 = _dailyRolloverCheck() === true && currentDailyDate === null && window._dailyLastToday === _st437t;
+       currentDailyDate = _st437n; window._dailyLastToday = _st437y;
+       var _st437g2 = _dailyRolloverCheck() === false && currentDailyDate === _st437n;
+       (_st437g1 && _st437g2)
+         ? ok('ST-437·③: 開いたまま日付をまたいだら、今日を見ていた画面は新しい今日へ（別の日を見ている画面は動かさない）')
+         : ng('ST-437·③: 日付をまたいだときの動きが違う', JSON.stringify([_st437g1, _st437g2]));
+       // ④ 日付を変えたら、魚の目も追いつく（入口すべてで同じ処理を呼ぶ・第79条）
+       var _st437src = [changeDailyDate, goToDailyToday].map(function(f) { return f.toString(); });
+       (_st437src.every(function(x) { return /_refreshDailyQuadIfShown\(\)/.test(x); }) && /setDailyViewDate\(/.test(goToDailyView.toString()))
+         ? ok('ST-437·④: 前日・翌日・今日で日付を変えると、魚の目も描き直す（月間などから開くときも同じ覚え方）')
+         : ng('ST-437·④: 日付を変える入口で、魚の目が追いつかない', '');
+     } catch(e) {
+       ng('ST-437: 例外', e.message);
+     } finally {
+       window._isTesting = _st437testing;
+       if (_st437key === null) localStorage.removeItem('selectedDailyDate'); else localStorage.setItem('selectedDailyDate', _st437key);
+       currentDailyDate = _st437cur; window._dailyLastToday = _st437last;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
