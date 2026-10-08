@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.26 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.27 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.26';
+    const APP_VERSION = 'v0.55.27';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14843,17 +14843,15 @@ function renderTodoList() {
     // v0.54.1: 【権威】2026-10-05、決済の直前に取る「当日謄本」の工程を入れ忘れていた、との指摘。決のすぐ前に入れる。
     // v0.54.2: 【権威】2026-10-05、正しい流れは「物・入・押・カク・依・金・設受・設組・カク・依・当日謄本・決・組・申」との指摘。
     // カク・依が2回出てくる。✓は工程の名前で覚えるので、2回目は中では「カク2」「依2」とし、画面には「カク」「依」と出す。
-    var TOKI_STEPS_1 = ['物', '入', '押', 'カク', '依', '金', '設受', '設組', 'カク2', '依2', '当日謄本', '当日抄本', '決', '組', '申'];
-    var TOKI_STEP_LABELS = { 'カク2': 'カク', '依2': '依' };
+    var TOKI_STEPS_1 = ['物', '入', '押', 'カク発送', '依発送', 'カク', '依', '金', '設受', '設組', 'カク2', '依2', '当日謄本', '当日抄本', '決', '組', '申'];
+    var TOKI_STEP_LABELS = { 'カク2': 'カク', '依2': '依', 'カク発送': 'カク', '依発送': '依' };
     // v0.55.23: 【権威】2026-10-07、当日抄本をとらなければいけないときがある（マンションの共用部分が持分1/1000などでネットで取れず、
-    // 管轄の法務局に出向いて売主の名前で抄本を抜く）。よく忘れて怒られる、との指摘。毎回は要らないので、初めは外しておき、
-    // 要る案件だけ「要る工程」で入れる。要る案件は、決済の7日前から⚠️で知らせる（tokiAlerts）
-    var TOKI_STEPS_DEFAULT_OFF = { '当日抄本': true };
-    function tokiDefaultEnabled1(steps) { return (steps || TOKI_STEPS_1).filter(function(st) { return !TOKI_STEPS_DEFAULT_OFF[st]; }); }
-    window.tokiDefaultEnabled1 = tokiDefaultEnabled1;
+    // 管轄の法務局に出向いて売主の名前で抄本を抜く）。よく忘れて怒られる、との指摘。要る案件は、決済の7日前から⚠️で知らせる（tokiAlerts）
+    // v0.55.27: 【権威】2026-10-08、押印書類を発送する案件は、発送前にカクと依がいる、との指摘。
+    // 当日抄本・発送前のカク依は、毎回は要らないので、作る画面の「この案件の形」で✓を入れたときだけ出す（optionalGroups の optIn）
     // v0.54.3: 【権威】2026-10-05、1回目のカク・依は「金消前チェック」、2回目は「決済前チェック」というコンセプト、との説明。
     // 作る画面の「要る工程」で、どちらのチェックかが分かるようにする（一覧のボタンは短いまま）
-    var TOKI_STEP_EDITOR_LABELS = { 'カク': 'カク（金消前チェック）', '依': '依（金消前チェック）', 'カク2': 'カク（決済前チェック）', '依2': '依（決済前チェック）', '当日抄本': '当日抄本（管轄法務局へ出向く）' };
+    var TOKI_STEP_EDITOR_LABELS = { 'カク': 'カク（金消前チェック）', '依': '依（金消前チェック）', 'カク2': 'カク（決済前チェック）', '依2': '依（決済前チェック）', '当日抄本': '当日抄本（管轄法務局へ出向く）', 'カク発送': 'カク（発送前チェック）', '依発送': '依（発送前チェック）' };
     // あとから足した工程と、足した版の番号。前からある案件（要る工程を選んだときに、まだ無かった）にも出す
     var TOKI_STEPS_ADDED_LATER = { '当日謄本': 3, 'カク2': 4, '依2': 4 };
     var TOKI_STEPS_2 = ['謄本', '印字', '送付状', '法務局からの返却', '組み立て', 'カク', '依頼'];
@@ -14917,8 +14915,18 @@ function renderTodoList() {
       ],
       closeOn: { stage: 'steps2', step: '依頼' },
       // v0.53.4: まとめて「なし」にできる工程（設定契約が無ければ、設受・設組を出さない）
-      optionalGroups: [ { key: 'settei', noneLabel: '設定なし（設受・設組を出さない）', steps: ['設受', '設組'] } ],
+      // v0.55.27: 「この案件の形」。none＝✓を入れると出さない、optIn＝✓を入れたときだけ出す。
+      // 設定なしは、✓を入れた瞬間に「金消同席なし」にも✓（設定が無ければ金消も無い）。手で外せる（alsoNone）
+      // 当日抄本は、前の版で工程の一覧に✓していた案件を「要る」と読む（legacyStep）
+      optionalGroups: [
+        { key: 'settei', noneLabel: '設定なし（設受・設組を出さない）', steps: ['設受', '設組'], alsoNone: 'kinsho' },
+        { key: 'hassou', optIn: true, onLabel: '押印書類を発送する（発送前のカク・依を出す）', steps: ['カク発送', '依発送'] },
+        { key: 'shouhon', optIn: true, onLabel: '当日抄本が要る（管轄法務局へ出向く）', steps: ['当日抄本'], legacyStep: '当日抄本' }
+      ],
       milestones: [
+        // v0.55.27: 【権威】2026-10-08、金消同席とは別に契約同席もある（契約のときに同席して登記の書類をもらい、もう会わない）。
+        // 初めは「なし」。「契約同席あり」に✓した瞬間に、決済を「自動決済（立会なし）」に✓（手で外せる・alsoAuto）
+        { key: 'keiyaku', name: '契約同席', icon: '🤝', mark: '契', plan: true, todayAlert: true, optIn: '契約同席あり', dateLabel: '契約同席日', alsoAuto: 'kessai' },
         // v0.55.23: 【権威】2026-10-07、金消は「金消同席」と明示して迷わせない、との指示（設定はあるが金消同席は無い、もある）
         { key: 'kinsho', name: '金消同席', icon: '💴', mark: '金', plan: true, todayAlert: true, showUndecided: true, dateLabel: '金消同席日', noneOption: '金消同席なし', linkedStep: '金', overdueIfNot: { stage: 'steps1', step: '金' } },
         { key: 'kessai', name: '決済', icon: '🔑', mark: '決', plan: true, todayAlert: true, showUndecided: true, dateLabel: '決済日（決まったら）', autoOption: '自動決済（立会なし）', autoLabel: '自動決済', overdueIfNot: { stage: 'steps1', step: '決' } },
@@ -15007,7 +15015,17 @@ function renderTodoList() {
     window.gyomuTemplateVisible = gyomuTemplateVisible;
     window.gyomuTemplateOf = gyomuTemplateOf;
     // 節目が「なし」「立会なし」になっているか
-    function gyomuMilestoneIsNone(c, ms) { return !!(ms.noneOption && c[ms.key + 'None']); }
+    // v0.55.27: 契約同席のように、初めは「なし」で「あり」に✓したときだけの節目（optIn）。前に日付が入っていれば「あり」と読む
+    function gyomuMilestoneIsNone(c, ms) {
+      if (ms.optIn) return !(c && (c[ms.key + 'On'] === true || (c[ms.key + 'On'] === undefined && c[ms.key + 'Date'])));
+      return !!(ms.noneOption && c[ms.key + 'None']);
+    }
+    // v0.55.27: ✓を入れたときだけ出す工程のまとまり（optIn）。前の版で工程の一覧に✓していた案件は「要る」と読む（legacyStep）
+    function gyomuGroupIsOn(c, g) {
+      if (c && typeof c[g.key + 'On'] === 'boolean') return c[g.key + 'On'];
+      return !!(g.legacyStep && c && Array.isArray(c.enabled1) && c.enabled1.indexOf(g.legacyStep) !== -1);
+    }
+    window.gyomuGroupIsOn = gyomuGroupIsOn;
     function gyomuMilestoneIsAuto(c, ms) { return !!(ms.autoOption && c[ms.key + 'Auto']); }
     window.gyomuMilestoneIsNone = gyomuMilestoneIsNone; window.gyomuMilestoneIsAuto = gyomuMilestoneIsAuto;
     // ===== END v0.53.0 ひな形 =====
@@ -15015,13 +15033,13 @@ function renderTodoList() {
     // したのに、［金］をチェックの有無だけで出していた。［金］は金消日で決める（入っていれば出す・空なら出さない）。
     function tokiStepsFor(c) {
       var tpl = gyomuTemplateOf(c), first = tpl.stages[0].steps;
-      var base = (c && c.enabled1) || (tpl.id === 'toki' ? tokiDefaultEnabled1(first) : first);   // v0.55.23: 当日抄本は初めは外す
+      var base = (c && c.enabled1) || first;
       var groups = tpl.optionalGroups || [];
       return first.filter(function(st) {
         // v0.53.4: まとめて「なし」にできる工程（設受・設組）は、「なし」でなければ出す。
         // 前からある案件（要る工程を選んだときに、まだ設受・設組が無かった）でも出るように、要る工程の一覧は見ない。
         var grp = groups.filter(function(g) { return g.steps.indexOf(st) !== -1; })[0];
-        if (grp) return !(c && c[grp.key + 'None']);
+        if (grp) return grp.optIn ? gyomuGroupIsOn(c, grp) : !(c && c[grp.key + 'None']);   // v0.55.27: ✓を入れたときだけ出す種類
         // 節目に結びついた工程（登記の［金］）は、その節目の日付が入っていて、「なし」でないときだけ出す
         var linked = tpl.milestones.filter(function(ms) { return ms.linkedStep === st; })[0];
         if (linked) return !!(c && c[linked.key + 'Date'] && !gyomuMilestoneIsNone(c, linked));
@@ -15052,7 +15070,8 @@ function renderTodoList() {
     function tokiKnownPeople() {
       var seen = {}; seen[TOKI_SELF] = 1;
       getTokiCases(true).forEach(function(c) {
-        [c.tantou, c.kinshoGoer, c.kessaiGoer].forEach(function(n) { n = String(n || '').trim(); if (n) seen[n] = 1; });
+        // v0.55.27: 契約同席の行く人も候補に
+        [c.tantou, c.keiyakuGoer, c.kinshoGoer, c.kessaiGoer].forEach(function(n) { n = String(n || '').trim(); if (n) seen[n] = 1; });
       });
       return Object.keys(seen);
     }
@@ -15938,7 +15957,7 @@ function renderTodoList() {
         var tpl = gyomuTemplateOf(c);
         var dates = tpl.milestones.map(function(ms) {
           var k = ms.key, dt = c[k + 'Date'];
-          if (gyomuMilestoneIsNone(c, ms)) return '<span style="color:#888;">' + ms.name + ' なし</span>';
+          if (gyomuMilestoneIsNone(c, ms)) return ms.optIn ? '' : '<span style="color:#888;">' + ms.name + ' なし</span>';   // v0.55.27: 初めは「なし」の節目（契約同席）は、なしなら何も出さない
           if (!dt) return ms.showUndecided ? '<span style="color:#999;">' + ms.name + ' 未定</span>' : '';
           if (gyomuMilestoneIsAuto(c, ms)) return _tokiDateLabel(ms.name, dt, today) + '<span style="color:#0b7285;font-weight:700;">（' + ms.autoLabel + '）</span>';
           return _tokiDateLabel(ms.name, dt, today) + (ms.plan ? plan(k) + goerTag(k) : '');
@@ -16231,7 +16250,7 @@ function renderTodoList() {
       var hits = (allTasks || []).filter(function(c) {
         if (!c || c.deleted || (c.kind !== 'toki' && c.kind !== 'gyomu')) return false;
         if (!gyomuTemplateVisible(gyomuTemplateOf(c))) return false;   // 見えないひな形の案件は出さない（第71条）
-        return [c.requester, c.buyer, c.seller, c.box, c.jian, c.bukken, c.houmukyoku, c.bikou, tokiTantou(c), c.kinshoGoer, c.kessaiGoer]
+        return [c.requester, c.buyer, c.seller, c.box, c.jian, c.bukken, c.houmukyoku, c.bikou, tokiTantou(c), c.keiyakuGoer, c.kinshoGoer, c.kessaiGoer]
           .concat(GYOMU_RELATION_KEYS.map(function(k) { return c[k]; }))   // v0.55.21: そのほかの関係者
           .concat([].concat.apply([], caseListsOf(gyomuTemplateOf(c)).map(function(sp) { return caseListItems(c, sp).map(function(b) { return b.name; }); })))   // v0.55.22・v0.55.24: 一覧
           .some(function(v) { return v && caseSearchNorm(v).indexOf(qn) !== -1; });
@@ -16312,8 +16331,9 @@ function renderTodoList() {
       var optGroups = tpl.optionalGroups || [];
       var stepLabelOf = function(st) { return (tpl.stepLabels && tpl.stepLabels[st]) || st; };
       var groupSteps = [].concat.apply([], optGroups.map(function(g) { return g.steps; }));
+      var sectionHead = function(t) { return '<div style="font-size:0.78em;font-weight:700;color:#6741d9;margin:16px 0 4px;padding-top:8px;border-top:1px solid #f0eefc;">' + t + '</div>'; };   // v0.55.27
       var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
-      var en1 = (c && c.enabled1) || tokiDefaultEnabled1(TOKI_STEPS_1);   // v0.55.23: 当日抄本は初めは外す
+      var en1 = (c && c.enabled1) || TOKI_STEPS_1;
       var ov = document.createElement('div');
       // v0.54.4: 画面の隅の丸いボタン（＋・◎：手前の順番 99990）より手前に出す。以前は 9000 で、下の「閉じる」に重なっていた
       ov.id = 'tokiCaseOverlay';
@@ -16378,21 +16398,34 @@ function renderTodoList() {
           '</details>';
         })() +
         field(tpl.tantouLabel || '担当者（空なら自分）', 'tokiTantou', c && c.tantou, 'text', tpl.tantouPlaceholder) +
-        // v0.55.23: 【権威】2026-10-07、「設定なし」は工程の一覧の下すぎる。金消同席の前へ（設定があるか → 金消同席があるか、の順）
-        optGroups.map(function(g) { return '<div>' + check('tokiGroupNone_' + g.key, g.noneLabel, c && c[g.key + 'None']) + '</div>'; }).join('') +
+        // v0.55.27: 【権威】2026-10-08、編集・入力の流れを見直して整える、との指示。
+        // 「案件のこと → この案件の形 → 会う予定 → 工程を手で直す（閉じた囲み） → 備考」の順にする。
+        // 案件の形を先に決めると、工程と会う予定が自動で出し分けられる
+        (optGroups.length ? sectionHead('この案件の形') +
+          optGroups.map(function(g) {
+            return '<div>' + (g.optIn ? check('tokiGroupOn_' + g.key, g.onLabel, gyomuGroupIsOn(c, g)) : check('tokiGroupNone_' + g.key, g.noneLabel, c && c[g.key + 'None'])) + '</div>';
+          }).join('') : '') +
+        sectionHead(tpl.id === 'toki' ? '会う予定' : '大事な日') +
         tpl.milestones.map(function(ms) {
           var K = capKey(ms.key);
-          return field(ms.dateLabel, 'toki' + K, c && c[ms.key + 'Date'], 'date') +
+          var dateAndPlan = field(ms.dateLabel, 'toki' + K, c && c[ms.key + 'Date'], 'date') +
             (ms.noneOption ? check('toki' + K + 'None', ms.noneOption, c && c[ms.key + 'None']) : '') +
             (ms.autoOption ? check('toki' + K + 'Auto', ms.autoOption, c && c[ms.key + 'Auto']) : '') +
             (ms.plan ? '<div id="toki' + K + 'Where">' + planFields(ms.key, ms.name, c) + '</div>' : '');
+          // v0.55.27: 初めは「なし」の節目（契約同席）は、「あり」に✓したときだけ日付と段取りを出す
+          if (ms.optIn) return check('toki' + K + 'On', ms.optIn, !gyomuMilestoneIsNone(c || {}, ms)) + '<div id="toki' + K + 'Box" style="margin-left:10px;padding-left:8px;border-left:2px solid #eee;">' + dateAndPlan + '</div>';
+          return dateAndPlan;
         }).join('') +
         '<datalist id="tokiPeopleList">' + tokiKnownPeople().map(function(n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
-        '<div style="font-size:0.8em;color:#555;margin:10px 0 2px;">' + tpl.stagesLabel +
+        // v0.55.27: 工程の一覧は、いつもは閉じておく（この案件の形と会う予定で、たいていは決まるため）。例外のときだけ開いて直す
+        '<details id="tokiStepsBox" style="margin:12px 0 2px;border:1px solid #eee;border-radius:8px;padding:4px 10px 8px;">' +
+        '<summary style="cursor:pointer;font-size:0.82em;color:#555;padding:4px 0;">🛠 工程を手で直す（いつもは開かなくて大丈夫です）</summary>' +
+        '<div style="font-size:0.8em;color:#555;margin:6px 0 2px;">' + tpl.stagesLabel +
           linkedMs.map(function(ms) { return '<span style="color:#999;font-size:0.9em;">　※［' + ms.linkedStep + '］は、' + ms.dateLabel + 'を入れると出ます</span>'; }).join('') + '</div><div>' +
           tpl.stages[0].steps.filter(function(st) { return linkedSteps.indexOf(st) === -1 && groupSteps.indexOf(st) === -1; }).map(function(st) {
             return '<label style="display:inline-flex;align-items:center;gap:3px;margin:2px 8px 2px 0;font-size:0.85em;"><input type="checkbox" data-toki-step="' + esc(st) + '"' + (en1.indexOf(st) !== -1 || (tpl.id === 'toki' && TOKI_STEPS_ADDED_LATER[st] && !(c && c.enabledVer >= TOKI_STEPS_ADDED_LATER[st])) ? ' checked' : '') + '>' + esc(tpl.id === 'toki' && TOKI_STEP_EDITOR_LABELS[st] ? TOKI_STEP_EDITOR_LABELS[st] : stepLabelOf(st)) + '</label>';
           }).join('') + '</div>' +
+        '</details>' +
         // v0.53.4: 【権威】2026-10-05、注意事項を文字で書ける備考欄がほしい、との指摘
         '<label style="display:block;font-size:0.8em;color:#555;margin:10px 0 2px;">備考（注意事項など）</label>' +
         '<textarea id="tokiBikou" rows="3" style="display:block;width:100%;max-width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccd;border-radius:8px;font-size:16px;font-family:inherit;">' + esc((c && c.bikou) || '') + '</textarea>' +
@@ -16406,12 +16439,24 @@ function renderTodoList() {
       // v0.54.4: ×とEscで閉じる
       document.getElementById('tokiCloseX').onclick = function() { ov.remove(); };
       ov.addEventListener('keydown', function(e) { if (e.key === 'Escape') ov.remove(); });
-      ['tokiTantou', 'tokiKinshoGoer', 'tokiKessaiGoer'].forEach(function(id) { var e = document.getElementById(id); if (e) e.setAttribute('list', 'tokiPeopleList'); });
+      ['tokiTantou', 'tokiKeiyakuGoer', 'tokiKinshoGoer', 'tokiKessaiGoer'].forEach(function(id) { var e = document.getElementById(id); if (e) e.setAttribute('list', 'tokiPeopleList'); });
       var $ = function(id) { return document.getElementById(id); };
       var hint = $('tokiHint');
       // 金消なし・自動決済で、要らない欄を閉じる
       tpl.milestones.forEach(function(ms) {
         var K = capKey(ms.key);
+        if (ms.optIn) {   // v0.55.27: 契約同席あり → 日付と段取りを出す。あり にした瞬間だけ、決済を自動決済に✓（手で外せる）
+          var syncOn = function(e) {
+            var on = $('toki' + K + 'On').checked;
+            if ($('toki' + K + 'Box')) $('toki' + K + 'Box').style.display = on ? 'block' : 'none';
+            if (!e || !ms.alsoAuto) return;
+            var au = $('toki' + capKey(ms.alsoAuto) + 'Auto');
+            if (!au) return;
+            if (on && !au.checked) { au.checked = true; au.dataset.auto = '1'; au.onchange && au.onchange(); }
+            else if (!on && au.dataset.auto === '1') { au.checked = false; delete au.dataset.auto; au.onchange && au.onchange(); }
+          };
+          $('toki' + K + 'On').onchange = syncOn; syncOn();
+        }
         if (ms.noneOption) {
           var syncNone = function() { var none = $('toki' + K + 'None').checked; $('toki' + K).disabled = none; if ($('toki' + K + 'Where')) $('toki' + K + 'Where').style.display = none ? 'none' : 'block'; if (none) $('toki' + K).value = ''; };
           $('toki' + K + 'None').onchange = syncNone; syncNone();
@@ -16419,7 +16464,20 @@ function renderTodoList() {
         if (ms.autoOption) {
           var syncAuto = function() { if ($('toki' + K + 'Where')) $('toki' + K + 'Where').style.display = $('toki' + K + 'Auto').checked ? 'none' : 'block'; };
           $('toki' + K + 'Auto').onchange = syncAuto; syncAuto();
+          // 手で触ったら、自動で入れた印は外す（あとで契約同席を外しても、手で入れた✓は残す）
+          $('toki' + K + 'Auto').addEventListener('click', function() { delete this.dataset.auto; });
         }
+        if (ms.noneOption) $('toki' + K + 'None').addEventListener('click', function() { delete this.dataset.auto; });
+      });
+      // v0.55.27: 設定なしに✓した瞬間に、金消同席なしにも✓（設定が無ければ金消も無い）。外したら、自動で入れた✓だけ外す
+      optGroups.forEach(function(g) {
+        if (!g.alsoNone || !$('tokiGroupNone_' + g.key)) return;
+        $('tokiGroupNone_' + g.key).addEventListener('change', function() {
+          var nn = $('toki' + capKey(g.alsoNone) + 'None');
+          if (!nn) return;
+          if (this.checked && !nn.checked) { nn.checked = true; nn.dataset.auto = '1'; nn.onchange && nn.onchange(); }
+          else if (!this.checked && nn.dataset.auto === '1') { nn.checked = false; delete nn.dataset.auto; nn.onchange && nn.onchange(); }
+        });
       });
       // ボックス番号：頭にB
       $('tokiBox').addEventListener('blur', function() { this.value = tokiNormalizeBox(this.value, tpl.numberPrefix); });
@@ -16504,6 +16562,7 @@ function renderTodoList() {
         var badMap = false;
         tpl.milestones.forEach(function(ms) {
           var k = ms.key, K = capKey(k);
+          if (ms.optIn) target[k + 'On'] = $('toki' + K + 'On').checked;   // v0.55.27: 契約同席あり
           if (ms.noneOption) target[k + 'None'] = $('toki' + K + 'None').checked;
           if (ms.autoOption) target[k + 'Auto'] = $('toki' + K + 'Auto').checked;
           target[k + 'Date'] = gyomuMilestoneIsNone(target, ms) ? '' : v('toki' + K);
@@ -16520,7 +16579,10 @@ function renderTodoList() {
         if (badMap && typeof showToast === 'function') showToast('⚠️ 地図は https:// で始まるURLだけ保存しました（それ以外は空にしました）');
         target.enabled1 = enabled.concat(linkedSteps);
         target.enabledVer = 4;   // v0.54.1／v0.54.2: この作る画面には、あとから足した工程（当日謄本・カク2・依2）も並んでいる
-        optGroups.forEach(function(g) { target[g.key + 'None'] = !!($('tokiGroupNone_' + g.key) || {}).checked; });
+        optGroups.forEach(function(g) {
+          if (g.optIn) target[g.key + 'On'] = !!($('tokiGroupOn_' + g.key) || {}).checked;   // v0.55.27: ✓を入れたときだけ出す
+          else target[g.key + 'None'] = !!($('tokiGroupNone_' + g.key) || {}).checked;
+        });
         target.bikou = String($('tokiBikou').value || '').trim();
         target.updatedAt = now;
         if (!c) {
@@ -52932,6 +52994,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.27', date: '2026-10-08',
+    items: [
+      { icon:'📝', t:'案件を作る画面の流れを整えました',
+        before:'案件の形を決める項目が、日程や工程の一覧の中にばらばらに入っていました',
+        after:'「案件のこと → この案件の形 → 会う予定 → 工程を手で直す → 備考」の順にしました。形を選ぶと、関係する工程と日程が自動で合わさります（自動で入った✓は、手で直せます）' }
+    ]
+  },
+  {
     ver: 'v0.55.26', date: '2026-10-08',
     items: [
       { icon:'📅', t:'日次を開くと、いつも今日が開くようにしました',
@@ -76177,7 +76247,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-406·⑩: 未定の案件の並びが違う', _st406u);
          // v0.51.4: 工程の並びと「様」
          // v0.55.23: 【第67条④】当日謄本のすぐ後ろに当日抄本を足した（2026-10-07 の指示）ので、並びの期待を変えた
-         (TOKI_STEPS_1.map(function(s) { return TOKI_STEP_LABELS[s] || s; }).join('') === '物入押カク依金設受設組カク依当日謄本当日抄本決組申' && TOKI_STEPS_1.length === new Set(TOKI_STEPS_1).size && tokiSama('山田') === '山田様' && tokiSama('山田様') === '山田様' && tokiSama('鈴木さん') === '鈴木さん')
+         // v0.55.27: 【第67条④】押の後ろに発送前のカク・依を足した（2026-10-08 の指示）ので、並びの期待を変えた
+         (TOKI_STEPS_1.map(function(s) { return TOKI_STEP_LABELS[s] || s; }).join('') === '物入押カク依カク依金設受設組カク依当日謄本当日抄本決組申' && TOKI_STEPS_1.length === new Set(TOKI_STEPS_1).size && tokiSama('山田') === '山田様' && tokiSama('山田様') === '山田様' && tokiSama('鈴木さん') === '鈴木さん')
            ? ok('ST-406·⑨: 工程は実際の流れの順。名前に「様」を重ねない')
            : ng('ST-406·⑨: 並びか「様」の付け方が違う', TOKI_STEPS_1.join(''));
          // v0.51.3: 担当者と行く人
@@ -76207,7 +76278,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      var _st407backup = allTasks.slice();
      var _st407fns = { admin: window.isKoyomiruAdminMode, save: window.saveAllTasks };
      var _st407flag = (allSettings.flags || {}).tokiMode;
-     var _st407tpl = JSON.parse(JSON.stringify({ t: GYOMU_TEMPLATE_TOKI.panelTitle, n: GYOMU_TEMPLATE_TOKI.milestones[1].name }));
+     // v0.55.27: 【第67条④】節目の並びに契約同席を足したので、番号ではなく key で決済を選ぶ（並びが変わっても壊れないように）
+     var _st407ms = GYOMU_TEMPLATE_TOKI.milestones.filter(function(m) { return m.key === 'kessai'; })[0];
+     var _st407tpl = JSON.parse(JSON.stringify({ t: GYOMU_TEMPLATE_TOKI.panelTitle, n: _st407ms.name }));
      try {
        if (typeof GYOMU_TEMPLATE_TOKI !== 'object' || typeof gyomuTemplateOf !== 'function') {
          ng('ST-407: ひな形が見つからない', '');
@@ -76218,7 +76291,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          window.saveAllTasks = function(){}; window.isKoyomiruAdminMode = function() { return true; };
          allSettings.flags = allSettings.flags || {}; allSettings.flags.tokiMode = true;
          allTasks.push({ id: 'st407-a', kind: 'toki', box: 'B407', buyer: '甲', kessaiDate: '2026-10-20', steps1: {}, steps2: {} });
-         GYOMU_TEMPLATE_TOKI.panelTitle = '🧪ST407の見出し'; GYOMU_TEMPLATE_TOKI.milestones[1].name = 'ST407節目';
+         GYOMU_TEMPLATE_TOKI.panelTitle = '🧪ST407の見出し'; _st407ms.name = 'ST407節目';
          var _st407box = document.createElement('div'); _st407box.id = 'st407Panel'; document.body.appendChild(_st407box);
          renderTokiPanel('st407Panel');
          var _st407txt = _st407box.innerText || _st407box.textContent;
@@ -76230,7 +76303,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-407: 例外', e.message);
      } finally {
-       GYOMU_TEMPLATE_TOKI.panelTitle = _st407tpl.t; GYOMU_TEMPLATE_TOKI.milestones[1].name = _st407tpl.n;
+       GYOMU_TEMPLATE_TOKI.panelTitle = _st407tpl.t; _st407ms.name = _st407tpl.n;   // v0.55.27: 番号ではなく、選んだ決済を元へ
        allTasks = _st407backup;
        window.isKoyomiruAdminMode = _st407fns.admin; window.saveAllTasks = _st407fns.save;
        if (allSettings.flags) allSettings.flags.tokiMode = _st407flag;
@@ -77347,8 +77420,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st434labels = [].map.call(document.querySelectorAll('#tokiCaseOverlay form label'), function(l) { return l.textContent.trim(); });
          var _st434pos = function(re) { for (var i = 0; i < _st434labels.length; i++) if (re.test(_st434labels[i])) return i; return -1; };
          _st434order = [_st434pos(/^物件$/), _st434pos(/^管轄法務局$/), _st434pos(/^事務所担当者/), _st434pos(/^設定なし/), _st434pos(/^金消同席日$/)].join(',');
-         var _st434shou = document.querySelector('[data-toki-step="当日抄本"]');
-         var _st434shouOff = !!_st434shou && !_st434shou.checked;
+         // v0.55.27: 【第67条④】当日抄本は、工程の一覧から「この案件の形」の✓へ移した（2026-10-08 の指示）
+         var _st434shou = document.getElementById('tokiGroupOn_shouhon');
+         var _st434shouOff = !!_st434shou && !_st434shou.checked && !document.querySelector('[data-toki-step="当日抄本"]');
          var _st434ov = document.getElementById('tokiCaseOverlay'); if (_st434ov) _st434ov.remove();
        }
        var _st434p = _st434order.split(',').map(Number);
@@ -77502,6 +77576,64 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window._isTesting = _st437testing;
        if (_st437key === null) localStorage.removeItem('selectedDailyDate'); else localStorage.setItem('selectedDailyDate', _st437key);
        currentDailyDate = _st437cur; window._dailyLastToday = _st437last;
+     }
+
+     // ===== ST-438: 作る画面の流れ（この案件の形 → 会う予定 → 工程を手で直す）・契約同席・発送前のカク依（v0.55.27〜） =====
+     // 【権威】2026-10-08、設定なしなら金消も無い・契約同席もある（もう会わない）・押印書類を発送するときは発送前にカクと依、
+     // 編集・入力の流れを見直して整える、との指示。自動の✓は手で直せること。名前はすべて架空
+     var _st438tasks = allTasks.slice();
+     var _st438flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st438saveT = window.saveAllTasks, _st438toast = window.showToast;
+     try {
+       window.saveAllTasks = function() {}; window.showToast = function() {};
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       if (!gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) { ng('ST-438: 登記の作る画面を開けない（管理者でない環境）', ''); }
+       else {
+         openTokiCaseEditor(null, { tplId: 'toki' });
+         var $8 = function(id) { return document.getElementById(id); };
+         var _st438click = function(id) { $8(id).click(); };
+         var _st438st = function() { return [$8('tokiGroupNone_settei').checked, $8('tokiKinshoNone').checked, $8('tokiKeiyakuOn').checked, $8('tokiKessaiAuto').checked].map(function(b) { return b ? 1 : 0; }).join(''); };
+         // ① 並び：見出し「この案件の形」→「会う予定」、工程の一覧は閉じた囲み
+         var _st438heads = [].map.call(document.querySelectorAll('#tokiCaseOverlay form > div'), function(d) { return d.textContent.trim(); }).filter(function(t) { return t === 'この案件の形' || t === '会う予定'; }).join(',');
+         var _st438ok1 = _st438heads === 'この案件の形,会う予定' && $8('tokiStepsBox') && !$8('tokiStepsBox').open && $8('tokiKeiyakuBox').style.display === 'none';
+         // ② 自動の✓と手直し
+         var _st438a = _st438st();                          // 0000
+         _st438click('tokiGroupNone_settei');               // 設定なし → 金消同席なしも
+         var _st438b = _st438st();                          // 1100
+         _st438click('tokiGroupNone_settei');               // 外すと、自動で入れた✓だけ外れる
+         var _st438c = _st438st();                          // 0000
+         _st438click('tokiKinshoNone'); _st438click('tokiGroupNone_settei'); _st438click('tokiGroupNone_settei');   // 手で入れた金消同席なしは残る
+         var _st438d = _st438st();                          // 0100
+         _st438click('tokiKinshoNone');
+         _st438click('tokiKeiyakuOn');                      // 契約同席あり → 自動決済
+         var _st438e = _st438st() + $8('tokiKeiyakuBox').style.display;   // 0011block
+         _st438click('tokiKessaiAuto');                     // 手で外せる
+         var _st438f = _st438st();                          // 0010
+         var _st438ov = $8('tokiCaseOverlay'); if (_st438ov) _st438ov.remove();
+         (_st438ok1 && _st438a === '0000' && _st438b === '1100' && _st438c === '0000' && _st438d === '0100' && _st438e === '0011block' && _st438f === '0010')
+           ? ok('ST-438·①: 作る画面は「この案件の形 → 会う予定 → 工程を手で直す（閉じた囲み）」。設定なし→金消同席なし、契約同席あり→自動決済を自動で✓し、手で直せる')
+           : ng('ST-438·①: 作る画面の流れか自動の✓が違う', JSON.stringify([_st438heads, _st438a, _st438b, _st438c, _st438d, _st438e, _st438f]));
+       }
+       // ③ 工程の出し分け：発送前のカク・依、当日抄本は✓したときだけ。前の版で当日抄本に✓していた案件は「要る」と読む
+       var _st438c1 = { id: 'st438-a', kind: 'toki', box: 'B1', buyer: '山田様', hassouOn: true, shouhonOn: false, steps1: {}, createdAt: '2026-10-01T00:00:00Z' };
+       var _st438old = { id: 'st438-b', kind: 'toki', box: 'B2', buyer: '佐藤様', enabled1: ['物', '入', '押', '当日謄本', '当日抄本', '決'], steps1: {}, createdAt: '2026-10-01T00:00:00Z' };
+       var _st438old2 = { id: 'st438-c', kind: 'toki', box: 'B3', buyer: '鈴木様', steps1: {}, createdAt: '2026-10-01T00:00:00Z' };
+       var _st438s = function(c) { return tokiStepsFor(c); };
+       (_st438s(_st438c1).indexOf('カク発送') === _st438s(_st438c1).indexOf('押') + 1 && _st438s(_st438c1).indexOf('依発送') !== -1 && _st438s(_st438c1).indexOf('当日抄本') === -1 &&
+        _st438s(_st438old).indexOf('当日抄本') !== -1 && _st438s(_st438old).indexOf('カク発送') === -1 && _st438s(_st438old2).indexOf('当日抄本') === -1)
+         ? ok('ST-438·②: 発送前のカク・依（押のすぐ後ろ）と当日抄本は、✓したときだけ出す（前の版で当日抄本に✓していた案件は要るのまま）')
+         : ng('ST-438·②: 工程の出し分けが違う', JSON.stringify([_st438s(_st438c1), _st438s(_st438old)]));
+       // ④ カード：契約同席は「あり」のときだけ出す（なしのときに「契約同席 なし」と出さない）
+       var _st438t = function(c) { var d = document.createElement('div'); d.innerHTML = _tokiCaseRowHtml(c, '2026-10-08'); return d.textContent; };
+       (_st438t(_st438old2).indexOf('契約同席') === -1 &&
+        _st438t(Object.assign({}, _st438old2, { keiyakuOn: true, keiyakuDate: '2026-10-15', keiyakuTime: '10:00' })).indexOf('契約同席 10/15') !== -1)
+         ? ok('ST-438·③: カードの契約同席は「あり」のときだけ出る')
+         : ng('ST-438·③: カードの契約同席の出方が違う', _st438t(_st438old2).slice(0, 80));
+     } catch(e) {
+       ng('ST-438: 例外', e.message);
+     } finally {
+       window.saveAllTasks = _st438saveT; window.showToast = _st438toast;
+       allTasks = _st438tasks; allSettings.flags = _st438flags;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
