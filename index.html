@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.33 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.35 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.33';
+    const APP_VERSION = 'v0.55.35';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14851,7 +14851,8 @@ function renderTodoList() {
     // 当日抄本・発送前のカク依は、毎回は要らないので、作る画面の「この案件の形」で✓を入れたときだけ出す（optionalGroups の optIn）
     // v0.54.3: 【権威】2026-10-05、1回目のカク・依は「金消前チェック」、2回目は「決済前チェック」というコンセプト、との説明。
     // 作る画面の「要る工程」で、どちらのチェックかが分かるようにする（一覧のボタンは短いまま）
-    var TOKI_STEP_EDITOR_LABELS = { 'カク': 'カク（金消前チェック）', '依': '依（金消前チェック）', 'カク2': 'カク（決済前チェック）', '依2': '依（決済前チェック）', '当日抄本': '当日抄本（管轄法務局へ出向く）', 'カク発送': 'カク（発送前チェック）', '依発送': '依（発送前チェック）', '家屋証明': '家屋証明（市役所で取る）' };
+    // v0.55.35: 【権威】2026-10-09、物入押は「物件（評価・謄本の取り込み・関与者の登録まで）を固める・申請書の入力・押印書類」、との説明
+    var TOKI_STEP_EDITOR_LABELS = { '物': '物（物件・評価・関与者を固める）', '入': '入（申請書の入力）', '押': '押（押印書類）', 'カク': 'カク（金消前チェック）', '依': '依（金消前チェック）', 'カク2': 'カク（決済前チェック）', '依2': '依（決済前チェック）', '当日抄本': '当日抄本（管轄法務局へ出向く）', 'カク発送': 'カク（発送前チェック）', '依発送': '依（発送前チェック）', '家屋証明': '家屋証明（市役所で取る）' };
     // あとから足した工程と、足した版の番号。前からある案件（要る工程を選んだときに、まだ無かった）にも出す
     var TOKI_STEPS_ADDED_LATER = { '当日謄本': 3, 'カク2': 4, '依2': 4 };
     var TOKI_STEPS_2 = ['謄本', '印字', '送付状', '法務局からの返却', '組み立て', 'カク', '依頼'];
@@ -14922,7 +14923,8 @@ function renderTodoList() {
       // 4つとも「未確認・あり・なし」の3つの状態で持つ（stateLabel：カードに出す名前、desc：作る画面の説明）。初めは未確認
       optionalGroups: [
         { key: 'settei', stateLabel: '設定', desc: 'なしなら設受・設組を出さず、金消同席もなしにする', noneLabel: '設定なし（設受・設組を出さない）', steps: ['設受', '設組'], alsoNone: 'kinsho' },
-        { key: 'hassou', stateLabel: '押印書類の発送', desc: 'ありなら発送前のカク・依を出す', optIn: true, onLabel: '押印書類を発送する（発送前のカク・依を出す）', steps: ['カク発送', '依発送'] },
+        // v0.55.35: 【権威】2026-10-09、発送は欠席だけでなく、買主でも会社の実印を持ち出せない（抵当権設定あり）などで前もって送ることがある
+        { key: 'hassou', stateLabel: '押印書類の発送', desc: '売主・買主に前もって送る（欠席・会社の実印を持ち出せない など）。ありなら発送前のカク・依を出す', optIn: true, onLabel: '押印書類を発送する（発送前のカク・依を出す）', steps: ['カク発送', '依発送'] },
         { key: 'shouhon', stateLabel: '当日抄本', desc: 'ありなら管轄法務局へ出向く', optIn: true, onLabel: '当日抄本が要る（管轄法務局へ出向く）', steps: ['当日抄本'], legacyStep: '当日抄本' },
         // v0.55.28: 【権威】2026-10-08、家屋証明書を市役所で取ることもある、との指摘。受託簿の流れ（家屋証明の手配 → 最終自己チェック）に合わせ、
         // 設組の後ろ・決済前チェックの前に置く。✓したときだけ出す
@@ -15574,9 +15576,18 @@ function renderTodoList() {
         try { isOpen = localStorage.getItem('koyomiru_sidebar_open_' + tpl.id) === '1'; } catch (e) {}
         if (!isOpen) return;
         // 日の欄の並び：その日に節目がある案件を先に（v0.55.0）
+        // v0.55.34: 【権威】2026-10-09、今日の予定を見るとき、今日が決済の案件を上に。自分が担当のものを先に、次にほかの人の担当
+        // （ほかの人の担当でも、自分が金消に行った案件などがあるため）。決済の時刻が早い順。手で並べ替えた日は、手で並べた順が優先
         var ids = {}; tokiMarksOnDate(ymd).forEach(function(m) { ids[m.id] = 1; });
         var cases = sortTokiCases(_gyomuOpenOn(tpl.kind, ymd), ymd);
-        out = out.concat(cases.filter(function(c) { return ids[c.id]; }), cases.filter(function(c) { return !ids[c.id]; }));
+        var rank = function(c) {
+          if (c.kessaiDate === ymd) return tokiIsSelf(tokiTantou(c)) ? 0 : 1;
+          return ids[c.id] ? 2 : 3;
+        };
+        var byTime = function(a, b) { return String(a.kessaiTime || '99:99').localeCompare(String(b.kessaiTime || '99:99')); };
+        out = out.concat(cases.map(function(c, i) { return { c: c, i: i, r: rank(c) }; }).sort(function(a, b) {
+          return (a.r - b.r) || (a.r <= 1 ? byTime(a.c, b.c) : 0) || (a.i - b.i);
+        }).map(function(x) { return x.c; }));
       });
       return out;
     }
@@ -16010,12 +16021,13 @@ function renderTodoList() {
         // v0.53.0: 節目はひな形から組み立てる（なし・未定・日付・自動決済・段取り・行く人）
         var tpl = gyomuTemplateOf(c);
         // v0.55.29: 「この案件の形」の状態も、節目と同じ行に出す（未確認は橙色）
-        var _grpStates = (tpl.optionalGroups || []).filter(function(g) { return g.stateLabel; }).map(function(g) {
-          var st = gyomuGroupState(c, g);
-          return st === 'yes' ? '<span style="color:#2f9e44;">' + g.stateLabel + ' あり</span>'
-            : st === 'no' ? '<span style="color:#888;">' + g.stateLabel + ' なし</span>'
-            : '<span style="color:#e8590c;font-weight:700;">' + g.stateLabel + ' 未確認</span>';
+        // v0.55.35: 【権威】2026-10-09、未確認が何個も並ぶのはつらい。未確認は「❓ 案件の形を決める（あと〇問）」の札1つにまとめ、
+        // 決めた後は「あり」のものだけ出す（なしは出さない）
+        var _grpStates = (tpl.optionalGroups || []).filter(function(g) { return g.stateLabel && gyomuGroupState(c, g) === 'yes'; }).map(function(g) {
+          return '<span style="color:#2f9e44;">' + g.stateLabel + ' あり</span>';
         });
+        var _wzLeft = (tpl.id === 'toki' && typeof tokiWizardRemaining === 'function') ? tokiWizardRemaining(c) : 0;
+        var _wzChip = _wzLeft ? '<button type="button" class="toki-wizard-chip" onclick="event.stopPropagation();openTokiWizard(\'' + esc(c.id) + '\')" style="border:1px solid #e8590c;background:#fff4e6;color:#e8590c;border-radius:999px;padding:1px 10px;font-size:0.95em;font-weight:700;cursor:pointer;">❓ 案件の形を決める（あと' + _wzLeft + '問）</button>' : '';
         // v0.55.33: カードの並びはひな形の cardOrder（登記は決済を先頭に逆算）。会う予定は「未確認・あり・なし」を出す（未確認は橙色）
         var _msOrdered = tpl.cardOrder ? tpl.cardOrder.map(function(key) { return tpl.milestones.filter(function(m) { return m.key === key; })[0]; }).filter(function(m) { return m; }) : tpl.milestones;
         var dates = _msOrdered.map(function(ms) {
@@ -16023,42 +16035,44 @@ function renderTodoList() {
           if (ms.attend && !c.closed) {
             var att = gyomuMilestoneAttend(c, ms);
             if (ms.attend.gatesDate) {
-              if (att === 'no') return '<span style="color:#888;">' + ms.name + ' なし</span>';
-              if (att === '') return '<span style="color:#e8590c;font-weight:700;">' + ms.name + ' 未確認</span>';
+              if (att === 'no') return ms.key === 'keiyaku' ? '' : '<span style="color:#888;">' + ms.name + ' なし</span>';   // 契約同席なしはふつうなので出さない
+              if (att === '') return '';   // v0.55.35: 未確認は「❓ 案件の形を決める」の札にまとめる
               if (!dt) return '<span style="color:#999;">' + ms.name + ' 未定</span>';
               return _tokiDateLabel(ms.name, dt, today) + (ms.plan ? plan(k) + goerTag(k) : '');
             }
             var base = dt ? _tokiDateLabel(ms.name, dt, today) : '<span style="color:#999;">' + ms.name + ' 未定</span>';
             if (att === 'no') return base + '<span style="color:#0b7285;font-weight:700;">（' + ms.autoLabel + '）</span>';
-            if (att === '') return base + '<span style="color:#e8590c;font-weight:700;">（立会 未確認）</span>';
+            if (att === '') return base;   // v0.55.35: 未確認は「❓ 案件の形を決める」の札にまとめる
             return base + (dt && ms.plan ? plan(k) + goerTag(k) : '');
           }
           if (gyomuMilestoneIsNone(c, ms)) return ms.optIn ? '' : '<span style="color:#888;">' + ms.name + ' なし</span>';   // v0.55.27: 初めは「なし」の節目（契約同席）は、なしなら何も出さない
           if (!dt) return ms.showUndecided ? '<span style="color:#999;">' + ms.name + ' 未定</span>' : '';
           if (gyomuMilestoneIsAuto(c, ms)) return _tokiDateLabel(ms.name, dt, today) + '<span style="color:#0b7285;font-weight:700;">（' + ms.autoLabel + '）</span>';
           return _tokiDateLabel(ms.name, dt, today) + (ms.plan ? plan(k) + goerTag(k) : '');
-        }).concat(c.closed ? [] : _grpStates).filter(function(x) { return !!x; }).join('　｜　');   // v0.55.29: 済んだ案件には状態を出さない
+        }).concat(c.closed ? [] : _grpStates.concat(_wzChip ? [_wzChip] : [])).filter(function(x) { return !!x; }).join('　｜　');   // v0.55.29: 済んだ案件には状態を出さない
         // v0.53.4: 【権威】2026-10-05、済んだ案件を隠すな、普通の予定と同じく取り消し線を引いて残せ、との指摘
         return '<div class="toki-case-row' + (c.closed ? ' toki-case-closed' : '') + '"' + (c.closed ? '' : ' draggable="true"') + ' data-toki-id="' + esc(c.id) + '" style="padding:7px 8px;margin:0 0 6px;border-radius:8px;' + (c.closed ? 'opacity:0.55;' : 'cursor:grab;') + 'background:' + (dayDone ? '#f1f3f5' : al.length ? '#fff4e6' : '#f6f8fc') + ';border-left:4px solid ' + (c.closed ? '#adb5bd' : al.length ? '#e8590c' : dayDone ? '#adb5bd' : '#5b8def') + ';">' +
           // v0.51.7: 【権威】2026-10-05、登記は直したり消したりできないのか、との指摘。番号を押せば直せたが、
           // 普通の予定のような ✏️ と × が無く、分からなかった。普通の予定と同じ形で、右上に付ける。
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">' +
+          // v0.55.34: 【権威】2026-10-09、スマホの魚の目で題が1文字ずつ縦に並んで読めない、との指摘。題の横のボタン群（置き場所・↑↓・今日おわり・✏️・×）が
+          // 折り返さないので、狭い列では題の取り分が無くなっていた。題に少なくとも150pxを約束し、足りないときはボタン群を次の行（右寄せ）に回す
+          '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:6px;">' +
           // v0.55.2: 【権威】2026-10-06、カードが大きい。そのときは役目を終えるので1枚ずつ折りたためるように、ただし気づきにくいのは困る、との指摘。
           // ▾／▸で開閉（カードごと・その端末で覚える）。たたんでも、次の節目・工程の進み・次の工程・⚠️とオレンジの色は残す。
           (dayDone ? '' : '<button onclick="toggleTokiCaseCollapsed(\'' + esc(c.id) + '\')" title="' + (collapsed ? '開く' : 'たたむ') + '" aria-expanded="' + !collapsed + '" style="border:none;background:none;cursor:pointer;color:#888;font-size:0.9em;padding:0 2px;flex:none;">' + (collapsed ? '▸' : '▾') + '</button>') +
-          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1;min-width:0;' + (collapsed ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' : '') + (c.closed || dayDone ? 'text-decoration:line-through;' : '') + (dayDone ? 'color:#999;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
+          '<div onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" style="cursor:pointer;font-size:0.9em;flex:1 1 150px;min-width:0;' + (collapsed ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' : '') + (c.closed || dayDone ? 'text-decoration:line-through;' : '') + (dayDone ? 'color:#999;' : '') + '">' + (c.closed ? '✅ <span style="font-size:0.85em;">' + (function() { var y = _gyomuLocalYmd(c.closedAt).split('-'); return y.length === 3 ? Number(y[1]) + '/' + Number(y[2]) + ' 完了' : '完了'; })() + '</span>　' : '') + '<b>' + esc(c.box || '') + '</b>　' +
             // v0.55.17: タイトルの書き方どおり「事案：買主・売主（物件：…）」で出す（同じ側の2人以上は「、」）
             (c.jian ? esc(c.jian) + '：' : '') + esc(tokiSamaList(c.buyer)) + (c.seller ? '・' + esc(tokiSamaList(c.seller)) : '') +
             // v0.55.21: 業務の案件で「（物件：…）」と出ていた。ひな形の言葉（登記＝物件、業務＝場所）を使う
             (c.bukken ? '<span style="color:#555;">（' + esc((gyomuTemplateOf(c).fields.bukken || {}).label || '物件') + '：' + esc(c.bukken) + '）</span>' : '') +
             (c.requester ? '<span style="color:#888;font-size:0.85em;">　' + esc(gyomuFieldShort(gyomuTemplateOf(c), 'requester')) + ' ' + esc(c.requester) + '</span>' : '') +   // v0.55.20・v0.55.21: 登記＝依頼、業務＝窓口
             (!tokiIsSelf(tokiTantou(c)) ? '<span style="color:#555;font-size:0.85em;">　担当 ' + esc(tokiTantou(c)) + '</span>' : '') + '</div>' +
-          '<span style="white-space:nowrap;">' +
+          '<span class="toki-case-actions" style="display:inline-flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:2px;margin-left:auto;">' +
             // v0.52.1: 【権威】2026-10-05、スマホは矢印で並べ替え。指で操作する端末だけに出す（パソコンはドラッグ＆ドロップ）
             // v0.55.1: スマホの魚の目では、置き場所（プラ・午前・午後・夕方）を切り替えられる
             (rowOpts.quad && _tokiIsTouch() ? (function() {
               var cur = gyomuQuadSlotOf(c, today);
-              return '<select onchange="setGyomuQuadSlot(\'' + esc(c.id) + '\', this.value)" title="置き場所" style="font-size:0.75em;padding:1px 2px;margin-right:4px;border:1px solid #ccd;border-radius:6px;">' +
+              return '<select onchange="setGyomuQuadSlot(\'' + esc(c.id) + '\', this.value)" title="置き場所" style="font-size:0.75em;padding:1px 2px;margin-right:4px;border:1px solid #ccd;border-radius:6px;width:auto;max-width:6em;flex:none;">' +
                 getQuadSlots().map(function(s) { return '<option value="' + s.key + '"' + (s.key === cur ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('') + '</select>';
             })() : '') +
             (_tokiIsTouch() ? '<button onclick="' + _mvCall(-1) + '" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
@@ -16801,6 +16815,8 @@ function renderTodoList() {
         ov.remove();
         _tokiRefreshAll();
         if (typeof showToast === 'function') showToast('📝 ' + (box || tokiSama(buyer)) + ' を保存しました');
+        // v0.55.35: 新しい登記の案件は、保存したらそのまま「案件の形を決める」ウィザードを開く（いらなければ「保存しないで閉じる」）
+        if (!c && tpl.id === 'toki' && typeof openTokiWizard === 'function' && tokiWizardRemaining(target) > 0) openTokiWizard(target.id);
       };
       var del = $('tokiDeleteBtn');
       if (del) del.onclick = function() { deleteTokiCase(c.id, function() { ov.remove(); }); };
@@ -16827,6 +16843,173 @@ function renderTodoList() {
       to.dispatchEvent(new Event('change'));
     }
     window._tokiUnsetAutoAttend = _tokiUnsetAutoAttend;
+    // ===== v0.55.35: 案件の形を決めるウィザード（1画面に1問、押すと次へ） =====
+    // 【権威】2026-10-09、3つから選ぶのを何個も選ばされるのがストレス。リーガルの力のように、1つずつ聞いてきて
+    // テンプレをカチッと押すだけ、の入力にしたい。あとで直せるように、との指示。
+    // 順番は、実際の流れで情報が分かる順（抵当権設定 → 金消同席 → 契約同席 → 決済の立会 → 押印書類の発送 → 当日抄本 → 家屋証明）。
+    // 評価は聞かない（無ければアプリに入れる前に動いて手を打つので、項目を増やすと手間が増えるだけ、との指摘）。
+    // 答えは案件の画面と同じ印に書く（案件の画面でいつでも直せる）。前の版の端末でも同じに動くよう、今までの印も一緒に書く
+    var TOKI_WIZARD_QS = [
+      { kind: 'group', key: 'settei', q: '抵当権設定はありますか？', yes: 'あり', no: 'なし' },
+      { kind: 'attend', key: 'kinsho', q: '金消に同席しますか？', yes: '同席する', no: '同席しない',
+        auto: function(a) { return a.settei === 'no' ? { val: 'no', why: '抵当権設定が無いので、金消も無し' } : null; } },
+      { kind: 'attend', key: 'keiyaku', q: '契約に同席しますか？', hint: 'まれ。契約の場で全員の書類をもらい、決済は全員欠席でできるようにする', yes: '同席する', no: '同席しない' },
+      { kind: 'attend', key: 'kessai', q: '決済に立会しますか？', yes: '立会する', no: '立会しない（自動決済）',
+        auto: function(a) { return a.keiyaku === 'yes' ? { val: 'no', why: '契約同席で書類をもらうので、決済は立会しない' } : null; } },
+      { kind: 'group', key: 'hassou', q: '押印書類を前もって発送しますか？', hint: '売主・買主のどちらにでも（欠席する・会社の実印を持ち出せない など）', yes: '発送する', no: '発送しない' },
+      { kind: 'group', key: 'shouhon', q: '当日抄本は要りますか？', hint: 'ネットで取れない共用部分など。管轄法務局へ出向く', yes: '要る', no: '要らない' },
+      { kind: 'group', key: 'kaoku', q: '家屋証明書は取りますか？', hint: '市役所で取る', yes: '取る', no: '取らない' }
+    ];
+    window.TOKI_WIZARD_QS = TOKI_WIZARD_QS;
+    function _tokiWizardDef(q) {
+      var tpl = GYOMU_TEMPLATE_TOKI;
+      return q.kind === 'group' ? (tpl.optionalGroups || []).filter(function(g) { return g.key === q.key; })[0]
+                                : tpl.milestones.filter(function(m) { return m.key === q.key; })[0];
+    }
+    function tokiWizardAnswers(c) {
+      var a = {};
+      TOKI_WIZARD_QS.forEach(function(q) {
+        var d = _tokiWizardDef(q);
+        a[q.key] = d ? (q.kind === 'group' ? gyomuGroupState(c, d) : gyomuMilestoneAttend(c, d)) : '';
+      });
+      return a;
+    }
+    window.tokiWizardAnswers = tokiWizardAnswers;
+    // まだ答えていない問いの数（自動で決まるものは数えない）
+    function tokiWizardRemaining(c) {
+      if (!c || c.closed || (c.kind || 'toki') !== 'toki') return 0;
+      var a = tokiWizardAnswers(c), n = 0;
+      TOKI_WIZARD_QS.forEach(function(q) { if (!a[q.key] && !(q.auto && q.auto(a))) n++; });
+      return n;
+    }
+    window.tokiWizardRemaining = tokiWizardRemaining;
+    // 答えを案件に書く（案件の画面の保存と同じ印。会う予定で「なし」になったら、日付と段取りは空にする）
+    function _tokiWizardApply(c, a) {
+      TOKI_WIZARD_QS.forEach(function(q) {
+        var d = _tokiWizardDef(q), v = a[q.key];
+        if (!d) return;
+        if (q.kind === 'group') {
+          if (v === 'yes' || v === 'no') c[q.key + 'State'] = v; else delete c[q.key + 'State'];
+          if (d.optIn) c[q.key + 'On'] = v === 'yes'; else c[q.key + 'None'] = v === 'no';
+          return;
+        }
+        c[q.key + 'Attend'] = (v === 'yes' || v === 'no') ? v : 'unk';
+        if (d.optIn) c[q.key + 'On'] = v === 'yes';
+        if (d.noneOption) c[q.key + 'None'] = v === 'no';
+        if (d.autoOption) c[q.key + 'Auto'] = v === 'no';
+        if (v === 'no') {
+          if (d.attend && d.attend.gatesDate) c[q.key + 'Date'] = '';
+          if (d.plan) ['Time', 'Place', 'Map', 'Means', 'Depart', 'Goer'].forEach(function(f) { c[q.key + f] = ''; });
+        }
+      });
+      c.updatedAt = new Date().toISOString();   // 第61条
+    }
+    window._tokiWizardApply = _tokiWizardApply;
+    function openTokiWizard(caseId, opts) {
+      opts = opts || {};
+      var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
+      if (!c || !gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) return;
+      var old = document.getElementById('tokiWizardOverlay'); if (old) old.remove();
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+      var a = tokiWizardAnswers(c), autoWhy = {}, history = [];
+      // 自動で決まる問いを決める（自分で答えたものは変えない）
+      var applyAuto = function() {
+        TOKI_WIZARD_QS.forEach(function(q) {
+          var r = q.auto && q.auto(a);
+          // 保存してある答えが、自動で決まる答えと同じなら、それも「自動」として扱う（問いの数に入れない）
+          if (r && (!a[q.key] || autoWhy[q.key] || a[q.key] === r.val)) { a[q.key] = r.val; autoWhy[q.key] = r.why; }
+          else if (!r && autoWhy[q.key]) { a[q.key] = ''; delete autoWhy[q.key]; }   // 前の答えを直して、自動の理由が無くなった
+        });
+      };
+      applyAuto();
+      // 初めに出す問い：答え直し（all）なら1問目、そうでなければ最初の未回答
+      var firstUnanswered = function(from) {
+        for (var i = from || 0; i < TOKI_WIZARD_QS.length; i++) { var q = TOKI_WIZARD_QS[i]; if (!a[q.key] && !autoWhy[q.key]) return i; }
+        return -1;
+      };
+      var idx = opts.all ? 0 : firstUnanswered(0);
+      if (idx < 0) idx = 'sum';
+      var ov = document.createElement('div');
+      ov.id = 'tokiWizardOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:16px;';
+      document.body.appendChild(ov);
+      var title = (c.box ? c.box + '　' : '') + (c.jian ? c.jian + '：' : '') + tokiSamaList(c.buyer);
+      // 次の問い：初めから答え直す（all）なら順に。カードの札から開いたときは、まだ答えていない問いだけ。無ければまとめへ
+      var nextIdx = function(i) {
+        for (var j = i + 1; j < TOKI_WIZARD_QS.length; j++) {
+          var k = TOKI_WIZARD_QS[j].key;
+          if (autoWhy[k]) continue;
+          if (opts.all || !a[k]) return j;
+        }
+        return 'sum';
+      };
+      var bigBtn = function(act, txt, on, color) {
+        return '<button type="button" data-wz="' + act + '" style="display:block;width:100%;margin:8px 0;padding:14px;border-radius:12px;font-size:1.05em;font-weight:700;cursor:pointer;' +
+          'border:2px solid ' + color + ';background:' + (on ? color : '#fff') + ';color:' + (on ? '#fff' : color) + ';">' + esc(txt) + '</button>';
+      };
+      var render = function() {
+        var box = '<div style="background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:90vh;overflow:auto;padding:18px 18px 14px;box-shadow:0 10px 30px rgba(0,0,0,0.25);">' +
+          '<div style="font-size:0.75em;color:#888;margin-bottom:6px;">' + esc(title) + '</div>';
+        if (idx === 'sum') {
+          box += '<div style="font-size:1.05em;font-weight:700;margin-bottom:10px;">まとめ（押すと、その問いに戻って直せます）</div>' +
+            TOKI_WIZARD_QS.map(function(q, i) {
+              var v = a[q.key], txt = v === 'yes' ? q.yes : v === 'no' ? q.no : '未確認';
+              return '<button type="button" data-wz="go:' + i + '" style="display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:9px 10px;margin:4px 0;border:1px solid #eee;border-radius:10px;background:#fafafa;cursor:pointer;font-size:0.88em;">' +
+                '<span>' + esc(q.q) + '</span><b style="white-space:nowrap;color:' + (v ? '#2f9e44' : '#e8590c') + ';">' + esc(txt) + (autoWhy[q.key] ? '（自動）' : '') + '</b></button>';
+            }).join('') +
+            '<button type="button" data-wz="save" style="display:block;width:100%;margin-top:12px;padding:13px;border:none;border-radius:12px;background:#3b82f6;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;">これで決める</button>' +
+            '<button type="button" data-wz="close" style="display:block;width:100%;margin-top:6px;padding:9px;border:1px solid #ddd;border-radius:12px;background:#fff;color:#666;cursor:pointer;">保存しないで閉じる</button>';
+        } else {
+          var q = TOKI_WIZARD_QS[idx], cur = a[q.key];
+          var shown = TOKI_WIZARD_QS.filter(function(x) { return !autoWhy[x.key]; });
+          var pos = shown.indexOf(q) + 1;
+          box += '<div style="font-size:0.75em;color:#6741d9;font-weight:700;">質問 ' + pos + ' / ' + shown.length + '</div>' +
+            '<div style="font-size:1.25em;font-weight:700;margin:6px 0 4px;">' + esc(q.q) + '</div>' +
+            (q.hint ? '<div style="font-size:0.8em;color:#888;margin-bottom:6px;">' + esc(q.hint) + '</div>' : '') +
+            bigBtn('yes', q.yes, cur === 'yes', '#2f9e44') + bigBtn('no', q.no, cur === 'no', '#868e96') +
+            '<div style="display:flex;justify-content:space-between;margin-top:6px;">' +
+              '<button type="button" data-wz="back" style="border:none;background:none;color:#4a6fa5;cursor:pointer;font-size:0.9em;padding:6px;"' + (history.length ? '' : ' disabled') + '>← 戻る</button>' +
+              '<button type="button" data-wz="skip" style="border:none;background:none;color:#e8590c;cursor:pointer;font-size:0.9em;padding:6px;">あとで（未確認のまま）→</button>' +
+            '</div>' +
+            '<div style="text-align:right;margin-top:2px;"><button type="button" data-wz="sum" style="border:none;background:none;color:#888;cursor:pointer;font-size:0.8em;">まとめを見る</button></div>';
+        }
+        ov.innerHTML = box + '</div>';
+      };
+      ov.addEventListener('click', function(e) {
+        var b = e.target.closest && e.target.closest('[data-wz]');
+        if (!b) { if (e.target === ov) ov.remove(); return; }
+        var act = b.getAttribute('data-wz');
+        if (act === 'close') { ov.remove(); return; }
+        if (act === 'save') {
+          _tokiWizardApply(c, a);
+          saveAllTasks();
+          ov.remove();
+          if (typeof _tokiRefreshAll === 'function') _tokiRefreshAll();
+          if (typeof showToast === 'function') showToast('📝 ' + (c.box || tokiSama(c.buyer)) + ' の案件の形を決めました');
+          return;
+        }
+        if (act === 'sum') { if (idx !== 'sum') history.push(idx); idx = 'sum'; render(); return; }
+        if (act.indexOf('go:') === 0) { history.push('sum'); idx = Number(act.slice(3)); render(); return; }
+        if (act === 'back') { if (history.length) idx = history.pop(); render(); return; }
+        var q = TOKI_WIZARD_QS[idx];
+        var changed = a[q.key] !== (act === 'skip' ? '' : act);
+        if (act === 'yes' || act === 'no') { a[q.key] = act; delete autoWhy[q.key]; }
+        else if (act === 'skip') { a[q.key] = ''; delete autoWhy[q.key]; }
+        // v0.55.35: その場で答えを変えたときは、自動で決まる問いもその場で決め直す（前の答えを上書き）。
+        // 例：抵当権設定を「なし」に変えたのに、前の「金消同席する」が残る、を防ぐ。まとめから押せば手で直せる
+        if (changed) TOKI_WIZARD_QS.forEach(function(q2) {
+          var r = q2.auto && q2.auto(a);
+          if (r) { a[q2.key] = r.val; autoWhy[q2.key] = r.why; }
+        });
+        applyAuto();
+        history.push(idx);
+        idx = nextIdx(idx);
+        render();
+      });
+      render();
+    }
+    window.openTokiWizard = openTokiWizard;
+    // ===== END v0.55.35 =====
     // v0.51.7: 案件の削除（一覧の × と、直す画面の「削除」の両方から使う）
     function deleteTokiCase(caseId, after) {
       var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
@@ -41834,8 +42017,11 @@ function renderDashboardView() {
       var slots = getQuadSlots();
       body.innerHTML = '';
       // v0.55.33: 【権威】2026-10-08、魚の目の表示が文字の長さに引きずられる（右の列が細くなり1文字ずつ折り返す）、との指摘。
-      // 1fr は「中身より細くならない」ので、長い文字のカードがある列だけ広がっていた。minmax(0,1fr) で4列を同じ幅に固定する
-      body.style.gridTemplateColumns = 'repeat(4,minmax(0,1fr))';
+      // 1fr は「中身より細くならない」ので、長い文字のカードがある列だけ広がっていた。
+      // v0.55.34: 【権威】2026-10-09、スマホでは細い画面に4列を押し込んで判読できない、との指摘（v0.55.33 の minmax(0,1fr) の見落とし）。
+      // 列はいつも同じ幅で、ただし 280px より細くしない。はみ出す分は横にスクロール（PC は4列が並び、スマホは横に流れる）
+      body.style.gridTemplateColumns = 'repeat(4,minmax(280px,1fr))';
+      body.style.overflowX = 'auto';
       slots.forEach(function(col) {
         body.appendChild(_buildQuadSlot(col, quadTasksInSlot(col.key, targetDate), targetDate));
       });
@@ -53220,6 +53406,28 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.35', date: '2026-10-09',
+    items: [
+      { icon:'❓', t:'案件の形を、1問ずつ答えて決められるようにしました',
+        before:'「未確認・あり・なし」の3つから選ぶのを、いくつも続けて選ぶ必要がありました',
+        after:'1画面に1つの質問が出て、押すと次の質問へ進みます。前の答えで決まる質問は自動で飛ばし、最後のまとめから直せます。あとで案件の画面でも直せます' },
+      { icon:'🃏', t:'カードの「未確認」を、1つの札にまとめました',
+        before:'まだ決めていない項目が、カードに1つずつ並んでいました',
+        after:'「❓ 案件の形を決める（あと〇問）」の札が1つだけ出て、押すと質問が開きます。決めた後は「あり」のものだけ出ます' }
+    ]
+  },
+  {
+    ver: 'v0.55.34', date: '2026-10-09',
+    items: [
+      { icon:'📱', t:'スマホの魚の目を、読める幅に戻しました',
+        before:'細い画面に4つの列を押し込み、文字が1文字ずつ縦に並んで読めませんでした',
+        after:'列は読める幅を保ち、はみ出す分は横にスクロールします。カードのボタンは、狭いときは名前の下の行に回ります' },
+      { icon:'🌙', t:'月間の日の欄で、その日の大事な予定を上に出すようにしました',
+        before:'その日が期日の案件も、ほかの案件と混ざって並んでいました',
+        after:'その日が期日の案件を上に、自分の担当を先に、時刻の早い順に並べます（手で並べ替えた日は、その並びのまま）' }
+    ]
+  },
   {
     ver: 'v0.55.33', date: '2026-10-08',
     items: [
@@ -77921,11 +78129,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-438·②: 工程の出し分けが違う', JSON.stringify([_st438s(_st438c1), _st438s(_st438old)]));
        // ④ カード：契約同席は「あり」のときだけ出す（なしのときに「契約同席 なし」と出さない）
        var _st438t = function(c) { var d = document.createElement('div'); d.innerHTML = _tokiCaseRowHtml(c, '2026-10-08'); return d.textContent; };
-       // v0.55.33: 【第67条④】会う予定は「未確認・あり・なし」をはっきり出す（2026-10-08 の指示）。未確認は橙色
-       (/color:#e8590c;font-weight:700;">契約同席 未確認/.test(_tokiCaseRowHtml(_st438old2, '2026-10-08')) &&
-        _st438t(Object.assign({}, _st438old2, { keiyakuAttend: 'no' })).indexOf('契約同席 なし') !== -1 &&
+       // v0.55.35: 【第67条④】未確認は「❓ 案件の形を決める（あと〇問）」の札1つにまとめる。契約同席なしはふつうなので出さない（2026-10-09 の指示）
+       (_st438t(_st438old2).indexOf('❓ 案件の形を決める（あと7問）') !== -1 && _st438t(_st438old2).indexOf('契約同席') === -1 &&
+        _st438t(Object.assign({}, _st438old2, { keiyakuAttend: 'no' })).indexOf('契約同席') === -1 &&
         _st438t(Object.assign({}, _st438old2, { keiyakuOn: true, keiyakuDate: '2026-10-15', keiyakuTime: '10:00' })).indexOf('契約同席 10/15') !== -1)
-         ? ok('ST-438·③: カードの契約同席は、未確認（橙色）・なし・あり（日付）をはっきり出す')
+         ? ok('ST-438·③: カードは、未確認を「❓ 案件の形を決める」の札1つにまとめ、契約同席は「あり」（日付）のときだけ出す')
          : ng('ST-438·③: カードの契約同席の出方が違う', _st438t(_st438old2).slice(0, 80));
      } catch(e) {
        ng('ST-438: 例外', e.message);
@@ -77996,9 +78204,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st440h = _tokiCaseRowHtml(_st440c, '2026-10-08');
          (_st440unk && _st440c.setteiState === 'yes' && _st440c.hassouState === 'no' && !('shouhonState' in _st440c) && _st440c.kaokuState === 'yes' &&
           _st440c.setteiNone === false && _st440c.kaokuOn === true && _st440c.hassouOn === false &&
-          _st440h.indexOf('設定 あり') !== -1 && _st440h.indexOf('押印書類の発送 なし') !== -1 && _st440h.indexOf('家屋証明 あり') !== -1 &&
-          /color:#e8590c;font-weight:700;">当日抄本 未確認/.test(_st440h))
-           ? ok('ST-440·②: 作る画面の「未確認｜あり｜なし」で選んで保存し、カードに状態が出る（未確認は橙色）')
+          // v0.55.35: 【第67条④】決めた後は「あり」だけ出す。未確認（当日抄本・会う予定の3つ）は「❓ 案件の形を決める（あと4問）」の札1つ
+          _st440h.indexOf('設定 あり') !== -1 && _st440h.indexOf('押印書類の発送') === -1 && _st440h.indexOf('家屋証明 あり') !== -1 &&
+          _st440h.indexOf('当日抄本') === -1 && _st440h.indexOf('❓ 案件の形を決める（あと4問）') !== -1)
+           ? ok('ST-440·②: 作る画面の「未確認｜あり｜なし」で選んで保存し、カードには「あり」と、未確認の数の札が出る')
            : ng('ST-440·②: 状態の選び方・保存・カードの出方が違う', JSON.stringify({ s: _st440c.setteiState, h: _st440c.hassouState, k: _st440c.kaokuState }));
        } else ng('ST-440·②: 登記の作る画面を開けない（管理者でない環境）', '');
        // ③ 知らせ：決済7日前から 家屋証明あり・未確認。決済の前日から 決済前チェック（カク・依）が済んでいなければ
@@ -78080,9 +78289,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ② カードは決済を先頭に逆算（決済 → 金消同席 → 契約同席）。未確認は橙色。立会が未確認なら段取りではなく「決めること」で知らせる
        var _st442c = { id: 'st442-a', kind: 'toki', box: 'B1', buyer: '山田様', kessaiDate: '2026-10-12', kinshoAttend: 'no', keiyakuAttend: 'unk', steps1: {} };
        var _st442h = (function() { var d = document.createElement('div'); d.innerHTML = _tokiCaseRowHtml(_st442c, '2026-10-08'); return d.textContent; })();
-       var _st442p = [_st442h.indexOf('決済 10/12'), _st442h.indexOf('金消同席 なし'), _st442h.indexOf('契約同席 未確認')];
+       // v0.55.35: 【第67条④】会う予定の未確認は、1つずつではなく「❓ 案件の形を決める（あと〇問）」の札にまとめる
+       var _st442p = [_st442h.indexOf('決済 10/12'), _st442h.indexOf('金消同席 なし'), _st442h.indexOf('❓ 案件の形を決める')];
        var _st442al = tokiAlerts(_st442c, '2026-10-08').join(' / ');
-       (_st442p[0] >= 0 && _st442p[0] < _st442p[1] && _st442p[1] < _st442p[2] && _st442h.indexOf('（立会 未確認）') !== -1 &&
+       (_st442p[0] >= 0 && _st442p[0] < _st442p[1] && _st442p[1] < _st442p[2] && _st442h.indexOf('（立会 未確認）') === -1 && _st442h.indexOf('契約同席 ') === -1 &&   /* 日程の行は「契約同席 …」。⚠️の行の「決めること：契約同席・」とは区別する */
         _st442al.indexOf('決済の段取りが未確定') === -1 && _st442al.indexOf('契約同席・決済の立会') !== -1)
          ? ok('ST-442·②: カードは決済を先頭に逆算して並び、会う予定の未確認を出す（立会が未確認のうちは、段取りではなく決めることとして知らせる）')
          : ng('ST-442·②: カードの並びか知らせが違う', _st442p.join(',') + ' / ' + _st442al);
@@ -78104,7 +78314,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ④ 魚の目の4列は、中身の長さに関係なく同じ幅（minmax(0,1fr)）
        renderQuadView();
        var _st442qb = document.getElementById('quadViewBody');
-       (_st442qb && /minmax\(0(px)?, ?1fr\)/.test(_st442qb.style.gridTemplateColumns))
+       // v0.55.34: 【第67条④】スマホで押し込まないよう、下限 280px を付けた
+       (_st442qb && /minmax\(280px, ?1fr\)/.test(_st442qb.style.gridTemplateColumns))
          ? ok('ST-442·④: 魚の目の4列は、長い文字があっても同じ幅（列の中で折り返す）')
          : ng('ST-442·④: 魚の目の列の幅の決め方が違う', _st442qb ? _st442qb.style.gridTemplateColumns : 'なし');
        // ⑤ 管轄法務局が空のとき、完了予定日のボタンは千葉の一覧を開いて知らせる
@@ -78121,6 +78332,100 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        window.open = _st442open; window.showToast = _st442toast;
        allTasks = _st442tasks; allSettings.flags = _st442flags;
+     }
+
+     // ===== ST-443: スマホの魚の目は横にスクロール・月間の日の欄は今日の決済を上に（v0.55.34〜） =====
+     // 【権威】2026-10-09、スマホでは4列を押し込んで判読できない／今日の予定を見るとき、今日が決済の案件（自分の担当を先に）を上に、との指摘
+     var _st443tasks = allTasks.slice(), _st443flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st443open = null; try { _st443open = localStorage.getItem('koyomiru_sidebar_open_toki'); } catch (e) {}
+     try {
+       renderQuadView();
+       var _st443qb = document.getElementById('quadViewBody');
+       (_st443qb && /minmax\(280px, ?1fr\)/.test(_st443qb.style.gridTemplateColumns) && _st443qb.style.overflowX === 'auto')
+         ? ok('ST-443·①: 魚の目の列は同じ幅で、280px より細くしない（はみ出す分は横にスクロール）')
+         : ng('ST-443·①: 魚の目の列の幅の決め方が違う', _st443qb ? _st443qb.style.gridTemplateColumns : 'なし');
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       try { localStorage.setItem('koyomiru_sidebar_open_toki', '1'); } catch (e) {}
+       var _st443d = '2026-10-09', _st443y = '2026-10-01T00:00:00Z';
+       allTasks.push(
+         { id: 'st443-a', kind: 'toki', box: 'B1', buyer: '甲様', kessaiDate: '2026-10-20', steps1: {}, createdAt: _st443y },
+         { id: 'st443-b', kind: 'toki', box: 'B2', buyer: '乙様', kessaiDate: _st443d, kessaiTime: '15:00', tantou: '協力者A', steps1: {}, createdAt: _st443y },
+         { id: 'st443-c', kind: 'toki', box: 'B3', buyer: '丙様', kessaiDate: _st443d, kessaiTime: '14:00', steps1: {}, createdAt: _st443y },
+         { id: 'st443-d', kind: 'toki', box: 'B4', buyer: '丁様', kessaiDate: _st443d, kessaiTime: '10:00', steps1: {}, createdAt: _st443y },
+         { id: 'st443-e', kind: 'toki', box: 'B5', buyer: '戊様', kinshoDate: _st443d, kessaiDate: '2026-10-30', steps1: {}, createdAt: _st443y });
+       var _st443o = _monthCasesOpen(_st443d).map(function(c) { return c.id.replace('st443-', ''); }).filter(function(x) { return /^[a-e]$/.test(x); }).join(',');
+       (_st443o === 'd,c,b,e,a')
+         ? ok('ST-443·②: 月間の日の欄は、今日の決済で自分の担当（時刻順）→ 今日の決済でほかの人の担当 → 今日のほかの節目 → それ以外の順')
+         : ng('ST-443·②: 月間の日の欄の初めの並びが違う', _st443o);
+     } catch(e) {
+       ng('ST-443: 例外', e.message);
+     } finally {
+       allTasks = _st443tasks; allSettings.flags = _st443flags;
+       try { if (_st443open === null) localStorage.removeItem('koyomiru_sidebar_open_toki'); else localStorage.setItem('koyomiru_sidebar_open_toki', _st443open); } catch (e) {}
+     }
+
+     // ===== ST-444: 案件の形を決めるウィザード（v0.55.35〜） =====
+     // 【権威】2026-10-09、3つから選ぶのを何個も選ばされるのがストレス。1つずつ聞いてきて押すだけの入力に。あとで直せるように、との指示。名前はすべて架空
+     var _st444tasks = allTasks.slice(), _st444flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st444saveT = window.saveAllTasks, _st444toast = window.showToast;
+     try {
+       window.saveAllTasks = function() {}; window.showToast = function() {};
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       // ① 問いの順（実際の流れで分かる順）と、評価は聞かないこと
+       var _st444order = TOKI_WIZARD_QS.map(function(q) { return q.key; }).join(',');
+       (_st444order === 'settei,kinsho,keiyaku,kessai,hassou,shouhon,kaoku' && TOKI_WIZARD_QS.every(function(q) { return !/評価/.test(q.q); }))
+         ? ok('ST-444·①: ウィザードの問いは、抵当権設定 → 金消同席 → 契約同席 → 決済の立会 → 押印書類の発送 → 当日抄本 → 家屋証明の順（評価は聞かない）')
+         : ng('ST-444·①: ウィザードの問いの順が違う', _st444order);
+       if (!gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) { ng('ST-444: 登記を使えない環境', ''); }
+       else {
+         // ② 繋がっているか（第76条）：新しい案件を保存するとウィザードが開き、押すたびに次へ。設定なし→金消同席は自動で飛ばす
+         openTokiCaseEditor(null, { tplId: 'toki' });
+         document.getElementById('tokiBox').value = '99444'; document.getElementById('tokiBuyer').value = '山田太郎様';
+         document.getElementById('tokiSaveBtn').click();
+         var _st444ov = function() { return document.getElementById('tokiWizardOverlay'); };
+         var _st444opened = !!_st444ov();
+         // まとめの画面には全部の問いの文が並ぶので、先にまとめかどうかを見る
+         var _st444q = function() { var o = _st444ov(); var t = o ? o.textContent : ''; if (t.indexOf('まとめ（') !== -1) return 'sum'; var m = TOKI_WIZARD_QS.filter(function(q) { return t.indexOf(q.q) !== -1; })[0]; return m ? m.key : '?'; };
+         var _st444press = function(act) { var b = _st444ov() && _st444ov().querySelector('[data-wz="' + act + '"]'); if (b) b.click(); };
+         var _st444seq = [_st444q()];
+         ['no', 'no', 'yes', 'yes', 'skip', 'no'].forEach(function(act) { _st444press(act); _st444seq.push(_st444q()); });
+         var _st444sumHasAuto = (_st444ov() ? _st444ov().textContent : '').indexOf('（自動）') !== -1;
+         _st444press('save');
+         var _st444c = allTasks.filter(function(t) { return t.box === 'B99444'; })[0] || {};
+         (_st444opened && _st444seq.join(',') === 'settei,keiyaku,kessai,hassou,shouhon,kaoku,sum' && _st444sumHasAuto &&
+          _st444c.setteiState === 'no' && _st444c.kinshoAttend === 'no' && _st444c.kinshoNone === true && _st444c.keiyakuAttend === 'no' &&
+          _st444c.kessaiAttend === 'yes' && _st444c.kessaiAuto === false && _st444c.hassouState === 'yes' && !('shouhonState' in _st444c) && _st444c.kaokuState === 'no' &&
+          tokiWizardRemaining(_st444c) === 1 && !_st444ov())
+           ? ok('ST-444·②: 新しい案件を保存するとウィザードが開き、1問ずつ押して進む（設定なしなら金消同席は自動で飛ばす・あとでは未確認のまま）')
+           : ng('ST-444·②: ウィザードの進み方か保存が違う', _st444seq.join(',') + ' / 開いた=' + _st444opened);
+         // ③ カードの札から開くと、残りの問いから始まり、答えるとまとめへ。契約同席あり→決済の立会は自動で「立会しない」
+         openTokiWizard(_st444c.id);
+         var _st444r1 = _st444q();
+         _st444press('yes');
+         var _st444r2 = _st444q();
+         _st444press('save');
+         openTokiWizard(_st444c.id, { all: true });
+         _st444press('no'); _st444press('yes');   // 抵当権設定なし → 契約に同席する
+         var _st444r3 = _st444q();                // 決済の立会は自動で飛ばす → 押印書類の発送
+         _st444press('sum');
+         var _st444sum = _st444ov() ? _st444ov().textContent : '';
+         var _st444x = _st444ov(); if (_st444x) _st444x.remove();
+         (_st444r1 === 'shouhon' && _st444r2 === 'sum' && tokiWizardRemaining(_st444c) === 0 && _st444c.shouhonState === 'yes' &&
+          _st444r3 === 'hassou' && /決済に立会しますか？立会しない（自動決済）（自動）/.test(_st444sum))
+           ? ok('ST-444·③: カードの札から開くと残りの問いから始まり、まとめへ。契約同席なら決済の立会は自動で「立会しない」')
+           : ng('ST-444·③: 札から開いたときの進み方が違う', [_st444r1, _st444r2, _st444r3].join(','));
+         // ④ カードの札：未確認の数を1つの札で出す。決め終わったら札は出ない
+         var _st444h = function(c) { var d = document.createElement('div'); d.innerHTML = _tokiCaseRowHtml(c, '2026-10-09'); return d.textContent; };
+         (_st444h({ id: 'st444-n', kind: 'toki', box: 'B1', buyer: '甲様', steps1: {} }).indexOf('❓ 案件の形を決める（あと7問）') !== -1 && _st444h(_st444c).indexOf('❓') === -1)
+           ? ok('ST-444·④: カードには、まだ答えていない問いの数を「❓ 案件の形を決める（あと〇問）」の札1つで出す（決め終わったら出さない）')
+           : ng('ST-444·④: カードの札の出し方が違う', '');
+       }
+     } catch(e) {
+       ng('ST-444: 例外', e.message);
+     } finally {
+       var _st444o = document.getElementById('tokiWizardOverlay'); if (_st444o) _st444o.remove();
+       window.saveAllTasks = _st444saveT; window.showToast = _st444toast;
+       allTasks = _st444tasks; allSettings.flags = _st444flags;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
