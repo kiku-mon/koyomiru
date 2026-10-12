@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.35 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.39 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.35';
+    const APP_VERSION = 'v0.55.39';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12970,9 +12970,35 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
       }
       overlay.style.display = 'flex';
     }
+    // v0.55.39: 【権威】2026-10-11、検索で雑記帳のメモが別のカレンダー（一覧の先頭の共有カレンダー）の予定に見え、
+    // 共有相手に漏れたように見える、との指摘。見つからないときに一覧の先頭を返していたため、
+    // カレンダーを持たない記録や、手元に無いカレンダーを指す予定が、ほかのカレンダーのふりをしていた。
+    // 見つからなければ何も返さない（ほかのカレンダーのふりをさせない）。表示には calendarForRecord を使う
     function getCalendar(id) {
-      return calendars.find(c => c.id === id) || calendars[0] || DEFAULT_CALENDARS[0];
+      return calendars.find(c => c.id === id) || null;
     }
+    // 記録がどのカレンダーのものか（表示用）。
+    //  ・カレンダーを指していて手元にある → そのカレンダー／手元に無い（別の端末で作った予定）→ null
+    //  ・カレンダーを持たない予定（古い予定）→ メインカレンダー（作るときの決まりと同じ・第11条）
+    //  ・雑記帳など、もともとカレンダーに属さない記録 → null
+    function calendarForRecord(t) {
+      if (!t) return null;
+      if (t.calendarId && t.calendarId !== 'default') return getCalendar(t.calendarId);
+      if ((t.kind || 'task') !== 'task') return null;
+      var mainId = allSettings && allSettings.calendar && allSettings.calendar.mainId;
+      return mainId ? getCalendar(mainId) : null;
+    }
+    window.calendarForRecord = calendarForRecord;
+    // 検索などに出す「出どころ」の名前
+    var RECORD_KIND_LABELS = { scratch: '📝 雑記帳', zen: '🧘 禅', video: '🎬 動画', audio: '🎙 音声' };
+    function recordSourceLabel(t) {
+      var cal = calendarForRecord(t);
+      if (cal) return cal.name;
+      if (t && RECORD_KIND_LABELS[t.kind]) return RECORD_KIND_LABELS[t.kind];
+      if (t && t.calendarId && t.calendarId !== 'default') return '手元に無いカレンダー';
+      return '';
+    }
+    window.recordSourceLabel = recordSourceLabel;
     // 表示ONのカレンダーIDセット（クイックフィルター用・セッション中のみ）
     let activeCalendarIds = null; // null = 全表示
     // 💰支払いのみフィルタ（月間カレンダー用）
@@ -14684,7 +14710,7 @@ function renderTodoList() {
         sec.textContent = '✅ タスク';
         container.appendChild(sec);
         taskHits.forEach(t => {
-          const cal = getCalendar(t.calendarId);
+          const cal = calendarForRecord(t);   // v0.55.39: ほかのカレンダーのふりをさせない
           const row = document.createElement('div');
           row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:10px 8px;border-bottom:1px solid #f5f5f5;cursor:pointer;border-radius:8px;transition:background 0.1s;';
           row.onmouseover = () => row.style.background = '#f9f9f9';
@@ -14704,7 +14730,7 @@ function renderTodoList() {
           textEl.innerHTML = highlightSafe(t.text || t.title || '', q);
           const meta = document.createElement('div');
           meta.style.cssText = 'font-size:0.75em;color:#aaa;margin-top:2px;';
-          meta.textContent = (t.date||'') + (t.time?' '+t.time:'') + '　' + (cal?.name||'');
+          meta.textContent = (t.date||'') + (t.time?' '+t.time:'') + '　' + recordSourceLabel(t);   // v0.55.39: 雑記帳なら「📝 雑記帳」など、正しい出どころ
           info.appendChild(textEl);
           if (t.memo) {
             const memoEl = document.createElement('div');
@@ -14843,8 +14869,8 @@ function renderTodoList() {
     // v0.54.1: 【権威】2026-10-05、決済の直前に取る「当日謄本」の工程を入れ忘れていた、との指摘。決のすぐ前に入れる。
     // v0.54.2: 【権威】2026-10-05、正しい流れは「物・入・押・カク・依・金・設受・設組・カク・依・当日謄本・決・組・申」との指摘。
     // カク・依が2回出てくる。✓は工程の名前で覚えるので、2回目は中では「カク2」「依2」とし、画面には「カク」「依」と出す。
-    var TOKI_STEPS_1 = ['物', '入', '押', 'カク発送', '依発送', 'カク', '依', '金', '設受', '設組', '家屋証明', 'カク2', '依2', '当日謄本', '当日抄本', '決', '組', '申'];
-    var TOKI_STEP_LABELS = { 'カク2': 'カク', '依2': '依', 'カク発送': 'カク', '依発送': '依' };
+    var TOKI_STEPS_1 = ['物', '入', '押', 'カク発送', '依発送', '買押発', '売押発', 'カク', '依', '金', '設受', '設組', '家屋証明', 'カク2', '依2', '当日謄本', '当日会ト', '当日抄本', '決', '組', '申'];
+    var TOKI_STEP_LABELS = { 'カク2': 'カク', '依2': '依', 'カク発送': 'カク', '依発送': '依', '買押発': '買主発送', '売押発': '売主発送' };
     // v0.55.23: 【権威】2026-10-07、当日抄本をとらなければいけないときがある（マンションの共用部分が持分1/1000などでネットで取れず、
     // 管轄の法務局に出向いて売主の名前で抄本を抜く）。よく忘れて怒られる、との指摘。要る案件は、決済の7日前から⚠️で知らせる（tokiAlerts）
     // v0.55.27: 【権威】2026-10-08、押印書類を発送する案件は、発送前にカクと依がいる、との指摘。
@@ -14852,7 +14878,8 @@ function renderTodoList() {
     // v0.54.3: 【権威】2026-10-05、1回目のカク・依は「金消前チェック」、2回目は「決済前チェック」というコンセプト、との説明。
     // 作る画面の「要る工程」で、どちらのチェックかが分かるようにする（一覧のボタンは短いまま）
     // v0.55.35: 【権威】2026-10-09、物入押は「物件（評価・謄本の取り込み・関与者の登録まで）を固める・申請書の入力・押印書類」、との説明
-    var TOKI_STEP_EDITOR_LABELS = { '物': '物（物件・評価・関与者を固める）', '入': '入（申請書の入力）', '押': '押（押印書類）', 'カク': 'カク（金消前チェック）', '依': '依（金消前チェック）', 'カク2': 'カク（決済前チェック）', '依2': '依（決済前チェック）', '当日抄本': '当日抄本（管轄法務局へ出向く）', 'カク発送': 'カク（発送前チェック）', '依発送': '依（発送前チェック）', '家屋証明': '家屋証明（市役所で取る）' };
+    // v0.55.36: 【権威】2026-10-09、「評価が先頭！」との指摘。受託簿の①も「評価準備済」が最初の確認
+    var TOKI_STEP_EDITOR_LABELS = { '物': '物（評価・物件・関与者を固める）', '入': '入（申請書の入力）', '押': '押（押印書類）', 'カク': 'カク（金消前チェック）', '依': '依（金消前チェック）', 'カク2': 'カク（決済前チェック）', '依2': '依（決済前チェック）', '当日抄本': '当日抄本（管轄法務局へ出向く）', 'カク発送': 'カク（発送前チェック）', '依発送': '依（発送前チェック）', '家屋証明': '家屋証明（市役所で取る）', '当日会ト': '当日会ト（売主の当日会社謄本）', '買押発': '買主押印 発送', '売押発': '売主押印 発送' };
     // あとから足した工程と、足した版の番号。前からある案件（要る工程を選んだときに、まだ無かった）にも出す
     var TOKI_STEPS_ADDED_LATER = { '当日謄本': 3, 'カク2': 4, '依2': 4 };
     var TOKI_STEPS_2 = ['謄本', '印字', '送付状', '法務局からの返却', '組み立て', 'カク', '依頼'];
@@ -14924,12 +14951,26 @@ function renderTodoList() {
       optionalGroups: [
         { key: 'settei', stateLabel: '設定', desc: 'なしなら設受・設組を出さず、金消同席もなしにする', noneLabel: '設定なし（設受・設組を出さない）', steps: ['設受', '設組'], alsoNone: 'kinsho' },
         // v0.55.35: 【権威】2026-10-09、発送は欠席だけでなく、買主でも会社の実印を持ち出せない（抵当権設定あり）などで前もって送ることがある
-        { key: 'hassou', stateLabel: '押印書類の発送', desc: '売主・買主に前もって送る（欠席・会社の実印を持ち出せない など）。ありなら発送前のカク・依を出す', optIn: true, onLabel: '押印書類を発送する（発送前のカク・依を出す）', steps: ['カク発送', '依発送'] },
+        // v0.55.38: 【権威】2026-10-09、買主押印の発送・売主押印の発送を別々に（買主が先）。どちらかが「あり」なら発送前のカク・依を出す（stepRules）
+        { key: 'hassouBuyer', stateLabel: '買主押印の発送', desc: '買主に押印書類を前もって送る（欠席・会社の実印を持ち出せない など）', optIn: true, onLabel: '買主押印の発送', steps: ['買押発'] },
+        { key: 'hassouSeller', stateLabel: '売主押印の発送', desc: '売主に押印書類を前もって送る（欠席 など）', optIn: true, onLabel: '売主押印の発送', steps: ['売押発'] },
         { key: 'shouhon', stateLabel: '当日抄本', desc: 'ありなら管轄法務局へ出向く', optIn: true, onLabel: '当日抄本が要る（管轄法務局へ出向く）', steps: ['当日抄本'], legacyStep: '当日抄本' },
         // v0.55.28: 【権威】2026-10-08、家屋証明書を市役所で取ることもある、との指摘。受託簿の流れ（家屋証明の手配 → 最終自己チェック）に合わせ、
         // 設組の後ろ・決済前チェックの前に置く。✓したときだけ出す
+        // v0.55.37: 売主が会社か（売主の欄から自動）。会社なら［当日会ト］を出す。カードには「あり」を出さない（変更の有無の方を出す）
+        { key: 'kaisha', stateLabel: '売主が会社', desc: '会社なら、決済の当日に売主の会社謄本を取る（当日会ト）', optIn: true, onLabel: '売主が会社', steps: ['当日会ト'],
+          autoState: function(c) { return tokiSellerIsCompany(c) ? 'yes' : 'no'; }, hideOnCard: true },
         { key: 'kaoku', stateLabel: '家屋証明', desc: 'ありなら市役所で取る', optIn: true, onLabel: '家屋証明書を取る（市役所）', steps: ['家屋証明'] }
       ],
+      // v0.55.38: 工程ごとの出す条件。ignoreManual＝「工程を手で直す」の一覧には出さず、この条件だけで決める
+      //  ・発送前のカク・依：買主押印か売主押印の発送が「あり」のとき（前の版の「押印書類の発送 あり」の案件も）
+      //  ・金消前のカク・依：【権威】2026-10-09、金消同席なしなら出さない（金消前にすることが無いため）。未確認のあいだは出しておく
+      stepRules: {
+        'カク発送': { ignoreManual: true, show: function(c) { return tokiHassouAny(c); } },
+        '依発送':   { ignoreManual: true, show: function(c) { return tokiHassouAny(c); } },
+        'カク':     { show: function(c) { return gyomuMilestoneAttend(c, GYOMU_TEMPLATE_TOKI.milestones.filter(function(m) { return m.key === 'kinsho'; })[0]) !== 'no'; } },
+        '依':       { show: function(c) { return gyomuMilestoneAttend(c, GYOMU_TEMPLATE_TOKI.milestones.filter(function(m) { return m.key === 'kinsho'; })[0]) !== 'no'; } }
+      },
       // v0.55.33: 【権威】2026-10-08、カードの日程は決済を先頭に、そこから逆算（決済 ← 金消同席 ← 契約同席）で並べる。完了予定は最後
       cardOrder: ['kessai', 'kinsho', 'keiyaku', 'kanryo'],
       milestones: [
@@ -15031,12 +15072,27 @@ function renderTodoList() {
       return !!(ms.noneOption && c[ms.key + 'None']);
     }
     // v0.55.27: ✓を入れたときだけ出す工程のまとまり（optIn）。前の版で工程の一覧に✓していた案件は「要る」と読む（legacyStep）
+    // v0.55.37: 【権威】2026-10-09、受託簿のいちばん上の「売主当日会ト」は、売主が会社のとき決済の当日に会社謄本を取ること
+    // （無断で本店移転などをされていると、名変を入れないと登記できない）。「変更有・無」はその会社謄本に変更が無いことを確かめた印。
+    // 売主が会社かどうかは、売主の欄から自動で判断する（手で直したときだけ、その答えを覚える）
+    var TOKI_COMPANY_RE = /株式会社|有限会社|合同会社|合資会社|合名会社|一般社団法人|一般財団法人|[（(]株[)）]|[（(]有[)）]|[（(]同[)）]|㈱|㈲/;
+    function tokiSellerIsCompany(c) { return TOKI_COMPANY_RE.test(String((c && c.seller) || '')); }
+    window.tokiSellerIsCompany = tokiSellerIsCompany;
+    // v0.55.38: 押印書類をどちらかに発送するか（前の版の「押印書類の発送 あり」も含む。どちらに送るかは未確認のまま）
+    function tokiHassouAny(c) {
+      if (!c) return false;
+      var gs = (GYOMU_TEMPLATE_TOKI.optionalGroups || []).filter(function(g) { return g.key === 'hassouBuyer' || g.key === 'hassouSeller'; });
+      if (gs.some(function(g) { return gyomuGroupState(c, g) === 'yes'; })) return true;
+      return c.hassouState === 'yes' || c.hassouOn === true;
+    }
+    window.tokiHassouAny = tokiHassouAny;
     // v0.55.29: 状態（'yes'＝あり／'no'＝なし／''＝未確認）。前の版の印も読む：
     //   ✓を入れたときだけ出す種類（optIn）は、On が true なら「あり」、前の版で工程の一覧に✓していたら「あり」
     //   ✓で出さない種類（設定なし）は、None が true なら「なし」。それ以外は未確認
     function gyomuGroupState(c, g) {
       var st = c && c[g.key + 'State'];
       if (st === 'yes' || st === 'no') return st;
+      if (typeof g.autoState === 'function') return g.autoState(c || {});   // v0.55.37: 自動で決まる項目（売主が会社か）
       if (g.optIn) {
         if (c && c[g.key + 'On'] === true) return 'yes';
         if (g.legacyStep && c && Array.isArray(c.enabled1) && c.enabled1.indexOf(g.legacyStep) !== -1 && c[g.key + 'On'] === undefined) return 'yes';
@@ -15079,6 +15135,9 @@ function renderTodoList() {
       return first.filter(function(st) {
         // v0.53.4: まとめて「なし」にできる工程（設受・設組）は、「なし」でなければ出す。
         // 前からある案件（要る工程を選んだときに、まだ設受・設組が無かった）でも出るように、要る工程の一覧は見ない。
+        // v0.55.38: 工程ごとの出す条件（ひな形の stepRules）。ignoreManual でなければ、手で外したもの（要る工程の一覧）も見る
+        var rule = tpl.stepRules && tpl.stepRules[st];
+        if (rule) return rule.show(c || {}) && (rule.ignoreManual || base.indexOf(st) !== -1);
         var grp = groups.filter(function(g) { return g.steps.indexOf(st) !== -1; })[0];
         if (grp) return grp.optIn ? gyomuGroupIsOn(c, grp) : gyomuGroupState(c, grp) !== 'no';   // v0.55.27・v0.55.29: 設定は未確認のあいだも出しておく
         // 節目に結びついた工程（登記の［金］）は、その節目の日付が入っていて、「なし」でないときだけ出す
@@ -15704,6 +15763,8 @@ function renderTodoList() {
       if (tpl.id === 'toki' && !c.closed) {
         // v0.55.29: 【権威】2026-10-08、家屋証明書も、当日抄本と同じく「あり」の案件は決済の7日前から知らせる
         if (tokiStepsFor(c).indexOf('家屋証明') !== -1 && !done({ stage: 'steps1', step: '家屋証明' }) && soon(c.kessaiDate)) out.push('家屋証明あり：市役所で取る');
+        // v0.55.37: 売主が会社なら、決済の当日に［当日会ト］（売主の当日会社謄本）
+        if (tokiStepsFor(c).indexOf('当日会ト') !== -1 && !done({ stage: 'steps1', step: '当日会ト' }) && c.kessaiDate === todayYmd) out.push('今日は当日会社謄本（売主が会社）');
         // v0.55.29: 決済の7日前になっても「この案件の形」に未確認が残っていたら知らせる（見逃すと工数を組み直すことになるため）
         // v0.55.33: 会う予定（契約同席・金消同席・決済の立会）の未確認も、決めることに入れる
         var unk = tpl.milestones.filter(function(ms) { return ms.attend && gyomuMilestoneAttend(c, ms) === ''; }).map(function(ms) { return ms.attend.title; })
@@ -15725,6 +15786,17 @@ function renderTodoList() {
       var key = 'steps' + row;
       c[key] = c[key] || {};
       c[key][step] = !c[key][step];
+      // v0.55.37: ［当日会ト］を済みにしたら「変更はありましたか？」を聞く。済みを外したら答えも消す
+      if (step === '当日会ト') {
+        if (!c[key][step]) delete c.kaishaHenkou;
+        else if (typeof showChoiceModal === 'function') {
+          setTimeout(function() {
+            var setH = function(v) { c.kaishaHenkou = v; c.updatedAt = new Date().toISOString(); saveAllTasks(); _tokiRefreshAll(); };
+            showChoiceModal({ title: '売主の会社謄本に、変更はありましたか？', desc: '本店移転・商号変更など。変更があると、このままでは登記できません。',
+              buttons: [ { label: '無', style: 'primary', onClick: function() { setH('no'); } }, { label: '有', style: 'danger', onClick: function() { setH('yes'); } } ] });
+          }, 0);
+        }
+      }
       // ひな形の「閉じる工程」（登記なら完了分の依頼）が済んだら完了して閉じる。戻したら開き直す
       var isClose = (tpl.closeOn.stage === key && tpl.closeOn.step === step);
       if (isClose) { c.closed = !!c[key][step]; c.closedAt = c.closed ? new Date().toISOString() : null; }
@@ -16023,9 +16095,15 @@ function renderTodoList() {
         // v0.55.29: 「この案件の形」の状態も、節目と同じ行に出す（未確認は橙色）
         // v0.55.35: 【権威】2026-10-09、未確認が何個も並ぶのはつらい。未確認は「❓ 案件の形を決める（あと〇問）」の札1つにまとめ、
         // 決めた後は「あり」のものだけ出す（なしは出さない）
-        var _grpStates = (tpl.optionalGroups || []).filter(function(g) { return g.stateLabel && gyomuGroupState(c, g) === 'yes'; }).map(function(g) {
+        var _grpStates = (tpl.optionalGroups || []).filter(function(g) { return g.stateLabel && !g.hideOnCard && gyomuGroupState(c, g) === 'yes'; }).map(function(g) {
           return '<span style="color:#2f9e44;">' + g.stateLabel + ' あり</span>';
         });
+        // v0.55.37: 売主の当日会社謄本の変更の有無（［当日会ト］を済みにしたあと）
+        if (tpl.id === 'toki' && c.steps1 && c.steps1['当日会ト']) {
+          _grpStates.push(c.kaishaHenkou === 'no' ? '<span style="color:#2f9e44;">会社謄本 変更なし</span>'
+            : c.kaishaHenkou === 'yes' ? '<span style="color:#c92a2a;font-weight:700;">⚠️ 売主の会社に変更あり（このままでは登記できない）</span>'
+            : '<span onclick="event.stopPropagation();toggleTokiStep(\'' + esc(c.id) + '\',1,\'当日会ト\');toggleTokiStep(\'' + esc(c.id) + '\',1,\'当日会ト\');" style="color:#e8590c;font-weight:700;cursor:pointer;">会社謄本 変更の有無 未記入</span>');
+        }
         var _wzLeft = (tpl.id === 'toki' && typeof tokiWizardRemaining === 'function') ? tokiWizardRemaining(c) : 0;
         var _wzChip = _wzLeft ? '<button type="button" class="toki-wizard-chip" onclick="event.stopPropagation();openTokiWizard(\'' + esc(c.id) + '\')" style="border:1px solid #e8590c;background:#fff4e6;color:#e8590c;border-radius:999px;padding:1px 10px;font-size:0.95em;font-weight:700;cursor:pointer;">❓ 案件の形を決める（あと' + _wzLeft + '問）</button>' : '';
         // v0.55.33: カードの並びはひな形の cardOrder（登記は決済を先頭に逆算）。会う予定は「未確認・あり・なし」を出す（未確認は橙色）
@@ -16472,7 +16550,8 @@ function renderTodoList() {
       var linkedSteps = linkedMs.map(function(ms) { return ms.linkedStep; });
       var optGroups = tpl.optionalGroups || [];
       var stepLabelOf = function(st) { return (tpl.stepLabels && tpl.stepLabels[st]) || st; };
-      var groupSteps = [].concat.apply([], optGroups.map(function(g) { return g.steps; }));
+      var groupSteps = [].concat.apply([], optGroups.map(function(g) { return g.steps; }))
+        .concat(Object.keys(tpl.stepRules || {}).filter(function(st) { return tpl.stepRules[st].ignoreManual; }));   // v0.55.38
       // v0.55.33: 「未確認｜あり｜なし」の押しボタン（この案件の形・会う予定で共通）
       var segBtn = function(name, val, txt, on) {
         var id = name + '_' + val;
@@ -16798,6 +16877,8 @@ function renderTodoList() {
           var sel = ov.querySelector('input[name="tokiGroup_' + g.key + '"]:checked');
           var st = sel ? sel.value : '';
           if (st === 'yes' || st === 'no') target[g.key + 'State'] = st; else delete target[g.key + 'State'];
+          // v0.55.37: 自動で決まる項目は、自動の答えと同じなら覚えない（売主の欄を後で直しても、自動の判断がついてくるように）
+          if (typeof g.autoState === 'function' && target[g.key + 'State'] === g.autoState(target)) delete target[g.key + 'State'];
           if (g.optIn) target[g.key + 'On'] = st === 'yes';
           else target[g.key + 'None'] = st === 'no';
         });
@@ -16856,9 +16937,14 @@ function renderTodoList() {
       { kind: 'attend', key: 'keiyaku', q: '契約に同席しますか？', hint: 'まれ。契約の場で全員の書類をもらい、決済は全員欠席でできるようにする', yes: '同席する', no: '同席しない' },
       { kind: 'attend', key: 'kessai', q: '決済に立会しますか？', yes: '立会する', no: '立会しない（自動決済）',
         auto: function(a) { return a.keiyaku === 'yes' ? { val: 'no', why: '契約同席で書類をもらうので、決済は立会しない' } : null; } },
-      { kind: 'group', key: 'hassou', q: '押印書類を前もって発送しますか？', hint: '売主・買主のどちらにでも（欠席する・会社の実印を持ち出せない など）', yes: '発送する', no: '発送しない' },
+      // v0.55.38: 買主・売主を別々に聞く（買主が先）
+      { kind: 'group', key: 'hassouBuyer', q: '買主に押印書類を前もって発送しますか？', hint: '欠席する・会社の実印を持ち出せない など', yes: '発送する', no: '発送しない' },
+      { kind: 'group', key: 'hassouSeller', q: '売主に押印書類を前もって発送しますか？', hint: '欠席する など', yes: '発送する', no: '発送しない' },
       { kind: 'group', key: 'shouhon', q: '当日抄本は要りますか？', hint: 'ネットで取れない共用部分など。管轄法務局へ出向く', yes: '要る', no: '要らない' },
-      { kind: 'group', key: 'kaoku', q: '家屋証明書は取りますか？', hint: '市役所で取る', yes: '取る', no: '取らない' }
+      { kind: 'group', key: 'kaoku', q: '家屋証明書は取りますか？', hint: '市役所で取る', yes: '取る', no: '取らない' },
+      // v0.55.37: 売主の欄から自動で決める（まとめに「（自動）」と出て、押せば直せる）
+      { kind: 'group', key: 'kaisha', q: '売主は会社ですか？', hint: '会社なら、決済の当日に売主の会社謄本を取る（当日会ト）', yes: '会社', no: '個人',
+        auto: function(a, c) { return { val: tokiSellerIsCompany(c) ? 'yes' : 'no', why: '売主の欄から判断' }; } }
     ];
     window.TOKI_WIZARD_QS = TOKI_WIZARD_QS;
     function _tokiWizardDef(q) {
@@ -16879,7 +16965,7 @@ function renderTodoList() {
     function tokiWizardRemaining(c) {
       if (!c || c.closed || (c.kind || 'toki') !== 'toki') return 0;
       var a = tokiWizardAnswers(c), n = 0;
-      TOKI_WIZARD_QS.forEach(function(q) { if (!a[q.key] && !(q.auto && q.auto(a))) n++; });
+      TOKI_WIZARD_QS.forEach(function(q) { if (!a[q.key] && !(q.auto && q.auto(a, c))) n++; });
       return n;
     }
     window.tokiWizardRemaining = tokiWizardRemaining;
@@ -16890,6 +16976,7 @@ function renderTodoList() {
         if (!d) return;
         if (q.kind === 'group') {
           if (v === 'yes' || v === 'no') c[q.key + 'State'] = v; else delete c[q.key + 'State'];
+          if (typeof d.autoState === 'function' && c[q.key + 'State'] === d.autoState(c)) delete c[q.key + 'State'];   // v0.55.37: 自動と同じなら覚えない
           if (d.optIn) c[q.key + 'On'] = v === 'yes'; else c[q.key + 'None'] = v === 'no';
           return;
         }
@@ -16915,7 +17002,7 @@ function renderTodoList() {
       // 自動で決まる問いを決める（自分で答えたものは変えない）
       var applyAuto = function() {
         TOKI_WIZARD_QS.forEach(function(q) {
-          var r = q.auto && q.auto(a);
+          var r = q.auto && q.auto(a, c);
           // 保存してある答えが、自動で決まる答えと同じなら、それも「自動」として扱う（問いの数に入れない）
           if (r && (!a[q.key] || autoWhy[q.key] || a[q.key] === r.val)) { a[q.key] = r.val; autoWhy[q.key] = r.why; }
           else if (!r && autoWhy[q.key]) { a[q.key] = ''; delete autoWhy[q.key]; }   // 前の答えを直して、自動の理由が無くなった
@@ -16998,7 +17085,7 @@ function renderTodoList() {
         // v0.55.35: その場で答えを変えたときは、自動で決まる問いもその場で決め直す（前の答えを上書き）。
         // 例：抵当権設定を「なし」に変えたのに、前の「金消同席する」が残る、を防ぐ。まとめから押せば手で直せる
         if (changed) TOKI_WIZARD_QS.forEach(function(q2) {
-          var r = q2.auto && q2.auto(a);
+          var r = q2.auto && q2.auto(a, c);
           if (r) { a[q2.key] = r.val; autoWhy[q2.key] = r.why; }
         });
         applyAuto();
@@ -18687,7 +18774,7 @@ function myDeckApply(idx) {
         });
         wgItems.forEach(({ task, topPx, blockH, col: colIdx, totalCols }) => {
           const myName     = allSettings.profile.name || null;
-          const taskCal    = getCalendar(task.calendarId);
+          const taskCal    = calendarForRecord(task);   // v0.55.39: 見つからなければ色は象限の色（先頭のカレンダーの色にしない）
           const calColor   = taskCal ? { bg: taskCal.color + '22', bd: taskCal.color } : null;
           const ownerColor = (task.owner && task.owner !== myName) ? getOwnerColor(task.owner) : null;
           const colors = calColor || ownerColor || SEC_COLOR[task.section] || SEC_COLOR[2];
@@ -20747,7 +20834,7 @@ function myDeckApply(idx) {
         var rightVal = colIdx < tcols - 1
           ? 'calc(' + (tcols - colIdx - 1) + ' * (100% - 52px) / ' + tcols + ' + 4px)'
           : '4px';
-        var cal      = getCalendar(task.calendarId);
+        var cal      = calendarForRecord(task);   // v0.55.39
         var calColor = cal ? { bg: cal.color + '22', bd: cal.color } : null;
         var colors   = calColor || SEC_COLOR_TL[task.section] || SEC_COLOR_TL[2];
         var bgC = task.completed ? '#e8e8e8' : colors.bg;
@@ -20893,7 +20980,7 @@ function myDeckApply(idx) {
         noTimeLabel.textContent = '⏱ 時間未設定';
         noTimeSection.appendChild(noTimeLabel);
         noTimeTasks.forEach(function(t) {
-          var cal = getCalendar(t.calendarId);
+          var cal = calendarForRecord(t);   // v0.55.39
           var calColor = cal ? { bg: cal.color + '22', bd: cal.color } : null;
           var colors = calColor || SEC_COLOR_TL[t.section] || SEC_COLOR_TL[2];
           var item = document.createElement('div');
@@ -53407,6 +53494,38 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.39', date: '2026-10-11',
+    items: [
+      { icon:'🔍', t:'検索などで、記録の出どころを正しく出すようにしました',
+        before:'カレンダーに属さない記録（雑記帳のメモなど）が、一覧の先頭のカレンダーの予定に見えていました。共有カレンダーが先頭だと、共有相手に見えているように見えました',
+        after:'雑記帳のメモは「📝 雑記帳」、手元に無いカレンダーの予定は「手元に無いカレンダー」と出ます。週間・タイムラインの色も、ほかのカレンダーの色にしません（実際に共有相手へ見えていたわけではありません）' }
+    ]
+  },
+  {
+    ver: 'v0.55.38', date: '2026-10-09',
+    items: [
+      { icon:'📮', t:'前もって送る書類の工程を、相手ごとに分けました',
+        before:'送る前の確かめの工程だけがあり、誰に送るかと、送った工程がありませんでした',
+        after:'相手ごとに「送るか」を聞き、送る相手の分だけ送る工程が出ます。答えに合わせて、要らない確かめの工程は出さないようにしました' }
+    ]
+  },
+  {
+    ver: 'v0.55.37', date: '2026-10-09',
+    items: [
+      { icon:'🏢', t:'相手が会社のとき、当日に確かめる工程を出すようにしました',
+        before:'相手が会社のときに、当日に確かめることを忘れないための工程がありませんでした',
+        after:'名前の欄から会社かどうかを自動で見分けて工程を出し、済んだら確かめた結果をカードに出します' }
+    ]
+  },
+  {
+    ver: 'v0.55.36', date: '2026-10-09',
+    items: [
+      { icon:'📝', t:'工程の説明の言葉の順を直しました',
+        before:'説明の言葉が、実際の作業の順と違っていました',
+        after:'実際に確かめる順に並べました' }
+    ]
+  },
+  {
     ver: 'v0.55.35', date: '2026-10-09',
     items: [
       { icon:'❓', t:'案件の形を、1問ずつ答えて決められるようにしました',
@@ -76744,7 +76863,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          // v0.55.23: 【第67条④】当日謄本のすぐ後ろに当日抄本を足した（2026-10-07 の指示）ので、並びの期待を変えた
          // v0.55.27: 【第67条④】押の後ろに発送前のカク・依を足した（2026-10-08 の指示）ので、並びの期待を変えた
          // v0.55.28: 【第67条④】設組の後ろに家屋証明を足した（2026-10-08 の指示）ので、並びの期待を変えた
-         (TOKI_STEPS_1.map(function(s) { return TOKI_STEP_LABELS[s] || s; }).join('') === '物入押カク依カク依金設受設組家屋証明カク依当日謄本当日抄本決組申' && TOKI_STEPS_1.length === new Set(TOKI_STEPS_1).size && tokiSama('山田') === '山田様' && tokiSama('山田様') === '山田様' && tokiSama('鈴木さん') === '鈴木さん')
+         // v0.55.37: 【第67条④】当日謄本のすぐ後ろに当日会ト（売主の当日会社謄本）を足した
+         // v0.55.38: 【第67条④】発送前のカク・依の後ろに、買主押印 発送・売主押印 発送を足した
+         (TOKI_STEPS_1.map(function(s) { return TOKI_STEP_LABELS[s] || s; }).join('') === '物入押カク依買主発送売主発送カク依金設受設組家屋証明カク依当日謄本当日会ト当日抄本決組申' && TOKI_STEPS_1.length === new Set(TOKI_STEPS_1).size && tokiSama('山田') === '山田様' && tokiSama('山田様') === '山田様' && tokiSama('鈴木さん') === '鈴木さん')
            ? ok('ST-406·⑨: 工程は実際の流れの順。名前に「様」を重ねない')
            : ng('ST-406·⑨: 並びか「様」の付け方が違う', TOKI_STEPS_1.join(''));
          // v0.51.3: 担当者と行く人
@@ -78130,7 +78251,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ④ カード：契約同席は「あり」のときだけ出す（なしのときに「契約同席 なし」と出さない）
        var _st438t = function(c) { var d = document.createElement('div'); d.innerHTML = _tokiCaseRowHtml(c, '2026-10-08'); return d.textContent; };
        // v0.55.35: 【第67条④】未確認は「❓ 案件の形を決める（あと〇問）」の札1つにまとめる。契約同席なしはふつうなので出さない（2026-10-09 の指示）
-       (_st438t(_st438old2).indexOf('❓ 案件の形を決める（あと7問）') !== -1 && _st438t(_st438old2).indexOf('契約同席') === -1 &&
+       (_st438t(_st438old2).indexOf('❓ 案件の形を決める（あと8問）') !== -1   /* v0.55.38: 発送を買主・売主に分けて8問 */ && _st438t(_st438old2).indexOf('契約同席') === -1 &&
         _st438t(Object.assign({}, _st438old2, { keiyakuAttend: 'no' })).indexOf('契約同席') === -1 &&
         _st438t(Object.assign({}, _st438old2, { keiyakuOn: true, keiyakuDate: '2026-10-15', keiyakuTime: '10:00' })).indexOf('契約同席 10/15') !== -1)
          ? ok('ST-438·③: カードは、未確認を「❓ 案件の形を決める」の札1つにまとめ、契約同席は「あり」（日付）のときだけ出す')
@@ -78188,32 +78309,35 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st440g = GYOMU_TEMPLATE_TOKI.optionalGroups;
        var _st440st = function(c) { return _st440g.map(function(g) { return gyomuGroupState(c, g) || '-'; }).join(','); };
        // ① 状態の読み方：初めは未確認。前の版の印（設定なし・✓）も読む
-       (_st440st({}) === '-,-,-,-' && _st440st({ setteiNone: true }) === 'no,-,-,-' && _st440st({ hassouOn: true }) === '-,yes,-,-' &&
-        _st440st({ enabled1: ['物', '当日抄本'] }) === '-,-,yes,-' && _st440st({ kaokuState: 'no', setteiState: 'yes' }) === 'yes,-,-,no')
+       // v0.55.37: 【第67条④】4番目に「売主が会社」（売主の欄から自動。売主が空なら個人＝no）を足した
+       // v0.55.38: 【第67条④】押印書類の発送を、買主（2番目）・売主（3番目）に分けた
+       (_st440st({}) === '-,-,-,-,no,-' && _st440st({ setteiNone: true }) === 'no,-,-,-,no,-' && _st440st({ hassouBuyerState: 'yes' }) === '-,yes,-,-,no,-' &&
+        _st440st({ enabled1: ['物', '当日抄本'] }) === '-,-,-,yes,no,-' && _st440st({ kaokuState: 'no', setteiState: 'yes' }) === 'yes,-,-,-,no,no' &&
+        _st440st({ seller: '（株）サンプル住宅' }) === '-,-,-,-,yes,-')
          ? ok('ST-440·①: この案件の形は、初めは未確認。前の版の印（設定なし・✓）も、なし・ありと読む')
          : ng('ST-440·①: 状態の読み方が違う', _st440st({}) + ' / ' + _st440st({ setteiNone: true }));
        // ② 作る画面の押しボタン → 保存（前の版の端末のための印も一緒に）→ カードに状態（未確認は橙色）
        if (gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) {
          openTokiCaseEditor(null, { tplId: 'toki' });
          document.getElementById('tokiBox').value = '99440'; document.getElementById('tokiBuyer').value = '山田太郎様';
-         var _st440unk = ['settei', 'hassou', 'shouhon', 'kaoku'].every(function(k) { return document.getElementById('tokiGroup_' + k + '_unk').checked; });
-         document.getElementById('tokiGroup_settei_yes').click(); document.getElementById('tokiGroup_kaoku_yes').click(); document.getElementById('tokiGroup_hassou_no').click();
+         var _st440unk = ['settei', 'hassouBuyer', 'hassouSeller', 'shouhon', 'kaoku'].every(function(k) { return document.getElementById('tokiGroup_' + k + '_unk').checked; });
+         document.getElementById('tokiGroup_settei_yes').click(); document.getElementById('tokiGroup_kaoku_yes').click(); document.getElementById('tokiGroup_hassouBuyer_no').click();   // v0.55.38: 買主押印の発送
          document.getElementById('tokiSaveBtn').click();
          var _st440ov = document.getElementById('tokiCaseOverlay'); if (_st440ov) _st440ov.remove();
          var _st440c = allTasks.filter(function(t) { return t.box === 'B99440'; })[0] || {};
          var _st440h = _tokiCaseRowHtml(_st440c, '2026-10-08');
-         (_st440unk && _st440c.setteiState === 'yes' && _st440c.hassouState === 'no' && !('shouhonState' in _st440c) && _st440c.kaokuState === 'yes' &&
-          _st440c.setteiNone === false && _st440c.kaokuOn === true && _st440c.hassouOn === false &&
+         (_st440unk && _st440c.setteiState === 'yes' && _st440c.hassouBuyerState === 'no' && !('shouhonState' in _st440c) && _st440c.kaokuState === 'yes' &&
+          _st440c.setteiNone === false && _st440c.kaokuOn === true && _st440c.hassouBuyerOn === false &&
           // v0.55.35: 【第67条④】決めた後は「あり」だけ出す。未確認（当日抄本・会う予定の3つ）は「❓ 案件の形を決める（あと4問）」の札1つ
           _st440h.indexOf('設定 あり') !== -1 && _st440h.indexOf('押印書類の発送') === -1 && _st440h.indexOf('家屋証明 あり') !== -1 &&
-          _st440h.indexOf('当日抄本') === -1 && _st440h.indexOf('❓ 案件の形を決める（あと4問）') !== -1)
+          _st440h.indexOf('当日抄本') === -1 && _st440h.indexOf('❓ 案件の形を決める（あと5問）') !== -1)   /* v0.55.38: 売主押印の発送も未確認で5問 */
            ? ok('ST-440·②: 作る画面の「未確認｜あり｜なし」で選んで保存し、カードには「あり」と、未確認の数の札が出る')
            : ng('ST-440·②: 状態の選び方・保存・カードの出方が違う', JSON.stringify({ s: _st440c.setteiState, h: _st440c.hassouState, k: _st440c.kaokuState }));
        } else ng('ST-440·②: 登記の作る画面を開けない（管理者でない環境）', '');
        // ③ 知らせ：決済7日前から 家屋証明あり・未確認。決済の前日から 決済前チェック（カク・依）が済んでいなければ
        var _st440t = '2026-10-08';
        // v0.55.33: 会う予定（契約同席・金消同席・決済の立会）も決めてある案件で確かめる
-       var _st440base = { id: 'st440-x', kind: 'toki', box: 'B1', buyer: '山田様', setteiState: 'yes', hassouState: 'no', shouhonState: 'no', kaokuState: 'yes', kessaiAuto: true, keiyakuAttend: 'no', kinshoAttend: 'no', steps1: {} };
+       var _st440base = { id: 'st440-x', kind: 'toki', box: 'B1', buyer: '山田様', setteiState: 'yes', hassouBuyerState: 'no', hassouSellerState: 'no', shouhonState: 'no', kaokuState: 'yes', kessaiAuto: true, keiyakuAttend: 'no', kinshoAttend: 'no', steps1: {} };
        var _st440a = function(o) { return tokiAlerts(Object.assign({}, _st440base, o), _st440t).join(' / '); };
        var _st440d5 = _st440a({ kessaiDate: '2026-10-13' });
        var _st440d8 = _st440a({ kessaiDate: '2026-10-16' });
@@ -78373,7 +78497,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
        // ① 問いの順（実際の流れで分かる順）と、評価は聞かないこと
        var _st444order = TOKI_WIZARD_QS.map(function(q) { return q.key; }).join(',');
-       (_st444order === 'settei,kinsho,keiyaku,kessai,hassou,shouhon,kaoku' && TOKI_WIZARD_QS.every(function(q) { return !/評価/.test(q.q); }))
+       // v0.55.37: 最後に「売主は会社か」（売主の欄から自動）を足した
+       // v0.55.38: 押印書類の発送を、買主・売主の順に分けた
+       (_st444order === 'settei,kinsho,keiyaku,kessai,hassouBuyer,hassouSeller,shouhon,kaoku,kaisha' && TOKI_WIZARD_QS.every(function(q) { return !/評価/.test(q.q); }))
          ? ok('ST-444·①: ウィザードの問いは、抵当権設定 → 金消同席 → 契約同席 → 決済の立会 → 押印書類の発送 → 当日抄本 → 家屋証明の順（評価は聞かない）')
          : ng('ST-444·①: ウィザードの問いの順が違う', _st444order);
        if (!gyomuTemplateVisible(GYOMU_TEMPLATE_TOKI)) { ng('ST-444: 登記を使えない環境', ''); }
@@ -78388,13 +78514,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st444q = function() { var o = _st444ov(); var t = o ? o.textContent : ''; if (t.indexOf('まとめ（') !== -1) return 'sum'; var m = TOKI_WIZARD_QS.filter(function(q) { return t.indexOf(q.q) !== -1; })[0]; return m ? m.key : '?'; };
          var _st444press = function(act) { var b = _st444ov() && _st444ov().querySelector('[data-wz="' + act + '"]'); if (b) b.click(); };
          var _st444seq = [_st444q()];
-         ['no', 'no', 'yes', 'yes', 'skip', 'no'].forEach(function(act) { _st444press(act); _st444seq.push(_st444q()); });
+         ['no', 'no', 'yes', 'yes', 'no', 'skip', 'no'].forEach(function(act) { _st444press(act); _st444seq.push(_st444q()); });
          var _st444sumHasAuto = (_st444ov() ? _st444ov().textContent : '').indexOf('（自動）') !== -1;
          _st444press('save');
          var _st444c = allTasks.filter(function(t) { return t.box === 'B99444'; })[0] || {};
-         (_st444opened && _st444seq.join(',') === 'settei,keiyaku,kessai,hassou,shouhon,kaoku,sum' && _st444sumHasAuto &&
+         (_st444opened && _st444seq.join(',') === 'settei,keiyaku,kessai,hassouBuyer,hassouSeller,shouhon,kaoku,sum' && _st444sumHasAuto &&
           _st444c.setteiState === 'no' && _st444c.kinshoAttend === 'no' && _st444c.kinshoNone === true && _st444c.keiyakuAttend === 'no' &&
-          _st444c.kessaiAttend === 'yes' && _st444c.kessaiAuto === false && _st444c.hassouState === 'yes' && !('shouhonState' in _st444c) && _st444c.kaokuState === 'no' &&
+          _st444c.kessaiAttend === 'yes' && _st444c.kessaiAuto === false && _st444c.hassouBuyerState === 'yes' && _st444c.hassouSellerState === 'no' && !('shouhonState' in _st444c) && _st444c.kaokuState === 'no' &&
           tokiWizardRemaining(_st444c) === 1 && !_st444ov())
            ? ok('ST-444·②: 新しい案件を保存するとウィザードが開き、1問ずつ押して進む（設定なしなら金消同席は自動で飛ばす・あとでは未確認のまま）')
            : ng('ST-444·②: ウィザードの進み方か保存が違う', _st444seq.join(',') + ' / 開いた=' + _st444opened);
@@ -78411,12 +78537,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _st444sum = _st444ov() ? _st444ov().textContent : '';
          var _st444x = _st444ov(); if (_st444x) _st444x.remove();
          (_st444r1 === 'shouhon' && _st444r2 === 'sum' && tokiWizardRemaining(_st444c) === 0 && _st444c.shouhonState === 'yes' &&
-          _st444r3 === 'hassou' && /決済に立会しますか？立会しない（自動決済）（自動）/.test(_st444sum))
+          _st444r3 === 'hassouBuyer' && /決済に立会しますか？立会しない（自動決済）（自動）/.test(_st444sum))
            ? ok('ST-444·③: カードの札から開くと残りの問いから始まり、まとめへ。契約同席なら決済の立会は自動で「立会しない」')
            : ng('ST-444·③: 札から開いたときの進み方が違う', [_st444r1, _st444r2, _st444r3].join(','));
          // ④ カードの札：未確認の数を1つの札で出す。決め終わったら札は出ない
          var _st444h = function(c) { var d = document.createElement('div'); d.innerHTML = _tokiCaseRowHtml(c, '2026-10-09'); return d.textContent; };
-         (_st444h({ id: 'st444-n', kind: 'toki', box: 'B1', buyer: '甲様', steps1: {} }).indexOf('❓ 案件の形を決める（あと7問）') !== -1 && _st444h(_st444c).indexOf('❓') === -1)
+         (_st444h({ id: 'st444-n', kind: 'toki', box: 'B1', buyer: '甲様', steps1: {} }).indexOf('❓ 案件の形を決める（あと8問）') !== -1 && _st444h(_st444c).indexOf('❓') === -1)
            ? ok('ST-444·④: カードには、まだ答えていない問いの数を「❓ 案件の形を決める（あと〇問）」の札1つで出す（決め終わったら出さない）')
            : ng('ST-444·④: カードの札の出し方が違う', '');
        }
@@ -78426,6 +78552,126 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _st444o = document.getElementById('tokiWizardOverlay'); if (_st444o) _st444o.remove();
        window.saveAllTasks = _st444saveT; window.showToast = _st444toast;
        allTasks = _st444tasks; allSettings.flags = _st444flags;
+     }
+
+     // ===== ST-445: 売主が会社のとき、当日会社謄本（当日会ト）と変更の有無（v0.55.37〜） =====
+     // 【権威】2026-10-09、受託簿の「売主当日会ト」「変更有・無」。売主が会社なら決済の当日に会社謄本を取り、変更が無いことを確かめる。名前はすべて架空
+     var _st445tasks = allTasks.slice(), _st445flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st445saveT = window.saveAllTasks, _st445modal = window.showChoiceModal;
+     try {
+       window.saveAllTasks = function() {};
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       // ① 売主の欄から会社かを判断し、会社なら［当日会ト］が当日謄本のすぐ後ろに出る。手で直したらその答え
+       var _st445co = { id: 'st445-a', kind: 'toki', box: 'B1', buyer: '山田様', seller: '（株）サンプル住宅', kessaiDate: '2026-10-09', steps1: {} };
+       var _st445ind = { id: 'st445-b', kind: 'toki', box: 'B2', buyer: '山田様', seller: '佐藤花子', steps1: {} };
+       var _st445s = tokiStepsFor(_st445co), _st445i = _st445s.indexOf('当日会ト');
+       (tokiSellerIsCompany(_st445co) && !tokiSellerIsCompany(_st445ind) && tokiSellerIsCompany({ seller: '合同会社サンプル' }) && tokiSellerIsCompany({ seller: 'サンプル㈱' }) &&
+        _st445i !== -1 && _st445s[_st445i - 1] === '当日謄本' && tokiStepsFor(_st445ind).indexOf('当日会ト') === -1 &&
+        tokiStepsFor(Object.assign({}, _st445ind, { kaishaState: 'yes' })).indexOf('当日会ト') !== -1)
+         ? ok('ST-445·①: 売主の欄から会社かを判断し、会社なら［当日会ト］を当日謄本のすぐ後ろに出す（手で直せる）')
+         : ng('ST-445·①: 売主が会社のときの出し方が違う', _st445s.join(','));
+       // ② 決済の当日に済んでいなければ⚠️。［当日会ト］を済みにすると変更の有無を聞き、カードに出す。済みを外すと答えも消える
+       var _st445al = tokiAlerts(_st445co, '2026-10-09').join(' / ');
+       window.saveAllTasks = _st445saveT; allTasks = _st445tasks; allSettings.flags = _st445flags;   // ここまでの後片付け
+       // ② は遅れて走る（変更の有無の問いは setTimeout で出る）。その間にほかのテストが一覧を戻すので、試しの案件は中で入れて、終わったら取り除く
+       var _st445opt = null, _st445h0 = '';
+       enqueueSmokeAsyncTest('ST-445·②', function() {
+         var _sv = window.saveAllTasks, _fl = JSON.parse(JSON.stringify(allSettings.flags || {}));
+         window.saveAllTasks = function() {};
+         allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+         allTasks.push(_st445co);
+         window.showChoiceModal = function(o) { _st445opt = o; };
+         toggleTokiStep('st445-a', 1, '当日会ト');
+         _st445h0 = _tokiCaseRowHtml(_st445co, '2026-10-09');
+         return new Promise(function(r) { setTimeout(r, 30); }).then(function() {
+           var asked = !!_st445opt && /変更はありましたか/.test(_st445opt.title);
+           if (_st445opt) _st445opt.buttons[1].onClick();   // 有
+           var hYes = _tokiCaseRowHtml(_st445co, '2026-10-09');
+           _st445opt.buttons[0].onClick();                  // 無
+           var hNo = _tokiCaseRowHtml(_st445co, '2026-10-09');
+           var al2 = tokiAlerts(_st445co, '2026-10-09').join(' / ');
+           toggleTokiStep('st445-a', 1, '当日会ト');          // 済みを外す
+           var cleared = !('kaishaHenkou' in _st445co);
+           window.showChoiceModal = _st445modal; window.saveAllTasks = _sv; allSettings.flags = _fl;
+           allTasks = allTasks.filter(function(t) { return t !== _st445co; });
+           (_st445al.indexOf('今日は当日会社謄本（売主が会社）') !== -1 && asked && _st445h0.indexOf('会社謄本 変更の有無 未記入') !== -1 &&
+            hYes.indexOf('売主の会社に変更あり（このままでは登記できない）') !== -1 && hNo.indexOf('会社謄本 変更なし') !== -1 &&
+            al2.indexOf('当日会社謄本') === -1 && cleared)
+             ? ok('ST-445·②: 決済の当日に済んでいなければ⚠️。済みにすると変更の有無を聞き、カードに出る（有は赤）。済みを外すと答えも消える')
+             : ng('ST-445·②: 当日会社謄本の流れが違う', [asked, cleared, _st445al].join(' / '));
+         });
+       });
+     } catch(e) {
+       ng('ST-445: 例外', e.message);
+       window.showChoiceModal = _st445modal; window.saveAllTasks = _st445saveT;
+       allTasks = _st445tasks; allSettings.flags = _st445flags;
+     }
+
+     // ===== ST-446: 押印書類の発送（買主・売主）と、金消同席なしなら金消前のカク・依を出さない（v0.55.38〜） =====
+     // 【権威】2026-10-09、買主押印発送・売主押印発送の順に、発送の工程も出す。金消同席なしなら金消前の確認・依頼は出さなくていい、との指示
+     try {
+       var _st446 = function(o) { return tokiStepsFor(Object.assign({ id: 'st446', kind: 'toki', steps1: {} }, o)).map(function(st) { return st; }).join(','); };
+       var _st446b = _st446({ hassouBuyerState: 'yes' }), _st446s = _st446({ hassouSellerState: 'yes' }), _st446n = _st446({});
+       var _st446bs = _st446({ hassouBuyerState: 'yes', hassouSellerState: 'yes' });
+       var _st446legacy = _st446({ hassouState: 'yes' });
+       (/^物,入,押,カク発送,依発送,買押発,カク,/.test(_st446b) && /^物,入,押,カク発送,依発送,売押発,カク,/.test(_st446s) && /^物,入,押,カク発送,依発送,買押発,売押発,カク,/.test(_st446bs) &&
+        _st446n.indexOf('発送') === -1 && /^物,入,押,カク発送,依発送,カク,/.test(_st446legacy))
+         ? ok('ST-446·①: 発送前のカク・依 → 買主押印 発送 → 売主押印 発送の順。どちらかが発送ありなら発送前のカク・依を出す（前の版の「発送あり」も）')
+         : ng('ST-446·①: 発送の工程の出し方が違う', [_st446b, _st446s, _st446legacy].join(' / '));
+       var _st446k1 = _st446({ kinshoAttend: 'no' }), _st446k2 = _st446({ kinshoAttend: 'yes', kinshoDate: '2026-10-20' }), _st446k3 = _st446({});
+       var _st446man = _st446({ kinshoAttend: 'yes', enabled1: ['物', '入', '押', '依', '当日謄本', '決', '組', '申'] });
+       (_st446k1.split(',').indexOf('カク') === -1 && _st446k1.split(',').indexOf('依') === -1 && _st446k1.indexOf('カク2') !== -1 &&
+        /,カク,依,金,/.test(_st446k2) && /,カク,依,/.test(_st446k3) && _st446man.split(',').indexOf('カク') === -1 && _st446man.split(',').indexOf('依') !== -1)
+         ? ok('ST-446·②: 金消同席なしなら金消前のカク・依を出さない（決済前のカク・依は出す。未確認のあいだは出す。手で外したものは外したまま）')
+         : ng('ST-446·②: 金消前のカク・依の出し方が違う', [_st446k1, _st446k2, _st446man].join(' / '));
+     } catch(e) {
+       ng('ST-446: 例外', e.message);
+     }
+
+     // ===== ST-447: カレンダーが見つからない記録を、ほかのカレンダー（一覧の先頭）のふりをさせない（v0.55.39〜） =====
+     // 【権威】2026-10-11、検索で雑記帳のメモが一覧の先頭の共有カレンダーの予定に見え、共有相手に漏れたように見える、との指摘。
+     // getCalendar を使う全部の場所（検索・週間の時間の欄・タイムライン2か所）を数えて確かめる（第79条）
+     var _st447cals = calendars.slice(), _st447main = allSettings.calendar ? allSettings.calendar.mainId : undefined, _st447tasks = allTasks.slice();
+     try {
+       calendars.unshift({ id: 'st447-shared', name: '共有カレンダー見本', color: '#e64980', visible: true, shared: true });
+       calendars.push({ id: 'st447-main', name: 'メイン見本', color: '#4dabf7', visible: true });
+       allSettings.calendar.mainId = 'st447-main';
+       // ① 見分け方
+       var _st447lbl = [
+         recordSourceLabel({ kind: 'scratch', text: 'メモ' }),
+         recordSourceLabel({ kind: 'task', text: '古い予定' }),
+         recordSourceLabel({ kind: 'task', text: '別の端末', calendarId: 'st447-unknown' }),
+         recordSourceLabel({ kind: 'task', text: '共有', calendarId: 'st447-shared' })
+       ];
+       (getCalendar('st447-unknown') === null && calendarForRecord({ kind: 'scratch' }) === null && calendarForRecord({ kind: 'task', calendarId: 'st447-unknown' }) === null &&
+        _st447lbl.join('|') === '📝 雑記帳|メイン見本|手元に無いカレンダー|共有カレンダー見本')
+         ? ok('ST-447·①: 見つからないカレンダーは一覧の先頭にしない（雑記帳は「雑記帳」、古い予定はメイン、別の端末のカレンダーは「手元に無いカレンダー」）')
+         : ng('ST-447·①: 出どころの見分け方が違う', _st447lbl.join(' | '));
+       // ② 繋がっているか（第76条）：検索の画面で、雑記帳のメモが共有カレンダーの名前で出ない
+       var _st447d = getLocalDateStr(new Date());
+       allTasks.push({ id: 'st447-s', kind: 'scratch', text: 'ST447ひみつのメモ', date: _st447d, createdAt: '2026-10-01T00:00:00Z' });
+       var _st447in = document.getElementById('searchInput'), _st447box = document.getElementById('searchResults'), _st447old = _st447in ? _st447in.value : '';
+       var _st447row = '';
+       if (_st447in && _st447box) {
+         _st447in.value = 'ST447ひみつ'; renderSearchResults();
+         _st447row = [].map.call(_st447box.children, function(r) { return r.textContent; }).filter(function(t) { return t.indexOf('ST447ひみつのメモ') !== -1; }).join(' ');
+         _st447in.value = _st447old; renderSearchResults();
+       }
+       (_st447row.indexOf('雑記帳') !== -1 && _st447row.indexOf('共有カレンダー見本') === -1)
+         ? ok('ST-447·②: 検索で、雑記帳のメモは「📝 雑記帳」と出て、共有カレンダーの名前では出ない')
+         : ng('ST-447·②: 検索の出どころが違う', _st447row);
+       // ③ getCalendar(…calendarId) を直接使って表示している所が、道具（calendarForRecord）の外に残っていない（第79条）
+       var _st447src = document.documentElement.outerHTML;
+       var _st447direct = (_st447src.match(/getCalendar\((t|task)\.calendarId\)/g) || []).length;
+       (_st447direct === 1 && /function getCalendar\(id\) \{\n      return calendars\.find\(c => c\.id === id\) \|\| null;/.test(_st447src))
+         ? ok('ST-447·③: カレンダーを直接引いて表示する所は残っていない（検索・週間・タイムラインは、すべて出どころの道具を通す）')
+         : ng('ST-447·③: 直接引いている所が残っている', String(_st447direct));
+     } catch(e) {
+       ng('ST-447: 例外', e.message);
+     } finally {
+       calendars.length = 0; _st447cals.forEach(function(c) { calendars.push(c); });
+       if (_st447main === undefined) delete allSettings.calendar.mainId; else allSettings.calendar.mainId = _st447main;
+       allTasks = _st447tasks;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
