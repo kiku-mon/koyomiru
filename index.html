@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.39 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.42 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.39';
+    const APP_VERSION = 'v0.55.42';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7263,12 +7263,16 @@ function _showInviteWelcome() {
       <button class="account-menu-settings" onclick="closeAccountMenu(); switchView('settings');" style="width:100%;padding:11px;border:1px solid #e0e0e0;border-radius:9px;background:#fff;color:#333;font-size:0.87em;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;"><span class="msb-gear">⚙️</span>設定</button>
     </div>
     <div style="border-top:1px solid #f0f0f0;padding:8px 0;">
+      <!-- v0.55.41: 【権威】2026-10-11、お知らせを一番上に・大福帳に分かる説明を・はじめの案内は「はじめての方へ」に、との指示。
+           並びは、よく使うもの・関係の近いものを近くに：お知らせ → 共有カレンダー → 大福帳（共有カレンダーの話なので、そのすぐ下）→ アカウント連携 → はじめての方へ。
+           大福帳は「来訪の記録を、番頭さんに届けるか」を選ぶ所。言葉は短く（細かい決まりは開いた画面の説明に任せる・選択「2」）。
+           はじめての方へは、設定の画面の「🌙 はじめての方へ」と同じ案内（showTutorial）を開くので、言葉と印をそろえる -->
+      <button class="account-menu-item" onclick="closeAccountMenu(); openOshiraseModal();"><span>📣</span>お知らせ</button>
       <button class="account-menu-item" onclick="closeAccountMenu(); openSharedCalendarModal();"><span>👥</span>共有カレンダー</button>
+      <button class="account-menu-item" id="accountMenuLedger" onclick="closeAccountMenu(); openLedgerPrivacyModal();"><span>📒</span>大福帳（共有カレンダーの来訪記録）</button>
       <!-- v0.45.1608: ログイン方法の連携。同じ人が別の方法で入ると別人扱いになるため、
            ここで紐づけておけば、どちらで入っても同じデータが見える。 -->
       <button class="account-menu-item" id="accountMenuLink" onclick="closeAccountMenu(); openLinkMethodModal();"><span>🔗</span>アカウント連携</button>
-      <button class="account-menu-item" id="accountMenuLedger" onclick="closeAccountMenu(); openLedgerPrivacyModal();"><span>📒</span>大福帳（だれが来たかの記録）</button>
-      <button class="account-menu-item" onclick="closeAccountMenu(); openOshiraseModal();"><span>📣</span>お知らせ</button>
       <!-- v0.45.2060: 【権威】2026-09-04、長押しで開発者ログに入る経路を作った覚えがない、
            勝手に作るな、との指摘。版の記録も残っておらず、いつ入ったか追えなかった。
            開発者ログには招待コード・見るだけリンクのトークン・予定の本文が出る。
@@ -7279,7 +7283,7 @@ function _showInviteWelcome() {
            これが開くのは showTutorial()＝初回の案内であって、使い方の説明ではない。
            お知らせの中にも「使い方」タブがあり、同じ名前で別のものが2つ並んでいた。
            名前を、中身に合わせる。 -->
-      <button class="account-menu-item" id="accountMenuHelp" onclick="closeAccountMenu(); showTutorial();"><span>🎬</span>はじめの案内をもう一度</button>
+      <button class="account-menu-item" id="accountMenuHelp" onclick="closeAccountMenu(); showTutorial();"><span>🌙</span>はじめての方へ</button>
     </div>
     <div id="accountMenuAuthArea" style="border-top:1px solid #f0f0f0;padding:8px 0 10px;"></div>
   </div>
@@ -8580,7 +8584,7 @@ function _showInviteWelcome() {
       <div class="vc-hero-orb1"></div>
       <div class="vc-hero-orb2"></div>
       <div class="vc-hero-in">
-        <div class="vc-hero-label">YARUKOTO CRAFT · PHOTO LOG</div>
+        <div class="vc-hero-label">KOYOMIRU · PHOTO LOG</div>
         <div class="vc-hero-row">
           <div class="vc-hero-left">
             <span class="vc-hero-icon">📷</span>
@@ -12989,8 +12993,58 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
       return mainId ? getCalendar(mainId) : null;
     }
     window.calendarForRecord = calendarForRecord;
+    // v0.55.40: 【権威】2026-10-11、別スレッドの調べで、カレンダーを持たない予定・結べない予定を「一覧の先頭」に入れていたと分かった。
+    // 先頭が共有カレンダーだと、他人と共有しているカレンダーに予定が入る（しかも送り先は個人用のまま食い違う）。
+    // 予定を入れてよい「ふだんのカレンダー」を1か所で決める（第71条④）：
+    //   メインカレンダー（作るときの決まりと同じ・第11条）→ 無ければ、共有でも受け皿でもない最初のカレンダー → それも無ければ最初
+    function _isSharedCalendar(c) { return !!(c && (c.cloudCalendarId || c.shared || c.isShared)); }
+    function defaultCalendarFor(list) {
+      list = (list || []).filter(function(c) { return c && c.id; });
+      if (!list.length) return null;
+      var mainId = allSettings && allSettings.calendar && allSettings.calendar.mainId;
+      var main = mainId ? list.filter(function(c) { return c.id === mainId; })[0] : null;
+      if (main && !main.isOrphanReceptacle && !isLegacyReceptacle(main)) return main;
+      return list.filter(function(c) { return !_isSharedCalendar(c) && !c.isOrphanReceptacle && !isLegacyReceptacle(c); })[0]
+        || list.filter(function(c) { return !c.isOrphanReceptacle; })[0] || list[0];
+    }
+    window.defaultCalendarFor = defaultCalendarFor;
+    // v0.55.42: 【権威】2026-10-12、共有カレンダーの仲間（カイモリさん）が入れた予定が、仲間に見えない件。クラウドを読んで確かめた：
+    //  ・端末のメインが、昔の版が作った受け皿「（他端末のカレンダー）」だった（v0.45.1821 より前に作られ、受け皿の印が無い）
+    //  ・自動でメインに入れるので、選ばずに入れた予定が受け皿 → 送るときに個人用へ落ち、仲間には見えていなかった（予定14件）
+    //  ・メインが壊れたときの直し先・予定を作るときの代わり先などが「一覧の先頭」で、受け皿や共有カレンダーがメインにされうる作りだった
+    // 「今のメイン」を1か所で決める（第71条④）。メインは、書き込めて（受け皿でない）、共有でないカレンダー。
+    // 本人が共有カレンダーをメインに選んでいれば、それは尊重する（受け皿だけは不可）
+    var LEGACY_RECEPTACLE_RE = /他端末のカレンダー/;
+    function isLegacyReceptacle(c) { return !!(c && !c.isOrphanReceptacle && !c.cloudCalendarId && LEGACY_RECEPTACLE_RE.test(String(c.name || ''))); }
+    window.isLegacyReceptacle = isLegacyReceptacle;
+    function getMainCalendarId(list) {
+      list = (list || (allSettings && allSettings.calendar && allSettings.calendar.list) || calendars || []).filter(function(c) { return c && c.id; });
+      var mainId = allSettings && allSettings.calendar && allSettings.calendar.mainId;
+      var main = mainId ? list.filter(function(c) { return c.id === mainId; })[0] : null;
+      if (main && !main.isOrphanReceptacle && !isLegacyReceptacle(main)) return main.id;
+      var own = list.filter(function(c) { return !_isSharedCalendar(c) && !c.isOrphanReceptacle && !isLegacyReceptacle(c); })[0];
+      return own ? own.id : null;
+    }
+    window.getMainCalendarId = getMainCalendarId;
+    // 自分だけのメインを用意する（無ければ作る）。戻り値：メインのID
+    function ensureOwnMainCalendar() {
+      if (!allSettings.calendar) allSettings.calendar = {};
+      if (!Array.isArray(allSettings.calendar.list)) allSettings.calendar.list = [];
+      var id = getMainCalendarId(allSettings.calendar.list);
+      if (!id) {
+        id = generateTaskId();
+        allSettings.calendar.list.unshift({ id: id, name: 'メイン', color: '#90caf9', visible: true, shareable: false });
+      }
+      if (allSettings.calendar.mainId !== id) {
+        allSettings.calendar.mainId = id;
+        if (!window._isTesting) { try { localStorage.setItem('mainCalendarId', id); } catch (e) {} }   // 第7条：テスト中は端末に書かない
+      }
+      return id;
+    }
+    window.ensureOwnMainCalendar = ensureOwnMainCalendar;
     // 検索などに出す「出どころ」の名前
-    var RECORD_KIND_LABELS = { scratch: '📝 雑記帳', zen: '🧘 禅', video: '🎬 動画', audio: '🎙 音声' };
+    // v0.55.40: 雑記帳の印は、日次のつまみと同じ「✏️」に
+    var RECORD_KIND_LABELS = { scratch: '✏️ 雑記帳', zen: '🧘 禅', video: '🎬 動画', audio: '🎙 音声' };
     function recordSourceLabel(t) {
       var cal = calendarForRecord(t);
       if (cal) return cal.name;
@@ -13746,9 +13800,8 @@ function isCalendarVisible(calendarId) {
       if (!calendarId || calendarId === 'default') {
         const mainId = allSettings.calendar.mainId || (localStorage.getItem('mainCalendarId'));
         const _calList = (allSettings.calendar && allSettings.calendar.list) || [];
-        calendarId = (mainId && _calList.find(function(c){return c.id===mainId;}) ? mainId : null)
-          || (_calList[0] && _calList[0].id)
-          || (calendars[0] && calendars[0].id)
+        // v0.55.42: 一覧の先頭ではなく「今のメイン」（受け皿・共有の代わりにしない）。無ければ作る
+        calendarId = getMainCalendarId(_calList)
           || (function(){
                var _newCalId = generateTaskId();
                var _newCal = { id: _newCalId, name: 'メイン', color: '#90caf9', visible: true, shareable: false };
@@ -17481,6 +17534,11 @@ function renderTodoList() {
           photo: '📷 写真',
           audio: '🎙️ 音声',
           video: '📹 動画',
+          // v0.55.40: 【権威】2026-10-11、「その他（toki）」「その他（gyomu）」「その他（money）」と中の言葉が出ていた、との指摘。
+          // 登記は管理者だけのものなので、登記モードがオンでなければぼかす
+          gyomu: '💼 業務の案件',
+          money: '💰 手持ち',
+          toki: (typeof isTokiModeOn === 'function' && isTokiModeOn()) ? '📝 登記の案件' : '🗂 案件（管理者用）',
           // v0.45.2033: 名前を付けていない種類は「● dailyStatus」のように
           // 中の言葉がそのまま出ていた。読む人には意味がない。
           dailyStatus: '📊 日次の記録',
@@ -18956,7 +19014,7 @@ function myDeckApply(idx) {
       // 終了時刻を設定
       setTimeSelect('weeklyEditEnd', task.endTime);
       // カレンダー選択UIを生成
-      _editCalendarId = task.calendarId || allSettings.calendar.mainId || (calendars[0] && calendars[0].id);
+      _editCalendarId = task.calendarId || getMainCalendarId();   // v0.55.42
       renderCalendarSelector('editCalendarBtns', _editCalendarId, function(id) { _editCalendarId = id; });
       // 象限を設定
       document.getElementById('editTaskSection').value = task.section || 2;
@@ -18984,14 +19042,17 @@ function myDeckApply(idx) {
       container.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
       // 自動投入ONかつメインカレンダーが選択されている場合は折りたたみ表示
       var autoMain = allSettings.calendar && allSettings.calendar.autoMain !== undefined ? allSettings.calendar.autoMain : localStorage.getItem('autoMainCalendar') !== 'false'; // allSettings優先（第41条）
-      var mainId = allSettings.calendar.mainId || (calendars[0] && calendars[0].id);
-      var visibleCals = calendars.filter(function(c) { return c.visible; });
+      var mainId = getMainCalendarId();   // v0.55.42
+      // v0.55.42: 受け皿は書き込み先に出さない（isWritableCalendar を1か所の判定に）
+      var visibleCals = calendars.filter(function(c) { return c.visible && isWritableCalendar(c) && !isLegacyReceptacle(c); });
       // selectedCalIdが存在しない場合はfallback
       if (!visibleCals.find(function(c){ return c.id === selectedCalId; })) {
         selectedCalId = mainId || (visibleCals[0] && visibleCals[0].id);
         onSelect && onSelect(selectedCalId);
       }
-      if (autoMain && selectedCalId === mainId) {
+      // v0.55.42: 共有カレンダーに入っている人は、畳まずに並べる（どこに入るかが毎回目に入るように。選ばずに個人用へ入る、を防ぐ）
+      var _hasShared = visibleCals.some(function(c) { return _isSharedCalendar(c); });
+      if (autoMain && selectedCalId === mainId && !_hasShared) {
         // メイン選択中: 小さく表示 + 「変更」ボタン
         var mainCal = calendars.find(function(c){ return c.id === mainId; });
         if (mainCal) {
@@ -26000,7 +26061,7 @@ function reviveBlueprint(id) {
         document.getElementById('monthlyTaskSection').value = '1';
         document.getElementById('monthlyDeleteBtn').style.display = 'none';
         // v0.45.1269: 自動投入ONならメイン、OFFなら前回選択を復元（週間と同じロジックに統一）
-        var _mMainId = allSettings.calendar.mainId || (calendars[0] && calendars[0].id);
+        var _mMainId = getMainCalendarId();   // v0.55.42
         var _mAutoMain = allSettings.calendar && allSettings.calendar.autoMain !== undefined ? allSettings.calendar.autoMain : localStorage.getItem('autoMainCalendar') !== 'false';
         _monthlyCalendarId = _mAutoMain ? _mMainId : (allSettings.ui.lastCalendarId || _monthlyCalendarId || _mMainId);
         renderCalendarSelector && renderCalendarSelector('monthlyCalendarBtns', _monthlyCalendarId, function(id) {
@@ -26975,7 +27036,7 @@ function _monthlySidebarTargetCalId() {
       if ((calendars || []).some(function(c) { return c && c.id === _only; })) return _only;
     }
   } catch(e) {}
-  return (allSettings.calendar && allSettings.calendar.mainId) || (calendars[0] && calendars[0].id) || 'default';
+  return getMainCalendarId() || 'default';   // v0.55.42
 }
 window._monthlySidebarTargetCalId = _monthlySidebarTargetCalId;
 
@@ -27943,7 +28004,7 @@ function saveMsbEdit() {
       // 象限をデフォルトに
       document.getElementById('createTaskSection').value = '1';
       // カレンダー選択UI: 自動投入ONならメインを初期選択、OFFなら前回選択を復元（v0.45.1269）
-      const _mainId = allSettings.calendar.mainId || (calendars[0] && calendars[0].id) || 'work';
+      const _mainId = getMainCalendarId() || 'work';   // v0.55.42
       const _autoMain = allSettings.calendar && allSettings.calendar.autoMain !== undefined ? allSettings.calendar.autoMain : localStorage.getItem('autoMainCalendar') !== 'false'; // allSettings優先（第41条）
       _createCalendarId = _autoMain ? _mainId : (allSettings.ui.lastCalendarId || _createCalendarId || _mainId);
       renderCalendarSelector('createCalendarBtns', _createCalendarId, function(id) {
@@ -28489,7 +28550,7 @@ function saveMsbEdit() {
         _calSel.innerHTML = _calList.map(function(cal) {
           return '<option value="' + cal.id + '">' + cal.name + '</option>';
         }).join('');
-        _calSel.value = task.calendarId || (_calList[0] ? _calList[0].id : '');
+        _calSel.value = task.calendarId || getMainCalendarId(_calList) || (_calList[0] ? _calList[0].id : '');   // v0.55.42
       })();
       // 本能選択の初期化
       (function() {
@@ -31186,7 +31247,10 @@ function saveMsbEdit() {
       const url = URL.createObjectURL(blob);
       const today = new Date();
       const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const filename = `yarukotocraft_${dateStr}.json`;
+      // v0.55.40: 【権威】2026-10-11、書き出しのファイル名が「やることクラフト」のままだった。こよみるの名前にする。
+      // 変えるのは書き出すファイル名だけ（写真・録音のしまい場所、Gist のバックアップの名前と鍵の材料は、変えると読めなくなるので変えない）。
+      // 取り込みはファイル名を見ないので、前の名前のファイルもそのまま読める
+      const filename = `koyomiru_${dateStr}.json`;
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
@@ -31468,15 +31532,17 @@ function saveMsbEdit() {
               const calToAdd = data.calendars.find(function(c) { return c.id === t.calendarId; });
               if (calToAdd && !currentCals.find(function(c) { return c.id === calToAdd.id; })) {
                 currentCals.push({ id: calToAdd.id, name: calToAdd.name, color: calToAdd.color, visible: true, shareable: true });
-                localStorage.setItem('calendars', JSON.stringify(currentCals));
+                // v0.55.40: 前の版の保存場所（calendars）ではなく、今の設定に書く（第41条）
+                if (allSettings.calendar) { allSettings.calendar.list = currentCals; saveAllSettings(); }
                 nameToId[calToAdd.name] = calToAdd.id;
               }
               return t; // calendarIdそのまま使える
             }
-            // 完全に不明なID → 先頭カレンダーに割り当て＆警告
+            // 完全に不明なID → ふだんのカレンダー（メイン優先）に割り当て＆警告（v0.55.40: 先頭＝共有のことがあるので使わない）
             _importUnmatchedCount = (_importUnmatchedCount || 0) + 1;
-            if (!_importFallbackCalName && currentCals[0]) _importFallbackCalName = currentCals[0].name;
-            return Object.assign({}, t, { calendarId: currentCals[0] ? currentCals[0].id : t.calendarId });
+            const _fbCal = defaultCalendarFor(currentCals);
+            if (!_importFallbackCalName && _fbCal) _importFallbackCalName = _fbCal.name;
+            return Object.assign({}, t, { calendarId: _fbCal ? _fbCal.id : t.calendarId });
           });
           // ⑤ 削除済みIDをスキップ
           const myDeletedIds = new Set(JSON.parse(localStorage.getItem('deletedTaskIds') || '[]'));
@@ -31806,15 +31872,20 @@ function saveMsbEdit() {
             let myCals = (allSettings.calendar && allSettings.calendar.list && allSettings.calendar.list.length > 0)
               ? JSON.parse(JSON.stringify(allSettings.calendar.list))
               : JSON.parse(localStorage.getItem('calendars') || '[]');
+            // v0.55.40: 【権威】2026-10-11、取り込みで空のカレンダーが増える、との指摘。予定は名前で自分のカレンダーに結び直しているのに、
+            // ここではIDだけで照らし合わせて知らないIDを足し、前の版の保存場所に書いていた（次の起動で一覧に吸い込まれ、空のカレンダーが増える）。
+            // 同じIDなら更新、同じ名前があれば足さない。足すのは、取り込んだ予定が実際に使っていて、手元に同じ名前も無いものだけ。今の設定に書く（第41条）
+            const _usedCalIds = {};
+            fixedTasks.forEach(function(t) { if (t && t.calendarId) _usedCalIds[t.calendarId] = true; });
             data.calendars.forEach(function(incoming) {
+              if (!incoming || !incoming.id) return;
               const idx = myCals.findIndex(function(c) { return c.id === incoming.id; });
-              if (idx >= 0) {
-                myCals[idx] = Object.assign(myCals[idx], incoming); // 上書き更新
-              } else {
-                myCals.push(incoming); // 新規追加
-              }
+              if (idx >= 0) { myCals[idx] = Object.assign(myCals[idx], incoming); return; }   // 同じID → 更新
+              if (myCals.some(function(c) { return c.name === incoming.name; })) return;          // 同じ名前 → 名前で結び直し済み。足さない
+              if (!_usedCalIds[incoming.id]) return;                                              // 使っている予定が無い → 足さない
+              myCals.push(incoming);
             });
-            localStorage.setItem('calendars', JSON.stringify(myCals));
+            if (allSettings.calendar) { allSettings.calendar.list = myCals; saveAllSettings(); }
           }
           // ===== 第3段：インポート履歴を記録 =====
           if (_importFingerprint !== '|') {
@@ -33664,7 +33735,25 @@ window._repairCloudCalendarIds();
         }
         var _validCalIds = new Set(_calList.map(function(c){ return c.id; }));
         var _calIdMigMap = allSettings.calendar.calIdMigMap || {};
-        var _defaultCalId = _calList[0].id;
+        // v0.55.42: 印の無い古い受け皿（「（他端末のカレンダー）」・クラウドとつながっていない）に、受け皿の印を付ける。
+        // 書き込み先の選択肢から外れ、「ここに移す」の対象にもなる。名前も実態に合わせる（v0.45.1821 と同じ）
+        var _legacyFixed = 0;
+        _calList.forEach(function(c) {
+          if (isLegacyReceptacle(c)) { c.isOrphanReceptacle = true; c.name = 'カレンダーが決まっていない予定'; c.shareable = false; _legacyFixed++; }
+        });
+        // メインが受け皿・共有の代わり・壊れているなら、自分だけのメインにする（無ければ作る）
+        var _mainBefore = allSettings.calendar.mainId;
+        var _mainNow = ensureOwnMainCalendar();
+        _calList = allSettings.calendar.list;
+        if (_legacyFixed || _mainBefore !== _mainNow) {
+          calendars = allSettings.calendar.list;
+          if (typeof saveAllSettings === 'function') saveAllSettings();
+          if (typeof _dbgLog === 'function') _dbgLog('[validateCalendarIds] 古い受け皿 ' + _legacyFixed + ' 件・メイン ' + (_mainBefore === _mainNow ? 'そのまま' : '直した'));
+        }
+        // v0.55.40: 補う先は「ふだんのカレンダー」（メイン優先）。先頭（共有のことがある）にしない
+        var _defaultCal = defaultCalendarFor(_calList);
+        var _defaultCalId = _defaultCal.id;
+        var _nowCal = new Date().toISOString();
         var _fixedCount = 0;
         // v0.45.861〜：calendarId保持kind全件を対象に修復
         // 旧バグ：task限定だったため、インポート→重複削除後のvideo等亡霊calendarIdを見逃していた（第53条検証で判明）
@@ -33686,7 +33775,15 @@ window._repairCloudCalendarIds();
           if (!_isCalKind) return;
           // ① 未設定（taskのみ補完。他kindはcalendarIdオプショナル）
           if (!t.calendarId) {
-            if (t.kind === 'task') { t.calendarId = _defaultCalId; _fixedCount++; }
+            if (t.kind === 'task') {
+              // v0.55.40: 送り先が共有カレンダーを指していれば、そのカレンダーに（手元と送り先を食い違わせない）。それ以外はふだんのカレンダー
+              var _byCloud = t.cloudCalendarId ? _calList.filter(function(c) { return c.cloudCalendarId && c.cloudCalendarId === t.cloudCalendarId; })[0] : null;
+              var _to = _byCloud || _defaultCal;
+              t.calendarId = _to.id;
+              if (_to.cloudCalendarId) t.cloudCalendarId = _to.cloudCalendarId;
+              t.updatedAt = _nowCal;   // 第61条：直した結果をほかの端末にも届ける
+              _fixedCount++;
+            }
             return;
           }
           // ② 有効なID → そのまま
@@ -33715,8 +33812,8 @@ window._repairCloudCalendarIds();
             _calListChanged = true;
           }
           if (_validCalIds.has(t.calendarId)) return; // プレースホルダー追加で有効化できた
-          // ⑤ UUIDですらない完全な不正値のみ fallback
-          t.calendarId = _defaultCalId; _fixedCount++;
+          // ⑤ UUIDですらない完全な不正値のみ fallback（v0.55.40: ふだんのカレンダーへ。更新の時刻も）
+          t.calendarId = _defaultCalId; t.updatedAt = _nowCal; _fixedCount++;
         });
         if (_calListChanged) {
           allSettings.calendar.list = _calList;
@@ -36813,9 +36910,9 @@ window._repairCloudCalendarIds();
           var content,filename;
           if(pw){
             content=JSON.stringify({kind:'notebook-enc',code:await nbEncrypt(json,pw)});
-            filename='yarukotocraft-notebook-enc-'+new Date().toISOString().slice(0,10)+'.json';
+            filename='koyomiru-notebook-enc-'+new Date().toISOString().slice(0,10)+'.json';   /* v0.55.40: こよみるの名前に */
           } else {
-            content=json; filename='yarukotocraft-notebook-'+new Date().toISOString().slice(0,10)+'.json';
+            content=json; filename='koyomiru-notebook-'+new Date().toISOString().slice(0,10)+'.json';   /* v0.55.40 */
           }
           var a=Object.assign(document.createElement('a'),{
             href:URL.createObjectURL(new Blob([content],{type:'application/json'})),download:filename
@@ -50447,7 +50544,9 @@ function _removeLocalSharedCalendar(cloudCalendarId, mode) {
     try {
       if (allSettings.calendar && allSettings.calendar.mainId &&
           !calendars.some(function(c) { return c && c.id === allSettings.calendar.mainId; })) {
-        var _next = calendars[0];
+        // v0.55.42: 一覧の先頭（共有のことがある）ではなく、自分だけのメイン（無ければ作る）
+        var _nextId = ensureOwnMainCalendar();
+        var _next = calendars.filter(function(c) { return c && c.id === _nextId; })[0] || { id: _nextId };
         if (_next) {
           allSettings.calendar.mainId = _next.id;
           if (typeof saveAllSettings === 'function') saveAllSettings();
@@ -53493,6 +53592,39 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.42', date: '2026-10-12',
+    items: [
+      { icon:'👥', t:'共有カレンダーに入れたつもりの予定が、仲間に見えないことがあったのを直しました',
+        before:'前の版のときに作られた「（他端末のカレンダー）」がメインになっていると、カレンダーを選ばずに入れた予定が、仲間には見えない所に入っていました',
+        after:'開いたときに自動で直り、自分だけの「メイン」ができます。予定を入れる画面では、メインと共有カレンダーが並んで見えるので、どちらに入るかが分かります' },
+      { icon:'📥', t:'見えない所に入っていた予定を、共有カレンダーへ移せます',
+        before:'まとめて移すことしかできませんでした',
+        after:'共有カレンダーの画面の「カレンダーが決まっていない予定」から、1件ずつ✓を付けて移せます（初めは全部に✓）。自分だけの予定は✓を外せば残ります' }
+    ]
+  },
+  {
+    ver: 'v0.55.41', date: '2026-10-11',
+    items: [
+      { icon:'🌙', t:'右上のメニューの並びと言葉を整えました',
+        before:'お知らせが下の方にあり、言葉だけでは何のことか分かりにくい項目がありました',
+        after:'お知らせを一番上にし、関係の近いものを並べ、分かりやすい言葉にしました' }
+    ]
+  },
+  {
+    ver: 'v0.55.40', date: '2026-10-11',
+    items: [
+      { icon:'📅', t:'カレンダーの決まっていない予定は、メインカレンダーに入るようにしました',
+        before:'カレンダーの決まっていない予定や、取り込みで行き先の分からない予定が、一覧のいちばん上のカレンダーに入っていました。いちばん上が共有カレンダーだと、共有カレンダーに入ることがありました',
+        after:'メインカレンダーに入ります（共有カレンダーには入れません）' },
+      { icon:'📥', t:'取り込んだとき、空のカレンダーが増えないようにしました',
+        before:'別の端末の書き出しを取り込むと、同じ名前の空のカレンダーが増えることがありました',
+        after:'同じ名前のカレンダーがあれば、そこにまとめます' },
+      { icon:'💾', t:'書き出しのファイル名を「koyomiru_日付」にしました',
+        before:'書き出しのファイル名が、前の名前のままでした',
+        after:'こよみるの名前になりました。前の名前のファイルも、そのまま取り込めます' }
+    ]
+  },
   {
     ver: 'v0.55.39', date: '2026-10-11',
     items: [
@@ -57982,7 +58114,7 @@ async function openLedgerPrivacyModal() {
       '<input type="checkbox" data-ledger-cal="' + esc(r.calendar_id) + '"' + (r.hide_from_ledger ? '' : ' checked') + ' style="width:20px;height:20px;"></label>';
   }).join('') : '<div style="color:#999;font-size:0.88em;">大福帳のあるカレンダーには、まだ入っていません。</div>';
   ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;max-height:80vh;overflow:auto;padding:18px;">' +
-    '<div style="font-weight:700;margin-bottom:4px;">📒 大福帳（だれが来たかの記録）</div>' +
+    '<div style="font-weight:700;margin-bottom:4px;">📒 大福帳（共有カレンダーの来訪記録）</div>' +   // v0.55.41: メニューの言葉とそろえる
     '<div style="font-size:0.78em;color:#888;margin-bottom:10px;">カレンダーを表示した状態でこよみるを開くと、そのカレンダーの番頭さんに「来た」ことが届きます。記録は90日で消えます。止めると、それまでのあなたの記録も消えます。予定・コメント・参加表明は、これまでどおり仲間に見えます。</div>' +
     rows + '<button onclick="document.getElementById(\'ledgerPrivacyOverlay\').remove()" style="margin-top:12px;width:100%;padding:10px;border:1px solid #ccd;border-radius:10px;background:#fff;">閉じる</button></div>';
   document.body.appendChild(ov);
@@ -58596,10 +58728,21 @@ function offerAdoptOrphanTasks(cloudCalendarId, calName) {
       '<div style="background:#fff;border-radius:18px;padding:24px 20px;max-width:360px;width:100%;color:#333;">' +
         '<div style="font-size:1.02em;font-weight:700;margin-bottom:10px;">カレンダーが決まっていない予定が' + _targets.length + '件あります</div>' +
         '<div style="font-size:0.85em;line-height:1.8;color:#666;margin-bottom:18px;">' +
-          'ログインする前に書いた予定です。手元には残っていますが、' +
+          // v0.55.42: ログインした後でも、受け皿がメインになっていて入ることがあった（カイモリさんの件）ので、言い方を実態に合わせる
+          'カレンダーに入らなかった予定です。手元には残っていますが、' +
           'どのカレンダーにも入っていないため、共有相手には見えていません。<br><br>' +
           '「' + (calName || _dest.name || '共有カレンダー') + '」に入れると、' +
           'あなたが書いたものとして相手にも表示されます。</div>' +
+        // v0.55.42: 【権威】2026-10-12、まとめて入れるだけだと、自分だけの予定まで仲間に見えてしまう。1件ずつ✓を外せるようにする（初めは全部✓）
+        '<div style="font-size:0.78em;color:#888;margin:-8px 0 6px;">入れない予定は、✓を外してください。</div>' +
+        '<div id="adoptOrphanList" style="max-height:38vh;overflow:auto;border:1px solid #eee;border-radius:10px;padding:4px 8px;margin-bottom:14px;">' +
+          _targets.map(function(t, i) {
+            var _e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+            return '<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f3f3f3;font-size:0.85em;cursor:pointer;">' +
+              '<input type="checkbox" class="adopt-orphan-check" data-i="' + i + '" checked style="margin-top:3px;">' +
+              '<span><span style="color:#888;">' + _e(t.date || '日付なし') + (t.time ? ' ' + _e(t.time) : '') + '</span>　' + _e(t.text || '（名前なし）') + '</span></label>';
+          }).join('') +
+        '</div>' +
         '<button id="adoptOrphanYes" style="width:100%;padding:12px;border:none;border-radius:12px;background:#0b6bcb;color:#fff;font-size:0.9em;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;">「' + (calName || _dest.name || '共有カレンダー') + '」に入れる</button>' +
         '<button id="adoptOrphanNo" style="width:100%;padding:11px;border:none;border-radius:12px;background:none;color:#9aa3af;font-size:0.85em;cursor:pointer;font-family:inherit;">このままにする</button>' +
       '</div>';
@@ -58610,6 +58753,10 @@ function offerAdoptOrphanTasks(cloudCalendarId, calName) {
       // その間にもう一度押されると同じ処理が重なる。
       var _btn = this;
       if (_btn.dataset.running === '1') return;
+      // v0.55.42: ✓を付けた予定だけを入れる
+      var _checked = [].filter.call(ov.querySelectorAll('.adopt-orphan-check'), function(cb) { return cb.checked; }).map(function(cb) { return _targets[Number(cb.getAttribute('data-i'))]; });
+      if (!_checked.length) { ov.remove(); return; }
+      _targets = _checked;
       _btn.dataset.running = '1';
       _btn.textContent = '入れています…';
       _btn.style.opacity = '0.6';
@@ -78644,7 +78791,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          recordSourceLabel({ kind: 'task', text: '共有', calendarId: 'st447-shared' })
        ];
        (getCalendar('st447-unknown') === null && calendarForRecord({ kind: 'scratch' }) === null && calendarForRecord({ kind: 'task', calendarId: 'st447-unknown' }) === null &&
-        _st447lbl.join('|') === '📝 雑記帳|メイン見本|手元に無いカレンダー|共有カレンダー見本')
+        _st447lbl.join('|') === '✏️ 雑記帳|メイン見本|手元に無いカレンダー|共有カレンダー見本')
          ? ok('ST-447·①: 見つからないカレンダーは一覧の先頭にしない（雑記帳は「雑記帳」、古い予定はメイン、別の端末のカレンダーは「手元に無いカレンダー」）')
          : ng('ST-447·①: 出どころの見分け方が違う', _st447lbl.join(' | '));
        // ② 繋がっているか（第76条）：検索の画面で、雑記帳のメモが共有カレンダーの名前で出ない
@@ -78658,7 +78805,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _st447in.value = _st447old; renderSearchResults();
        }
        (_st447row.indexOf('雑記帳') !== -1 && _st447row.indexOf('共有カレンダー見本') === -1)
-         ? ok('ST-447·②: 検索で、雑記帳のメモは「📝 雑記帳」と出て、共有カレンダーの名前では出ない')
+         ? ok('ST-447·②: 検索で、雑記帳のメモは「✏️ 雑記帳」と出て、共有カレンダーの名前では出ない')
          : ng('ST-447·②: 検索の出どころが違う', _st447row);
        // ③ getCalendar(…calendarId) を直接使って表示している所が、道具（calendarForRecord）の外に残っていない（第79条）
        var _st447src = document.documentElement.outerHTML;
@@ -78672,6 +78819,118 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        calendars.length = 0; _st447cals.forEach(function(c) { calendars.push(c); });
        if (_st447main === undefined) delete allSettings.calendar.mainId; else allSettings.calendar.mainId = _st447main;
        allTasks = _st447tasks;
+     }
+
+     // ===== ST-448: カレンダーを持たない・結べない予定は「ふだんのカレンダー」へ（先頭＝共有にしない）・取り込みで空のカレンダーを増やさない（v0.55.40〜） =====
+     // 【権威】2026-10-11、別スレッドの調べ（不具合1・2）。起動時の補い・メインの直し・取り込みの結べない予定が一覧の先頭（共有のことがある）に入っていた。
+     // 取り込みの最後のまとめがIDだけで照らし合わせ、前の版の保存場所に書くので、次の起動で空のカレンダーが増えていた。
+     // 実際の動き（起動時の補い・取り込み）は v0.55.40 の作業で本物の画面を使って確かめた（直す前：共有へ・空のカレンダー2件、直した後：メインへ・増えない）
+     var _st448main = allSettings.calendar ? allSettings.calendar.mainId : undefined;
+     try {
+       var S = { id: 's', name: '共有', cloudCalendarId: 'cloud-1' }, M = { id: 'm', name: 'メイン' }, P = { id: 'p', name: 'プライベート' }, O = { id: 'o', name: '受け皿', isOrphanReceptacle: true };
+       allSettings.calendar.mainId = 'm';
+       var _a = defaultCalendarFor([S, M, P]).id;
+       allSettings.calendar.mainId = 'こわれた';
+       var _b = defaultCalendarFor([S, O, P, M]).id;
+       allSettings.calendar.mainId = 's';   // メインが共有でも、本人が選んだメインならそれ
+       var _c = defaultCalendarFor([P, S]).id;
+       allSettings.calendar.mainId = '';
+       var _d = defaultCalendarFor([S]).id;
+       (_a === 'm' && _b === 'p' && _c === 's' && _d === 's' && defaultCalendarFor([]) === null)
+         ? ok('ST-448·①: 予定を入れる先はメイン。メインが無ければ共有でも受け皿でもない最初のカレンダー（一覧の先頭＝共有にしない）')
+         : ng('ST-448·①: 予定を入れる先の決め方が違う', [_a, _b, _c, _d].join(','));
+       // ② 3か所（起動時の補い・メインの直し・取り込みの結べない予定）が、同じ決め方を使っている。補った予定には更新の時刻を付ける（第61条）
+       var _v = validateCalendarIds.toString();
+       var _imp = importData.toString();
+       (/_defaultCal = defaultCalendarFor\(_calList\)/.test(_v) && !/_calList\[0\]\.id/.test(_v) && /t\.updatedAt = _nowCal/.test(_v) &&
+        /defaultCalendarFor\(currentCals\)/.test(_imp) && !/calendarId: currentCals\[0\]/.test(_imp))
+         ? ok('ST-448·②: 起動時の補い・メインの直し・取り込みの結べない予定は、同じ「ふだんのカレンダー」を使い、補った予定には更新の時刻を付ける')
+         : ng('ST-448·②: 一覧の先頭を使う所が残っている', '');
+       // ③ 取り込みの最後のまとめ：同じ名前は足さない・使っていないものは足さない・前の版の保存場所（calendars）に書かない（第41条）
+       var _tail = _imp.slice(_imp.indexOf('// マージ方式：IDが同じなら更新'));
+       (/c\.name === incoming\.name/.test(_tail) && /_usedCalIds\[incoming\.id\]/.test(_tail) && !/localStorage\.setItem\('calendars'/.test(_tail.slice(0, 1500)))
+         ? ok('ST-448·③: 取り込みで、同じ名前のカレンダーや使っていないカレンダーを足さない（前の版の保存場所に書かない）')
+         : ng('ST-448·③: 取り込みのカレンダーのまとめ方が違う', '');
+     } catch(e) {
+       ng('ST-448: 例外', e.message);
+     } finally {
+       if (_st448main === undefined) delete allSettings.calendar.mainId; else allSettings.calendar.mainId = _st448main;
+     }
+
+     // ===== ST-449: 書き出しのファイル名・ダッシュボードの種類の名前（v0.55.40〜） =====
+     // 【権威】2026-10-11、書き出しのファイル名が「やることクラフト」のまま・ダッシュボードに「その他（toki）」など中の言葉が出る、との指摘
+     try {
+       var _st449e = exportData.toString();
+       var _st449src = document.documentElement.outerHTML;
+       (/`koyomiru_\$\{dateStr\}\.json`/.test(_st449e) && _st449e.indexOf('yarukotocraft_${') === -1 &&
+        _st449src.indexOf("indexedDB.open('yarukotocraft_photos'") !== -1 && _st449src.indexOf("'yarukotocraft_backup.json'") !== -1)
+         ? ok('ST-449·①: 書き出すファイル名は koyomiru_日付.json（写真・録音のしまい場所とGistのバックアップの名前は、読めなくならないよう変えない）')
+         : ng('ST-449·①: 書き出しのファイル名か、変えてはいけない名前が違う', '');
+       var _st449d = (typeof renderDashboard === 'function') ? renderDashboard.toString() : _st449src;
+       (/gyomu: '💼 業務の案件'/.test(_st449src) && /money: '💰 手持ち'/.test(_st449src) && /toki: \(typeof isTokiModeOn === 'function' && isTokiModeOn\(\)\) \? '📝 登記の案件' : '🗂 案件（管理者用）'/.test(_st449src))
+         ? ok('ST-449·②: ダッシュボードの種類の名前に、業務の案件・手持ち・案件を付ける（登記は登記モードがオンでなければぼかす）')
+         : ng('ST-449·②: ダッシュボードの種類の名前が違う', '');
+     } catch(e) {
+       ng('ST-449: 例外', e.message);
+     }
+
+     // ===== ST-450: アカウントのメニューの並びと言葉（v0.55.41〜） =====
+     // 【権威】2026-10-11、お知らせを一番上に・大福帳に分かる説明を・はじめの案内は「はじめての方へ」に、との指示
+     try {
+       var _st450 = [].map.call(document.querySelectorAll('#accountMenu .account-menu-item'), function(b) { return b.textContent.trim(); });
+       (_st450.join('|') === '📣お知らせ|👥共有カレンダー|📒大福帳（共有カレンダーの来訪記録）|🔗アカウント連携|🌙はじめての方へ')
+         ? ok('ST-450·①: アカウントのメニューは、お知らせ → 共有カレンダー → 大福帳（共有カレンダーの来訪記録）→ アカウント連携 → はじめての方へ')
+         : ng('ST-450·①: アカウントのメニューの並びか言葉が違う', _st450.join(' | '));
+     } catch(e) {
+       ng('ST-450: 例外', e.message);
+     }
+
+     // ===== ST-451: 古い受け皿がメインになっていて、共有カレンダーの仲間の予定が個人用に落ちる件（v0.55.42〜） =====
+     // 【権威】2026-10-12、カイモリさんが入れた予定があなたに見えない件。クラウドを読んで確かめた：端末のメインが印の無い古い受け皿
+     // 「（他端末のカレンダー）」で、選ばずに入れた予定14件が個人用へ落ちていた。メインの直し・代わり先が「一覧の先頭」だった。
+     // 実際の端末の状態をそのまま作って、本物の画面で直す前と後を比べた（直す前：受け皿がメインで畳まれた選択・ここに移すが出ない、
+     // 直した後：自分だけのメインを作り、メインと共有カレンダーが並び、ここに移すで1件ずつ選んで共有カレンダーへ）
+     var _st451set = JSON.parse(JSON.stringify(allSettings.calendar || {})), _st451cals = calendars;
+     try {
+       var R = { id: 'r', name: '（他端末のカレンダー）', color: '#999999', visible: true };
+       var W = { id: 'w', name: 'WMカレンダー1', color: '#e64980', visible: true, cloudCalendarId: 'cloud-wm' };
+       var M = { id: 'm', name: 'メイン', color: '#90caf9', visible: true };
+       // ① 古い受け皿の見分けと、今のメインの決め方
+       allSettings.calendar.list = [R, W]; allSettings.calendar.mainId = 'r';
+       var _a = getMainCalendarId();                          // 受け皿・共有しか無い → 無し（作る必要がある）
+       allSettings.calendar.list = [R, W, M];
+       var _b = getMainCalendarId();                          // 受け皿がメイン → 自分だけのカレンダー
+       allSettings.calendar.mainId = 'w';
+       var _c = getMainCalendarId();                          // 本人が共有カレンダーをメインに選んでいれば尊重
+       (isLegacyReceptacle(R) && !isLegacyReceptacle(W) && !isLegacyReceptacle(M) && _a === null && _b === 'm' && _c === 'w')
+         ? ok('ST-451·①: 印の無い古い受け皿を見分け、メインにしない（共有をメインに選んだ人は、その選びを尊重）')
+         : ng('ST-451·①: 古い受け皿かメインの決め方が違う', [_a, _b, _c].join(','));
+       // ② 自分だけのメインを用意する（無ければ作る）
+       allSettings.calendar.list = [R, W]; allSettings.calendar.mainId = 'r';
+       var _id = ensureOwnMainCalendar();
+       var _made = allSettings.calendar.list.filter(function(c) { return c.id === _id; })[0] || {};
+       (_id && _id !== 'r' && _id !== 'w' && _made.name === 'メイン' && !_made.cloudCalendarId && allSettings.calendar.mainId === _id)
+         ? ok('ST-451·②: 受け皿と共有カレンダーしか無い人には、自分だけの「メイン」を作ってメインにする')
+         : ng('ST-451·②: 自分だけのメインの用意が違う', String(_id));
+       // ③ 予定を入れる画面：受け皿は出さず、共有カレンダーに入っている人は畳まずに並べる
+       allSettings.calendar.list = [Object.assign({}, R, { isOrphanReceptacle: true }), W, M]; allSettings.calendar.mainId = 'm'; allSettings.calendar.autoMain = true;
+       calendars = allSettings.calendar.list;
+       var _box = document.createElement('div'); _box.id = 'st451Sel'; document.body.appendChild(_box);
+       renderCalendarSelector('st451Sel', 'm', function() {});
+       var _t = _box.textContent; _box.remove();
+       (_t.indexOf('メイン') !== -1 && _t.indexOf('WMカレンダー1') !== -1 && _t.indexOf('他端末') === -1 && _t.indexOf('決まっていない') === -1 && _t.indexOf('変更') === -1)
+         ? ok('ST-451·③: 予定を入れる画面は、受け皿を出さず、共有カレンダーに入っている人にはメインと共有カレンダーを並べて見せる')
+         : ng('ST-451·③: 予定を入れる画面のカレンダーの並びが違う', _t);
+       // ④「一覧の先頭」をメインの代わりにしている所が残っていない（第79条）
+       var _src = document.documentElement.outerHTML;
+       var _left = (_src.match(/mainId \|\| \(calendars\[0\] && calendars\[0\]\.id\)|var _next = calendars\[0\];|\|\| \(_calList\[0\] && _calList\[0\]\.id\)/g) || []).length;
+       (_left === 0 && /'カレンダーに入らなかった予定です。/.test(_src) && /adopt-orphan-check/.test(_src))
+         ? ok('ST-451·④: メインの代わりに一覧の先頭を使う所は残っていない。ここに移すは1件ずつ選べる')
+         : ng('ST-451·④: 一覧の先頭を使う所が残っている', String(_left));
+     } catch(e) {
+       ng('ST-451: 例外', e.message);
+     } finally {
+       allSettings.calendar = _st451set; calendars = _st451cals;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
