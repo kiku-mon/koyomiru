@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.42 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.43 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.42';
+    const APP_VERSION = 'v0.55.43';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13053,6 +13053,17 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
       return '';
     }
     window.recordSourceLabel = recordSourceLabel;
+    // v0.55.43: 【権威】2026-10-12、カイモリさんは「選ばないとメインに入る」ことが見えないまま使い、共有したつもりの予定が届いていなかった。
+    // 保存したら、どこに入ったか・共有したかを毎回はっきり出す。人数は出さない（「〇人に見えます」は変、との指摘）。
+    //   共有カレンダー → 「〇〇」に入れて、共有しました／自分だけのカレンダー → 「〇〇」に入れました（自分だけ）
+    // カレンダーを選ぶ入口（月間の日の欄・月間・週間）はすべてここを通す（第71条④）
+    function calendarSavedMessage(calendarId) {
+      var id = (!calendarId || calendarId === 'default') ? getMainCalendarId() : calendarId;
+      var cal = getCalendar(id);
+      if (!cal) return '入れました';
+      return _isSharedCalendar(cal) ? '「' + cal.name + '」に入れて、共有しました' : '「' + cal.name + '」に入れました（自分だけ）';
+    }
+    window.calendarSavedMessage = calendarSavedMessage;
     // 表示ONのカレンダーIDセット（クイックフィルター用・セッション中のみ）
     let activeCalendarIds = null; // null = 全表示
     // 💰支払いのみフィルタ（月間カレンダー用）
@@ -27803,9 +27814,7 @@ function saveMsbEdit() {
           if (_cal && _newTask && typeof sendDiscordNotify === 'function') {
             sendDiscordNotify(_cal, _newTask, 'create');
           }
-          showToast(_cal
-            ? ('「' + _cal.name + '」に追加しました' + (_cal.cloudCalendarId ? '（共有中）' : ''))
-            : '追加しました', {type:'ok'});
+          showToast(calendarSavedMessage(_newCalId), {type:'ok'});   // v0.55.43: 入った先と共有したかを、どの入口でも同じ言い方で
         } catch(eT2) { showToast('追加しました', {type:'ok'}); }
         return;
       }
@@ -27957,6 +27966,7 @@ function saveMsbEdit() {
         if (_mRepVal !== 'none') { _mUpdates.repeat = _mRepVal; _mUpdates.repeatEnd = _mRepEnd || null; _mUpdates.repeatGroupId = newTask.id; }
         updateTask(newTask.id, _mUpdates);
         if (_mRepVal !== 'none') generateRepeatTasks(Object.assign({}, newTask, _mUpdates), _mRepVal, _mRepEnd, dateStr, newTask.id);
+        if (typeof showToast === 'function') showToast(calendarSavedMessage(_mUpdates.calendarId), {type:'ok'});   // v0.55.43
       }
       closeMonthlyTaskModal();
       renderMonthlyView();
@@ -28075,6 +28085,7 @@ function saveMsbEdit() {
       if (_cRepeat !== 'none') {
         generateRepeatTasks(Object.assign({}, newTask, updates), _cRepeat, _cRepeatEnd, creatingTask.dateStr, newTask.id);
       }
+      if (typeof showToast === 'function') showToast(calendarSavedMessage(updates.calendarId), {type:'ok'});   // v0.55.43
       // モーダルを閉じる前にリセット
       var _crEl = document.getElementById('createRepeat'); if(_crEl) { _crEl.value='none'; document.getElementById('createRepeatEndWrap').style.display='none'; }
       closeCreateModal();
@@ -53593,6 +53604,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.43', date: '2026-10-12',
+    items: [
+      { icon:'💬', t:'予定を入れたとき、どこに入ったかを出すようにしました',
+        before:'予定を入れても、どのカレンダーに入ったか・共有されたかが分かりませんでした',
+        after:'「〇〇に入れて、共有しました」「〇〇に入れました（自分だけ）」と出ます' }
+    ]
+  },
+  {
     ver: 'v0.55.42', date: '2026-10-12',
     items: [
       { icon:'👥', t:'共有カレンダーに入れたつもりの予定が、仲間に見えないことがあったのを直しました',
@@ -78931,6 +78950,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-451: 例外', e.message);
      } finally {
        allSettings.calendar = _st451set; calendars = _st451cals;
+     }
+
+     // ===== ST-452: 予定を保存したら、入った先と共有したかを出す（v0.55.43〜） =====
+     // 【権威】2026-10-12、選ばないとメインに入ることが見えず、共有したつもりの予定が届いていなかった件。人数は出さず「共有しました」と言う
+     var _st452set = JSON.parse(JSON.stringify(allSettings.calendar || {})), _st452cals = calendars;
+     try {
+       allSettings.calendar.list = [{ id: 'm', name: 'メイン', visible: true }, { id: 'w', name: 'WMカレンダー1', visible: true, cloudCalendarId: 'cloud-wm' }];
+       allSettings.calendar.mainId = 'm'; calendars = allSettings.calendar.list;
+       var _a = calendarSavedMessage('w'), _b = calendarSavedMessage('m'), _c = calendarSavedMessage('default'), _d = calendarSavedMessage(null);
+       var _src = document.documentElement.outerHTML;
+       var _uses = (_src.match(/showToast\(calendarSavedMessage\(/g) || []).length;
+       (_a === '「WMカレンダー1」に入れて、共有しました' && _b === '「メイン」に入れました（自分だけ）' && _c === _b && _d === _b && _uses >= 3 && _src.indexOf("に追加しました' + (_cal.cloudCalendarId ? '（共有" + "中）'") === -1)   /* 探す文字を分けて書く（テスト自身に当たらないように） */
+         ? ok('ST-452·①: 保存したら「〇〇に入れて、共有しました」／「〇〇に入れました（自分だけ）」と出す（月間の日の欄・月間・週間の3つの入口すべて）')
+         : ng('ST-452·①: 保存したときの言い方か、入口の数が違う', [_a, _b, _c, _uses].join(' / '));
+     } catch(e) {
+       ng('ST-452: 例外', e.message);
+     } finally {
+       allSettings.calendar = _st452set; calendars = _st452cals;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
