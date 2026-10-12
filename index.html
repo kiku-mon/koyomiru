@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.45 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.46 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.45';
+    const APP_VERSION = 'v0.55.46';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -8225,7 +8225,6 @@ function _showInviteWelcome() {
           <label class="msb-label"></label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button type="button" onclick="window._msbQuickTime(30)" class="msb-now-btn" title="いまから30分後">30分後</button>
-            <button type="button" onclick="window._msbQuickTomorrow9()" class="msb-now-btn" title="明日の9時">明日9:00</button>
             <button type="button" onclick="window._msbClearTimes()" class="msb-now-btn" title="開始と終了の時刻を消す">時刻なし</button>
           </div>
         </div>
@@ -8237,6 +8236,8 @@ function _showInviteWelcome() {
           <div class="msb-dt-pair">
             <input id="msbEditEndDate" type="date" class="msb-input-sm" onchange="window._msbOnEndDateChange()">
             <input id="msbEditEndTime" type="time" class="msb-input-sm msb-dt-time" placeholder="終了時刻" title="終了時刻">
+            <!-- v0.55.46: 【権威】2026-10-12、終了にも「今」と「時刻なし」がいる、との指示。開始と同じ置き方にそろえる -->
+            <button type="button" onclick="window._msbEndNow()" class="msb-now-btn" title="終了にいまの時刻を入れる">今</button>
           </div>
           <!-- v0.45.1764: 【権威】2026-08-26、「空のままで構いません」と書くのは対症であり
                根を直していない、との指摘。そのとおり。
@@ -8264,6 +8265,12 @@ function _showInviteWelcome() {
             <button type="button" onclick="window._msbAddFromStart(30)" class="msb-now-btn" title="終了を30分遅らせる">+30分</button>
             <button type="button" onclick="window._msbAddFromStart(60)" class="msb-now-btn" title="終了を1時間遅らせる">+1h</button>
             <button type="button" onclick="window._msbAddFromStart(120)" class="msb-now-btn" title="終了を2時間遅らせる">+2h</button>
+          </div>
+        </div>
+        <div class="msb-edit-row" style="margin-top:-6px;">
+          <label class="msb-label"></label>
+          <div style="display:flex;justify-content:flex-end;gap:6px;flex:1;">
+            <button type="button" onclick="window._msbClearEnd()" class="msb-now-btn" title="終了の時刻を消す（開始はそのまま）">時刻なし</button>
           </div>
         </div>
         <div class="msb-edit-row" style="margin-top:-6px;">
@@ -27650,26 +27657,7 @@ function _msbQuickTime(minutes) {
 window._msbQuickTime = _msbQuickTime;
 
 // 明日の9時。日付の欄も明日にする。時刻だけ変えて日付が今日のままだと、過ぎた予定になる。
-function _msbQuickTomorrow9() {
-  try {
-    var st = document.getElementById('msbEditTime');
-    var dt = document.getElementById('msbEditDate');
-    if (!st) return;
-    var p = function(v) { return String(v).padStart(2, '0'); };
-    var base = dt && dt.value ? new Date(dt.value + 'T00:00:00') : new Date();
-    if (!dt || !dt.value) base = new Date();
-    base.setDate(base.getDate() + 1);
-    if (dt) dt.value = base.getFullYear() + '-' + p(base.getMonth() + 1) + '-' + p(base.getDate());
-    st.value = '09:00';
-    var allDay = document.getElementById('msbEditAllDay');
-    if (allDay && allDay.checked) { allDay.checked = false; if (typeof msbAllDayChange === 'function') msbAllDayChange(); }
-    // 前に入っていた終了は、開始より前になってしまう。入れ直す。
-    var et9 = document.getElementById('msbEditEndTime');
-    if (et9) et9.value = '';
-    _msbOnStartTimeChange();
-  } catch (e) {}
-}
-window._msbQuickTomorrow9 = _msbQuickTomorrow9;
+// v0.55.46: 【権威】2026-10-12、開始の「明日9:00」は無くてよい、との指示。ボタンと一緒に消した（第31条）
 
 // 時刻をまとめて消す。終日とは別物で、日付はそのまま残す。
 // 入れる方へ導くには、戻す道が一度で済むことが要る。
@@ -27682,6 +27670,25 @@ function _msbClearTimes() {
   } catch (e) {}
 }
 window._msbClearTimes = _msbClearTimes;
+// v0.55.46: 終了の「今」：終了に今の時刻（5分単位）、終了日は今日
+function _msbEndNow() {
+  try {
+    var ed = document.getElementById('msbEditEndDate');
+    var n = new Date(), p = function(v) { return String(v).padStart(2, '0'); };
+    if (ed) { ed.value = n.getFullYear() + '-' + p(n.getMonth() + 1) + '-' + p(n.getDate()); ed.dispatchEvent(new Event('change', { bubbles: true })); }
+    _msbFillTime('msbEditEndTime');
+  } catch (e) {}
+}
+window._msbEndNow = _msbEndNow;
+// v0.55.46: 終了の「時刻なし」：終了の時刻と日付だけを消す（開始はそのまま。空なら開始した日のその時刻だけの予定）
+function _msbClearEnd() {
+  try {
+    var et = document.getElementById('msbEditEndTime'), ed = document.getElementById('msbEditEndDate');
+    if (et) et.value = '';
+    if (ed) { ed.value = ''; ed.dispatchEvent(new Event('change', { bubbles: true })); }
+  } catch (e) {}
+}
+window._msbClearEnd = _msbClearEnd;
 
 // v0.47.71: 【権威】2026-09-25、-1h・-2hもほしい、との要望。
 // 元の作りは「時刻だけを見て、開始より前になったら終了日を+1日」という
@@ -53630,6 +53637,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.55.46', date: '2026-10-12',
+    items: [
+      { icon:'🕐', t:'終了の時刻にも「今」「時刻なし」を付けました',
+        before:'「今」「時刻なし」は開始にしかありませんでした',
+        after:'終了にも同じ置き方で付けました。終了の「時刻なし」は、終了だけを消します（開始はそのまま）。開始の「明日9:00」は外しました' }
+    ]
+  },
+  {
     ver: 'v0.55.45', date: '2026-10-12',
     items: [
       { icon:'🕚', t:'夜遅くに予定を作っても、勝手に翌日までの予定にならないようにしました',
@@ -75178,7 +75193,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            ? [].map.call(_st367row.nextElementSibling.querySelectorAll('button'), function(b) { return b.textContent; })
            : [];
          // v0.55.45: 【第67条④】-5分・+5分を足した（2026-10-12 の指示）ので、10個に
-         (_st367inPair === 0 && _st367below.join(',') === '-2h,-1h,-30分,-15分,-5分,+5分,+15分,+30分,+1h,+2h')
+         // v0.55.46: 【第67条④】終了の時刻の横に「今」を足した（開始と同じ置き方・2026-10-12 の指示）ので、横のボタンは1つ
+         (_st367inPair === 1 && _st367below.join(',') === '-2h,-1h,-30分,-15分,-5分,+5分,+15分,+30分,+1h,+2h')
            ? ok('ST-367·⑤: ボタンは終了行の外に、0から遠い順に10個並んでいる（-2h〜+2h、±5分を含む）')
            : ng('ST-367·⑤: ボタンの位置・並びが想定と違う', 'in=' + _st367inPair + ' below=' + _st367below.join(','));
        }
@@ -79059,6 +79075,28 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-454·①: 自動の終了か、ボタンの並びが違う', _st454btns);
      } catch(e) {
        ng('ST-454: 例外', e.message);
+     }
+
+     // ===== ST-455: 開始と終了の［今］［時刻なし］（v0.55.46〜） =====
+     // 【権威】2026-10-12、開始は今・時刻なしを残し、明日9:00は無くてよい。終了にも今と時刻なしがいる、との指示
+     try {
+       var _s = function(id) { return document.getElementById(id); };
+       var _st455start = [].map.call((_s('msbEditTime').closest('.msb-edit-row').nextElementSibling || document).querySelectorAll('button'), function(b) { return b.textContent; }).join(',');
+       var _st455endPair = [].map.call(_s('msbEditEndTime').parentElement.querySelectorAll('button'), function(b) { return b.textContent; }).join(',');
+       var _st455clearRow = _s('msbEditEndTimeRow').nextElementSibling && _s('msbEditEndTimeRow').nextElementSibling.nextElementSibling;
+       var _st455clear = _st455clearRow ? [].map.call(_st455clearRow.querySelectorAll('button'), function(b) { return b.textContent; }).join(',') : '';
+       var _ov = { st: _s('msbEditTime').value, et: _s('msbEditEndTime').value, ed: _s('msbEditEndDate').value };
+       _s('msbEditTime').value = '10:00'; _s('msbEditEndTime').value = '11:00'; _s('msbEditEndDate').value = '2026-10-12';
+       _msbClearEnd();
+       var _st455c = [_s('msbEditTime').value, _s('msbEditEndTime').value, _s('msbEditEndDate').value].join('|');
+       _msbEndNow();
+       var _st455n = _s('msbEditEndTime').value !== '' && _s('msbEditEndDate').value === getLocalDateStr(new Date());
+       _s('msbEditTime').value = _ov.st; _s('msbEditEndTime').value = _ov.et; _s('msbEditEndDate').value = _ov.ed;
+       (_st455start === '30分後,時刻なし' && _st455endPair === '今' && _st455clear === '時刻なし' && _st455c === '10:00||' && _st455n && typeof window._msbQuickTomorrow9 === 'undefined')
+         ? ok('ST-455·①: 開始は［今］［30分後］［時刻なし］（明日9:00は無し）。終了にも［今］［時刻なし］。終了の時刻なしは終了だけを消す')
+         : ng('ST-455·①: 開始・終了のボタンが違う', [_st455start, _st455endPair, _st455clear, _st455c].join(' / '));
+     } catch(e) {
+       ng('ST-455: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
