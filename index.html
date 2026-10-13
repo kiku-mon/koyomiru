@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.56.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.56.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.56.1';
+    const APP_VERSION = 'v0.56.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6744,6 +6744,31 @@ function _showInviteWelcome() {
 </style>
 
 <script>
+// ===== v0.56.2: 起動のときに自動で開く画面は、1つずつ順番に出す =====
+// 【権威】2026-10-13、今日の暦がお知らせにかぶる → 直したら今度は季節の風だよりとお知らせがかぶる、との指摘。
+// 起動のときに自動で開く画面（お知らせ・今日の暦・季節の風だより）が3つあり、互いを待たずに開いていた。
+// 1か所で「今、ほかの画面が開いていないか」を見て、開いていれば閉じるまで待ってから出す（第71条④）。
+// 季節の風だよりを出す所が起動のとても早い段階にあるので、この道具はそれより前に置く（第74条）
+(function() {
+  var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiTodayOverlay'];
+  function openNow() {
+    return IDS.some(function(id) {
+      var e = document.getElementById(id); if (!e) return false;
+      var cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+    });
+  }
+  // fn を、ほかの画面が閉じてから呼ぶ（1秒ごとに見る。30分待っても閉じなければやめる）
+  function whenStartupClear(fn, tries) {
+    tries = tries || 0;
+    if (!openNow()) { try { fn(); } catch (e) {} return; }
+    if (tries < 1800) setTimeout(function() { whenStartupClear(fn, tries + 1); }, 1000);
+  }
+  window.STARTUP_MODAL_IDS = IDS;
+  window.startupModalOpen = openNow;
+  window.whenStartupClear = whenStartupClear;
+})();
+</script>
+<script>
 (function(){
   // テスト中はスキップ
   if (window._isTesting) {
@@ -6775,7 +6800,16 @@ function _showInviteWelcome() {
     setTimeout(function() {
       // v0.56.0: その日に最初に開いたときは、季節の風だよりの代わりに「今日の暦」のカードを出す（2つを重ねない。朝いちばんに2回閉じさせない）。
       // 2回目以降は今までどおり。今日の暦の問いかけを設定で止めれば、毎回、季節の風だより
-      try { if (typeof showKazedayoriModal === 'function' && !(typeof koyomiTodayWillShow === 'function' && koyomiTodayWillShow())) showKazedayoriModal(); } catch(e) {}
+      // v0.56.2: ほかの画面（お知らせなど）が開いていれば、閉じてから出す。
+      // 「今日の暦をこのあと出すか」を答える道具は後ろの方で読み込まれるので、決めるのはページを読み終えてから（第74条）
+      try {
+        var _kzDecide = function() {
+          if (typeof showKazedayoriModal !== 'function') return;
+          if (typeof koyomiTodayWillShow === 'function' && (koyomiTodayWillShow() || window._koyomiTodayShownNow)) return;   // その日の最初は今日の暦が代わり
+          whenStartupClear(function() { showKazedayoriModal(); });
+        };
+        if (document.readyState === 'complete') _kzDecide(); else window.addEventListener('load', function() { setTimeout(_kzDecide, 0); }, { once: true });
+      } catch(e) {}
       if (typeof renderDailyFocusBanner === 'function') renderDailyFocusBanner();
     }, 300);
     return;
@@ -21995,15 +22029,7 @@ var KOYOMI_TODAY_KEY = 'koyomiTodayShownOn';
 // v0.56.1: 【権威】2026-10-13、新しい版を読み込んだ直後、自動で開く「お知らせ」に、今日の暦がいきなりかぶる、との指摘。
 // ほかの画面（お知らせ・初めての案内・案件の質問・季節の風だより）が開いている間は待ち、閉じたら出す。
 // 前は「何かが開いていたら、その日は出さない」だったので、新しい版を読み込んだ日に出なくなっていた
-var KOYOMI_TODAY_BUSY_IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal'];
-function koyomiTodayBusy() {
-  return KOYOMI_TODAY_BUSY_IDS.some(function(id) {
-    var e = document.getElementById(id); if (!e) return false;
-    var cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
-  });
-}
-window.koyomiTodayBusy = koyomiTodayBusy;
-var _koyomiTodayWaits = 0;
+// v0.56.2: 待ち方は、起動の画面を1つずつ出す道具（whenStartupClear）にまとめた
 function maybeShowKoyomiToday() {
   try {
     var chk = document.getElementById('koyomiTodayCheck');
@@ -22016,10 +22042,7 @@ function maybeShowKoyomiToday() {
     // 初めての案内のときは待たない（初めての人には、まず案内に集中してもらう）
     var setup = document.getElementById('setupOverlay');
     if (setup && getComputedStyle(setup).display !== 'none') return false;
-    if (koyomiTodayBusy()) {
-      if (_koyomiTodayWaits++ < 1800) setTimeout(maybeShowKoyomiToday, 1000);
-      return false;
-    }
+    if (startupModalOpen()) { whenStartupClear(maybeShowKoyomiToday); return false; }
     localStorage.setItem(KOYOMI_TODAY_KEY, today);
     window._koyomiTodayShownNow = true;   // 同じ日の「新しい候へ」のトーストは控える（同じことを2度言わない）
     openKoyomiToday(new Date());
@@ -53829,6 +53852,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.56.2', date: '2026-10-13',
+    items: [
+      { icon:'🪟', t:'開いたときに出る画面が、重ならないようにしました',
+        before:'新しい版を読み込んだ直後などに、お知らせ・季節の風だより・今日の暦が重なって出ることがありました',
+        after:'1つずつ順番に出ます。前の画面を閉じると、次が出ます' }
+    ]
+  },
+  {
     ver: 'v0.56.1', date: '2026-10-13',
     items: [
       { icon:'🌾', t:'今日の暦が、お知らせにかぶらないようにしました',
@@ -56297,9 +56328,12 @@ window.addEventListener('load', function() {
     var _want = localStorage.getItem('koyomiruShowWhatsNew');
     if (_want) {
       localStorage.removeItem('koyomiruShowWhatsNew');
+      // v0.56.2: ほかの画面（季節の風だよりなど）が開いていれば、閉じてから出す
       setTimeout(function() {
-        if (typeof openOshiraseModal === 'function') openOshiraseModal();
-        if (typeof switchOshiraseTab === 'function') switchOshiraseTab('news');
+        whenStartupClear(function() {
+          if (typeof openOshiraseModal === 'function') openOshiraseModal();
+          if (typeof switchOshiraseTab === 'function') switchOshiraseTab('news');
+        });
       }, 900);
     }
   } catch (e) {}
@@ -79462,7 +79496,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ④ テスト中は出さない。季節の風だよりとは重ねない。ページを読み終えてから出す（第74条）
        var _src = document.documentElement.outerHTML;
        (maybeShowKoyomiToday() === false && koyomiTodayWillShow() === false &&
-        /!\(typeof koyomiTodayWillShow === 'function' && koyomiTodayWillShow\(\)\)\) showKazedayoriModal\(\)/.test(_src) &&
+        // v0.56.2: 【第67条④】季節の風だよりも、起動の画面を1つずつ出す道具を通すようになった
+        /koyomiTodayWillShow\(\) \|\| window\._koyomiTodayShownNow\)\) return;/.test(_src) && /window\.addEventListener\('load', function\(\) \{ setTimeout\(_kzDecide, 0\); \}, \{ once: true \}\)/.test(_src) &&
         /window\.addEventListener\('load', go, \{ once: true \}\)/.test(_src))
          ? ok('ST-459·④: テスト中は出さない。その日の最初は季節の風だよりの代わりに出す（重ねない）。ページを読み終えてから出す')
          : ng('ST-459·④: 出す決まりが違う', '');
@@ -79473,22 +79508,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _o = document.getElementById('koyomiTodayOverlay'); if (_o) _o.remove();
      }
 
-     // ===== ST-460: 今日の暦は、ほかの画面が開いている間は待ち、閉じたら出す（v0.56.1〜） =====
-     // 【権威】2026-10-13、新しい版を読み込んだ直後に自動で開く「お知らせ」に、今日の暦がいきなりかぶる、との指摘。
-     // 本物の画面で確かめた：お知らせ・季節の風だよりが開いている間は待ち、両方を閉じたら出る
+     // ===== ST-460: 起動のときに自動で開く画面は、1つずつ順番に出す（v0.56.1〜・v0.56.2で3つとも） =====
+     // 【権威】2026-10-13、今日の暦がお知らせにかぶる → 季節の風だよりとお知らせがかぶる、との指摘。
+     // 本物の画面で確かめた：お知らせ・季節の風だより・今日の暦が、互いに閉じるのを待ってから1つずつ出る
      try {
-       var _ids = KOYOMI_TODAY_BUSY_IDS.join(',');
+       var _ids = STARTUP_MODAL_IDS.join(',');
        var _m = document.getElementById('oshiraseModal');
        var _was = _m ? _m.style.display : '';
        if (_m) _m.style.display = 'flex';
-       var _busy1 = koyomiTodayBusy();
-       if (_m) _m.style.display = 'none';
-       var _busy0 = koyomiTodayBusy();
+       var _calls = 0; whenStartupClear(function() { _calls++; });
+       var _busy1 = startupModalOpen(), _calls1 = _calls;
        if (_m) _m.style.display = _was;
-       (_ids.indexOf('oshiraseModal') !== -1 && _ids.indexOf('kazedayoriModal') !== -1 && _ids.indexOf('setupOverlay') !== -1 && _busy1 === true &&
-        /if \(koyomiTodayBusy\(\)\) \{\s*if \(_koyomiTodayWaits\+\+ < 1800\) setTimeout\(maybeShowKoyomiToday, 1000\);/.test(maybeShowKoyomiToday.toString()))
-         ? ok('ST-460·①: お知らせ・季節の風だより・初めての案内などが開いている間は今日の暦を出さずに待ち、閉じたら出す')
-         : ng('ST-460·①: ほかの画面との重なり方が違う', _ids + ' / ' + _busy1 + ',' + _busy0);
+       var _src = document.documentElement.outerHTML;
+       (['oshiraseModal', 'kazedayoriModal', 'koyomiTodayOverlay', 'setupOverlay'].every(function(x) { return _ids.indexOf(x) !== -1; }) && _busy1 === true && _calls1 === 0 &&
+        /whenStartupClear\(function\(\) \{ showKazedayoriModal\(\); \}\)/.test(_src) &&
+        /whenStartupClear\(function\(\) \{\s*if \(typeof openOshiraseModal === 'function'\) openOshiraseModal\(\);/.test(_src) &&
+        /if \(startupModalOpen\(\)\) \{ whenStartupClear\(maybeShowKoyomiToday\); return false; \}/.test(maybeShowKoyomiToday.toString()))
+         ? ok('ST-460·①: お知らせ・今日の暦・季節の風だよりは、ほかの画面が開いている間は待ち、1つずつ順番に出る（同じ1つの道具を通す）')
+         : ng('ST-460·①: 起動の画面の出し方が違う', _ids + ' / ' + _busy1 + ',' + _calls1);
      } catch(e) {
        ng('ST-460: 例外', e.message);
      }
