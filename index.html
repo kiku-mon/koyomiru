@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.49 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.50 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.49';
+    const APP_VERSION = 'v0.55.50';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -42506,6 +42506,21 @@ function renderDashboardView() {
           }
         };
         item.appendChild(textSpan);
+        // v0.55.50: 【権威】2026-10-13、ふつうの予定が案件のカードに埋もれ、案件と同じ ⤒↑↓⤓ がないと面倒、との指摘。
+        // PCのときだけ付ける（スマホは行が狭く、✏️📅🏃×に4つ足すと名前が読めない。スマホは長押しで動かせる）。
+        // 案件と同じ並び（予定と案件を1本で並べる・v0.55.8）の中で動く。押すときに少し動いてもドラッグにしない（_noDragHandle）
+        if (!_tokiIsTouch()) {
+          [[-9999, '⤒', 'いちばん上へ'], [-1, '↑', '上へ'], [1, '↓', '下へ'], [9999, '⤓', 'いちばん下へ']].forEach(function(m) {
+            var mv = document.createElement('span');
+            mv.className = 'quad-task-move';
+            mv.textContent = m[1];
+            mv.title = m[2];
+            mv.style.cssText = 'cursor:pointer;font-size:0.85em;flex-shrink:0;color:#667;border:1px solid #dde;border-radius:4px;padding:0 3px;line-height:1.3;';
+            mv.onclick = function(e) { e.stopPropagation(); quadMoveBy(t.id, m[0], col.key, day); };
+            _noDragHandle(mv, item);
+            item.appendChild(mv);
+          });
+        }
         // ✏️編集
         var editBtn = document.createElement('span');
         editBtn.textContent = '✏️';
@@ -53654,6 +53669,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.50', date: '2026-10-13',
+    items: [
+      { icon:'🐟', t:'パソコンの魚の目で、ふつうの予定も ⤒↑↓⤓ で動かせるようにしました',
+        before:'ふつうの予定は、ドラッグするしかありませんでした',
+        after:'パソコンでは、予定の行にも ⤒↑↓⤓ が出ます（スマホは行が狭いので、今までどおり長押しで動かします）' }
+    ]
+  },
   {
     ver: 'v0.55.49', date: '2026-10-13',
     items: [
@@ -79191,6 +79214,35 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-457·①: 「メインへ自動投入」の説明が違う', _st457t.slice(0, 120));
      } catch(e) {
        ng('ST-457: 例外', e.message);
+     }
+
+     // ===== ST-458: 魚の目の予定の行にも ⤒↑↓⤓（PCのとき）（v0.55.50〜） =====
+     // 【権威】2026-10-13、ふつうの予定が案件のカードに埋もれ、案件と同じ ⤒↑↓⤓ がないと面倒、との指摘。スマホは付けない（行が狭い）
+     var _st458tasks = allTasks.slice(), _st458save = window.saveAllTasks, _st458cur = currentDailyDate, _st458touch = window._tokiIsTouch;
+     try {
+       window.saveAllTasks = function() {};
+       var _d = getLocalDateStr(new Date()); currentDailyDate = _d;
+       ['a', 'b', 'c'].forEach(function(x) { allTasks.push({ id: 'st458-' + x, kind: 'task', text: 'ST458' + x, date: _d, section: 1, timeSlot: 'slot2', displayScope: 'both', createdAt: '2026-10-01T00:00:00Z' }); });
+       window._tokiIsTouch = function() { return false; };   // PC
+       renderQuadView();
+       var _row = document.querySelector('#quadViewBody [data-task-id="st458-c"]');
+       var _btns = _row ? [].map.call(_row.querySelectorAll('.quad-task-move'), function(b) { return b.textContent; }).join('') : '';
+       var _ord = function() { return quadColumnRows('slot2', _d).map(function(r) { return r.item.id; }).filter(function(id) { return /^st458-/.test(id); }).map(function(id) { return id.slice(-1); }).join(''); };
+       var _o0 = _ord();
+       if (_row) [].filter.call(_row.querySelectorAll('.quad-task-move'), function(b) { return b.textContent === '⤒'; })[0].click();
+       var _o1 = _ord();
+       window._tokiIsTouch = function() { return true; };    // スマホ
+       renderQuadView();
+       var _rowS = document.querySelector('#quadViewBody [data-task-id="st458-a"]');
+       var _btnsS = _rowS ? _rowS.querySelectorAll('.quad-task-move').length : -1;
+       (_btns === '⤒↑↓⤓' && _o1.charAt(0) === 'c' && _o0 !== _o1 && _btnsS === 0)
+         ? ok('ST-458·①: PCでは魚の目の予定の行にも ⤒↑↓⤓ が出て、案件と同じ並びの中で動く（スマホでは出さない）')
+         : ng('ST-458·①: 予定の行の動かすボタンが違う', [_btns, _o0, _o1, _btnsS].join(' / '));
+     } catch(e) {
+       ng('ST-458: 例外', e.message);
+     } finally {
+       window._tokiIsTouch = _st458touch; window.saveAllTasks = _st458save; allTasks = _st458tasks; currentDailyDate = _st458cur;
+       try { renderQuadView(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
