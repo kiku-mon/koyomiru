@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.56.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.56.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.56.0';
+    const APP_VERSION = 'v0.56.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -21992,20 +21992,34 @@ function openKoyomiToday(dateObj) {
 window.openKoyomiToday = openKoyomiToday;
 // その日に最初に開いたときだけ出す（テスト中・初めての案内などが出ている間は出さない。設定で止められる）
 var KOYOMI_TODAY_KEY = 'koyomiTodayShownOn';
+// v0.56.1: 【権威】2026-10-13、新しい版を読み込んだ直後、自動で開く「お知らせ」に、今日の暦がいきなりかぶる、との指摘。
+// ほかの画面（お知らせ・初めての案内・案件の質問・季節の風だより）が開いている間は待ち、閉じたら出す。
+// 前は「何かが開いていたら、その日は出さない」だったので、新しい版を読み込んだ日に出なくなっていた
+var KOYOMI_TODAY_BUSY_IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal'];
+function koyomiTodayBusy() {
+  return KOYOMI_TODAY_BUSY_IDS.some(function(id) {
+    var e = document.getElementById(id); if (!e) return false;
+    var cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  });
+}
+window.koyomiTodayBusy = koyomiTodayBusy;
+var _koyomiTodayWaits = 0;
 function maybeShowKoyomiToday() {
   try {
     var chk = document.getElementById('koyomiTodayCheck');
     if (chk) chk.checked = !(allSettings && allSettings.ui && allSettings.ui.koyomiToday === false);
     if (window._isTesting) return false;
     if (allSettings && allSettings.ui && allSettings.ui.koyomiToday === false) return false;
-    // 案内の画面は画面に貼り付ける作り（固定）なので、offsetParent では見えているか分からない。表示の決まりで見る
-    var busy = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay'].some(function(id) {
-      var e = document.getElementById(id); if (!e) return false;
-      var cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
-    });
-    if (busy) return false;
     var today = getLocalDateStr(new Date());
     if (localStorage.getItem(KOYOMI_TODAY_KEY) === today) return false;
+    // ほかの画面が開いている間は待つ（1秒ごとに見て、閉じたら出す。30分待っても閉じなければ、その日はやめる）。
+    // 初めての案内のときは待たない（初めての人には、まず案内に集中してもらう）
+    var setup = document.getElementById('setupOverlay');
+    if (setup && getComputedStyle(setup).display !== 'none') return false;
+    if (koyomiTodayBusy()) {
+      if (_koyomiTodayWaits++ < 1800) setTimeout(maybeShowKoyomiToday, 1000);
+      return false;
+    }
     localStorage.setItem(KOYOMI_TODAY_KEY, today);
     window._koyomiTodayShownNow = true;   // 同じ日の「新しい候へ」のトーストは控える（同じことを2度言わない）
     openKoyomiToday(new Date());
@@ -53815,6 +53829,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.56.1', date: '2026-10-13',
+    items: [
+      { icon:'🌾', t:'今日の暦が、お知らせにかぶらないようにしました',
+        before:'新しい版を読み込んだ直後、お知らせの上に今日の暦がいきなり重なって出ていました',
+        after:'お知らせなど、ほかの画面が開いている間は待ち、閉じてから出ます' }
+    ]
+  },
+  {
     ver: 'v0.56.0', date: '2026-10-13',
     items: [
       { icon:'🌾', t:'今日の暦',
@@ -79449,6 +79471,26 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        allTasks = _st459tasks;
        var _o = document.getElementById('koyomiTodayOverlay'); if (_o) _o.remove();
+     }
+
+     // ===== ST-460: 今日の暦は、ほかの画面が開いている間は待ち、閉じたら出す（v0.56.1〜） =====
+     // 【権威】2026-10-13、新しい版を読み込んだ直後に自動で開く「お知らせ」に、今日の暦がいきなりかぶる、との指摘。
+     // 本物の画面で確かめた：お知らせ・季節の風だよりが開いている間は待ち、両方を閉じたら出る
+     try {
+       var _ids = KOYOMI_TODAY_BUSY_IDS.join(',');
+       var _m = document.getElementById('oshiraseModal');
+       var _was = _m ? _m.style.display : '';
+       if (_m) _m.style.display = 'flex';
+       var _busy1 = koyomiTodayBusy();
+       if (_m) _m.style.display = 'none';
+       var _busy0 = koyomiTodayBusy();
+       if (_m) _m.style.display = _was;
+       (_ids.indexOf('oshiraseModal') !== -1 && _ids.indexOf('kazedayoriModal') !== -1 && _ids.indexOf('setupOverlay') !== -1 && _busy1 === true &&
+        /if \(koyomiTodayBusy\(\)\) \{\s*if \(_koyomiTodayWaits\+\+ < 1800\) setTimeout\(maybeShowKoyomiToday, 1000\);/.test(maybeShowKoyomiToday.toString()))
+         ? ok('ST-460·①: お知らせ・季節の風だより・初めての案内などが開いている間は今日の暦を出さずに待ち、閉じたら出す')
+         : ng('ST-460·①: ほかの画面との重なり方が違う', _ids + ' / ' + _busy1 + ',' + _busy0);
+     } catch(e) {
+       ng('ST-460: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
