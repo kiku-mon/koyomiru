@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.55.46 ★ -->
+<!-- ★ CURRENT VERSION: v0.55.47 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.55.46';
+    const APP_VERSION = 'v0.55.47';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15616,8 +15616,11 @@ function renderTodoList() {
     // スマホの ↑↓：その場所の中で1つ上・下へ
     function mixedMoveBy(ctx, id, delta, ymd) {
       var rows = mixedRows(ctx, ymd);
-      var i = rows.findIndex(function(r) { return r.item.id === id; }), j = i + delta;
-      if (i < 0 || j < 0 || j >= rows.length) return false;
+      var i = rows.findIndex(function(r) { return r.item.id === id; });
+      if (i < 0) return false;
+      // v0.55.47: 大きく動かすとき（⤒ いちばん上へ）は端で止める
+      var j = Math.max(0, Math.min(rows.length - 1, i + delta));
+      if (j === i) return false;
       return mixedDropMove(ctx, id, rows[j].item.id, delta > 0, ymd);
     }
     window.mixedMoveBy = mixedMoveBy;
@@ -16078,9 +16081,11 @@ function renderTodoList() {
       if (!me) return;
       var list = sortTokiCases(getTokiCases(false, me.kind), today);
       var i = list.findIndex(function(c) { return c.id === caseId; });
-      var j = i + delta;
-      if (i < 0 || j < 0 || j >= list.length) return;
-      var t = list[i]; list[i] = list[j]; list[j] = t;
+      if (i < 0) return;
+      // v0.55.47: 大きく動かすとき（⤒ いちばん上へ）は端で止め、その位置へ移す（隣と入れ替えるのではなく）
+      var j = Math.max(0, Math.min(list.length - 1, i + delta));
+      if (j === i) return;
+      var t = list.splice(i, 1)[0]; list.splice(j, 0, t);
       var now = new Date().toISOString();
       // v0.55.10: 手で並べ替えたら、見ている日の「今日✓を下へ」の印を外し、並べた順を優先する
       var _vd = window._gyomuViewDate || today;
@@ -16246,8 +16251,10 @@ function renderTodoList() {
               return '<select onchange="setGyomuQuadSlot(\'' + esc(c.id) + '\', this.value)" title="置き場所" style="font-size:0.75em;padding:1px 2px;margin-right:4px;border:1px solid #ccd;border-radius:6px;width:auto;max-width:6em;flex:none;">' +
                 getQuadSlots().map(function(s) { return '<option value="' + s.key + '"' + (s.key === cur ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('') + '</select>';
             })() : '') +
-            (_tokiIsTouch() ? '<button onclick="' + _mvCall(-1) + '" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
-                              '<button onclick="' + _mvCall(1) + '" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">↓</button>' : '') +
+            // v0.55.47: 【権威】2026-10-13、仕事PCでもドラッグのほかに↑↓を、大きく上へ動かしたいこともある、との指示。どの画面でも出し、⤒（いちばん上へ）を足す
+            ('<button onclick="' + _mvCall(-9999) + '" title="いちばん上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">⤒</button>' +
+            '<button onclick="' + _mvCall(-1) + '" title="上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">↑</button>' +
+            '<button onclick="' + _mvCall(1) + '" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">↓</button>') +
             // v0.55.6: 今日はもう終わり（押すと取り消し線。もう一度押すと戻る。翌日は自動で戻る）
             (c.closed ? '' : '<button onclick="toggleTokiDayDone(\'' + esc(c.id) + '\',\'' + esc(today) + '\')" class="toki-daydone-btn" title="' + (dayDone ? '今日はもう終わり、を取り消す' : '今日はもう終わり') + '" style="border:1px solid ' + (dayDone ? '#2f9e44' : '#ccd') + ';background:' + (dayDone ? '#2f9e44' : '#fff') + ';color:' + (dayDone ? '#fff' : '#555') + ';border-radius:6px;cursor:pointer;font-size:0.72em;padding:1px 6px;margin-right:2px;">' + (dayDone ? '今日✓' : '今日おわり') + '</button>') +
             '<button onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" title="直す" style="border:none;background:none;cursor:pointer;font-size:1em;padding:0 4px;">✏️</button>' +
@@ -42250,6 +42257,10 @@ function renderDashboardView() {
       // 列はいつも同じ幅で、ただし 280px より細くしない。はみ出す分は横にスクロール（PC は4列が並び、スマホは横に流れる）
       body.style.gridTemplateColumns = 'repeat(4,minmax(280px,1fr))';
       body.style.overflowX = 'auto';
+      // v0.55.47: 【権威】2026-10-13、仕事PCで、左の列に案件が集まると、ほかの列（午前など）の枠が途中で切れて、下の方へドラッグできない、との指摘。
+      // 上の「横にスクロール」で、列の入れ物が外の箱の高さまで縮められていた（列は884で切れ、左の列の中身だけがはみ出す）。
+      // 縮まないようにして、4つの列を中身の長さまでそろえて伸ばす（外の箱ごと縦にスクロール。スマホの横スクロールはそのまま）
+      body.style.flexShrink = '0';
       slots.forEach(function(col) {
         body.appendChild(_buildQuadSlot(col, quadTasksInSlot(col.key, targetDate), targetDate));
       });
@@ -53636,6 +53647,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.55.47', date: '2026-10-13',
+    items: [
+      { icon:'🐟', t:'魚の目の列が、途中で切れないようにしました',
+        before:'1つの列に予定が多くて長くなると、ほかの列の枠が途中で切れて、下の方へドラッグできませんでした',
+        after:'4つの列が、いちばん長い列に合わせて下まで伸びます' },
+      { icon:'⤒', t:'パソコンでも、カードを ⤒↑↓ で動かせるようにしました',
+        before:'↑↓はスマホだけで、パソコンではドラッグするしかありませんでした',
+        after:'どの画面でも ⤒（いちばん上へ）↑ ↓ が出ます' }
+    ]
+  },
   {
     ver: 'v0.55.46', date: '2026-10-12',
     items: [
@@ -79097,6 +79119,42 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-455·①: 開始・終了のボタンが違う', [_st455start, _st455endPair, _st455clear, _st455c].join(' / '));
      } catch(e) {
        ng('ST-455: 例外', e.message);
+     }
+
+     // ===== ST-456: 魚の目の列は下までそろって伸びる・PCでも ⤒↑↓（v0.55.47〜） =====
+     // 【権威】2026-10-13、仕事PCで、左の列に案件が集まると午前の列の枠が途中で切れ、下の方へドラッグできない。PCでも↑↓を、大きく上へも、との指示。
+     // 実際の動きは v0.55.47 の作業で本物の画面を使って確かめた（直す前：列は画面の高さで切れ、下の方へのドラッグは入らない、
+     // ⤒↑↓は出ない。直した後：4列が中身の長さまで伸び、午前の列の下の方へ入る。⤒でいちばん上へ）
+     var _st456tasks = allTasks.slice(), _st456flags = JSON.parse(JSON.stringify(allSettings.flags || {}));
+     var _st456save = window.saveAllTasks;
+     try {
+       window.saveAllTasks = function() {};
+       renderQuadView();
+       var _b = document.getElementById('quadViewBody');
+       (_b && _b.style.flexShrink === '0' && _b.style.overflowX === 'auto')
+         ? ok('ST-456·①: 魚の目の列の入れ物は縮まない（4列が中身の長さまでそろって伸びる。スマホの横スクロールはそのまま）')
+         : ng('ST-456·①: 列の入れ物の決め方が違う', _b ? _b.style.flexShrink : 'なし');
+       allSettings.flags = Object.assign({}, allSettings.flags || {}, { tokiMode: true });
+       var _h = _tokiCaseRowHtml({ id: 'st456-x', kind: 'toki', box: 'B1', buyer: '甲様', steps1: {} }, '2026-10-13');
+       (/title="いちばん上へ"[^>]*>⤒</.test(_h) && /title="上へ"[^>]*>↑</.test(_h) && /title="下へ"[^>]*>↓</.test(_h))
+         ? ok('ST-456·②: 案件のカードには、どの画面でも ⤒（いちばん上へ）↑ ↓ が出る')
+         : ng('ST-456·②: 動かすボタンが違う', '');
+       allTasks = allTasks.filter(function(t) { return (t.kind || 'task') !== 'toki'; });
+       ['a', 'b', 'c', 'd'].forEach(function(x, i) { allTasks.push({ id: 'st456-' + x, kind: 'toki', box: 'B' + x, buyer: x + '様', order: i, steps1: {}, createdAt: '2026-10-01T00:00:00Z' }); });
+       var _o = function() { return sortTokiCases(getTokiCases(false, 'toki'), getLocalDateStr(new Date())).map(function(c) { return c.box; }).join(''); };
+       moveTokiCaseBy('st456-d', -9999);
+       var _o1 = _o();
+       moveTokiCaseBy('st456-d', 9999);
+       var _o2 = _o();
+       moveTokiCaseBy('st456-b', -1);
+       var _o3 = _o();
+       (_o1 === 'BdBaBbBc' && _o2 === 'BaBbBcBd' && _o3 === 'BbBaBcBd')
+         ? ok('ST-456·③: 大きく動かすと端で止まり、その位置へ移る（隣と入れ替えるのではない）。1つずつも今までどおり')
+         : ng('ST-456·③: 大きく動かしたときの並びが違う', [_o1, _o2, _o3].join(' / '));
+     } catch(e) {
+       ng('ST-456: 例外', e.message);
+     } finally {
+       window.saveAllTasks = _st456save; allTasks = _st456tasks; allSettings.flags = _st456flags;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
