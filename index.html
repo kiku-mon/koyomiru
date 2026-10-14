@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.56.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.56.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.56.2';
+    const APP_VERSION = 'v0.56.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -3868,6 +3868,9 @@ function _showInviteWelcome() {
     .msb-edit-row:last-of-type {
       border-bottom: none;
     }
+    /* v0.56.3: 今日の暦の札。PCは見出しの中、スマホは見出しの下の行 */
+    .koyomi-chip-narrow-row { display: none; }
+    @media (max-width: 600px) { .koyomi-chip-wide { display: none !important; } .koyomi-chip-narrow-row { display: block; } }
     .msb-label {
       font-size: 15px;
       color: #6b7280;
@@ -8043,6 +8046,9 @@ function _showInviteWelcome() {
            年と月を選ぶ入口は、隣の小さな印にする。 -->
       <button class="monthly-nav-btn" onclick="window.openYearPicker('monthly')" title="年と月を選ぶ"
         style="padding:2px 6px;">▾</button>
+      <!-- v0.56.3: 【権威】2026-10-14、西暦の隣に二十四節気・七十二候を、との提案。答えがいつも見えると「思い出す」が効かないので、
+           まだめくっていない日は「今日の暦 ？」（押すと問い）、めくったあとは「寒露・菊花開（2日目）」。PCはここ、スマホは見出しの下の行（はみ出すため） -->
+      <button id="monthlyKoyomiChip" class="koyomi-chip koyomi-chip-wide" onclick="window.koyomiChipClick()" style="padding:3px 10px;border:1px solid #d9c9a6;border-radius:999px;background:#fffaf0;color:#6b4f2a;font-size:0.82em;cursor:pointer;white-space:nowrap;font-family:inherit;" title="今日の暦"></button>
       <button class="monthly-nav-btn" onclick="changeMonth(1)">来月 ▶</button>
       <div id="widthSliderWrap" style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
         <button id="monthlyPrintBtn" onclick="window.printMonthlyCalendar()" title="🖨️ タスク入りA4印刷"
@@ -8055,6 +8061,9 @@ function _showInviteWelcome() {
          皇紀・仏暦・民国紀元・ヒジュラ暦は見出しを崩さない別枠にする。
          対象が1つも無ければボタンごと出さない。開閉は押した分だけ覚える
          （毎回開き直す手間を減らす。閉じたい人は押せば閉じる）。 -->
+    <div class="koyomi-chip-narrow-row" style="text-align:center;margin:-2px 0 4px;">
+      <button id="monthlyKoyomiChipSub" class="koyomi-chip" onclick="window.koyomiChipClick()" style="padding:3px 10px;border:1px solid #d9c9a6;border-radius:999px;background:#fffaf0;color:#6b4f2a;font-size:0.82em;cursor:pointer;white-space:nowrap;font-family:inherit;" title="今日の暦"></button>
+    </div>
     <div id="monthlyExtraEraToggleWrap" style="display:none;text-align:center;margin:-4px 0 2px;">
       <button id="monthlyExtraEraToggle" onclick="window._toggleExtraEraRow('monthly')"
         style="border:none;background:none;color:#9aa3af;font-size:0.72em;cursor:pointer;padding:2px 8px;">
@@ -20487,6 +20496,7 @@ function myDeckApply(idx) {
       if (!last) { window._dailyLastToday = today; return false; }
       if (last === today) return false;
       window._dailyLastToday = today;
+      try { if (typeof renderKoyomiChips === 'function') renderKoyomiChips(); } catch (eC) {}   // v0.56.3: 日付をまたいだら札も新しい日に
       if (currentDailyDate && currentDailyDate !== last) return false;   // 別の日を見ている人の画面は動かさない
       if (typeof goToDailyToday === 'function') goToDailyToday();
       return true;
@@ -21980,7 +21990,7 @@ function koyomiTodayData(dateObj) {
   };
 }
 window.koyomiTodayData = koyomiTodayData;
-function openKoyomiToday(dateObj) {
+function openKoyomiToday(dateObj, opts) {
   var old = document.getElementById('koyomiTodayOverlay'); if (old) old.remove();
   var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
   var v = koyomiTodayData(dateObj);
@@ -22014,16 +22024,37 @@ function openKoyomiToday(dateObj) {
       '<div style="color:#8a7f6a;margin-bottom:4px;">' + where + '</div>' + list + '</div>' +
     '<div style="margin-top:20px;font-size:1.05em;font-weight:700;color:#6b4f2a;">今日という一回を、どう生きる？</div>' +
     '<button type="button" data-kt="close" style="margin-top:18px;padding:10px 34px;border:1px solid #6b4f2a;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.95em;cursor:pointer;">はじめる</button></div>';
-  ov.innerHTML = ask;
+  ov.innerHTML = (opts && opts.flipped) ? ans : ask;   // v0.56.3: もうめくった日に札から開いたら、答えのまま
   ov.addEventListener('click', function(e) {
     var b = e.target.closest && e.target.closest('[data-kt]');
     if (!b) { if (e.target === ov) ov.remove(); return; }
-    if (b.getAttribute('data-kt') === 'flip') { ov.innerHTML = ans; return; }
+    if (b.getAttribute('data-kt') === 'flip') {
+      ov.innerHTML = ans;
+      // v0.56.3: めくったことを覚え、見出しの札に答えを出す（テスト中は端末に書かない・第7条）
+      if (!window._isTesting) { try { localStorage.setItem(KOYOMI_FLIPPED_KEY, getLocalDateStr(new Date())); } catch (e2) {} }
+      if (typeof renderKoyomiChips === 'function') renderKoyomiChips();
+      return;
+    }
     ov.remove();
   });
   document.body.appendChild(ov);
 }
 window.openKoyomiToday = openKoyomiToday;
+// v0.56.3: 今日めくったか（めくったら、見出しの札に答えを出す）
+var KOYOMI_FLIPPED_KEY = 'koyomiTodayFlippedOn';
+function koyomiFlippedToday() { try { return localStorage.getItem(KOYOMI_FLIPPED_KEY) === getLocalDateStr(new Date()); } catch (e) { return false; } }
+window.koyomiFlippedToday = koyomiFlippedToday;
+function renderKoyomiChips() {
+  var txt;
+  if (koyomiFlippedToday()) {
+    var v = koyomiTodayData(new Date());
+    txt = v.kou ? (v.sekki + '・' + v.kou + '（' + v.kouDay + '日目）') : v.sekki;
+  } else txt = '今日の暦 ？';
+  ['monthlyKoyomiChip', 'monthlyKoyomiChipSub'].forEach(function(id) { var e = document.getElementById(id); if (e) e.textContent = txt; });
+}
+window.renderKoyomiChips = renderKoyomiChips;
+function koyomiChipClick() { openKoyomiToday(new Date(), { flipped: koyomiFlippedToday() }); }
+window.koyomiChipClick = koyomiChipClick;
 // その日に最初に開いたときだけ出す（テスト中・初めての案内などが出ている間は出さない。設定で止められる）
 var KOYOMI_TODAY_KEY = 'koyomiTodayShownOn';
 // v0.56.1: 【権威】2026-10-13、新しい版を読み込んだ直後、自動で開く「お知らせ」に、今日の暦がいきなりかぶる、との指摘。
@@ -22031,6 +22062,7 @@ var KOYOMI_TODAY_KEY = 'koyomiTodayShownOn';
 // 前は「何かが開いていたら、その日は出さない」だったので、新しい版を読み込んだ日に出なくなっていた
 // v0.56.2: 待ち方は、起動の画面を1つずつ出す道具（whenStartupClear）にまとめた
 function maybeShowKoyomiToday() {
+  try { renderKoyomiChips(); } catch (eC) {}   // v0.56.3: 見出しの札も起動のときに描く
   try {
     var chk = document.getElementById('koyomiTodayCheck');
     if (chk) chk.checked = !(allSettings && allSettings.ui && allSettings.ui.koyomiToday === false);
@@ -53852,6 +53884,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.56.3', date: '2026-10-14',
+    items: [
+      { icon:'🌾', t:'月間の見出しに「今日の暦」の札を置きました',
+        before:'今日の節気や候は、問いかけの時にしか見られませんでした',
+        after:'見出しに札があり、まだめくっていない日は「今日の暦 ？」（押すと問いが出ます）、めくったあとは「寒露・菊花開（2日目）」のように出ます' }
+    ]
+  },
+  {
     ver: 'v0.56.2', date: '2026-10-13',
     items: [
       { icon:'🪟', t:'開いたときに出る画面が、重ならないようにしました',
@@ -79528,6 +79568,29 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-460·①: 起動の画面の出し方が違う', _ids + ' / ' + _busy1 + ',' + _calls1);
      } catch(e) {
        ng('ST-460: 例外', e.message);
+     }
+
+     // ===== ST-461: 見出しの今日の暦の札（めくる前は「？」、めくったあとは答え）（v0.56.3〜） =====
+     // 【権威】2026-10-14、西暦の隣に二十四節気・七十二候を、との提案。答えがいつも見えると思い出すが効かないので、めくったあとに出す。
+     // 本物の画面で確かめた：PCは西暦の右、スマホは見出しの下の行（はみ出さない）
+     var _st461k = localStorage.getItem('koyomiTodayFlippedOn');
+     try {
+       localStorage.removeItem('koyomiTodayFlippedOn');
+       renderKoyomiChips();
+       var _a = (document.getElementById('monthlyKoyomiChip') || {}).textContent;
+       var _a2 = (document.getElementById('monthlyKoyomiChipSub') || {}).textContent;
+       localStorage.setItem('koyomiTodayFlippedOn', getLocalDateStr(new Date()));
+       renderKoyomiChips();
+       var _b = (document.getElementById('monthlyKoyomiChip') || {}).textContent;
+       var _v = koyomiTodayData(new Date());
+       (_a === '今日の暦 ？' && _a2 === '今日の暦 ？' && _v.sekki && _b.indexOf(_v.sekki) === 0 && _b.indexOf(_v.kou) !== -1 && _b.indexOf('日目）') !== -1)
+         ? ok('ST-461·①: 見出しの札は、めくる前は「今日の暦 ？」、めくったあとは「節気・候（何日目）」')
+         : ng('ST-461·①: 見出しの札の中身が違う', [_a, _b].join(' / '));
+     } catch(e) {
+       ng('ST-461: 例外', e.message);
+     } finally {
+       if (_st461k === null) localStorage.removeItem('koyomiTodayFlippedOn'); else localStorage.setItem('koyomiTodayFlippedOn', _st461k);
+       try { renderKoyomiChips(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
