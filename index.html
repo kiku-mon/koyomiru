@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.56.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.56.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.56.3';
+    const APP_VERSION = 'v0.56.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15998,7 +15998,12 @@ function renderTodoList() {
       var list = sortTokiCases(_gyomuOpenOn(tpl.kind, today), today);
       // v0.55.1: 魚の目では、プライベートの列に置いた案件だけをここに出す（午前・午後・夕方は、それぞれの列に出す）
       var quadMode = /Quad$/.test(elId);
-      if (quadMode) { list = list.filter(function(c) { return gyomuQuadSlotOf(c, today) === 'slot1'; }); el.setAttribute('data-quad-slot', 'slot1'); }
+      var _rest = { sleep: [], help: [] };
+      if (quadMode) {
+        list = list.filter(function(c) { return gyomuQuadSlotOf(c, today) === 'slot1'; }); el.setAttribute('data-quad-slot', 'slot1');
+        // v0.56.4: 寝ている案件・手伝いの案件は、箱のいちばん下に畳んで置く
+        list = list.filter(function(c) { var k = quadRestingKind(c, today); if (k) { _rest[k].push(c); return false; } return true; });
+      }
       else el.removeAttribute('data-quad-slot');
       list = tokiDoneLast(list, today);   // v0.55.6: 今日はもう終わりの案件は下へ
       var closedAll = _gyomuShownClosed(tpl.kind, today);
@@ -16008,6 +16013,15 @@ function renderTodoList() {
       // 済む前の日を見ているときは、その日の時点では進行中だったので、取り消し線を引かない
       var rows = list.map(function(c) { return _tokiCaseRowHtml(c.closed ? Object.assign({}, c, { closed: false }) : c, today, { quad: quadMode }); }).join('') +
         closedShown.map(function(c) { return _tokiCaseRowHtml(c, today); }).join('');
+      // v0.56.4: 「💤 寝ている案件 〇件 ▸」「🤝 手伝い 〇件 ▸」（押せば開く）
+      if (quadMode) [['sleep', '💤 寝ている案件'], ['help', '🤝 手伝い']].forEach(function(r) {
+        var arr = _rest[r[0]]; if (!arr.length) return;
+        var open = !!window._quadRestOpen[r[0]];
+        rows += '<div class="quad-rest" data-rest="' + r[0] + '" style="margin:4px 0 6px;">' +
+          '<button type="button" onclick="toggleQuadRest(\'' + r[0] + '\')" style="width:100%;text-align:left;padding:6px 8px;border:1px dashed #c5cbd6;border-radius:8px;background:#fafbfc;color:#666;font-size:0.8em;cursor:pointer;">' +
+          r[1] + ' ' + arr.length + '件 ' + (open ? '▾' : '▸') + '</button>' +
+          (open ? '<div style="margin-top:6px;">' + arr.map(function(c) { return _tokiCaseRowHtml(c, today, { quad: true }); }).join('') + '</div>' : '') + '</div>';
+      });
       // v0.55.11: マトリクスで予定と案件を混ぜているときは、案件の行は一覧（list1）に描く。箱は見出し・つまみ・＋ボタンだけ
       var mixMatrix = /Matrix$/.test(elId) && gyomuCasesShown();
       if (mixMatrix) { rows = ''; restN = 0; }
@@ -16030,7 +16044,7 @@ function renderTodoList() {
           '<div style="display:flex;justify-content:flex-end;gap:6px;margin:6px 0;">' + plus(GYOMU_TEMPLATE_TOKI) + plus(gyomuTemplateIppan()) + '</div>';
       } else {
         head = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
-          '<span style="font-size:0.85em;font-weight:700;color:#333;">' + tpl.panelTitle + '（' + list.length + '件）</span>' + newBtn + '</div>';
+          '<span style="font-size:0.85em;font-weight:700;color:#333;">' + tpl.panelTitle + '（' + (list.length + _rest.sleep.length + _rest.help.length) + '件）</span>' + newBtn + '</div>';   // v0.56.4: 畳んだ分も数える
       }
       el.innerHTML = '<div style="padding:4px 6px 2px;">' + head +
         (rows || (mixMatrix ? '' : '<div style="font-size:0.8em;color:#999;padding:4px 0 8px;">案件はまだありません</div>')) +
@@ -16085,6 +16099,91 @@ function renderTodoList() {
       return h < 12 ? 'slot2' : h < 17 ? 'slot3' : 'slot4';
     }
     window.gyomuQuadSlotOf = gyomuQuadSlotOf;
+    // ===== v0.56.4: 魚の目で、今日手を動かさない案件を休ませる（寝かせる・手伝い） =====
+    // 【権威】2026-10-14、自分が担当の案件は最後までカードで管理でよいが、スポットで手伝うだけの案件（設定受け取りだけ など）や、
+    // だいぶ先が決済の案件が、4つの列に居座って困る、との指摘。
+    //  ・💤 寝かせる：「決済の7日前まで」か「〇日まで」。その日が来るまで、魚の目の左の箱から外す（メールのスヌーズと同じ考え方）
+    //  ・🤝 手伝い：担当がほかの人の案件は、自分が行く節目がある日だけ出す
+    //  ・どちらも、左の箱のいちばん下に「💤 寝ている案件 〇件 ▸」「🤝 手伝い 〇件 ▸」と畳んで置く（消えない。押せば開く）
+    //  ・自分でその日の列に移したもの、その日に時刻つきの節目があるものは、寝ていても手伝いでも出す
+    var CASE_SLEEP_BEFORE_KESSAI = 7;
+    function caseSleepUntil(c) {
+      var sl = c && c.sleep;
+      if (!sl) return '';
+      if (sl.until && /^\d{4}-\d{2}-\d{2}$/.test(sl.until)) return sl.until;
+      if (sl.beforeKessai && c.kessaiDate) {
+        var p = c.kessaiDate.split('-').map(Number), d = new Date(p[0], p[1] - 1, p[2]);
+        d.setDate(d.getDate() - Number(sl.beforeKessai));
+        return getLocalDateStr(d);
+      }
+      return '';
+    }
+    window.caseSleepUntil = caseSleepUntil;
+    function caseIsSleeping(c, ymd) { var u = caseSleepUntil(c); return !!u && ymd < u; }
+    window.caseIsSleeping = caseIsSleeping;
+    function caseIsHelp(c) { var t = tokiTantou(c); return !!t && !tokiIsSelf(t); }
+    window.caseIsHelp = caseIsHelp;
+    // 魚の目の左の箱で、今日は休ませるか（'sleep'＝寝ている／'help'＝手伝い／''＝ふつうに出す）
+    function quadRestingKind(c, ymd) {
+      if (!c || c.closed) return '';
+      if (gyomuQuadSlotOf(c, ymd) !== 'slot1') return '';           // 自分でその日の列に置いた・その日に時刻つきの節目がある（置き場所の道具が、手で置いた場所を先に返す）
+      if (caseIsSleeping(c, ymd)) return 'sleep';
+      if (caseIsHelp(c) && !tokiMarksOnDate(ymd).some(function(m) { return m.id === c.id && m.self; })) return 'help';
+      return '';
+    }
+    window.quadRestingKind = quadRestingKind;
+    function setCaseSleep(caseId, sleep) {
+      var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
+      if (!c) return;
+      if (sleep) c.sleep = sleep; else delete c.sleep;
+      c.updatedAt = new Date().toISOString();   // 第61条
+      saveAllTasks();
+      renderGyomuPanels('Quad');
+      if (typeof showToast === 'function') {
+        var name = c.box || tokiSama(c.buyer);
+        showToast(sleep ? '💤 ' + name + ' を ' + caseSleepUntil(c).slice(5).replace('-', '/') + ' まで寝かせました（左の箱のいちばん下にあります）' : '⏰ ' + name + ' を起こしました');
+      }
+    }
+    window.setCaseSleep = setCaseSleep;
+    // 💤 を押したとき：いつまで寝かせるかを選ぶ（寝ている案件なら「起こす」）
+    function openCaseSleepMenu(caseId) {
+      var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
+      if (!c) return;
+      var today = window._gyomuViewDate || getLocalDateStr(new Date());
+      if (caseIsSleeping(c, today)) { setCaseSleep(caseId, null); return; }
+      var old = document.getElementById('caseSleepOverlay'); if (old) old.remove();
+      var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+      var k7 = caseSleepUntil({ kessaiDate: c.kessaiDate, sleep: { beforeKessai: CASE_SLEEP_BEFORE_KESSAI } });
+      var canK = !!k7 && k7 > today;
+      var ov = document.createElement('div');
+      ov.id = 'caseSleepOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;padding:16px;';
+      var tom = new Date(); tom.setDate(tom.getDate() + 1);
+      ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;padding:18px;">' +
+        '<div style="font-weight:700;margin-bottom:4px;">💤 いつまで寝かせる？</div>' +
+        '<div style="font-size:0.8em;color:#888;margin-bottom:12px;">' + esc(c.box || '') + '　' + esc(tokiSama(c.buyer)) + '<br>その日の朝に、ふつうの場所へ戻ります</div>' +
+        (canK ? '<button type="button" data-sl="k7" style="display:block;width:100%;margin:6px 0;padding:10px;border:1px solid #5b8def;border-radius:10px;background:#f6f8fc;color:#2f6fed;font-weight:700;cursor:pointer;">決済の7日前まで（' + k7.slice(5).replace('-', '/') + '）</button>' : '') +
+        '<div style="display:flex;gap:6px;align-items:center;margin:6px 0;">' +
+          '<input type="date" id="caseSleepDate" value="' + getLocalDateStr(tom) + '" min="' + getLocalDateStr(tom) + '" style="flex:1;padding:8px;border:1px solid #ccd;border-radius:8px;font-size:16px;">' +
+          '<button type="button" data-sl="date" style="padding:9px 12px;border:1px solid #5b8def;border-radius:8px;background:#fff;color:#2f6fed;font-weight:700;cursor:pointer;">まで</button>' +
+        '</div>' +
+        '<button type="button" data-sl="cancel" style="display:block;width:100%;margin-top:8px;padding:8px;border:none;background:none;color:#888;cursor:pointer;">やめる</button></div>';
+      ov.addEventListener('click', function(e) {
+        var b = e.target.closest && e.target.closest('[data-sl]');
+        if (!b) { if (e.target === ov) ov.remove(); return; }
+        var a = b.getAttribute('data-sl');
+        if (a === 'k7') setCaseSleep(caseId, { beforeKessai: CASE_SLEEP_BEFORE_KESSAI });
+        else if (a === 'date') { var v = (document.getElementById('caseSleepDate') || {}).value; if (v && v > today) setCaseSleep(caseId, { until: v }); else return; }
+        ov.remove();
+      });
+      document.body.appendChild(ov);
+    }
+    window.openCaseSleepMenu = openCaseSleepMenu;
+    window._quadRestOpen = window._quadRestOpen || { sleep: false, help: false };
+    function toggleQuadRest(kind) { window._quadRestOpen[kind] = !window._quadRestOpen[kind]; renderGyomuPanels('Quad'); }
+    window.toggleQuadRest = toggleQuadRest;
+    // ===== END v0.56.4 =====
+
     function setGyomuQuadSlot(caseId, slot) {
       var c = allTasks.filter(function(t) { return t && t.id === caseId; })[0];
       if (!c || (c.kind !== 'toki' && c.kind !== 'gyomu') || ['slot1', 'slot2', 'slot3', 'slot4'].indexOf(slot) === -1) return;   // v0.55.3: 案件だけ
@@ -16313,6 +16412,10 @@ function renderTodoList() {
             '<button onclick="' + _mvCall(1) + '" title="下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:8px;">↓</button>' +
             '<button onclick="' + _mvCall(-9999) + '" title="いちばん上へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:2px;">⤒</button>' +
             '<button onclick="' + _mvCall(9999) + '" title="いちばん下へ" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.85em;padding:1px 6px;margin-right:4px;">⤓</button>') +
+            // v0.56.4: 💤 寝かせる（魚の目のときだけ）。寝ている案件は「⏰ 起こす」
+            ((rowOpts.quad || rowOpts.quadSlot) && !c.closed ? (caseIsSleeping(c, today)
+              ? '<button onclick="openCaseSleepMenu(\'' + esc(c.id) + '\')" title="起こす（ふつうの場所へ戻す）" style="border:1px solid #f0c36d;background:#fff8e6;border-radius:6px;cursor:pointer;font-size:0.72em;padding:1px 6px;margin-right:2px;">⏰ 起こす</button>'
+              : '<button onclick="openCaseSleepMenu(\'' + esc(c.id) + '\')" title="寝かせる（その日まで魚の目に出さない）" style="border:1px solid #ccd;background:#fff;border-radius:6px;cursor:pointer;font-size:0.8em;padding:1px 5px;margin-right:2px;">💤</button>') : '') +
             // v0.55.6: 今日はもう終わり（押すと取り消し線。もう一度押すと戻る。翌日は自動で戻る）
             (c.closed ? '' : '<button onclick="toggleTokiDayDone(\'' + esc(c.id) + '\',\'' + esc(today) + '\')" class="toki-daydone-btn" title="' + (dayDone ? '今日はもう終わり、を取り消す' : '今日はもう終わり') + '" style="border:1px solid ' + (dayDone ? '#2f9e44' : '#ccd') + ';background:' + (dayDone ? '#2f9e44' : '#fff') + ';color:' + (dayDone ? '#fff' : '#555') + ';border-radius:6px;cursor:pointer;font-size:0.72em;padding:1px 6px;margin-right:2px;">' + (dayDone ? '今日✓' : '今日おわり') + '</button>') +
             '<button onclick="openTokiCaseEditor(\'' + esc(c.id) + '\')" title="直す" style="border:none;background:none;cursor:pointer;font-size:1em;padding:0 4px;">✏️</button>' +
@@ -53884,6 +53987,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.56.4', date: '2026-10-14',
+    items: [
+      { icon:'💤', t:'魚の目で、今日手を動かさない案件を「寝かせる」ことができるようにしました',
+        before:'まだ先の案件や、手伝うだけの案件も、毎日同じように並んでいました',
+        after:'カードの💤で「決済の7日前まで」「〇日まで」寝かせると、その日まで左の箱のいちばん下に畳まれます。担当がほかの人の案件も、自分が行く日以外は「🤝 手伝い」に畳まれます。押せば開き、⏰で起こせます' }
+    ]
+  },
+  {
     ver: 'v0.56.3', date: '2026-10-14',
     items: [
       { icon:'🌾', t:'月間の見出しに「今日の暦」の札を置きました',
@@ -79591,6 +79702,46 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        if (_st461k === null) localStorage.removeItem('koyomiTodayFlippedOn'); else localStorage.setItem('koyomiTodayFlippedOn', _st461k);
        try { renderKoyomiChips(); } catch (e2) {}
+     }
+
+     // ===== ST-462: 魚の目の寝かせる・手伝い（v0.56.4〜） =====
+     // 【権威】2026-10-14、スポットで手伝うだけの案件や、だいぶ先が決済の案件が、4つの列に居座って困る、との指摘。
+     // 本物の画面で4つの場合を確かめた（寝かせた案件・手伝いは左の箱の下に畳む／今日自分が行く・自分で列に置いたものは出る／起こせば戻る）
+     var _st462tasks = allTasks.slice(), _st462save = window.saveAllTasks, _st462toast = window.showToast;
+     try {
+       window.saveAllTasks = function() {}; window.showToast = function() {};
+       var _d = '2026-10-14';
+       var A = { id: 'st462-a', kind: 'toki', box: 'B1', buyer: '甲様', kessaiDate: '2026-10-29', steps1: {} };
+       var B = { id: 'st462-b', kind: 'toki', box: 'B2', buyer: '乙様', tantou: 'ST462の協力者', steps1: {} };
+       var q = {}; q[_d] = 'slot2';
+       var D = { id: 'st462-d', kind: 'toki', box: 'B4', buyer: '丁様', sleep: { until: '2026-12-01' }, quadSlots: q, steps1: {} };
+       allTasks = allTasks.concat([A, B, D]);
+       // ① 寝かせる日の決め方：決済の7日前／日付。その日の朝に起きる
+       var _u = caseSleepUntil(Object.assign({}, A, { sleep: { beforeKessai: 7 } }));
+       var _sl1 = caseIsSleeping(Object.assign({}, A, { sleep: { beforeKessai: 7 } }), '2026-10-21');
+       var _sl2 = caseIsSleeping(Object.assign({}, A, { sleep: { beforeKessai: 7 } }), '2026-10-22');
+       (_u === '2026-10-22' && _sl1 === true && _sl2 === false && caseSleepUntil({ sleep: { until: '2026-11-03' } }) === '2026-11-03' && caseSleepUntil({}) === '')
+         ? ok('ST-462·①: 寝かせるのは「決済の7日前まで」か「〇日まで」。その日の朝に起きる')
+         : ng('ST-462·①: 寝かせる日の決め方が違う', _u);
+       // ② 左の箱で休ませるか：寝ている／手伝い／自分で列に置いたものは出す／ふつうは出す
+       var _k = [Object.assign({}, A, { sleep: { beforeKessai: 7 } }), B, D, A].map(function(c) { return quadRestingKind(c, _d) || '-'; }).join(',');
+       (_k === 'sleep,help,-,-')
+         ? ok('ST-462·②: 寝ている案件・手伝いの案件は左の箱で休ませ、自分でその日の列に置いたものは出す')
+         : ng('ST-462·②: 休ませる決まりが違う', _k);
+       // ③ 繋がっているか（第76条）：寝かせると左の箱の下に畳まれ、見出しの件数には数える。起こせば戻る
+       setCaseSleep('st462-a', { beforeKessai: 7 });
+       var _st462a = allTasks.filter(function(t) { return t.id === 'st462-a'; })[0];
+       var _rest = quadRestingKind(_st462a, getLocalDateStr(new Date()));
+       setCaseSleep('st462-a', null);
+       var _back = quadRestingKind(_st462a, getLocalDateStr(new Date()));
+       var _src = document.documentElement.outerHTML;
+       (_rest === 'sleep' && _back === '' && !('sleep' in _st462a) && /toggleQuadRest\(/.test(_src) && /\(list\.length \+ _rest\.sleep\.length \+ _rest\.help\.length\)/.test(_src))
+         ? ok('ST-462·③: 寝かせると左の箱の下に畳まれ（見出しの件数には数える）、起こせば元に戻る')
+         : ng('ST-462·③: 寝かせる・起こすのつながりが違う', [_rest, _back].join(','));
+     } catch(e) {
+       ng('ST-462: 例外', e.message);
+     } finally {
+       window.saveAllTasks = _st462save; window.showToast = _st462toast; allTasks = _st462tasks;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
