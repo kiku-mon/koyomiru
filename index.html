@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.57.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.58.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.57.0';
+    const APP_VERSION = 'v0.58.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6760,7 +6760,7 @@ function _showInviteWelcome() {
 // 1か所で「今、ほかの画面が開いていないか」を見て、開いていれば閉じるまで待ってから出す（第71条④）。
 // 季節の風だよりを出す所が起動のとても早い段階にあるので、この道具はそれより前に置く（第74条）
 (function() {
-  var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiTodayOverlay'];
+  var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiTodayOverlay', 'koyomiOrderOverlay'];   // v0.58.0: 注文票も
   function openNow() {
     return IDS.some(function(id) {
       var e = document.getElementById(id); if (!e) return false;
@@ -6815,7 +6815,7 @@ function _showInviteWelcome() {
       try {
         var _kzDecide = function() {
           if (typeof showKazedayoriModal !== 'function') return;
-          if (typeof koyomiTodayWillShow === 'function' && (koyomiTodayWillShow() || window._koyomiTodayShownNow)) return;   // その日の最初は今日の暦が代わり
+          if (typeof koyomiTodayWillShow === 'function' && (koyomiTodayWillShow() || window._koyomiCardShownNow)) return;   // 今日の暦のカードを出す回は、その代わり（v0.58.0: あっさりの1行は代わりにしない）
           whenStartupClear(function() { showKazedayoriModal(); });
         };
         if (document.readyState === 'complete') _kzDecide(); else window.addEventListener('load', function() { setTimeout(_kzDecide, 0); }, { once: true });
@@ -10571,11 +10571,12 @@ function _showInviteWelcome() {
       <div id="settingsViewsBlock" style="margin-top: 24px; border-top: 1px solid #efefef; padding-top: 18px;">
         <h3 style="margin: 0 0 15px 0; color: #262626; font-size: 1.05em; font-weight: 600; border-bottom: 1px solid #efefef; padding-bottom: 12px;">日次ビュー</h3>
         <div data-setgroup="view">
-          <!-- v0.56.0: 今日の一回（その日に最初に開いたとき、今日の暦を問う） -->
-          <label class="settings-check-label" style="display:flex;gap:8px;align-items:flex-start;margin:4px 0 12px;cursor:pointer;">
-            <input type="checkbox" id="koyomiTodayCheck" checked onchange="setKoyomiTodayEnabled(this.checked)" style="margin-top:3px;">
-            <span><b>今日の暦の問いかけ</b><br><span style="font-size:0.8em;color:#888;">その日に最初に開いたとき、「今日は何の節気？何の候？」と問い、めくると今日の暦と予定が出ます</span></span>
-          </label>
+          <!-- v0.58.0: 暦の注文票の入口（前の「今日の暦の問いかけ」のオン・オフは、こってり度の「なし」に引き継いだ・第48条） -->
+          <div style="margin:4px 0 12px;padding:10px 12px;border:1px solid #e6dcc6;border-radius:10px;background:#fffdf5;">
+            <div style="font-weight:700;color:#6b4f2a;">🍜 暦の注文票</div>
+            <div id="koyomiOrderSummarySettings" style="font-size:0.78em;color:#8a7f6a;margin:4px 0 8px;line-height:1.6;"></div>
+            <button type="button" onclick="openKoyomiOrderSheet()" style="padding:7px 14px;border:1px solid #b0443a;border-radius:999px;background:#fff;color:#b0443a;font-weight:700;cursor:pointer;">注文票を開く</button>
+          </div>
           <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #262626; font-size: 0.9em;">表示形式</label>
           <p style="font-size: 0.8em; color: #8e8e8e; margin: 0 0 10px 0;">日次を開いたときのデフォルト表示を選択</p>
           <div class="settings-radio-group" id="dailyViewModeGroup">
@@ -22059,11 +22060,16 @@ function checkShichijuniKouChangeAndShowToast() {
   saveAllSettings();
 }
 
-// ===== v0.56.0: 今日の一回（暦専門店の入口） =====
-// 【権威】2026-10-13、「今日という日をどう生きるか、それだけ。暦をその人の暮らしに重ねる。それが暦専門店」との指示。
-// その日に最初に開いたとき、答えを伏せた問い（今日は何の節気？何の候？）を出し、自分で思い出してからめくる（想起）。
-// めくると、節気・候と何日目・月の形・西暦と曜日・皇紀、その暦の中に今日の予定を置いて見せる。
-// 最後に「今日という一回を、どう生きる？」とだけ置き、返事は求めない（味わったかを問うのは野暮）。過去・未来は問わない
+// ===== v0.58.0: 暦の注文票（暦専門店の芯） =====
+// 【権威】2026-10-13〜15、「今日という日をどう生きるか、それだけ。暦をその人の暮らしに重ねる。それが暦専門店」
+// 「一品しか出さない専門店だから、それをいろいろカスタマイズできる。一蘭の注文票を徹底的に真似し尽くせ」との指示。
+// v0.58.1: 【権威】2026-10-15、「店主の一言なんていらん。ラーメンで勝負、暦で勝負」「秘伝のたれを月に」「ねぎは皇紀以外も」との指示で対応を組み直した：
+//   器＝今日／スープ＝暦（専門）／麺＝予定（毎日こなす本体）
+//   味の濃さ（3段）＝二十四節気・こってり度（5段）＝今日の一回の深さ・にんにく（5段）＝問いの数・
+//   ねぎ（白・青・両方）＝年の数え方（白ねぎ＝皇紀、青ねぎ＝他の暦から選ぶ）・チャーシュー（あり・なし）＝七十二候・
+//   秘伝のたれ（5段・（ ）倍）＝月（丼の真ん中の赤い一点＝暦の空に浮かぶ月）・麺のかたさ（5段）＝今日の予定の盛り方。
+//   「出てくる時」は丼の中身ではなく、いつ店に入るかなので、注文票の下に別の1行で置く。
+// 言葉はこよみるのもの（一蘭の名前・言い回しは使わない）。注文は allSettings.ui.koyomiOrder に1つのまとまりで持つ（第41条・第71条④）。
 var MOON_SHAPE_NAMES = [
   [1, '新月'], [2, '二日月'], [4, '三日月'], [6.5, '夕月'], [8.5, '上弦の月'], [11.5, '十日夜の月'], [13.5, '十三夜の月'],
   [15.5, '満月'], [16.5, '十六夜の月'], [17.5, '立待月'], [18.5, '居待月'], [19.5, '寝待月'], [21.5, '更待月'],
@@ -22076,7 +22082,139 @@ function moonShapeName(age) {
   return '新月';
 }
 window.moonShapeName = moonShapeName;
-// 今日の一回の中身（暦と、その暦の中に置く今日の予定）
+
+var KOYOMI_ORDER_DEFAULT = {
+  sekkiStrength: 'basic',                       // 二十四節気（ラーメンなら味の濃さ）
+  richness: 'basic',                            // 今日の一回の深さ（こってり度）
+  questionCount: 'basic',                       // 問いの数（にんにく）
+  yearNegi: { white: true, blue: true },        // 年の数え方（ねぎ）。白ねぎ＝皇紀・青ねぎ＝他の暦（両方に〇も可）
+  blueEra: 'wareki',                            // 青ねぎで添える暦
+  kou72: true,                                  // 七十二候（チャーシュー）
+  moon: 'basic',                                // 月（秘伝のたれ）
+  moonTimes: 3,                                 // 「（ ）倍」の数（3〜10）
+  schedule: 'basic',                            // 今日の予定の盛り方（麺のかたさ）
+  timing: 'basic'                               // 出てくる時（注文票の下の別の1行）
+};
+window.KOYOMI_ORDER_DEFAULT = KOYOMI_ORDER_DEFAULT;
+// 青ねぎで選べる年の数え方（他の暦の計算をそのまま使う）
+var KOYOMI_BLUE_ERAS = [
+  ['wareki', '和暦（令和）'], ['eto', '年の干支'], ['butsureki', '仏暦'], ['minkoku', '民国暦'], ['hijri', 'ヒジュラ暦'], ['hebrew', 'ヘブライ暦']
+];
+window.KOYOMI_BLUE_ERAS = KOYOMI_BLUE_ERAS;
+var KOYOMI_ORDER_ITEMS = [
+  { key: 'sekkiStrength', name: '二十四節気', ramen: '味の濃さ', options: [
+    ['light', 'うす味', '名前だけ'], ['basic', '基本', '＋読み方・何日目'], ['rich', 'こい味', '＋雑節・六曜・日の干支'] ] },
+  { key: 'richness', name: '今日の一回の深さ', ramen: 'こってり度', options: [
+    ['none', 'なし', '問いかけない。札を押せば見られる'], ['light', 'あっさり', '問わずに、今日の暦を1行だけ'],
+    ['basic', '基本', '問う → めくる → 今日の暦'], ['rich', 'こってり', '＋「今日という一回を、どう生きる？」'],
+    ['extraRich', '超こってり', '＋二度と戻らない今日の一言と、日誌への一言'] ] },
+  { key: 'questionCount', name: '問いの数', ramen: 'にんにく', options: [
+    ['none', 'なし', '問わずに、すぐ答え'], ['one', '1問', '節気'], ['basic', '基本', '節気と候'],
+    ['three', '3問', '＋月の形'], ['all', '全部', '＋候の何日目・年'] ] },
+  { key: 'yearNegi', name: '年の数え方', ramen: 'ねぎ', multi: true, options: [
+    ['white', '白ねぎ', '皇紀'], ['blue', '青ねぎ', '他の暦から選ぶ'] ] },
+  { key: 'kou72', name: '七十二候', ramen: 'チャーシュー', options: [
+    [false, 'なし', ''], [true, 'あり', '候の名前・何日目・読み方・意味'] ] },
+  { key: 'moon', name: '月', ramen: '秘伝のたれ', options: [
+    ['none', 'なし', ''], ['half', '1/2', '月の形'], ['basic', '基本', '＋月齢'],
+    ['double', '2倍', '＋次の満月・新月まで何日'], ['times', '（　）倍', '＋今月の満ち欠けの日付まで'] ] },
+  { key: 'schedule', name: '今日の予定の盛り方', ramen: '麺のかたさ', options: [
+    ['all', '超かた', '全部'], ['more', 'かため', '10件まで'], ['basic', '基本', '5件まで'],
+    ['timed', 'やわめ', '時刻のある予定だけ'], ['none', '超やわ', '出さない'] ] }
+];
+window.KOYOMI_ORDER_ITEMS = KOYOMI_ORDER_ITEMS;
+// 出てくる時（丼の中身ではなく、いつ店に入るか。注文票の下の別の1行）
+var KOYOMI_TIMING_OPTIONS = [
+  ['everyOpen', '開くたびに'], ['firstOfDay', 'その日の最初に開いたとき'], ['basic', '1日1回、いつか'],
+  ['whimsical', '数日に1回、気まぐれに'], ['onlyChip', '自分で札を押したときだけ']
+];
+window.KOYOMI_TIMING_OPTIONS = KOYOMI_TIMING_OPTIONS;
+function _koyomiOrderValid(key, val) {
+  if (key === 'timing') return KOYOMI_TIMING_OPTIONS.some(function(o) { return o[0] === val; });
+  if (key === 'blueEra') return KOYOMI_BLUE_ERAS.some(function(o) { return o[0] === val; });
+  var it = KOYOMI_ORDER_ITEMS.filter(function(x) { return x.key === key; })[0];
+  return !!it && it.options.some(function(o) { return o[0] === val; });
+}
+var _KOYOMI_ORDER_ENUM_KEYS = ['sekkiStrength', 'richness', 'questionCount', 'moon', 'schedule', 'timing', 'blueEra'];
+// 今の注文（保存が無ければ基本）。
+// 第48条：前の版（v0.56）で「今日の暦の問いかけ」を外していた人は、深さ「なし」から。
+// v0.58.0 で保存した注文（暦の濃さ・ねぎ＝和/空・今日の予定・店主の一言）は、新しい対応に読み替える
+function getKoyomiOrder() {
+  var o = JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT));
+  var ui = (allSettings && allSettings.ui) || {};
+  var saved = ui.koyomiOrder;
+  if (saved && typeof saved === 'object') {
+    if (saved.koyomiStrength && !saved.sekkiStrength) {   // v0.58.0 の注文
+      if (_koyomiOrderValid('sekkiStrength', saved.koyomiStrength)) o.sekkiStrength = saved.koyomiStrength;
+      o.kou72 = saved.koyomiStrength !== 'light';
+      if (saved.sideKoyomi) { o.yearNegi = { white: saved.sideKoyomi.wa === true, blue: saved.sideKoyomi.wa === true }; o.moon = saved.sideKoyomi.sora === false ? 'none' : 'basic'; }
+      if (saved.todaySchedule === false) o.schedule = 'none';
+    }
+    _KOYOMI_ORDER_ENUM_KEYS.forEach(function(k) { if (_koyomiOrderValid(k, saved[k])) o[k] = saved[k]; });
+    if (typeof saved.kou72 === 'boolean') o.kou72 = saved.kou72;
+    if (saved.yearNegi && typeof saved.yearNegi === 'object') o.yearNegi = { white: saved.yearNegi.white === true, blue: saved.yearNegi.blue === true };
+    var n = parseInt(saved.moonTimes, 10);
+    if (n >= 3 && n <= 10) o.moonTimes = n;
+  } else if (ui.koyomiToday === false) {
+    o.richness = 'none';
+  }
+  return o;
+}
+window.getKoyomiOrder = getKoyomiOrder;
+function setKoyomiOrder(order) {
+  if (!allSettings.ui) allSettings.ui = {};
+  var next = getKoyomiOrder();
+  if (order) {
+    _KOYOMI_ORDER_ENUM_KEYS.forEach(function(k) { if (_koyomiOrderValid(k, order[k])) next[k] = order[k]; });
+    if (typeof order.kou72 === 'boolean') next.kou72 = order.kou72;
+    if (order.yearNegi) next.yearNegi = { white: order.yearNegi.white === true, blue: order.yearNegi.blue === true };
+    if (order.moonTimes !== undefined) { var n = parseInt(order.moonTimes, 10); next.moonTimes = Math.max(3, Math.min(10, isFinite(n) ? n : 3)); }
+  }
+  allSettings.ui.koyomiOrder = next;
+  saveAllSettings();
+  try { renderKoyomiChips(); } catch (e) {}
+  return next;
+}
+window.setKoyomiOrder = setKoyomiOrder;
+function _koyomiOptLabel(key, val) {
+  var it = KOYOMI_ORDER_ITEMS.filter(function(x) { return x.key === key; })[0];
+  var op = it && it.options.filter(function(p) { return p[0] === val; })[0];
+  return op ? op[1] : '';
+}
+function _koyomiBlueEraName(id) { var e = KOYOMI_BLUE_ERAS.filter(function(x) { return x[0] === id; })[0]; return e ? e[1] : ''; }
+// 注文を一言で（設定・画像・トーストに使う）
+function koyomiOrderSummary(o) {
+  o = o || getKoyomiOrder();
+  var negi = (o.yearNegi.white && o.yearNegi.blue) ? '白ねぎ・青ねぎ' : o.yearNegi.white ? '白ねぎ' : o.yearNegi.blue ? '青ねぎ' : 'ねぎなし';
+  var moon = o.moon === 'times' ? o.moonTimes + '倍' : _koyomiOptLabel('moon', o.moon);
+  return '節気 ' + _koyomiOptLabel('sekkiStrength', o.sekkiStrength) + '・深さ ' + _koyomiOptLabel('richness', o.richness) + '・問い ' + _koyomiOptLabel('questionCount', o.questionCount) +
+    '・' + negi + '・七十二候 ' + (o.kou72 ? 'あり' : 'なし') + '・月 ' + moon + '・予定 ' + _koyomiOptLabel('schedule', o.schedule);
+}
+window.koyomiOrderSummary = koyomiOrderSummary;
+
+// 今日の暦の中身（材料はアプリの中の計算を使う）
+var _JIKKAN = '甲乙丙丁戊己庚辛壬癸', _JUNISHI = '子丑寅卯辰巳午未申酉戌亥';
+function koyomiBlueEraLabel(id, d) {
+  var y = d.getFullYear(), m = d.getMonth() + 1, dd = d.getDate();
+  try {
+    if (id === 'wareki') return (typeof _toWareki === 'function' ? _toWareki(y, m, dd) : '') || '';
+    if (id === 'eto') { var i = ((y - 4) % 60 + 60) % 60; return _JIKKAN.charAt(i % 10) + _JUNISHI.charAt(i % 12) + 'の年'; }
+    if (id === 'butsureki') return typeof _toButsureki === 'function' ? _toButsureki(y) : '';
+    if (id === 'minkoku') return (typeof _toMinkoku === 'function' ? _toMinkoku(y) : '') || '';
+    if (id === 'hijri') return (typeof _toHijriLabel === 'function' ? _toHijriLabel(y, m, dd) : '') || '';
+    if (id === 'hebrew') return (typeof _toHebrewLabel === 'function' ? _toHebrewLabel(y, m, dd) : '') || '';
+  } catch (e) {}
+  return '';
+}
+window.koyomiBlueEraLabel = koyomiBlueEraLabel;
+// 月の満ち欠けの日付（その年と翌年から、今日より後の次の満月・新月、今月の4つ）
+function _koyomiMoonEvents(d) {
+  var ymd = getLocalDateStr(d), ym = ymd.slice(0, 7), all = [];
+  try { all = (typeof getMoonPhaseEvents === 'function') ? getMoonPhaseEvents(d.getFullYear()).concat(getMoonPhaseEvents(d.getFullYear() + 1)) : []; } catch (e) {}
+  var daysTo = function(x) { var p = x.split('-').map(Number), q = ymd.split('-').map(Number); return Math.round((new Date(p[0], p[1] - 1, p[2]) - new Date(q[0], q[1] - 1, q[2])) / 86400000); };
+  var next = function(type) { var e = all.filter(function(x) { return x.type === type && x.date > ymd; })[0]; return e ? { date: e.date, days: daysTo(e.date) } : null; };
+  return { nextFull: next(2), nextNew: next(0), thisMonth: all.filter(function(x) { return x.date.slice(0, 7) === ym; }).map(function(x) { return { name: x.name, date: x.date }; }) };
+}
 function koyomiTodayData(dateObj) {
   var d = dateObj || new Date();
   var ymd = getLocalDateStr(d);
@@ -22084,72 +22222,234 @@ function koyomiTodayData(dateObj) {
   var kou = (typeof getCurrentShichijuniKou === 'function') ? getCurrentShichijuniKou(noon) : null;
   var age = (typeof calcMoonAgeNAOJ === 'function') ? calcMoonAgeNAOJ(noon) : null;
   var wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-  var items = (allTasks || []).filter(function(t) {
+  var nextKou = null;
+  if (kou && kou.totalDays && kou.dayInKou) {
+    var nd = new Date(noon.getTime()); nd.setDate(nd.getDate() + (kou.totalDays - kou.dayInKou + 1));
+    var nk = getCurrentShichijuniKou(nd);
+    if (nk) nextKou = { name: nk.name, reading: nk.reading, startYmd: getLocalDateStr(nd) };
+  }
+  var tasks = (allTasks || []).filter(function(t) {
     return t && (t.kind || 'task') === 'task' && t.date === ymd && !t.completed && !t.done && !t.deletedAt;
-  }).sort(function(a, b) { return String(a.time || '99:99').localeCompare(String(b.time || '99:99')); })
-    .map(function(t) { return (t.time ? t.time + '　' : '') + String(t.text || ''); });
+  }).sort(function(a, b) { return String(a.time || '99:99').localeCompare(String(b.time || '99:99')); });
   var marks = (typeof tokiMarksOnDate === 'function') ? tokiMarksOnDate(ymd).map(function(m) {
-    return m.name + '　' + (m.box || m.buyer || '') + (m.plan && m.self ? '（自分が行く）' : '');
+    return { text: m.name + '　' + (m.box || m.buyer || '') + (m.plan && m.self ? '（自分が行く）' : ''), timed: true };
   }) : [];
+  var kanshiIdx = (typeof _dayKanshiIndex === 'function') ? _dayKanshiIndex(d.getFullYear(), d.getMonth() + 1, d.getDate()) : null;
   return {
-    ymd: ymd,
+    date: d, ymd: ymd,
     sekki: kou ? kou.sekkiName : '',
     sekkiReading: (kou && typeof getNijushiSekkiReading === 'function') ? (getNijushiSekkiReading(kou.sekkiName) || '') : '',
     sekkiDay: kou ? kou.sekkiDay : null,
     kou: kou ? kou.name : '',
     kouReading: kou ? kou.reading : '',
+    kouDesc: kou ? (kou.desc || '') : '',
     kouDay: kou ? kou.dayInKou : null,
+    nextKou: nextKou,
     moonAge: age,
     moonName: moonShapeName(age),
+    moonEvents: _koyomiMoonEvents(d),
     dateText: d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + wd + '曜日',
     koki: (typeof _toKoki === 'function') ? _toKoki(d.getFullYear()) : '',
-    items: marks.concat(items)
+    rokuyo: (typeof getRokuyo === 'function') ? (getRokuyo(ymd) || '') : '',
+    zassetsu: (typeof getZassetsuOnDate === 'function') ? getZassetsuOnDate(ymd) : [],
+    kanshi: kanshiIdx === null ? '' : (_JIKKAN.charAt(kanshiIdx % 10) + _JUNISHI.charAt(kanshiIdx % 12)),
+    items: marks.concat(tasks.map(function(t) { return { text: (t.time ? t.time + '　' : '') + String(t.text || ''), timed: !!t.time }; }))
   };
 }
 window.koyomiTodayData = koyomiTodayData;
+// 年の数え方（ねぎ）で添える年
+function koyomiYearLabels(v, order) {
+  var out = [];
+  if (order.yearNegi.white && v.koki) out.push(v.koki);
+  if (order.yearNegi.blue) { var b = koyomiBlueEraLabel(order.blueEra, v.date || new Date()); if (b) out.push(b); }
+  return out;
+}
+window.koyomiYearLabels = koyomiYearLabels;
+// 問い（問いの数で決まる。注文に無いもの＝候なし・月なしは問わない）
+function koyomiQuestions(order) {
+  var c = order.questionCount;
+  if (c === 'none') return [];
+  var pool = ['今日の二十四節気は？'];
+  if (order.kou72) pool.push('今日の七十二候は？');
+  if (order.moon !== 'none') pool.push('今夜の月の形は？');
+  var deep = [];
+  if (order.kou72) deep.push('今日は、その候の何日目？');
+  if (order.yearNegi.white) deep.push('今年は、皇紀何年？');
+  var n = { one: 1, basic: 2, three: 3, all: 99 }[c] || 2;
+  return pool.concat(c === 'all' ? deep : []).slice(0, n);
+}
+window.koyomiQuestions = koyomiQuestions;
+// もう一問（替え玉）。まだ出していない問いから1つ
+function koyomiExtraQuestion(v, asked) {
+  var pool = [
+    ['今日の六曜は？', v.rokuyo], ['今日の日の干支は？', v.kanshi], ['今日の候の読み方は？', v.kouReading],
+    ['今年は、皇紀何年？', v.koki], ['今夜の月の形は？', v.moonName], ['今年の干支は？', koyomiBlueEraLabel('eto', v.date || new Date())],
+    ['次の候は？', v.nextKou ? v.nextKou.name + '（' + v.nextKou.reading + '）' : ''],
+    ['次の満月まで、あと何日？', v.moonEvents && v.moonEvents.nextFull ? v.moonEvents.nextFull.days + '日（' + v.moonEvents.nextFull.date.slice(5).replace('-', '/') + '）' : '']
+  ];
+  if (v.zassetsu && v.zassetsu.length) pool.push(['今日は、何の日（雑節）？', v.zassetsu.join('・')]);
+  pool = pool.filter(function(p) { return p[1] && (asked || []).indexOf(p[0]) === -1; });
+  if (!pool.length) return null;
+  var p = pool[Math.floor(Math.random() * pool.length)];
+  return { q: p[0], a: p[1] };
+}
+window.koyomiExtraQuestion = koyomiExtraQuestion;
+
+// 出てくる時の判断（純粋な関数。ctx：その日の最初の起動か・今の時・乱数・最後に出してから何日か・今日もう出したか）
+function koyomiDecideAutoShow(order, ctx) {
+  if (!order || order.richness === 'none') return false;
+  var t = order.timing;
+  if (t === 'onlyChip') return false;
+  if (t === 'everyOpen') return true;
+  if (ctx.shownToday) return false;
+  if (t === 'firstOfDay') return !!ctx.firstOpenToday;
+  if (t === 'basic') return !ctx.firstOpenToday && (ctx.rand < 0.35 || ctx.hour >= 20);
+  if (t === 'whimsical') return !ctx.firstOpenToday && ctx.daysSinceShown >= 3 && (ctx.rand < 0.25 || ctx.daysSinceShown >= 7);
+  return false;
+}
+window.koyomiDecideAutoShow = koyomiDecideAutoShow;
+// ---- 今日の暦のカード ----
+var KOYOMI_TODAY_KEY = 'koyomiTodayShownOn';     // その日にもう出したか（端末ごと）
+var KOYOMI_FLIPPED_KEY = 'koyomiTodayFlippedOn';  // その日にもうめくったか（めくったら、見出しの札に答えを出す）
+function koyomiFlippedToday() { try { return localStorage.getItem(KOYOMI_FLIPPED_KEY) === getLocalDateStr(new Date()); } catch (e) { return false; } }
+window.koyomiFlippedToday = koyomiFlippedToday;
+function _koyomiMarkFlipped() {
+  if (window._isTesting) return;   // 第7条：テスト中は端末に書かない
+  try { localStorage.setItem(KOYOMI_FLIPPED_KEY, getLocalDateStr(new Date())); } catch (e) {}
+}
+// めくったあとの面（注文に合わせて組み立てる。全部、暦で勝負。店主の一言は無い）
+function koyomiAnswerHtml(v, order, esc) {
+  var line = function(html, style) { return '<div style="' + (style || '') + '">' + html + '</div>'; };
+  var h = '';
+  // 二十四節気（味の濃さ）
+  h += line(esc(v.sekki), 'font-size:1.9em;font-weight:700;margin:12px 0 0;color:#3a3226;');
+  if (order.sekkiStrength !== 'light') {
+    if (v.sekkiReading) h += line(esc(v.sekkiReading) + (v.sekkiDay ? '　' + v.sekkiDay + '日目' : ''), 'font-size:0.78em;color:#a99f8c;');
+  }
+  if (order.sekkiStrength === 'rich') {
+    var rich = [];
+    if (v.zassetsu && v.zassetsu.length) rich.push(esc(v.zassetsu.join('・')));
+    if (v.rokuyo) rich.push(esc(v.rokuyo));
+    if (v.kanshi) rich.push(esc(v.kanshi) + 'の日');
+    if (rich.length) h += line(rich.join('　'), 'margin-top:6px;font-size:0.9em;color:#6b5a3e;');
+  }
+  // 七十二候（チャーシュー）
+  if (order.kou72 && v.kou) {
+    h += line('七十二候「' + esc(v.kou) + '」の' + v.kouDay + '日目', 'font-size:1.05em;margin:12px 0 2px;color:#4a3f30;');
+    if (v.kouReading) h += line(esc(v.kouReading), 'font-size:0.78em;color:#a99f8c;');
+    if (v.kouDesc) h += line(esc(v.kouDesc), 'font-size:0.82em;color:#6b5a3e;margin-top:2px;');
+  }
+  // 月（秘伝のたれ）
+  if (order.moon !== 'none' && v.moonName) {
+    var mh = esc(v.moonName);
+    if (order.moon !== 'half') mh += '<span style="font-size:0.78em;color:#a99f8c;">（月齢 ' + (Math.round(v.moonAge * 10) / 10) + '）</span>';
+    h += line(mh, 'margin-top:12px;color:#b0443a;font-weight:700;');
+    var ev = v.moonEvents || {};
+    if ((order.moon === 'double' || order.moon === 'times')) {
+      var nx = [];
+      if (ev.nextFull) nx.push('満月まで あと' + ev.nextFull.days + '日');
+      if (ev.nextNew) nx.push('新月まで あと' + ev.nextNew.days + '日');
+      if (nx.length) h += line(esc(nx.join('　')), 'font-size:0.82em;color:#8a6a5e;');
+    }
+    if (order.moon === 'times' && ev.thisMonth && ev.thisMonth.length)
+      h += line(esc(ev.thisMonth.map(function(e) { return e.name + ' ' + e.date.slice(5).replace('-', '/'); }).join('・')), 'font-size:0.78em;color:#8a6a5e;');
+  }
+  // 西暦と、年の数え方（ねぎ）
+  h += line(esc(v.dateText), 'margin-top:12px;font-size:0.92em;color:#4a3f30;');
+  var years = koyomiYearLabels(v, order);
+  if (years.length) h += line(esc(years.join('・')), 'font-size:0.85em;color:#8a7f6a;');
+  // 今日の予定（麺のかたさ＝盛り方）
+  if (order.schedule !== 'none') {
+    var its = (v.items || []).filter(function(x) { return order.schedule !== 'timed' || x.timed; });
+    var cap = { all: 999, more: 10, basic: 5, timed: 999 }[order.schedule] || 5;
+    var where = (order.kou72 && v.kou) ? ('この' + esc(v.kou) + 'の' + v.kouDay + '日目に ──') : ('この' + esc(v.sekki) + 'の日に ──');
+    var list = its.length
+      ? its.slice(0, cap).map(function(x) { return '<div style="padding:3px 0;">' + esc(x.text) + '</div>'; }).join('') + (its.length > cap ? '<div style="color:#a99f8c;">ほか ' + (its.length - cap) + ' 件</div>' : '')
+      : '<div style="color:#a99f8c;">予定のない、まっさらな一日。</div>';
+    h += '<div style="margin:16px auto 0;padding-top:14px;border-top:1px dashed #e0d6c2;text-align:left;font-size:0.9em;color:#4a3f30;max-width:330px;">' +
+      '<div style="color:#8a7f6a;margin-bottom:4px;">' + where + '</div>' + list + '</div>';
+  }
+  // 今日の一回の深さ（こってり度）
+  if (order.richness === 'rich' || order.richness === 'extraRich')
+    h += line('今日という一回を、どう生きる？', 'margin-top:20px;font-size:1.05em;font-weight:700;color:#6b4f2a;');
+  if (order.richness === 'extraRich') {
+    h += line('地球は今日も、二度と戻らない場所を進んでいます。', 'margin-top:8px;font-size:0.85em;color:#8a7f6a;');
+    h += '<div style="margin:10px auto 0;max-width:330px;"><textarea id="koyomiTodayWord" rows="2" placeholder="今日の一言（日誌に残ります）" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #e0d6c2;border-radius:8px;font-size:16px;font-family:inherit;background:#fff;"></textarea>' +
+      '<button type="button" data-kt="word" style="margin-top:6px;padding:6px 14px;border:1px solid #6b4f2a;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.85em;cursor:pointer;">日誌に残す</button></div>';
+  }
+  return h;
+}
+window.koyomiAnswerHtml = koyomiAnswerHtml;
+// 超こってりの一言を、今日の日誌に残す
+function saveKoyomiTodayWord(text) {
+  text = String(text || '').trim();
+  if (!text) return false;
+  var today = getLocalDateStr(new Date()), now = new Date().toISOString();
+  var j = allTasks.filter(function(t) { return t && t.kind === 'journal' && t.date === today; })[0];
+  if (!j) { j = { id: generateTaskId(), kind: 'journal', date: today, text: '', thoughts: [], mood: 0, condition: 0, weather: '', savedAt: now, createdAt: now, updatedAt: now }; allTasks.push(j); }
+  allTasks.push({ id: generateTaskId(), kind: 'thought', parentId: j.id, text: text.slice(0, 500), createdAt: now, updatedAt: now });
+  saveAllTasks();
+  return true;
+}
+window.saveKoyomiTodayWord = saveKoyomiTodayWord;
+// カードを開く。opts.face：'question' か 'answer'（無ければ注文とめくったかで決める）。opts.order はテスト用
 function openKoyomiToday(dateObj, opts) {
+  opts = opts || {};
   var old = document.getElementById('koyomiTodayOverlay'); if (old) old.remove();
   var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var order = opts.order || getKoyomiOrder();
   var v = koyomiTodayData(dateObj);
+  var questions = koyomiQuestions(order);
+  var face = opts.face || ((order.richness === 'none' || order.richness === 'light' || !questions.length || koyomiFlippedToday()) ? 'answer' : 'question');
+  var asked = questions.slice();
   var ov = document.createElement('div');
   ov.id = 'koyomiTodayOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(20,20,30,0.55);display:flex;align-items:center;justify-content:center;padding:18px;';
-  var card = '<div style="background:#fffdf7;border-radius:18px;max-width:420px;width:100%;max-height:90vh;overflow:auto;padding:26px 22px 18px;box-shadow:0 12px 36px rgba(0,0,0,0.3);text-align:center;font-family:inherit;">';
-  // 問い（答えは伏せる）
-  var ask = card +
-    '<div style="font-size:0.8em;color:#9a8f7a;letter-spacing:.2em;">今日の暦</div>' +
-    '<div style="font-size:1.35em;font-weight:700;margin:18px 0 8px;line-height:1.7;color:#3a3226;">今日は、何の節気？<br>何の候？</div>' +
+  var cardOpen = '<div style="background:#fffdf7;border-radius:18px;max-width:420px;width:100%;max-height:90vh;overflow:auto;padding:24px 22px 16px;box-shadow:0 12px 36px rgba(0,0,0,0.3);text-align:center;font-family:inherit;">' +
+    '<div style="font-size:0.8em;color:#9a8f7a;letter-spacing:.2em;">今日の暦</div>';
+  var ask = cardOpen +
+    '<div style="font-size:1.25em;font-weight:700;margin:18px 0 8px;line-height:1.8;color:#3a3226;">' + questions.map(esc).join('<br>') + '</div>' +
     '<div style="font-size:0.8em;color:#a99f8c;margin-bottom:22px;">頭の中で思い出してから、めくってください</div>' +
     '<button type="button" data-kt="flip" style="padding:12px 34px;border:none;border-radius:999px;background:#6b4f2a;color:#fff;font-size:1em;font-weight:700;cursor:pointer;">めくる</button>' +
     '<div><button type="button" data-kt="close" style="margin-top:12px;border:none;background:none;color:#b0a690;font-size:0.8em;cursor:pointer;">今はいい</button></div></div>';
-  // めくったあと（暦と、その暦の中の今日の予定）
-  var head = v.kou ? ('七十二候「' + esc(v.kou) + '」の' + v.kouDay + '日目') : '';
-  var where = v.kou ? ('この' + esc(v.kou) + 'の' + v.kouDay + '日目に ──') : '今日 ──';
-  var list = v.items.length
-    ? v.items.slice(0, 5).map(function(x) { return '<div style="padding:3px 0;">' + esc(x) + '</div>'; }).join('') + (v.items.length > 5 ? '<div style="color:#a99f8c;">ほか ' + (v.items.length - 5) + ' 件</div>' : '')
-    : '<div style="color:#a99f8c;">予定のない、まっさらな一日。</div>';
-  var ans = card +
-    '<div style="font-size:0.8em;color:#9a8f7a;letter-spacing:.2em;">今日の暦</div>' +
-    '<div style="font-size:1.9em;font-weight:700;margin:14px 0 0;color:#3a3226;">' + esc(v.sekki) + '</div>' +
-    (v.sekkiReading ? '<div style="font-size:0.78em;color:#a99f8c;">' + esc(v.sekkiReading) + '</div>' : '') +
-    '<div style="font-size:1.05em;margin:12px 0 2px;color:#4a3f30;">' + head + '</div>' +
-    (v.kouReading ? '<div style="font-size:0.78em;color:#a99f8c;">' + esc(v.kouReading) + '</div>' : '') +
-    (v.moonName ? '<div style="margin-top:10px;color:#4a3f30;">' + esc(v.moonName) + '<span style="font-size:0.78em;color:#a99f8c;">（月齢 ' + (Math.round(v.moonAge * 10) / 10) + '）</span></div>' : '') +
-    '<div style="margin-top:10px;font-size:0.92em;color:#4a3f30;">' + esc(v.dateText) + '</div>' +
-    '<div style="font-size:0.85em;color:#8a7f6a;">' + esc(v.koki) + '</div>' +
-    '<div style="margin:16px auto 0;padding-top:14px;border-top:1px dashed #e0d6c2;text-align:left;font-size:0.9em;color:#4a3f30;max-width:320px;">' +
-      '<div style="color:#8a7f6a;margin-bottom:4px;">' + where + '</div>' + list + '</div>' +
-    '<div style="margin-top:20px;font-size:1.05em;font-weight:700;color:#6b4f2a;">今日という一回を、どう生きる？</div>' +
-    '<button type="button" data-kt="close" style="margin-top:18px;padding:10px 34px;border:1px solid #6b4f2a;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.95em;cursor:pointer;">はじめる</button></div>';
-  ov.innerHTML = (opts && opts.flipped) ? ans : ask;   // v0.56.3: もうめくった日に札から開いたら、答えのまま
+  var intro = (!allSettings.ui || !allSettings.ui.koyomiOrderIntroShown)
+    ? '<div style="margin-top:14px;font-size:0.82em;color:#8a7f6a;">🍜 お好みに〇を付けますか？ <button type="button" data-kt="order" style="border:none;background:none;color:#b0443a;text-decoration:underline;cursor:pointer;font-size:1em;">暦の注文票</button></div>' : '';
+  var ans = function() {
+    return cardOpen + koyomiAnswerHtml(v, order, esc) +
+      '<div id="koyomiExtraArea" style="margin-top:12px;"></div>' + intro +
+      '<div style="margin-top:16px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">' +
+        '<button type="button" data-kt="extra" style="padding:7px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fffaf0;color:#6b4f2a;font-size:0.82em;cursor:pointer;">🍜 もう一問</button>' +
+        '<button type="button" data-kt="order" style="padding:7px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fffaf0;color:#6b4f2a;font-size:0.82em;cursor:pointer;">📜 注文票</button>' +
+        '<button type="button" data-kt="image" style="padding:7px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fffaf0;color:#6b4f2a;font-size:0.82em;cursor:pointer;">🖼 画像にする</button>' +
+      '</div>' +
+      '<button type="button" data-kt="close" style="margin-top:14px;padding:10px 34px;border:1px solid #6b4f2a;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.95em;cursor:pointer;">はじめる</button></div>';
+  };
+  var showAnswer = function() {
+    ov.innerHTML = ans();
+    if (intro && allSettings.ui && !window._isTesting) { allSettings.ui.koyomiOrderIntroShown = true; saveAllSettings(); }
+  };
+  if (face === 'answer') showAnswer(); else ov.innerHTML = ask;
   ov.addEventListener('click', function(e) {
     var b = e.target.closest && e.target.closest('[data-kt]');
     if (!b) { if (e.target === ov) ov.remove(); return; }
-    if (b.getAttribute('data-kt') === 'flip') {
-      ov.innerHTML = ans;
-      // v0.56.3: めくったことを覚え、見出しの札に答えを出す（テスト中は端末に書かない・第7条）
-      if (!window._isTesting) { try { localStorage.setItem(KOYOMI_FLIPPED_KEY, getLocalDateStr(new Date())); } catch (e2) {} }
-      if (typeof renderKoyomiChips === 'function') renderKoyomiChips();
+    var a = b.getAttribute('data-kt');
+    if (a === 'flip') { showAnswer(); _koyomiMarkFlipped(); try { renderKoyomiChips(); } catch (e2) {} return; }
+    if (a === 'extra') {
+      var x = koyomiExtraQuestion(v, asked);
+      var area = document.getElementById('koyomiExtraArea');
+      if (!area) return;
+      if (!x) { area.innerHTML = '<div style="font-size:0.85em;color:#a99f8c;">今日の問いは、これでおしまい。</div>'; return; }
+      asked.push(x.q);
+      area.innerHTML = '<div style="background:#fbf3e3;border-radius:10px;padding:10px;"><div style="font-weight:700;color:#3a3226;">' + esc(x.q) + '</div>' +
+        '<button type="button" data-kt="extraFlip" data-a="' + esc(x.a) + '" style="margin-top:6px;padding:5px 16px;border:none;border-radius:999px;background:#6b4f2a;color:#fff;font-size:0.85em;cursor:pointer;">めくる</button></div>';
+      return;
+    }
+    if (a === 'extraFlip') { b.outerHTML = '<div style="margin-top:6px;font-size:1.1em;color:#6b4f2a;font-weight:700;">' + esc(b.getAttribute('data-a')) + '</div>'; return; }
+    if (a === 'order') { ov.remove(); openKoyomiOrderSheet(); return; }
+    if (a === 'image') { shareKoyomiCanvas(drawKoyomiTodayCanvas(v, order), 'koyomi-today-' + v.ymd + '.png', '今日の暦 ' + v.sekki + (v.kou ? '・' + v.kou : '') + ' #こよみる'); return; }
+    if (a === 'word') {
+      var ta = document.getElementById('koyomiTodayWord');
+      if (ta && saveKoyomiTodayWord(ta.value)) { ta.value = ''; if (typeof showToast === 'function') showToast('今日の日誌に残しました', { type: 'ok' }); }
       return;
     }
     ov.remove();
@@ -22157,64 +22457,265 @@ function openKoyomiToday(dateObj, opts) {
   document.body.appendChild(ov);
 }
 window.openKoyomiToday = openKoyomiToday;
-// v0.56.3: 今日めくったか（めくったら、見出しの札に答えを出す）
-var KOYOMI_FLIPPED_KEY = 'koyomiTodayFlippedOn';
-function koyomiFlippedToday() { try { return localStorage.getItem(KOYOMI_FLIPPED_KEY) === getLocalDateStr(new Date()); } catch (e) { return false; } }
-window.koyomiFlippedToday = koyomiFlippedToday;
+// あっさり：問わずに、今日の暦を1行だけ（画面を覆わない。押せばカード）
+function showKoyomiLightBanner(dateObj) {
+  var old = document.getElementById('koyomiLightBanner'); if (old) old.remove();
+  var v = koyomiTodayData(dateObj), esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var bar = document.createElement('div');
+  bar.id = 'koyomiLightBanner';
+  // 画面の上のナビに重ならないよう、下（＋ボタンの上）に出す
+  bar.style.cssText = 'position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom, 0px) + 96px);transform:translateX(-50%);z-index:99990;background:#fffaf0;border:1px solid #d9c9a6;border-radius:999px;padding:7px 16px;font-size:0.88em;color:#6b4f2a;box-shadow:0 4px 14px rgba(0,0,0,0.12);cursor:pointer;white-space:nowrap;';
+  var _o = getKoyomiOrder();
+  bar.textContent = '今日は ' + v.sekki + (_o.kou72 && v.kou ? '・' + v.kou + '（' + v.kouDay + '日目）' : '');
+  bar.onclick = function() { bar.remove(); openKoyomiToday(dateObj, { face: 'answer' }); };
+  document.body.appendChild(bar);
+  setTimeout(function() { if (bar.parentNode) bar.remove(); }, 7000);
+}
+window.showKoyomiLightBanner = showKoyomiLightBanner;
+
+// ---- 見出しの札 ----
 function renderKoyomiChips() {
   var txt;
   if (koyomiFlippedToday()) {
-    var v = koyomiTodayData(new Date());
-    txt = v.kou ? (v.sekki + '・' + v.kou + '（' + v.kouDay + '日目）') : v.sekki;
+    var v = koyomiTodayData(new Date()), o = getKoyomiOrder();
+    txt = (o.kou72 && v.kou) ? (v.sekki + '・' + v.kou + '（' + v.kouDay + '日目）') : v.sekki;
   } else txt = '今日の暦 ？';
   ['monthlyKoyomiChip', 'monthlyKoyomiChipSub'].forEach(function(id) { var e = document.getElementById(id); if (e) e.textContent = txt; });
+  var sum = document.getElementById('koyomiOrderSummarySettings');
+  if (sum) sum.textContent = koyomiOrderSummary();
 }
 window.renderKoyomiChips = renderKoyomiChips;
-function koyomiChipClick() { openKoyomiToday(new Date(), { flipped: koyomiFlippedToday() }); }
+function koyomiChipClick() { openKoyomiToday(new Date()); }
 window.koyomiChipClick = koyomiChipClick;
-// その日に最初に開いたときだけ出す（テスト中・初めての案内などが出ている間は出さない。設定で止められる）
-var KOYOMI_TODAY_KEY = 'koyomiTodayShownOn';
-// v0.56.1: 【権威】2026-10-13、新しい版を読み込んだ直後、自動で開く「お知らせ」に、今日の暦がいきなりかぶる、との指摘。
-// ほかの画面（お知らせ・初めての案内・案件の質問・季節の風だより）が開いている間は待ち、閉じたら出す。
-// 前は「何かが開いていたら、その日は出さない」だったので、新しい版を読み込んだ日に出なくなっていた
-// v0.56.2: 待ち方は、起動の画面を1つずつ出す道具（whenStartupClear）にまとめた
-function maybeShowKoyomiToday() {
-  try { renderKoyomiChips(); } catch (eC) {}   // v0.56.3: 見出しの札も起動のときに描く
+// 札を長押し（PCは右クリック）で注文票
+function bindKoyomiChipOrderGesture() {
+  ['monthlyKoyomiChip', 'monthlyKoyomiChipSub'].forEach(function(id) {
+    var e = document.getElementById(id); if (!e || e._koyomiOrderBound) return;
+    e._koyomiOrderBound = true;
+    e.addEventListener('contextmenu', function(ev) { ev.preventDefault(); openKoyomiOrderSheet(); });
+    var timer = null;
+    e.addEventListener('touchstart', function() { timer = setTimeout(function() { timer = 'fired'; openKoyomiOrderSheet(); }, 600); }, { passive: true });
+    e.addEventListener('touchend', function(ev) { if (timer === 'fired') { ev.preventDefault(); } else clearTimeout(timer); timer = null; });
+    e.addEventListener('touchmove', function() { if (timer && timer !== 'fired') clearTimeout(timer); timer = null; }, { passive: true });
+  });
+}
+window.bindKoyomiChipOrderGesture = bindKoyomiChipOrderGesture;
+
+// ---- 起動のときの出し方（出てくる時） ----
+var KOYOMI_OPEN_COUNT_KEY = 'koyomiOpenCount';   // その日に何回開いたか（端末ごと。{date, count}）
+function _koyomiCountOpenOnce() {
+  if (window._koyomiOpenCtx) return window._koyomiOpenCtx;
+  var today = getLocalDateStr(new Date()), count = 1;
   try {
-    var chk = document.getElementById('koyomiTodayCheck');
-    if (chk) chk.checked = !(allSettings && allSettings.ui && allSettings.ui.koyomiToday === false);
+    var rec = JSON.parse(localStorage.getItem(KOYOMI_OPEN_COUNT_KEY) || 'null');
+    count = (rec && rec.date === today) ? (Number(rec.count) || 0) + 1 : 1;
+    if (!window._isTesting) localStorage.setItem(KOYOMI_OPEN_COUNT_KEY, JSON.stringify({ date: today, count: count }));
+  } catch (e) {}
+  var last = '';
+  try { last = localStorage.getItem(KOYOMI_TODAY_KEY) || ''; } catch (e) {}
+  var days = 999;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(last)) { var p = last.split('-').map(Number); days = Math.round((new Date(today.replace(/-/g, '/')) - new Date(p[0], p[1] - 1, p[2])) / 86400000); }
+  window._koyomiOpenCtx = { today: today, firstOpenToday: count === 1, opensToday: count, hour: new Date().getHours(), rand: Math.random(), daysSinceShown: days, shownToday: last === today };
+  return window._koyomiOpenCtx;
+}
+// このページを開いたときに、今日の暦を自動で出すか（1回だけ決める。季節の風だよりの判断と同じ答えを使う）
+function koyomiAutoDecision() {
+  if (window._isTesting) return false;
+  if (window._koyomiAutoDecisionCache !== undefined) return window._koyomiAutoDecisionCache;
+  var d = koyomiDecideAutoShow(getKoyomiOrder(), _koyomiCountOpenOnce());
+  window._koyomiAutoDecisionCache = d;
+  return d;
+}
+window.koyomiAutoDecision = koyomiAutoDecision;
+// 季節の風だよりの代わりに出すか：この起動でカードを出すなら、その回は季節の風だよりの代わり（2つ続けて閉じさせない）。
+// あっさりの1行は画面を覆わないので、代わりにしない
+function koyomiTodayWillShow() {
+  try {
     if (window._isTesting) return false;
-    if (allSettings && allSettings.ui && allSettings.ui.koyomiToday === false) return false;
-    var today = getLocalDateStr(new Date());
-    if (localStorage.getItem(KOYOMI_TODAY_KEY) === today) return false;
-    // ほかの画面が開いている間は待つ（1秒ごとに見て、閉じたら出す。30分待っても閉じなければ、その日はやめる）。
-    // 初めての案内のときは待たない（初めての人には、まず案内に集中してもらう）
+    return koyomiAutoDecision() && getKoyomiOrder().richness !== 'light';
+  } catch (e) { return false; }
+}
+window.koyomiTodayWillShow = koyomiTodayWillShow;
+function maybeShowKoyomiToday() {
+  try { renderKoyomiChips(); bindKoyomiChipOrderGesture(); } catch (eC) {}
+  try {
+    if (window._isTesting) return false;
     var setup = document.getElementById('setupOverlay');
     if (setup && getComputedStyle(setup).display !== 'none') return false;
+    if (!koyomiAutoDecision()) return false;
     if (startupModalOpen()) { whenStartupClear(maybeShowKoyomiToday); return false; }
-    localStorage.setItem(KOYOMI_TODAY_KEY, today);
-    window._koyomiTodayShownNow = true;   // 同じ日の「新しい候へ」のトーストは控える（同じことを2度言わない）
-    openKoyomiToday(new Date());
+    if (window._koyomiShownThisPage) return false;
+    window._koyomiShownThisPage = true;
+    try { localStorage.setItem(KOYOMI_TODAY_KEY, getLocalDateStr(new Date())); } catch (e) {}
+    window._koyomiTodayShownNow = true;   // 同じ日の「新しい候へ」のトーストは控える
+    if (getKoyomiOrder().richness === 'light') showKoyomiLightBanner(new Date());
+    else { window._koyomiCardShownNow = true; openKoyomiToday(new Date()); }   // カードを出した回は、季節の風だよりの代わり
     return true;
   } catch (e) { return false; }
 }
 window.maybeShowKoyomiToday = maybeShowKoyomiToday;
-// 今日の暦のカードを、このあと出すか（季節の風だよりと重ねないため）
-function koyomiTodayWillShow() {
+// ---- 暦の注文票（紙） ----
+// 一蘭の用紙のように、各項目に〇を付ける。どの項目にも「基本」があり、何も変えずに決めてもよい。
+// いつでも書き直せる（札の長押し・カードの「📜 注文票」・設定の「画面の見え方」の日次ビュー）
+function openKoyomiOrderSheet() {
+  var old = document.getElementById('koyomiOrderOverlay'); if (old) old.remove();
+  var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var draft = getKoyomiOrder();
+  var ov = document.createElement('div');
+  ov.id = 'koyomiOrderOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(20,20,30,0.55);display:flex;align-items:center;justify-content:center;padding:12px;';
+  var circle = function(on) { return '<span style="display:inline-block;width:15px;height:15px;border-radius:50%;border:2px solid ' + (on ? '#b0443a' : '#cbbf9f') + ';background:' + (on ? '#b0443a' : '#fff') + ';vertical-align:-2px;margin-right:5px;"></span>'; };
+  var render = function() {
+    var rows = KOYOMI_ORDER_ITEMS.map(function(it) {
+      var opts = it.options.map(function(op) {
+        var val = op[0], on;
+        if (it.multi) on = !!draft.yearNegi[val];
+        else on = draft[it.key] === val;
+        var label = op[1];
+        if (it.key === 'moon' && val === 'times') label = '（<select data-ko-times style="font-size:14px;padding:0 2px;">' + [3,4,5,6,7,8,9,10].map(function(n) { return '<option value="' + n + '"' + (draft.moonTimes === n ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>）倍';
+        var hint = op[2];
+        if (it.key === 'yearNegi' && val === 'blue') hint = '他の暦から：<select data-ko-blue style="font-size:13px;padding:0 2px;">' + KOYOMI_BLUE_ERAS.map(function(e) { return '<option value="' + e[0] + '"' + (draft.blueEra === e[0] ? ' selected' : '') + '>' + esc(e[1]) + '</option>'; }).join('') + '</select>';
+        else hint = hint ? esc(hint) : '';
+        // 段の名前がすでに「基本」のときは、同じ言葉を2つ並べないよう印を付けない
+        var dflt = it.multi ? KOYOMI_ORDER_DEFAULT.yearNegi[val] : KOYOMI_ORDER_DEFAULT[it.key] === val;
+        var isBasic = op[1] !== '基本' && dflt;
+        return '<button type="button" data-ko-key="' + it.key + '" data-ko-val="' + esc(String(val)) + '" style="display:flex;align-items:flex-start;gap:2px;text-align:left;width:100%;padding:6px 8px;margin:2px 0;border:1px solid ' + (on ? '#e3b8a8' : '#efe6d2') + ';border-radius:8px;background:' + (on ? '#fff3ee' : '#fff') + ';cursor:pointer;font-family:inherit;">' +
+          circle(on) + '<span style="flex:1;"><span style="font-weight:700;color:#3a3226;">' + label + '</span>' +
+          (isBasic ? '<span style="margin-left:6px;font-size:0.72em;color:#b0443a;border:1px solid #b0443a;border-radius:4px;padding:0 4px;">基本</span>' : '') +
+          (hint ? '<br><span style="font-size:0.78em;color:#8a7f6a;">' + hint + '</span>' : '') + '</span></button>';
+      }).join('');
+      return '<div style="margin:10px 0 4px;padding-top:8px;border-top:1px dashed #e6dcc6;">' +
+        '<div style="font-weight:700;color:#6b4f2a;">' + esc(it.name) + ' <span style="font-size:0.75em;color:#a99f8c;font-weight:400;">（ラーメンなら：' + esc(it.ramen) + '）</span>' +
+        (it.multi ? '<span style="font-size:0.72em;color:#a99f8c;font-weight:400;">　両方に〇もできます</span>' : '') + '</div>' + opts + '</div>';
+    }).join('');
+    ov.innerHTML = '<div style="background:#fffdf5;border-radius:14px;max-width:440px;width:100%;max-height:92vh;overflow:auto;padding:18px 16px 14px;box-shadow:0 12px 36px rgba(0,0,0,0.3);font-family:inherit;">' +
+      '<div style="text-align:center;font-size:1.25em;font-weight:700;color:#b0443a;letter-spacing:.15em;">暦の注文票</div>' +
+      '<div style="text-align:center;font-size:0.8em;color:#8a7f6a;margin:4px 0 6px;">お好みに〇を付けてください。迷ったら、全部「基本」でどうぞ。</div>' +
+      '<div style="text-align:center;font-size:0.78em;color:#fff;background:#b0443a;border-radius:6px;padding:4px 8px;">初めての方へのおすすめ：全部「基本」</div>' +
+      rows +
+      '<div style="margin:14px 0 4px;padding-top:10px;border-top:2px solid #e6dcc6;">' +
+        '<div style="font-weight:700;color:#6b4f2a;">出てくる時 <span style="font-size:0.75em;color:#a99f8c;font-weight:400;">（お店に入る時）</span></div>' +
+        '<select data-ko-timing style="width:100%;margin-top:4px;padding:8px;border:1px solid #e6dcc6;border-radius:8px;font-size:15px;background:#fff;">' +
+          KOYOMI_TIMING_OPTIONS.map(function(t) { return '<option value="' + t[0] + '"' + (draft.timing === t[0] ? ' selected' : '') + '>' + esc(t[1]) + (t[0] === KOYOMI_ORDER_DEFAULT.timing ? '（基本）' : '') + '</option>'; }).join('') +
+        '</select></div>' +
+      '<div style="margin-top:14px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">' +
+        '<button type="button" data-ko-act="save" style="flex:1 1 100%;padding:11px;border:none;border-radius:10px;background:#b0443a;color:#fff;font-weight:700;font-size:1em;cursor:pointer;">この注文で決める</button>' +
+        '<button type="button" data-ko-act="basic" style="padding:7px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.82em;cursor:pointer;">基本にもどす</button>' +
+        '<button type="button" data-ko-act="image" style="padding:7px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.82em;cursor:pointer;">🖼 画像にして持ち帰る</button>' +
+        '<button type="button" data-ko-act="close" style="padding:7px 12px;border:none;background:none;color:#a99f8c;font-size:0.82em;cursor:pointer;">やめる</button>' +
+      '</div></div>';
+    var sel = ov.querySelector('[data-ko-times]');
+    if (sel) { sel.addEventListener('click', function(e) { e.stopPropagation(); }); sel.addEventListener('change', function() { draft.moonTimes = parseInt(sel.value, 10) || 3; draft.moon = 'times'; render(); }); }
+    var blue = ov.querySelector('[data-ko-blue]');
+    if (blue) { blue.addEventListener('click', function(e) { e.stopPropagation(); }); blue.addEventListener('change', function() { draft.blueEra = blue.value; draft.yearNegi.blue = true; render(); }); }
+    var tim = ov.querySelector('[data-ko-timing]');
+    if (tim) tim.addEventListener('change', function() { draft.timing = tim.value; });
+  };
+  ov.addEventListener('click', function(e) {
+    var b = e.target.closest && e.target.closest('[data-ko-key],[data-ko-act]');
+    if (!b) { if (e.target === ov) ov.remove(); return; }
+    var key = b.getAttribute('data-ko-key');
+    if (key) {
+      var raw = b.getAttribute('data-ko-val');
+      if (key === 'yearNegi') draft.yearNegi[raw] = !draft.yearNegi[raw];
+      else if (key === 'kou72') draft.kou72 = (raw === 'true');
+      else draft[key] = raw;
+      render(); return;
+    }
+    var act = b.getAttribute('data-ko-act');
+    if (act === 'basic') { draft = JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)); render(); return; }
+    if (act === 'image') { shareKoyomiCanvas(drawKoyomiOrderCanvas(draft), 'koyomi-order.png', 'わたしの暦の注文票 #こよみる'); return; }
+    if (act === 'save') {
+      var saved = setKoyomiOrder(draft);
+      ov.remove();
+      if (typeof showToast === 'function') showToast('🍜 ご注文、承りました（' + koyomiOrderSummary(saved) + '）', { type: 'ok' });
+      return;
+    }
+    ov.remove();
+  });
+  render();
+  document.body.appendChild(ov);
+}
+window.openKoyomiOrderSheet = openKoyomiOrderSheet;
+
+// ---- 画像にして持ち帰る（Xなどに上げられる1枚） ----
+function _koyomiCanvasBase(title) {
+  var cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350;
+  var g = cv.getContext('2d');
+  g.fillStyle = '#fffdf5'; g.fillRect(0, 0, cv.width, cv.height);
+  g.strokeStyle = '#b0443a'; g.lineWidth = 10; g.strokeRect(36, 36, cv.width - 72, cv.height - 72);
+  g.fillStyle = '#b0443a'; g.textAlign = 'center'; g.font = 'bold 64px sans-serif'; g.fillText(title, cv.width / 2, 150);
+  g.fillStyle = '#a99f8c'; g.font = '30px sans-serif'; g.fillText('こよみる ── 暦専門店', cv.width / 2, cv.height - 80);
+  return { cv: cv, g: g };
+}
+function _koyomiWrapText(g, text, x, y, maxW, lineH) {
+  var line = '';
+  String(text).split('').forEach(function(ch) {
+    if (ch === '\n') { g.fillText(line, x, y); line = ''; y += lineH; return; }
+    if (g.measureText(line + ch).width > maxW) { g.fillText(line, x, y); line = ch; y += lineH; } else line += ch;
+  });
+  if (line) { g.fillText(line, x, y); y += lineH; }
+  return y;
+}
+function drawKoyomiOrderCanvas(order) {
+  order = order || getKoyomiOrder();
+  var b = _koyomiCanvasBase('暦の注文票'), g = b.g, y = 260;
+  KOYOMI_ORDER_ITEMS.forEach(function(it) {
+    var chosen;
+    if (it.multi) chosen = it.options.filter(function(o) { return order.yearNegi[o[0]]; }).map(function(o) { return o[1]; }).join('・') || 'なし';
+    else {
+      var op = it.options.filter(function(o) { return o[0] === order[it.key]; })[0];
+      chosen = op ? (it.key === 'moon' && op[0] === 'times' ? order.moonTimes + '倍' : op[1]) : '';
+    }
+    g.textAlign = 'left'; g.fillStyle = '#6b4f2a'; g.font = 'bold 42px sans-serif'; g.fillText(it.name, 110, y);
+    g.fillStyle = '#a99f8c'; g.font = '26px sans-serif'; g.fillText('（' + it.ramen + '）', 110, y + 36);
+    g.textAlign = 'right'; g.fillStyle = '#b0443a'; g.font = 'bold 48px sans-serif'; g.fillText('〇 ' + chosen, 970, y + 10);
+    g.strokeStyle = '#e6dcc6'; g.lineWidth = 2; g.beginPath(); g.moveTo(110, y + 58); g.lineTo(970, y + 58); g.stroke();
+    y += 130;
+  });
+  return b.cv;
+}
+window.drawKoyomiOrderCanvas = drawKoyomiOrderCanvas;
+function drawKoyomiTodayCanvas(v, order) {
+  order = order || getKoyomiOrder();
+  var b = _koyomiCanvasBase('今日の暦'), g = b.g, cx = b.cv.width / 2, y = 330;
+  g.textAlign = 'center';
+  g.fillStyle = '#3a3226'; g.font = 'bold 120px sans-serif'; g.fillText(v.sekki || '', cx, y); y += 70;
+  g.fillStyle = '#a99f8c'; g.font = '36px sans-serif'; g.fillText(v.sekkiReading || '', cx, y); y += 100;
+  if (order.kou72 && v.kou) { g.fillStyle = '#4a3f30'; g.font = 'bold 54px sans-serif'; g.fillText('七十二候「' + v.kou + '」の' + v.kouDay + '日目', cx, y); y += 60;
+    g.fillStyle = '#a99f8c'; g.font = '34px sans-serif'; g.fillText(v.kouReading || '', cx, y); y += 90; }
+  if (order.moon !== 'none' && v.moonName) { g.fillStyle = '#b0443a'; g.font = 'bold 46px sans-serif'; g.fillText(v.moonName + (order.moon !== 'half' ? '（月齢 ' + (Math.round(v.moonAge * 10) / 10) + '）' : ''), cx, y); y += 72; }
+  g.fillStyle = '#4a3f30'; g.font = '44px sans-serif'; g.fillText(v.dateText, cx, y); y += 60;
+  var years = koyomiYearLabels(v, order);
+  if (years.length) { g.fillStyle = '#8a7f6a'; g.font = '38px sans-serif'; g.fillText(years.join('・'), cx, y); }
+  y += 110;
+  g.fillStyle = '#6b4f2a'; g.font = 'bold 50px sans-serif'; g.fillText('今日という一回を、どう生きる？', cx, y);
+  return b.cv;
+}
+window.drawKoyomiTodayCanvas = drawKoyomiTodayCanvas;
+// 共有できる端末は共有の画面へ、できなければ画像として保存する
+function shareKoyomiCanvas(cv, fileName, text) {
   try {
-    if (window._isTesting) return false;
-    if (allSettings && allSettings.ui && allSettings.ui.koyomiToday === false) return false;
-    return localStorage.getItem(KOYOMI_TODAY_KEY) !== getLocalDateStr(new Date());
-  } catch (e) { return false; }
+    cv.toBlob(function(blob) {
+      if (!blob) return;
+      var file = null;
+      try { file = new File([blob], fileName, { type: 'image/png' }); } catch (e) {}
+      if (file && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+        navigator.share({ files: [file], text: text }).catch(function() {});
+        return;
+      }
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = fileName;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 4000);
+      if (typeof showToast === 'function') showToast('🖼 画像を保存しました。Xなどに上げてみてください', { type: 'ok' });
+    }, 'image/png');
+  } catch (e) {}
 }
-window.koyomiTodayWillShow = koyomiTodayWillShow;
-function setKoyomiTodayEnabled(on) {
-  if (!allSettings.ui) allSettings.ui = {};
-  allSettings.ui.koyomiToday = !!on;
-  saveAllSettings();
-}
-window.setKoyomiTodayEnabled = setKoyomiTodayEnabled;
-// ===== END v0.56.0 =====
+window.shareKoyomiCanvas = shareKoyomiCanvas;
+// ===== END v0.58.0 =====
+
+
 
 var KINGDOM_TITLES = [
   { min: 0, icon:'🌱', name:'種を蒔いた人', color:'#bbb' },
@@ -54026,6 +54527,28 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.58.1', date: '2026-10-15',
+    items: [
+      { icon:'🌕', t:'暦の注文票を、全部「暦」の項目にしました',
+        before:'店主の一言など、暦ではない項目が混ざっていました',
+        after:'七十二候（あり・なし）と月（1/2〜（ ）倍）を項目にし、年の数え方は皇紀のほか、和暦・年の干支・仏暦なども選べます。今日の予定は「盛り方」（全部・10件・5件・時刻のあるものだけ・出さない）で選べます' }
+    ]
+  },
+  {
+    ver: 'v0.58.0', date: '2026-10-15',
+    items: [
+      { icon:'🍜', t:'暦の注文票',
+        before:'今日の暦は、みんな同じ出し方でした',
+        after:'7つの項目に〇を付けて、自分好みの「今日の暦」にできます。二十四節気（うす味・基本・こい味）、今日の一回の深さ（なし〜超こってり）、問いの数、年の数え方（白ねぎ＝皇紀・青ねぎ＝他の暦）、七十二候（あり・なし）、月（1/2〜（ ）倍）、今日の予定の盛り方（超かた〜超やわ）。迷ったら全部「基本」でどうぞ。見出しの札を長押し（パソコンは右クリック）か、設定の「画面の見え方」の日次ビューから開けます' },
+      { icon:'🍥', t:'もう一問（替え玉）',
+        before:'問いは、めくったら終わりでした',
+        after:'めくったあとに「もう一問」で、六曜・日の干支・次の候などをもう1つ問えます' },
+      { icon:'🖼', t:'注文票と今日の暦を、画像にして持ち帰れます',
+        before:'画面を写すしかありませんでした',
+        after:'「画像にする」で1枚の画像になり、Xなどにそのまま上げられます' }
+    ]
+  },
+  {
     ver: 'v0.57.0', date: '2026-10-14',
     items: [
       { icon:'📱', t:'スマホの月間で、カレンダーが見える所を広げました',
@@ -79710,17 +80233,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
                                    { id: 'st459-b', kind: 'task', text: 'ST459の済み', date: '2026-10-13', completed: true, section: 1, createdAt: '2026-10-01T00:00:00Z' }]);
        var _v = koyomiTodayData(new Date(2026, 9, 13, 9, 0, 0));
        (_v.sekki === '寒露' && _v.kou === '菊花開' && _v.kouDay === 1 && _v.koki === '皇紀2686年' && _v.dateText === '2026年10月13日 火曜日' &&
-        _v.items.indexOf('10:00　ST459のTEL') !== -1 && _v.items.join('').indexOf('ST459の済み') === -1)
+        // v0.58.1: 【第67条④】予定は {text, timed} の組になった（盛り方「時刻のある予定だけ」のため）
+        _v.items.map(function(x) { return x.text; }).indexOf('10:00　ST459のTEL') !== -1 && _v.items.map(function(x) { return x.text; }).join('').indexOf('ST459の済み') === -1)
          ? ok('ST-459·②: 今日の暦（寒露・菊花開の1日目・皇紀2686年・西暦と曜日）と、その中に置く今日の予定（済んだものは除く）')
          : ng('ST-459·②: 今日の暦の中身が違う', JSON.stringify([_v.sekki, _v.kou, _v.kouDay, _v.koki, _v.dateText]));
        // ③ 問いの画面には答えを出さない。めくると暦と「今日という一回を、どう生きる？」
-       openKoyomiToday(new Date(2026, 9, 13, 9, 0, 0));
+       // v0.58.0: 【第67条④】問いの言葉は注文票の「問いの数」で決まり、「どう生きる？」はこってり以上の注文で出る
+       var _st459order = JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)); _st459order.richness = 'rich';
+       openKoyomiToday(new Date(2026, 9, 13, 9, 0, 0), { order: _st459order, face: 'question' });
        var _ov = document.getElementById('koyomiTodayOverlay');
        var _q = _ov ? _ov.textContent : '';
        if (_ov) _ov.querySelector('[data-kt="flip"]').click();
        var _a = _ov ? _ov.textContent : '';
        if (_ov) _ov.remove();
-       (_q.indexOf('今日は、何の節気？') !== -1 && _q.indexOf('寒露') === -1 && _q.indexOf('菊花開') === -1 &&
+       (_q.indexOf('今日の二十四節気は？') !== -1 && _q.indexOf('今日の七十二候は？') !== -1 && _q.indexOf('寒露') === -1 && _q.indexOf('菊花開') === -1 &&
         _a.indexOf('寒露') !== -1 && _a.indexOf('菊花開') !== -1 && _a.indexOf('今日という一回を、どう生きる？') !== -1 && _a.indexOf('味わ') === -1)
          ? ok('ST-459·③: 問いの画面に答えは出さず、めくると今日の暦と「今日という一回を、どう生きる？」（返事は求めない）')
          : ng('ST-459·③: 問いとめくったあとの出し方が違う', _q.slice(0, 60));
@@ -79728,7 +80254,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _src = document.documentElement.outerHTML;
        (maybeShowKoyomiToday() === false && koyomiTodayWillShow() === false &&
         // v0.56.2: 【第67条④】季節の風だよりも、起動の画面を1つずつ出す道具を通すようになった
-        /koyomiTodayWillShow\(\) \|\| window\._koyomiTodayShownNow\)\) return;/.test(_src) && /window\.addEventListener\('load', function\(\) \{ setTimeout\(_kzDecide, 0\); \}, \{ once: true \}\)/.test(_src) &&
+        /koyomiTodayWillShow\(\) \|\| window\._koyomiCardShownNow\)\) return;/.test(_src) &&   /* v0.58.0: カードを出した回だけ代わり */ /window\.addEventListener\('load', function\(\) \{ setTimeout\(_kzDecide, 0\); \}, \{ once: true \}\)/.test(_src) &&
         /window\.addEventListener\('load', go, \{ once: true \}\)/.test(_src))
          ? ok('ST-459·④: テスト中は出さない。その日の最初は季節の風だよりの代わりに出す（重ねない）。ページを読み終えてから出す')
          : ng('ST-459·④: 出す決まりが違う', '');
@@ -79869,6 +80395,97 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-465·①: 札と他の暦が別の行になっている', '');
      } catch(e) {
        ng('ST-465: 例外', e.message);
+     }
+
+     // ===== ST-466: 暦の注文票（v0.58.0〜・v0.58.1 で全部、暦で勝負） =====
+     // 【権威】2026-10-15、一蘭の注文票を徹底的に真似し尽くせ／店主の一言はいらん、暦で勝負／秘伝のたれを月に、ねぎは皇紀以外も、との指示。
+     // 7項目・段の数は一蘭と同じ（3・5・5・ねぎ2種・あり/なし・5・5）。出てくる時は注文票の下の別の1行
+     var _st466ui = JSON.parse(JSON.stringify(allSettings.ui || {})), _st466save = window.saveAllSettings;
+     try {
+       window.saveAllSettings = function() {};
+       // ① 7項目・段の数。名前は暦（二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定の盛り方）
+       var _n = KOYOMI_ORDER_ITEMS.map(function(it) { return it.options.length; }).join(',');
+       var _names = KOYOMI_ORDER_ITEMS.map(function(it) { return it.name; }).join('・');
+       delete allSettings.ui.koyomiOrder; delete allSettings.ui.koyomiToday;
+       var _d = getKoyomiOrder();
+       (KOYOMI_ORDER_ITEMS.length === 7 && _n === '3,5,5,2,2,5,5' && _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定の盛り方' &&
+        _d.richness === 'basic' && _d.moon === 'basic' && _d.kou72 === true && _d.yearNegi.white && _d.yearNegi.blue && _d.blueEra === 'wareki' && _d.timing === 'basic' &&
+        KOYOMI_TIMING_OPTIONS.length === 5 && typeof koyomiOwnerWords === 'undefined')
+         ? ok('ST-466·①: 注文票は7項目（3・5・5・ねぎ2種・あり/なし・5・5）で、全部が暦。店主の一言は無い。出てくる時は別の1行（5つ）')
+         : ng('ST-466·①: 注文票の項目か初期値が違う', _n + ' / ' + _names);
+       // ② 前の版の引き継ぎ：問いかけを外していた人は「なし」から。v0.58.0 の注文（店主の一言など）は新しい対応に読み替える。変な値ははじく
+       allSettings.ui.koyomiToday = false;
+       var _mig = getKoyomiOrder().richness;
+       allSettings.ui.koyomiOrder = { koyomiStrength: 'light', richness: 'rich', sideKoyomi: { wa: false, sora: false }, todaySchedule: false, ownerWords: 'double' };
+       var _old = getKoyomiOrder();
+       var _set = setKoyomiOrder({ richness: 'extraRich', timing: 'firstOfDay', moon: 'times', moonTimes: 99, sekkiStrength: 'あやしい', yearNegi: { white: false, blue: true }, blueEra: 'eto', kou72: false });
+       (_mig === 'none' && _old.sekkiStrength === 'light' && _old.kou72 === false && _old.moon === 'none' && _old.schedule === 'none' && !_old.yearNegi.white && _old.richness === 'rich' &&
+        _set.richness === 'extraRich' && _set.moonTimes === 10 && _set.sekkiStrength === 'light' && !_set.yearNegi.white && _set.yearNegi.blue && _set.blueEra === 'eto' && _set.kou72 === false)
+         ? ok('ST-466·②: 問いかけを外していた人は「なし」から。前の注文は新しい対応に読み替え、範囲の外の値ははじく（（ ）倍は10まで）')
+         : ng('ST-466·②: 注文の読み書きが違う', JSON.stringify([_mig, _old, _set]));
+       // ③ 注文で中身が変わる（全部、暦）
+       var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
+       var _qs = ['none', 'one', 'basic', 'three', 'all'].map(function(c) { return koyomiQuestions(_o({ questionCount: c })).length; }).join(',');
+       var _qNoKou = koyomiQuestions(_o({ questionCount: 'all', kou72: false, moon: 'none', yearNegi: { white: false, blue: true } })).join('|');
+       var _v = koyomiTodayData(new Date(2026, 9, 15, 9, 0, 0));
+       var _esc = function(x) { return String(x); };
+       var _light = koyomiAnswerHtml(_v, _o({ sekkiStrength: 'light', kou72: false, moon: 'none', yearNegi: { white: false, blue: false }, schedule: 'none' }), _esc);
+       var _rich = koyomiAnswerHtml(_v, _o({ sekkiStrength: 'rich', richness: 'extraRich', moon: 'times', yearNegi: { white: true, blue: true }, blueEra: 'eto' }), _esc);
+       (_qs === '0,1,2,3,5' && _qNoKou === '今日の二十四節気は？' &&
+        _light.indexOf('寒露') !== -1 && _light.indexOf('かんろ') === -1 && _light.indexOf('菊花開') === -1 && _light.indexOf('月齢') === -1 && _light.indexOf('皇紀') === -1 && _light.indexOf('まっさら') === -1 &&
+        _rich.indexOf('かんろ') !== -1 && _rich.indexOf('菊花開') !== -1 && _rich.indexOf('皇紀2686年') !== -1 && _rich.indexOf('丙午の年') !== -1 && _rich.indexOf('月齢') !== -1 &&
+        _rich.indexOf('満月まで') !== -1 && _rich.indexOf('今日という一回を、どう生きる？') !== -1 && _rich.indexOf('二度と戻らない') !== -1 && _rich.indexOf('店主') === -1)
+         ? ok('ST-466·③: 問いの数（注文に無い暦は問わない）・二十四節気・七十二候・月（秘伝のたれ）・年の数え方（皇紀と年の干支など）・深さで中身が変わる。店主の一言は無い')
+         : ng('ST-466·③: 注文と中身のつながりが違う', _qs + ' / ' + _qNoKou);
+       // ④ 今日の予定の盛り方（麺のかたさ）
+       var _vi = Object.assign({}, _v, { items: [1,2,3,4,5,6,7,8,9,10,11,12].map(function(i) { return { text: 'ST466予定' + i, timed: i <= 3 }; }) });
+       var _cnt = function(s) { return (koyomiAnswerHtml(_vi, _o({ schedule: s }), _esc).match(/ST466予定/g) || []).length; };
+       var _sc = ['all', 'more', 'basic', 'timed', 'none'].map(_cnt).join(',');
+       (_sc === '12,10,5,3,0')
+         ? ok('ST-466·④: 今日の予定の盛り方（全部・10件・5件・時刻のあるものだけ・出さない）')
+         : ng('ST-466·④: 予定の盛り方が違う', _sc);
+       // ⑤ 出てくる時（純粋な判断）
+       var _c = function(p) { return Object.assign({ firstOpenToday: false, opensToday: 2, hour: 10, rand: 0.9, daysSinceShown: 1, shownToday: false }, p); };
+       var _t = [
+         koyomiDecideAutoShow(_o({ richness: 'none' }), _c({ firstOpenToday: true })) === false,
+         koyomiDecideAutoShow(_o({ timing: 'everyOpen' }), _c({ shownToday: true })) === true,
+         koyomiDecideAutoShow(_o({ timing: 'firstOfDay' }), _c({ firstOpenToday: true })) === true,
+         koyomiDecideAutoShow(_o({ timing: 'firstOfDay' }), _c({})) === false,
+         koyomiDecideAutoShow(_o({ timing: 'basic' }), _c({ firstOpenToday: true, rand: 0 })) === false,
+         koyomiDecideAutoShow(_o({ timing: 'basic' }), _c({ rand: 0.1 })) === true,
+         koyomiDecideAutoShow(_o({ timing: 'basic' }), _c({ rand: 0.9, hour: 21 })) === true,
+         koyomiDecideAutoShow(_o({ timing: 'basic' }), _c({ rand: 0.1, shownToday: true })) === false,
+         koyomiDecideAutoShow(_o({ timing: 'whimsical' }), _c({ rand: 0.1, daysSinceShown: 2 })) === false,
+         koyomiDecideAutoShow(_o({ timing: 'whimsical' }), _c({ rand: 0.9, daysSinceShown: 7 })) === true,
+         koyomiDecideAutoShow(_o({ timing: 'onlyChip' }), _c({ firstOpenToday: true, rand: 0 })) === false
+       ];
+       (_t.every(Boolean))
+         ? ok('ST-466·⑤: 出てくる時（開くたび・その日の最初・1日1回いつか（夜は必ず）・数日に1回・札を押した時だけ）と、深さなし')
+         : ng('ST-466·⑤: 出てくる時の判断が違う', _t.map(function(x, i) { return x ? '' : i; }).join(' '));
+       // ⑥ 繋がっているか（第76条）：紙の〇（27）・青ねぎで暦を選ぶ・出てくる時の1行。〇を付けて決めると保存。画像にできる
+       delete allSettings.ui.koyomiOrder;
+       openKoyomiOrderSheet();
+       var _sh = document.getElementById('koyomiOrderOverlay');
+       var _rows = _sh ? _sh.querySelectorAll('[data-ko-key]').length : 0;
+       var _hasBlue = _sh && !!_sh.querySelector('[data-ko-blue]'), _hasTiming = _sh && !!_sh.querySelector('[data-ko-timing]');
+       var _txt = _sh ? _sh.textContent : '';
+       if (_sh) { _sh.querySelector('[data-ko-key="moon"][data-ko-val="double"]').click(); _sh.querySelector('[data-ko-key="kou72"][data-ko-val="false"]').click(); _sh.querySelector('[data-ko-act="save"]').click(); }
+       var _after = getKoyomiOrder();
+       var _img = drawKoyomiOrderCanvas(_after).toDataURL('image/png'), _img2 = drawKoyomiTodayCanvas(_v, _after).toDataURL('image/png');
+       (_rows === 27 && _hasBlue && _hasTiming && _txt.indexOf('暦の注文票') !== -1 && _txt.indexOf('ラーメンなら：秘伝のたれ') !== -1 && _txt.indexOf('店主') === -1 &&
+        _after.moon === 'double' && _after.kou72 === false && /^data:image\/png/.test(_img) && /^data:image\/png/.test(_img2) && !document.getElementById('koyomiOrderOverlay'))
+         ? ok('ST-466·⑥: 注文票の紙（27の〇・青ねぎで暦を選ぶ・出てくる時の1行）で〇を付けて決めると保存され、画像にできる')
+         : ng('ST-466·⑥: 注文票の紙のつながりが違う', [_rows, _hasBlue, _hasTiming, _after.moon, _after.kou72].join(','));
+       // ⑦ もう一問（替え玉）は、まだ出していない問いから出す
+       var _x1 = koyomiExtraQuestion(_v, []), _x2 = koyomiExtraQuestion(_v, [_x1.q]);
+       (_x1 && _x1.a && _x2 && _x2.q !== _x1.q)
+         ? ok('ST-466·⑦: もう一問（替え玉）は、まだ出していない問いから出す')
+         : ng('ST-466·⑦: もう一問の出し方が違う', '');
+     } catch(e) {
+       ng('ST-466: 例外', e.message);
+     } finally {
+       var _o2 = document.getElementById('koyomiOrderOverlay'); if (_o2) _o2.remove();
+       allSettings.ui = _st466ui; window.saveAllSettings = _st466save;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
