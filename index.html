@@ -22202,7 +22202,6 @@ function _koyomiOptLabel(key, val) {
   var op = it && it.options.filter(function(p) { return p[0] === val; })[0];
   return op ? op[1] : '';
 }
-function _koyomiBlueEraName(id) { var e = KOYOMI_BLUE_ERAS.filter(function(x) { return x[0] === id; })[0]; return e ? e[1] : ''; }
 // 注文を一言で（設定・画像・トーストに使う）
 function koyomiOrderSummary(o) {
   o = o || getKoyomiOrder();
@@ -22628,9 +22627,8 @@ window.maybeShowKoyomiToday = maybeShowKoyomiToday;
 function openKoyomiOrderSheet(opts) {
   opts = opts || {};
   // v0.58.2: 1項目を1行にして、〇を横に並べる（ラーメン店の注文票の形）。v0.58.3: 広い画面では大きく広げる。
-  // v0.58.5: 【権威】2026-10-16、「初めから〇なんか付いていない。既定を基本にするな。考えて選ばせるのが楽しい体験なのに、
-  // 楽しみを機能性の追求で奪っている」との指摘。注文票はいつも白紙で出す。前に注文した人には、前の選びに「前回」と薄く添えるだけ。
-  // 〇の無い項目が残る間は決められない（あと〇つ）。同じでよければ「いつもので」。
+  // v0.58.5 で一度「白紙で出す」にしたが、v0.58.7 で「めんどくさがる人もいる。よく分かりもしないものを全部選ばせるのは酷」との指示で、
+  // 前の注文（無ければ基本）に〇を付けて出す形に戻した。v0.58.12 の掃除で、白紙のときの処理（あと〇つ・前回の印）は消した。
   var old = document.getElementById('koyomiOrderOverlay'); if (old) old.remove();
   var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
   var hasPrev = !!(allSettings.ui && allSettings.ui.koyomiOrder);
@@ -22650,9 +22648,7 @@ function openKoyomiOrderSheet(opts) {
     if (it.multi) { var n = draft.yearNegi; if (!n) return false; return val === 'none' ? (!n.white && !n.blue) : !!n[val]; }
     return draft[it.key] !== null && draft[it.key] === val;
   };
-  var unmarked = function() { return KOYOMI_ORDER_ITEMS.filter(function(it) { return it.multi ? !draft.yearNegi : draft[it.key] === null; }); };
-  var render = function(showMissing) {
-    var miss = unmarked().map(function(it) { return it.key; });
+  var render = function() {
     var rows = KOYOMI_ORDER_ITEMS.map(function(it) {
       var cells = it.options.map(function(op) {
         var val = op[0], on = isOn(it, val);
@@ -22661,11 +22657,9 @@ function openKoyomiOrderSheet(opts) {
           circle(on) + '<span style="display:block;font-size:' + Z.optFs + ';line-height:1.25;color:' + (on ? '#b0443a' : '#4a3f30') + ';font-weight:' + (on ? '700' : '400') + ';white-space:nowrap;overflow:hidden;">' + esc(label) + '</span>' +
           '</button>';
       }).join('');
-      // 選んだ段の説明（1行）。まだ〇が無ければ空ける（決めようとして残っていたら「ここに〇を」）
+      // 選んだ段の説明（1行）
       var note = '';
-      var missing = showMissing && miss.indexOf(it.key) !== -1;
-      if (missing) note = '<span style="color:#b0443a;font-weight:700;">ここに〇を付けてください</span>';
-      else if (it.multi && draft.yearNegi) {
+      if (it.multi && draft.yearNegi) {
         var parts = [];
         if (draft.yearNegi.white) parts.push('白ねぎ＝皇紀');
         if (draft.yearNegi.blue) parts.push('青ねぎ＝<select data-ko-blue style="font-size:12px;padding:0 2px;">' + KOYOMI_BLUE_ERAS.map(function(e) { return '<option value="' + e[0] + '"' + (draft.blueEra === e[0] ? ' selected' : '') + '>' + esc(e[1]) + '</option>'; }).join('') + '</select>');
@@ -22676,7 +22670,7 @@ function openKoyomiOrderSheet(opts) {
         if (it.key === 'moon' && draft.moon === 'times')
           note = '<select data-ko-times style="font-size:12px;padding:0 2px;">' + [3,4,5,6,7,8,9,10].map(function(n) { return '<option value="' + n + '"' + (draft.moonTimes === n ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>倍　' + note;
       }
-      return '<div style="border-bottom:1px solid #e3d6b8;' + (missing ? 'background:#fff6f3;' : '') + '">' +
+      return '<div style="border-bottom:1px solid #e3d6b8;">' +
         '<div style="display:grid;grid-template-columns:' + Z.name + 'px repeat(' + it.options.length + ', 1fr);align-items:stretch;">' +
           '<div style="padding:6px 8px;background:#f6ecd7;color:#6b4f2a;font-weight:700;font-size:' + Z.nameFs + ';line-height:1.25;display:flex;flex-direction:column;justify-content:center;">' + esc(it.name) +
             '<span style="font-size:' + Z.subFs + ';font-weight:400;color:#a08d66;">' + esc(it.ramen) + '</span></div>' + cells +
@@ -22684,7 +22678,6 @@ function openKoyomiOrderSheet(opts) {
         '<div style="padding:' + Z.notePad + ';font-size:' + Z.noteFs + ';color:#8a7f6a;line-height:1.4;min-height:1.2em;">' + note + '</div>' +
       '</div>';
     }).join('');
-    var left = miss.length;
     ov.innerHTML = '<div style="background:#fffdf5;border-radius:12px;max-width:' + Z.w + 'px;width:100%;max-height:94vh;overflow:auto;box-shadow:0 12px 36px rgba(0,0,0,0.3);font-family:inherit;">' +
       '<div style="background:#b0443a;color:#fff;text-align:center;padding:8px 10px;border-radius:12px 12px 0 0;">' +
         '<div style="font-size:' + Z.head + ';font-weight:700;letter-spacing:.3em;">こよみの注文票</div>' +
@@ -22697,8 +22690,7 @@ function openKoyomiOrderSheet(opts) {
           KOYOMI_TIMING_OPTIONS.map(function(t) { return '<option value="' + t[0] + '"' + (draft.timing === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>'; }).join('') +
         '</select></div>' +
       '<div style="padding:10px 8px 12px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">' +
-        '<button type="button" data-ko-act="save" style="flex:1 1 100%;padding:11px;border:none;border-radius:10px;background:' + (left ? '#d9b3aa' : '#b0443a') + ';color:#fff;font-weight:700;font-size:1em;cursor:pointer;">' +
-          (left ? 'あと ' + left + ' つ、〇を付けてください' : 'この注文で決める') + '</button>' +
+        '<button type="button" data-ko-act="save" style="flex:1 1 100%;padding:11px;border:none;border-radius:10px;background:#b0443a;color:#fff;font-weight:700;font-size:1em;cursor:pointer;">この注文で決める</button>' +
         (opts.ask && prev ? '<button type="button" data-ko-act="usual" style="flex:1 1 100%;padding:10px;border:2px solid #6b4f2a;border-radius:10px;background:#fff;color:#6b4f2a;font-weight:700;font-size:1em;cursor:pointer;">いつもので</button>' : '') +
         '<button type="button" data-ko-act="basic" style="padding:6px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.8em;cursor:pointer;">基本にもどす</button>' +
         '<button type="button" data-ko-act="image" style="padding:6px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.8em;cursor:pointer;">🖼 画像にして持ち帰る</button>' +
@@ -22732,10 +22724,9 @@ function openKoyomiOrderSheet(opts) {
       draft.yearNegi = dft.yearNegi;
       render(); return;
     }
-    if (act === 'image') { if (unmarked().length) { render(true); return; } shareKoyomiCanvas(drawKoyomiOrderCanvas(draft), 'koyomi-order.png', 'わたしのこよみの注文票 #こよみる'); return; }
+    if (act === 'image') { shareKoyomiCanvas(drawKoyomiOrderCanvas(draft), 'koyomi-order.png', 'わたしのこよみの注文票 #こよみる'); return; }
     if (act === 'usual') { ov.remove(); if (typeof showToast === 'function') showToast('🍜 いつもので、承りました', { type: 'ok' }); return; }   // 注文は変えない
     if (act === 'save') {
-      if (unmarked().length) { render(true); return; }   // 〇の無い項目が残っていたら、そこを示す
       var saved = setKoyomiOrder(draft);
       ov.remove();
       if (typeof showToast === 'function') showToast('🍜 ご注文、承りました（' + koyomiOrderSummary(saved) + '）', { type: 'ok' });
@@ -22757,15 +22748,6 @@ function _koyomiCanvasBase(title) {
   g.fillStyle = '#b0443a'; g.textAlign = 'center'; g.font = 'bold 64px sans-serif'; g.fillText(title, cv.width / 2, 150);
   g.fillStyle = '#a99f8c'; g.font = '30px sans-serif'; g.fillText('こよみる ── 暦専門店', cv.width / 2, cv.height - 80);
   return { cv: cv, g: g };
-}
-function _koyomiWrapText(g, text, x, y, maxW, lineH) {
-  var line = '';
-  String(text).split('').forEach(function(ch) {
-    if (ch === '\n') { g.fillText(line, x, y); line = ''; y += lineH; return; }
-    if (g.measureText(line + ch).width > maxW) { g.fillText(line, x, y); line = ch; y += lineH; } else line += ch;
-  });
-  if (line) { g.fillText(line, x, y); y += lineH; }
-  return y;
 }
 function drawKoyomiOrderCanvas(order) {
   order = order || getKoyomiOrder();
