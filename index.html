@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.58.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.58.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.58.3';
+    const APP_VERSION = 'v0.58.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6815,7 +6815,8 @@ function _showInviteWelcome() {
       try {
         var _kzDecide = function() {
           if (typeof showKazedayoriModal !== 'function') return;
-          if (typeof koyomiTodayWillShow === 'function' && (koyomiTodayWillShow() || window._koyomiCardShownNow)) return;   // 今日の暦のカードを出す回は、その代わり（v0.58.0: あっさりの1行は代わりにしない）
+          if (typeof koyomiTodayWillShow === 'function' && (koyomiTodayWillShow() || window._koyomiCardShownNow)) return;
+          if (typeof koyomiOrderAskWillShow === 'function' && (koyomiOrderAskWillShow() || window._koyomiOrderAskQueued)) return;   // v0.58.4: 注文票を聞く回も代わり   // 今日の暦のカードを出す回は、その代わり（v0.58.0: あっさりの1行は代わりにしない）
           whenStartupClear(function() { showKazedayoriModal(); });
         };
         if (document.readyState === 'complete') _kzDecide(); else window.addEventListener('load', function() { setTimeout(_kzDecide, 0); }, { once: true });
@@ -22536,8 +22537,42 @@ function koyomiTodayWillShow() {
   } catch (e) { return false; }
 }
 window.koyomiTodayWillShow = koyomiTodayWillShow;
+// v0.58.4: 【権威】2026-10-16、注文票は起動したら聞いてこないのか、との問い。ブレストの結果「七十二候が変わる日（約5日に1度）に、
+// 前の注文に〇が付いた注文票を出し、『いつもので』1押しで閉じられる」に決めた（新しく入れたので、まず見てもらう回数を増やす。うるさければ間を空ける）。
+// どの候で聞いたかは設定に覚える（ほかの端末でも、同じ候のうちは聞かない）。その回は季節の風だよりの代わり
+function _koyomiCurrentKou() {
+  try { var d = new Date(); return getCurrentShichijuniKou(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0)); } catch (e) { return null; }
+}
+// 聞くかの判断（純粋な関数）：テスト中・初めての案内の間は聞かない。今の候で、まだ聞いていなければ聞く
+function koyomiOrderAskDecide(ctx) {
+  if (ctx.testing || ctx.setupVisible || !ctx.currentKouId) return false;
+  return (ctx.askedKouId || '') !== ctx.currentKouId;
+}
+window.koyomiOrderAskDecide = koyomiOrderAskDecide;
+function koyomiOrderAskWillShow() {
+  try {
+    var setup = document.getElementById('setupOverlay'), kou = _koyomiCurrentKou();
+    return koyomiOrderAskDecide({ testing: !!window._isTesting, setupVisible: !!(setup && getComputedStyle(setup).display !== 'none'),
+      currentKouId: kou ? kou.id : '', askedKouId: allSettings.ui && allSettings.ui.koyomiOrderAskedKou });
+  } catch (e) { return false; }
+}
+window.koyomiOrderAskWillShow = koyomiOrderAskWillShow;
+function _markKoyomiOrderAsked(kouId) {
+  if (window._isTesting || !kouId) return;
+  if (!allSettings.ui) allSettings.ui = {};
+  allSettings.ui.koyomiOrderAskedKou = kouId;
+  saveAllSettings();
+}
 function maybeShowKoyomiToday() {
   try { renderKoyomiChips(); bindKoyomiChipOrderGesture(); } catch (eC) {}
+  // v0.58.4: 七十二候が変わってから最初に開いたときは、まず注文票（カードはそのあと、順番に）
+  try {
+    if (!window._koyomiOrderAskQueued && koyomiOrderAskWillShow()) {
+      window._koyomiOrderAskQueued = true;
+      var _kou = _koyomiCurrentKou();
+      whenStartupClear(function() { _markKoyomiOrderAsked(_kou.id); openKoyomiOrderSheet({ ask: true, kouName: _kou.name }); });
+    }
+  } catch (eA) {}
   try {
     if (window._isTesting) return false;
     var setup = document.getElementById('setupOverlay');
@@ -22557,7 +22592,8 @@ window.maybeShowKoyomiToday = maybeShowKoyomiToday;
 // ---- 暦の注文票（紙） ----
 // ラーメン店の注文票のように、各項目に〇を付ける。どの項目にも「基本」があり、何も変えずに決めてもよい。
 // いつでも書き直せる（札の長押し・カードの「📜 注文票」・設定の「画面の見え方」の日次ビュー）
-function openKoyomiOrderSheet() {
+function openKoyomiOrderSheet(opts) {
+  opts = opts || {};
   // v0.58.2: 【権威】2026-10-16、「デザインが駄目。ラーメン店の注文票をまねろ。上下に長い。横に並んでいたはず」との指摘。
   // ラーメン店の注文票のように、1項目を1行にして、〇を横に並べる。説明の小さな字は、選んでいる段の分だけを行の下に1行で出す。
   var old = document.getElementById('koyomiOrderOverlay'); if (old) old.remove();
@@ -22606,6 +22642,7 @@ function openKoyomiOrderSheet() {
     ov.innerHTML = '<div style="background:#fffdf5;border-radius:12px;max-width:' + Z.w + 'px;width:100%;max-height:94vh;overflow:auto;box-shadow:0 12px 36px rgba(0,0,0,0.3);font-family:inherit;">' +
       '<div style="background:#b0443a;color:#fff;text-align:center;padding:8px 10px;border-radius:12px 12px 0 0;">' +
         '<div style="font-size:' + Z.head + ';font-weight:700;letter-spacing:.3em;">暦の注文票</div>' +
+        (opts.ask && opts.kouName ? '<div style="font-size:' + Z.headSub + ';font-weight:700;margin-top:2px;">今日から「' + esc(opts.kouName) + '」。ご注文は？</div>' : '') +
         '<div style="font-size:' + Z.headSub + ';opacity:.9;">お好みに〇を。迷ったら、全部「基本」でどうぞ。</div></div>' +
       '<div style="border:2px solid #b0443a;border-top:none;margin:0 8px;">' + rows + '</div>' +
       '<div style="margin:8px 8px 0;display:grid;grid-template-columns:' + Z.name + 'px 1fr;align-items:center;border:1px solid #e3d6b8;">' +
@@ -22614,7 +22651,8 @@ function openKoyomiOrderSheet() {
           KOYOMI_TIMING_OPTIONS.map(function(t) { return '<option value="' + t[0] + '"' + (draft.timing === t[0] ? ' selected' : '') + '>' + esc(t[1]) + (t[0] === KOYOMI_ORDER_DEFAULT.timing ? '（基本）' : '') + '</option>'; }).join('') +
         '</select></div>' +
       '<div style="padding:10px 8px 12px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">' +
-        '<button type="button" data-ko-act="save" style="flex:1 1 100%;padding:10px;border:none;border-radius:10px;background:#b0443a;color:#fff;font-weight:700;font-size:1em;cursor:pointer;">この注文で決める</button>' +
+        (opts.ask ? '<button type="button" data-ko-act="usual" style="flex:1 1 100%;padding:12px;border:none;border-radius:10px;background:#6b4f2a;color:#fff;font-weight:700;font-size:1.05em;cursor:pointer;">いつもので</button>' : '') +
+        '<button type="button" data-ko-act="save" style="flex:1 1 100%;padding:10px;border:' + (opts.ask ? '2px solid #b0443a' : 'none') + ';border-radius:10px;background:' + (opts.ask ? '#fff' : '#b0443a') + ';color:' + (opts.ask ? '#b0443a' : '#fff') + ';font-weight:700;font-size:1em;cursor:pointer;">' + (opts.ask ? 'この注文に変える' : 'この注文で決める') + '</button>' +
         '<button type="button" data-ko-act="basic" style="padding:6px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.8em;cursor:pointer;">基本にもどす</button>' +
         '<button type="button" data-ko-act="image" style="padding:6px 12px;border:1px solid #d9c9a6;border-radius:999px;background:#fff;color:#6b4f2a;font-size:0.8em;cursor:pointer;">🖼 画像にして持ち帰る</button>' +
         '<button type="button" data-ko-act="close" style="padding:6px 12px;border:none;background:none;color:#a99f8c;font-size:0.8em;cursor:pointer;">やめる</button>' +
@@ -22639,6 +22677,7 @@ function openKoyomiOrderSheet() {
     }
     var act = b.getAttribute('data-ko-act');
     if (act === 'basic') { draft = JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)); render(); return; }
+    if (act === 'usual') { ov.remove(); if (typeof showToast === 'function') showToast('🍜 いつもので、承りました', { type: 'ok' }); return; }   // 注文は変えない
     if (act === 'image') { shareKoyomiCanvas(drawKoyomiOrderCanvas(draft), 'koyomi-order.png', 'わたしの暦の注文票 #こよみる'); return; }
     if (act === 'save') {
       var saved = setKoyomiOrder(draft);
@@ -54542,6 +54581,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.58.4', date: '2026-10-16',
+    items: [
+      { icon:'🍜', t:'七十二候が変わる日に、暦の注文票をお聞きします',
+        before:'注文票は、自分で開かないと出てきませんでした',
+        after:'七十二候が変わってから最初に開いたとき（約5日に1度）、「今日から〇〇。ご注文は？」と注文票が出ます。前の注文に〇が付いているので、「いつもので」を押せばそのままです' }
+    ]
+  },
+  {
     ver: 'v0.58.3', date: '2026-10-16',
     items: [
       { icon:'📜', t:'パソコンでは、暦の注文票を大きく広げました',
@@ -80530,6 +80577,42 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-467·①: お店の名前・言い回しが残っている', _bad.join(','));
      } catch(e) {
        ng('ST-467: 例外', e.message);
+     }
+
+     // ===== ST-468: 七十二候が変わる日に、注文票を「いつもので」付きで聞く（v0.58.4〜） =====
+     // 【権威】2026-10-16、毎回聞くのはうるさい。七十二候が変わる日（約5日に1度）＋「いつもので」1押し、に決めた
+     var _st468ui = JSON.parse(JSON.stringify(allSettings.ui || {})), _st468save = window.saveAllSettings, _st468test = window._isTesting;
+     try {
+       window.saveAllSettings = function() {};
+       // ① 聞くかの判断：テスト中は聞かない。今の候で聞いていなければ聞く・聞いたら聞かない
+       var _t0 = koyomiOrderAskWillShow();
+       var _dc = function(p) { return koyomiOrderAskDecide(Object.assign({ testing: false, setupVisible: false, currentKouId: '寒露_2', askedKouId: '' }, p)); };
+       var _t1 = _dc({ askedKouId: '寒露_1' }), _t2 = _dc({ askedKouId: '寒露_2' }), _t3 = _dc({ setupVisible: true }), _t4 = _dc({ testing: true }), _t5 = _dc({});
+       (_t0 === false && _t1 === true && _t2 === false && _t3 === false && _t4 === false && _t5 === true)
+         ? ok('ST-468·①: 七十二候が変わってから最初に開いたときだけ聞く（同じ候のうちは、ほかの端末でも聞かない。テスト中は聞かない）')
+         : ng('ST-468·①: 聞くかの判断が違う', [_t0, _t1, _t2, _t3, _t4, _t5].join(','));
+       // ② 聞くときの紙：「今日から『〇〇』。ご注文は？」と「いつもので」。押しても注文は変わらない
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'rich' });
+       openKoyomiOrderSheet({ ask: true, kouName: 'ST468の候' });
+       var _sh = document.getElementById('koyomiOrderOverlay');
+       var _txt = _sh ? _sh.textContent : '';
+       var _usual = _sh && _sh.querySelector('[data-ko-act="usual"]');
+       if (_sh) _sh.querySelector('[data-ko-key="richness"][data-ko-val="none"]').click();
+       if (_usual) document.querySelector('#koyomiOrderOverlay [data-ko-act="usual"]').click();
+       var _after = getKoyomiOrder().richness;
+       // ③ 繋がっているか（第76条）：起動のときに出す（順番に出す道具を通す）・その回は季節の風だよりの代わり
+       var _src = document.documentElement.outerHTML;
+       (_txt.indexOf('今日から「ST468の候」。ご注文は？') !== -1 && !!_usual && _txt.indexOf('この注文に変える') !== -1 && _after === 'rich' && !document.getElementById('koyomiOrderOverlay') &&
+        /whenStartupClear\(function\(\) \{ _markKoyomiOrderAsked\(_kou\.id\); openKoyomiOrderSheet\(\{ ask: true, kouName: _kou\.name \}\); \}\)/.test(_src) &&
+        /koyomiOrderAskWillShow\(\) \|\| window\._koyomiOrderAskQueued\)\) return;/.test(_src))
+         ? ok('ST-468·②: 聞くときは「今日から『〇〇』。ご注文は？」と「いつもので」（押しても注文は変わらない）。起動のときに順番に出し、その回は季節の風だよりの代わり')
+         : ng('ST-468·②: 聞くときの紙かつながりが違う', [!!_usual, _after].join(','));
+     } catch(e) {
+       ng('ST-468: 例外', e.message);
+     } finally {
+       window._isTesting = _st468test;
+       var _o = document.getElementById('koyomiOrderOverlay'); if (_o) _o.remove();
+       allSettings.ui = _st468ui; window.saveAllSettings = _st468save;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
