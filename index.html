@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.58.10 ★ -->
+<!-- ★ CURRENT VERSION: v0.58.12 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.58.10';
+    const APP_VERSION = 'v0.58.12';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10581,6 +10581,14 @@ function _showInviteWelcome() {
           <div id="koyomiOrderSummarySettings" style="font-size:0.78em;color:#6b4f2a;margin:2px 0 8px;line-height:1.6;"></div>
           <div style="font-size:0.75em;color:#a99f8c;margin-bottom:8px;">注文の中身と、出てくる時（今日の暦がいつ出るか）を選べます。七十二候が変わる日にも、お聞きします。</div>
           <button type="button" onclick="openKoyomiOrderSheet()" style="padding:8px 16px;border:1px solid #b0443a;border-radius:999px;background:#fff;color:#b0443a;font-weight:700;cursor:pointer;">注文票を開く</button>
+          <!-- v0.58.11: お聞きする頻度（注文票の項目は7つで止めるので、ここで別に選ぶ） -->
+          <div style="margin-top:12px;font-size:0.82em;color:#6b4f2a;font-weight:700;">注文票をお聞きする頻度</div>
+          <select id="koyomiAskFreqSelect" onchange="setKoyomiAskFreq(this.value)" style="margin-top:4px;padding:6px 8px;border:1px solid #e6dcc6;border-radius:8px;font-size:14px;background:#fff;">
+            <option value="daily">毎日</option>
+            <option value="kou">七十二候が変わる日（約5日に1度）</option>
+            <option value="sekki">二十四節気が変わる日（約15日に1度）</option>
+            <option value="never">聞かない</option>
+          </select>
         </div>
       </div>
 
@@ -22469,6 +22477,8 @@ function renderKoyomiChips() {
   ['monthlyKoyomiChip', 'monthlyKoyomiChipSub'].forEach(function(id) { var e = document.getElementById(id); if (e) e.textContent = txt; });
   var sum = document.getElementById('koyomiOrderSummarySettings');
   if (sum) sum.textContent = koyomiOrderSummary();
+  var fq = document.getElementById('koyomiAskFreqSelect');
+  if (fq && typeof koyomiAskFreq === 'function') fq.value = koyomiAskFreq();
 }
 window.renderKoyomiChips = renderKoyomiChips;
 function koyomiChipClick() { openKoyomiToday(new Date()); }
@@ -22528,24 +22538,62 @@ window.koyomiTodayWillShow = koyomiTodayWillShow;
 function _koyomiCurrentKou() {
   try { var d = new Date(); return getCurrentShichijuniKou(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0)); } catch (e) { return null; }
 }
-// 聞くかの判断（純粋な関数）：テスト中・初めての案内の間は聞かない。今の候で、まだ聞いていなければ聞く
+// v0.58.11: 【権威】2026-10-16、注文票を毎日見たい。ただし注文票の項目は7つで止める（人の認知の限界）。
+// お聞きする頻度は注文票に入れず、設定で別に選ぶ：毎日・七十二候が変わる日（初め）・二十四節気が変わる日・聞かない
+var KOYOMI_ASK_FREQS = [['daily', '毎日'], ['kou', '七十二候が変わる日（約5日に1度）'], ['sekki', '二十四節気が変わる日（約15日に1度）'], ['never', '聞かない']];
+window.KOYOMI_ASK_FREQS = KOYOMI_ASK_FREQS;
+function koyomiAskFreq() {
+  var f = allSettings && allSettings.ui && allSettings.ui.koyomiOrderAskFreq;
+  return KOYOMI_ASK_FREQS.some(function(x) { return x[0] === f; }) ? f : 'kou';
+}
+window.koyomiAskFreq = koyomiAskFreq;
+// 今の「聞く区切り」の印（毎日なら日付、候なら候、節気なら年と節気）
+function koyomiAskKey(freq, ymd, kou) {
+  if (freq === 'daily') return 'day:' + ymd;
+  if (freq === 'kou') return kou ? 'kou:' + kou.id : '';
+  if (freq === 'sekki') return kou ? 'sekki:' + ymd.slice(0, 4) + ':' + kou.sekkiName : '';
+  return '';
+}
+window.koyomiAskKey = koyomiAskKey;
+// 聞くかの判断（純粋な関数）：テスト中・初めての案内の間・「聞かない」は聞かない。今の区切りで、まだ聞いていなければ聞く
 function koyomiOrderAskDecide(ctx) {
-  if (ctx.testing || ctx.setupVisible || !ctx.currentKouId) return false;
-  return (ctx.askedKouId || '') !== ctx.currentKouId;
+  if (ctx.testing || ctx.setupVisible || ctx.freq === 'never' || !ctx.currentKey) return false;
+  return (ctx.askedKey || '') !== ctx.currentKey;
 }
 window.koyomiOrderAskDecide = koyomiOrderAskDecide;
+function _koyomiAskedKey() {
+  var ui = (allSettings && allSettings.ui) || {};
+  if (ui.koyomiOrderAskedKey) return ui.koyomiOrderAskedKey;
+  return ui.koyomiOrderAskedKou ? 'kou:' + ui.koyomiOrderAskedKou : '';   // 第48条：v0.58.4〜 の印を引き継ぐ
+}
 function koyomiOrderAskWillShow() {
   try {
-    var setup = document.getElementById('setupOverlay'), kou = _koyomiCurrentKou();
-    return koyomiOrderAskDecide({ testing: !!window._isTesting, setupVisible: !!(setup && getComputedStyle(setup).display !== 'none'),
-      currentKouId: kou ? kou.id : '', askedKouId: allSettings.ui && allSettings.ui.koyomiOrderAskedKou });
+    var setup = document.getElementById('setupOverlay'), kou = _koyomiCurrentKou(), freq = koyomiAskFreq();
+    return koyomiOrderAskDecide({ testing: !!window._isTesting, setupVisible: !!(setup && getComputedStyle(setup).display !== 'none'), freq: freq,
+      currentKey: koyomiAskKey(freq, getLocalDateStr(new Date()), kou), askedKey: _koyomiAskedKey() });
   } catch (e) { return false; }
 }
-window.koyomiOrderAskWillShow = koyomiOrderAskWillShow;
-function _markKoyomiOrderAsked(kouId) {
-  if (window._isTesting || !kouId) return;
+// 聞くときの見出し（頻度に合わせる）。
+// v0.58.12: 【権威】2026-10-16、「注文する前から、ラーメン届いてるような作りにするな」との指摘。
+// 見出しで節気・候の名前を言うと、そのあとの問い（今日の七十二候は？）の答えを先に見せてしまう。変わったことだけを伝え、名前は言わない
+function koyomiAskTitle(freq) {
+  if (freq === 'daily') return 'いらっしゃいませ。今日のご注文は？';
+  if (freq === 'sekki') return '二十四節気が変わりました。ご注文は？';
+  return '七十二候が変わりました。ご注文は？';
+}
+window.koyomiAskTitle = koyomiAskTitle;
+function setKoyomiAskFreq(f) {
+  if (!KOYOMI_ASK_FREQS.some(function(x) { return x[0] === f; })) return;
   if (!allSettings.ui) allSettings.ui = {};
-  allSettings.ui.koyomiOrderAskedKou = kouId;
+  allSettings.ui.koyomiOrderAskFreq = f;
+  saveAllSettings();
+}
+window.setKoyomiAskFreq = setKoyomiAskFreq;
+window.koyomiOrderAskWillShow = koyomiOrderAskWillShow;
+function _markKoyomiOrderAsked(key) {
+  if (window._isTesting || !key) return;
+  if (!allSettings.ui) allSettings.ui = {};
+  allSettings.ui.koyomiOrderAskedKey = key;
   saveAllSettings();
 }
 function maybeShowKoyomiToday() {
@@ -22554,8 +22602,8 @@ function maybeShowKoyomiToday() {
   try {
     if (!window._koyomiOrderAskQueued && koyomiOrderAskWillShow()) {
       window._koyomiOrderAskQueued = true;
-      var _kou = _koyomiCurrentKou();
-      whenStartupClear(function() { _markKoyomiOrderAsked(_kou.id); openKoyomiOrderSheet({ ask: true, kouName: _kou.name }); });
+      var _kou = _koyomiCurrentKou(), _freq = koyomiAskFreq();
+      whenStartupClear(function() { _markKoyomiOrderAsked(koyomiAskKey(_freq, getLocalDateStr(new Date()), _kou)); openKoyomiOrderSheet({ ask: true, askTitle: koyomiAskTitle(_freq) }); });
     }
   } catch (eA) {}
   try {
@@ -22640,7 +22688,7 @@ function openKoyomiOrderSheet(opts) {
     ov.innerHTML = '<div style="background:#fffdf5;border-radius:12px;max-width:' + Z.w + 'px;width:100%;max-height:94vh;overflow:auto;box-shadow:0 12px 36px rgba(0,0,0,0.3);font-family:inherit;">' +
       '<div style="background:#b0443a;color:#fff;text-align:center;padding:8px 10px;border-radius:12px 12px 0 0;">' +
         '<div style="font-size:' + Z.head + ';font-weight:700;letter-spacing:.3em;">こよみの注文票</div>' +
-        (opts.ask && opts.kouName ? '<div style="font-size:' + Z.headSub + ';font-weight:700;margin-top:2px;">今日から「' + esc(opts.kouName) + '」。ご注文は？</div>' : '') +
+        (opts.ask && (opts.askTitle || opts.kouName) ? '<div style="font-size:' + Z.headSub + ';font-weight:700;margin-top:2px;">' + esc(opts.askTitle || ('今日から「' + opts.kouName + '」。ご注文は？')) + '</div>' : '') +
         '<div style="font-size:' + Z.headSub + ';opacity:.9;">天然こよみ専門店　こよみる ── こだわりたい、今日という体験があります。</div></div>' +
       '<div style="border:2px solid #b0443a;border-top:none;margin:0 8px;">' + rows + '</div>' +
       '<div style="margin:8px 8px 0;display:grid;grid-template-columns:' + Z.name + 'px 1fr;align-items:center;border:1px solid #e3d6b8;">' +
@@ -54575,6 +54623,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.58.12', date: '2026-10-16',
+    items: [
+      { icon:'🍜', t:'注文票の見出しで、答えを先に言わないようにしました',
+        before:'注文票の見出しに、今日の節気や候の名前が出ていました',
+        after:'「七十二候が変わりました。ご注文は？」のように、変わったことだけをお伝えします。名前は、今日の暦をめくったときのお楽しみです' }
+    ]
+  },
+  {
+    ver: 'v0.58.11', date: '2026-10-16',
+    items: [
+      { icon:'🍜', t:'こよみの注文票をお聞きする頻度を選べるようにしました',
+        before:'七十二候が変わる日（約5日に1度）だけ、お聞きしていました',
+        after:'設定の「🍜 こよみの注文票」で、毎日・七十二候が変わる日・二十四節気が変わる日・聞かない、から選べます' }
+    ]
+  },
+  {
     ver: 'v0.58.10', date: '2026-10-16',
     items: [
       { icon:'🍜', t:'こよみの注文票の「今日の予定の盛り方」の並びを、ほかの項目にそろえました',
@@ -80639,14 +80703,19 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window.saveAllSettings = function() {};
        // ① 聞くかの判断：テスト中は聞かない。今の候で聞いていなければ聞く・聞いたら聞かない
        var _t0 = koyomiOrderAskWillShow();
-       var _dc = function(p) { return koyomiOrderAskDecide(Object.assign({ testing: false, setupVisible: false, currentKouId: '寒露_2', askedKouId: '' }, p)); };
-       var _t1 = _dc({ askedKouId: '寒露_1' }), _t2 = _dc({ askedKouId: '寒露_2' }), _t3 = _dc({ setupVisible: true }), _t4 = _dc({ testing: true }), _t5 = _dc({});
-       (_t0 === false && _t1 === true && _t2 === false && _t3 === false && _t4 === false && _t5 === true)
-         ? ok('ST-468·①: 七十二候が変わってから最初に開いたときだけ聞く（同じ候のうちは、ほかの端末でも聞かない。テスト中は聞かない）')
+       var _kk = { id: '寒露_2', name: '菊花開', sekkiName: '寒露', dayInKou: 3 };
+       var _dc = function(p) { return koyomiOrderAskDecide(Object.assign({ testing: false, setupVisible: false, freq: 'kou', currentKey: koyomiAskKey('kou', '2026-10-15', _kk), askedKey: '' }, p)); };
+       var _t1 = _dc({ askedKey: 'kou:寒露_1' }), _t2 = _dc({ askedKey: 'kou:寒露_2' }), _t3 = _dc({ setupVisible: true }), _t4 = _dc({ testing: true }), _t5 = _dc({}), _t6 = _dc({ freq: 'never' });
+       var _keys = [koyomiAskKey('daily', '2026-10-15', _kk), koyomiAskKey('sekki', '2026-10-15', _kk), koyomiAskKey('never', '2026-10-15', _kk)].join('|');
+       var _titles = [koyomiAskTitle('daily'), koyomiAskTitle('kou'), koyomiAskTitle('sekki')].join('|');
+       (_t0 === false && _t1 === true && _t2 === false && _t3 === false && _t4 === false && _t5 === true && _t6 === false &&
+        _keys === 'day:2026-10-15|sekki:2026:寒露|' && _titles === 'いらっしゃいませ。今日のご注文は？|七十二候が変わりました。ご注文は？|二十四節気が変わりました。ご注文は？' &&   /* v0.58.12: 名前を先に言わない */
+        !!document.getElementById('koyomiAskFreqSelect') && KOYOMI_ORDER_ITEMS.length === 7)
+         ? ok('ST-468·①: お聞きする頻度（毎日・候・節気・聞かない）で、今の区切りでまだ聞いていなければ聞く。見出しは変わったことだけ（節気・候の名前は先に言わない）。頻度は設定で選び、注文票の項目は7つのまま')
          : ng('ST-468·①: 聞くかの判断が違う', [_t0, _t1, _t2, _t3, _t4, _t5].join(','));
        // ② 聞くときの紙：「今日から『〇〇』。ご注文は？」と「いつもので」。押しても注文は変わらない
        allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'rich' });
-       openKoyomiOrderSheet({ ask: true, kouName: 'ST468の候' });
+       openKoyomiOrderSheet({ ask: true, askTitle: 'ST468の見出し。ご注文は？' });
        var _sh = document.getElementById('koyomiOrderOverlay');
        var _txt = _sh ? _sh.textContent : '';
        var _usual = _sh && _sh.querySelector('[data-ko-act="usual"]');
@@ -80655,10 +80724,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _after = getKoyomiOrder().richness;
        // ③ 繋がっているか（第76条）：起動のときに出す（順番に出す道具を通す）・その回は季節の風だよりの代わり
        var _src = document.documentElement.outerHTML;
-       (_txt.indexOf('今日から「ST468の候」。ご注文は？') !== -1 && !!_usual && _after === 'rich' && !document.getElementById('koyomiOrderOverlay') &&
-        /whenStartupClear\(function\(\) \{ _markKoyomiOrderAsked\(_kou\.id\); openKoyomiOrderSheet\(\{ ask: true, kouName: _kou\.name \}\); \}\)/.test(_src) &&
+       (_txt.indexOf('ST468の見出し。ご注文は？') !== -1 && !!_usual && _after === 'rich' && !document.getElementById('koyomiOrderOverlay') &&
+        /whenStartupClear\(function\(\) \{ _markKoyomiOrderAsked\(koyomiAskKey\(_freq, getLocalDateStr\(new Date\(\)\), _kou\)\); openKoyomiOrderSheet\(\{ ask: true, askTitle: koyomiAskTitle\(_freq\) \}\); \}\)/.test(_src) &&
         /koyomiOrderAskWillShow\(\) \|\| window\._koyomiOrderAskQueued\)\) return;/.test(_src))
-         ? ok('ST-468·②: 聞くときは「今日から『〇〇』。ご注文は？」と「いつもので」（押しても注文は変わらない）。起動のときに順番に出し、その回は季節の風だよりの代わり')
+         ? ok('ST-468·②: 聞くときは頻度に合わせた見出し（七十二候が変わりました。ご注文は？など）と「いつもので」（押しても注文は変わらない）。起動のときに順番に出し、その回は季節の風だよりの代わり')
          : ng('ST-468·②: 聞くときの紙かつながりが違う', [!!_usual, _after].join(','));
      } catch(e) {
        ng('ST-468: 例外', e.message);
