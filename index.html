@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.59.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.59.5 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.59.4';
+    const APP_VERSION = 'v0.59.5';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40857,31 +40857,35 @@ function renderMonthlyMoneyLine() {
         // v0.59.4: 【権威】2026-10-19、「出る入るを整えて。計算の根拠を調べて」との指示。
         // スマホで1行が長く「差」が次の行に落ちていたので、表にする（月・出る・入る・差）。
         // 計算の決まりは変えない（今月は今日から月末、来月はまるごと。見込み＝手持ち＋入る−出る）
-        var _rowsT = [];
-        if (_sum.cur.out || _sum.cur['in']) _rowsT.push([_m + '月（今日〜）', _sum.cur]);
-        if (_sum.next.out || _sum.next['in']) _rowsT.push([_nm + '月', _sum.next]);
-        var html = '';
-        if (_rowsT.length) {
-          // PCで横に広がりすぎないよう、幅に上限を付ける
-          html += '<div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:2px 14px;align-items:baseline;margin-top:6px;max-width:460px;">' +
-            '<div></div><div style="text-align:right;color:' + RED + ';font-size:0.85em;font-weight:700;">▲ 出る</div>' +
-            '<div style="text-align:right;color:' + GREEN + ';font-size:0.85em;font-weight:700;">▽ 入る</div>' +
-            '<div style="text-align:right;color:' + GRAY + ';font-size:0.85em;">差</div>' +
-            _rowsT.map(function(r) {
-              var d = r[1]['in'] - r[1].out;
-              return '<div style="color:' + GRAY + ';white-space:nowrap;">' + r[0] + '</div>' +
-                '<div style="text-align:right;color:' + RED + ';font-weight:700;">' + y(r[1].out) + '</div>' +
-                '<div style="text-align:right;color:' + GREEN + ';font-weight:700;">' + y(r[1]['in']) + '</div>' +
-                '<div style="text-align:right;color:' + (d < 0 ? RED : GREEN) + ';">' + sg(d) + '</div>';
-            }).join('') + '</div>';
-        }
-
         // 手持ち（財布・銀行）。1件も無ければ何も足さない。月末の見込み＝いまの手持ち ＋ 今日から今月末の（入る−出る）。
         // 読めない残高があるときは見込みを出さない（合っていない数字を出さないため）
         var _pt = { count: 0, total: 0, unreadable: 0 };
         try { if (typeof getMoneyPursesTotal === 'function') _pt = getMoneyPursesTotal(); } catch (ePt) {}
         var _fore = null;
         if (_pt.count > 0 && _pt.unreadable === 0 && (_sum.cur.out > 0 || _sum.cur['in'] > 0)) _fore = _pt.total + _sum.cur['in'] - _sum.cur.out;
+        // v0.59.5: 【権威】2026-10-19、「この版は手持ちを無視して差を出してしまう」との指摘。
+        // 手持ちがあるときは、右の列を「月末の残り」（手持ちから見て、その月末にいくら残るか）にする。
+        // 今月末＝手持ち＋今月の（入る−出る）、来月末＝今月末＋来月の（入る−出る）。手持ちが無い人は「差」のまま
+        var _useRest = (_fore !== null);
+        var _rowsT = [];
+        if (_sum.cur.out || _sum.cur['in']) _rowsT.push([_m + '月（今日〜）', _sum.cur, _fore]);
+        if (_sum.next.out || _sum.next['in']) _rowsT.push([_nm + '月', _sum.next, _useRest ? _fore + _sum.next['in'] - _sum.next.out : null]);
+        var html = '';
+        if (_rowsT.length) {
+          // PCで横に広がりすぎないよう、幅に上限を付ける
+          html += '<div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:2px 14px;align-items:baseline;margin-top:6px;max-width:460px;">' +
+            '<div></div><div style="text-align:right;color:' + RED + ';font-size:0.85em;font-weight:700;">▲ 出る</div>' +
+            '<div style="text-align:right;color:' + GREEN + ';font-size:0.85em;font-weight:700;">▽ 入る</div>' +
+            '<div style="text-align:right;color:' + GRAY + ';font-size:0.85em;' + (_useRest ? 'font-weight:700;' : '') + '">' + (_useRest ? '月末の残り' : '差') + '</div>' +
+            _rowsT.map(function(r) {
+              var d = _useRest ? r[2] : (r[1]['in'] - r[1].out);
+              return '<div style="color:' + GRAY + ';white-space:nowrap;">' + r[0] + '</div>' +
+                '<div style="text-align:right;color:' + RED + ';font-weight:700;">' + y(r[1].out) + '</div>' +
+                '<div style="text-align:right;color:' + GREEN + ';font-weight:700;">' + y(r[1]['in']) + '</div>' +
+                '<div style="text-align:right;color:' + (d < 0 ? RED : GREEN) + ';' + (_useRest ? 'font-weight:800;' : '') + '">' + (_useRest ? y(d) : sg(d)) + '</div>';
+            }).join('') + '</div>';
+        }
+
         var _purseHtml = '';
         try {
           if (_pt.count > 0) {
@@ -40898,6 +40902,7 @@ function renderMonthlyMoneyLine() {
             '<span style="color:' + GRAY + ';">→ ' + _m + '月末の見込み</span>　' +
             '<span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;font-size:1.1em;">' + y(_fore) + '</span>' +
             '<div style="color:' + GRAY + ';font-size:0.78em;">＝ 手持ち ' + y(_pt.total) + ' ＋ 入る ' + y(_sum.cur['in']) + ' − 出る ' + y(_sum.cur.out) + '（' + _m + '月の今日から月末まで）</div>' +
+            ((_sum.next.out || _sum.next['in']) ? '<div style="color:' + GRAY + ';font-size:0.78em;">' + _nm + '月末の残り ＝ ' + _m + '月末の見込み ＋ ' + _nm + '月の入る − 出る</div>' : '') +
           '</div>';
         html = _purseHtml + html + _foreHtml;
 
@@ -54907,6 +54912,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.59.5', date: '2026-10-19',
+    items: [
+      { icon:'💰', t:'お金の表の右の列を「月末の残り」にしました',
+        before:'右の列は「差（入る − 出る）」で、手持ちを入れない数字が大きく目立っていました',
+        after:'手持ちを入れている人は、右の列が「月末の残り」（手持ちから見て、その月末にいくら残るか）になります。来月の行は、今月末の残りから続けて数えます' }
+    ]
+  },
   {
     ver: 'v0.59.4', date: '2026-10-19',
     items: [
@@ -81188,6 +81201,37 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-472: 例外', e.message);
      } finally {
        allSettings.ui = _st472ui;
+     }
+
+     // ===== ST-473: お金の表の右の列は、手持ちから見た「月末の残り」（v0.59.5〜） =====
+     // 【権威】2026-10-19、「この版は手持ちを無視して差を出してしまう」との指摘
+     var _st473tasks = allTasks.slice(), _st473open = null;
+     try {
+       try { _st473open = localStorage.getItem('moneyLineOpen'); } catch (e0) {}
+       var _t = getLocalDateStr(new Date()), _d = new Date();
+       var _nm = (_d.getMonth() + 1) % 12 + 1, _ny = _d.getMonth() === 11 ? _d.getFullYear() + 1 : _d.getFullYear();
+       var _nx = _ny + '-' + String(_nm).padStart(2, '0') + '-05';
+       allTasks = allTasks.filter(function(x) { return x && x.kind !== 'money' && !(x.kind === 'task' && x.text && /[▲▽△▼]/.test(x.text)); });
+       allTasks.push({ id: 'st473a', kind: 'money', name: 'ST473の財布', amount: 100000, order: 0 });
+       allTasks.push({ id: 'st473b', kind: 'task', text: '▲30,000 ST473家賃', date: _t });
+       allTasks.push({ id: 'st473c', kind: 'task', text: '▽5,000 ST473入金', date: _t });
+       allTasks.push({ id: 'st473d', kind: 'task', text: '▲20,000 ST473保険', date: _nx });
+       localStorage.setItem('moneyLineOpen', '1');
+       var _el = document.getElementById('monthlyMoneyLine');
+       var _prevDisp = _el ? _el.style.display : '';
+       renderMonthlyMoneyLine();
+       var _txt = _el ? _el.textContent : '';
+       // 今月末＝100,000＋5,000−30,000＝75,000、来月末＝75,000−20,000＝55,000
+       (_txt.indexOf('月末の残り') !== -1 && _txt.indexOf('75,000') !== -1 && _txt.indexOf('55,000') !== -1 && _txt.indexOf('-25,000') === -1)
+         ? ok('ST-473·①: 手持ちがあるとき、右の列は「月末の残り」（今月末＝手持ち＋入る−出る、来月末＝今月末から続けて）。手持ちを無視した差は出さない')
+         : ng('ST-473·①: 月末の残りが違う', _txt.slice(0, 160));
+       if (_el) _el.style.display = _prevDisp;
+     } catch(e) {
+       ng('ST-473: 例外', e.message);
+     } finally {
+       allTasks = _st473tasks;
+       try { if (_st473open === null) localStorage.removeItem('moneyLineOpen'); else localStorage.setItem('moneyLineOpen', _st473open); } catch (e1) {}
+       try { renderMonthlyMoneyLine(); } catch (e2) {}
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
