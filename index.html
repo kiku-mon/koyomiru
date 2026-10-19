@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.59.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.59.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.59.2';
+    const APP_VERSION = 'v0.59.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6760,7 +6760,7 @@ function _showInviteWelcome() {
 // 1か所で「今、ほかの画面が開いていないか」を見て、開いていれば閉じるまで待ってから出す（第71条④）。
 // 季節の風だよりを出す所が起動のとても早い段階にあるので、この道具はそれより前に置く（第74条）
 (function() {
-  var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiOrderOverlay'];   // v0.58.0: 注文票も（v0.59.0: 今日の暦のカードは無くした）
+  var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiOrderOverlay', 'koyomiLifeSwipe'];   // v0.59.3: 払う画面も   // v0.58.0: 注文票も（v0.59.0: 今日の暦のカードは無くした）
   function openNow() {
     return IDS.some(function(id) {
       var e = document.getElementById(id); if (!e) return false;
@@ -22369,9 +22369,29 @@ var KOYOMI_LIFE_QUESTIONS = {
 };
 window.KOYOMI_LIFE_QUESTIONS = KOYOMI_LIFE_QUESTIONS;
 var KOYOMI_LIFE_BETA_NOTE = 'β版：いまの数字は仮のものです。みなさんの答えが集まると、本物に切り替わります。';
+// v0.59.3: 【権威】2026-10-19、「つぎにやることを押して、それから払うのはめんどくさい。いきなり払って聞いちゃえば」との指示。
+// めくったら（もうめくった日は季節の風だよりを開いたら）、答えていない問いがあれば、すぐ払う画面を出す。
+// 全部答えずに閉じた日は、その日はもう自動では出さない（「つぎにやること」から開ける）
+var KOYOMI_LIFE_DISMISS_KEY = 'koyomiLifeDismissedOn';
+function koyomiLifeAutoOpen(opts) {
+  if (window._isTesting) return false;
+  try { if (localStorage.getItem(KOYOMI_LIFE_DISMISS_KEY) === getLocalDateStr(new Date())) return false; } catch (e) {}
+  if (!koyomiLifeQueue(new Date()).length) return false;
+  if (document.getElementById('koyomiLifeSwipe')) return false;
+  openKoyomiLifeSwipe(opts || {});
+  return true;
+}
+window.koyomiLifeAutoOpen = koyomiLifeAutoOpen;
 var KOYOMI_SWIPE_THRESHOLD = 80;   // これ以上払ったら答えにする（px）
-// 払った量から答えを決める（純粋な関数）
-function koyomiSwipeDecide(dx) { return dx >= KOYOMI_SWIPE_THRESHOLD ? 'yes' : (dx <= -KOYOMI_SWIPE_THRESHOLD ? 'no' : null); }
+// 払った量と、はなした瞬間の速さ（px/ms）から答えを決める（純粋な関数）。
+// v0.59.3: 速く払えば、距離が短くても答えにする（マッチングアプリ型のカードの定番。距離だけだと、さっと払ったときに戻ってしまい、ぎこちない）
+var KOYOMI_SWIPE_FLICK = 0.5;   // これより速く払ったら答え（px/ms）
+function koyomiSwipeDecide(dx, vx) {
+  if (dx >= KOYOMI_SWIPE_THRESHOLD) return 'yes';
+  if (dx <= -KOYOMI_SWIPE_THRESHOLD) return 'no';
+  if (typeof vx === 'number' && Math.abs(dx) >= 20 && Math.abs(vx) >= KOYOMI_SWIPE_FLICK && (vx > 0) === (dx > 0)) return dx > 0 ? 'yes' : 'no';
+  return null;
+}
 window.koyomiSwipeDecide = koyomiSwipeDecide;
 // 今日の答え（設定に残す。ほかの端末にも届く。直近120日分だけ持つ）
 function koyomiLifeAnswer(ymd) { var a = allSettings && allSettings.ui && allSettings.ui.koyomiLifeAnswers; return (a && a[ymd]) || null; }
@@ -22470,11 +22490,12 @@ function openKoyomiLifeSwipe(opts) {
   ov.style.cssText = 'position:fixed;inset:0;z-index:100005;background:#fff;display:flex;flex-direction:column;font-family:inherit;overflow:hidden;';
   var close = function() {
     document.removeEventListener('keydown', onKey);
+    if (queue.length && !window._isTesting) { try { localStorage.setItem(KOYOMI_LIFE_DISMISS_KEY, getLocalDateStr(new Date())); } catch (eD) {} }
     ov.remove();
     if (typeof opts.onClose === 'function') { try { opts.onClose(); } catch (e) {} }
   };
   var big = window.innerWidth >= 760;
-  var render = function() {
+  var render = function(entering) {
     var cur = queue[0];
     var col = koyomiLifeColor(cur ? cur.kou : '');
     if (!cur) {
@@ -22503,11 +22524,13 @@ function openKoyomiLifeSwipe(opts) {
           // 前のカードと同じ大きさの入れ物に、後ろのカード（次の問いがあるとき・少し下に小さく）と前のカードを重ねる
           '<div style="position:relative;width:calc(100% - 52px);height:' + (big ? 400 : 380) + 'px;max-height:100%;">' +
           (queue.length > 1 ? '<div style="position:absolute;left:14px;right:14px;top:14px;bottom:-14px;background:rgba(255,255,255,0.55);border-radius:30px;"></div>' : '') +
-          '<div data-life-card style="position:relative;width:100%;height:100%;background:#fff;border-radius:30px;box-shadow:0 10px 30px rgba(0,0,0,0.15);padding:30px 22px 20px;box-sizing:border-box;display:flex;flex-direction:column;touch-action:pan-y;user-select:none;cursor:grab;transition:transform 0.25s ease;">' +
+          '<div data-life-card style="will-change:transform;transform-origin:50% 115%;position:relative;width:100%;height:100%;background:#fff;border-radius:30px;box-shadow:0 10px 30px rgba(0,0,0,0.15);padding:30px 22px 20px;box-sizing:border-box;display:flex;flex-direction:column;touch-action:pan-y;user-select:none;cursor:grab;transition:transform 0.25s ease;">' +
             '<div style="position:absolute;left:50%;top:-22px;transform:translateX(-50%);background:' + col.accent + ';color:#fff;border:2px solid #fff;border-radius:999px;padding:6px 22px;font-weight:800;font-size:0.95em;white-space:nowrap;">残り <span style="font-size:1.3em;">' + queue.length + '</span> 問</div>' +
-            // 払う向きと反対側に印を出す（右に払うと右端は画面の外に出るので、「はい」は左上・「いいえ」は右上）
-            '<span data-life-tag="yes" style="position:absolute;left:18px;top:34px;opacity:0;color:#66a0d6;background:#fff;border:3px solid #66a0d6;border-radius:8px;padding:2px 10px;font-weight:800;font-size:1.2em;transform:rotate(-12deg);z-index:1;">はい</span>' +
-            '<span data-life-tag="no" style="position:absolute;right:18px;top:34px;opacity:0;color:#bb93c0;background:#fff;border:3px solid #bb93c0;border-radius:8px;padding:2px 10px;font-weight:800;font-size:1.2em;transform:rotate(12deg);z-index:1;">いいえ</span>' +
+            // v0.59.3: 【権威】2026-10-19、タックスナップは寄せるとカードそのものに「プライベート」「ビジネス」と出る、との指摘。
+            // 寄せた向きの色でカード全体を覆い、真ん中に大きく「はい」「いいえ」。寄せた量に合わせて濃くなる
+            // 文字は、払う向きと反対の側（画面の内側に残る側）に寄せる。「はい」は左寄り、「いいえ」は右寄り
+            '<div data-life-tag="yes" style="position:absolute;inset:0;border-radius:30px;background:rgba(102,160,214,0.92);color:#fff;display:flex;align-items:center;justify-content:flex-start;padding-left:9%;box-sizing:border-box;font-size:2.6em;font-weight:800;letter-spacing:.1em;opacity:0;pointer-events:none;z-index:2;">はい</div>' +
+            '<div data-life-tag="no" style="position:absolute;inset:0;border-radius:30px;background:rgba(187,147,192,0.92);color:#fff;display:flex;align-items:center;justify-content:flex-end;padding-right:9%;box-sizing:border-box;font-size:2.6em;font-weight:800;letter-spacing:.1em;opacity:0;pointer-events:none;z-index:2;">いいえ</div>' +
             '<div style="font-weight:800;font-size:1.5em;color:' + col.accent + ';">' + p[0] + '.' + Number(p[1]) + '.' + Number(p[2]) + '</div>' +
             '<div style="margin-top:8px;font-size:0.9em;color:#999;font-weight:700;">七十二候「' + esc(cur.kou) + '」</div>' +
             '<div style="margin-top:12px;font-size:1.6em;font-weight:800;color:#333;line-height:1.45;">' + esc(cur.q) + '</div>' +
@@ -22524,41 +22547,80 @@ function openKoyomiLifeSwipe(opts) {
         '<button type="button" data-ls="close" style="display:flex;flex-direction:column;align-items:center;border:none;background:none;cursor:pointer;color:#333;font-weight:800;font-size:0.85em;">' +
           '<span style="width:64px;height:64px;border-radius:50%;box-shadow:0 4px 14px rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;font-size:1.5em;margin-bottom:8px;">✕</span>閉じる</button>' +
       '</div>';
-    bindCard();
+    bindCard(entering);
   };
+  var busy = false;
+  // 答える：指の勢いのまま、画面の外へ飛んでいく。次のカードは後ろから大きくなって前に出てくる
   var answer = function(ans) {
-    var cur = queue[0]; if (!cur) return;
+    var cur = queue[0]; if (!cur || busy) return;
+    busy = true;
     var card = ov.querySelector('[data-life-card]');
-    if (card) { card.style.transition = 'transform 0.28s ease'; card.style.transform = 'translateX(' + (ans === 'yes' ? 150 : -150) + '%) rotate(' + (ans === 'yes' ? 14 : -14) + 'deg)'; }
+    if (card) {
+      var tag = card.querySelector('[data-life-tag="' + ans + '"]'); if (tag) tag.style.opacity = 1;
+      card.style.transition = 'transform 0.32s cubic-bezier(0.2, 0.7, 0.3, 1)';
+      card.style.transform = 'translate3d(' + (ans === 'yes' ? 1 : -1) * (window.innerWidth + 200) + 'px, 40px, 0) rotate(' + (ans === 'yes' ? 28 : -28) + 'deg)';
+    }
     setKoyomiLifeAnswer(cur.ymd, cur.kou, ans);
     queue.shift();
-    setTimeout(render, 280);
+    setTimeout(function() { busy = false; render(true); }, 300);
   };
-  var bindCard = function() {
+  var bindCard = function(entering) {
     var card = ov.querySelector('[data-life-card]'); if (!card) return;
+    if (entering) {   // 後ろのカードの位置から、大きくなって前に出てくる
+      card.style.transition = 'none';
+      card.style.transform = 'translate3d(0, 14px, 0) scale(0.94)';
+      card.style.opacity = '0.6';
+      requestAnimationFrame(function() { requestAnimationFrame(function() {
+        card.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.2s ease';
+        card.style.transform = ''; card.style.opacity = '';
+      }); });
+    }
     var tags = { yes: card.querySelector('[data-life-tag="yes"]'), no: card.querySelector('[data-life-tag="no"]') };
-    var startX = null, dx = 0;
-    card.addEventListener('pointerdown', function(e) { startX = e.clientX; dx = 0; try { card.setPointerCapture(e.pointerId); } catch (eP) {} });
+    var startX = null, startY = 0, dx = 0, dy = 0, lastX = 0, lastT = 0, vx = 0, raf = 0;
+    // 画面の書き換えは、描画の合間に1回だけ（指の動きのたびに書き換えると、カクつく）
+    var paint = function() {
+      raf = 0;
+      card.style.transform = 'translate3d(' + dx + 'px,' + (dy * 0.2) + 'px,0) rotate(' + (dx * 0.06) + 'deg)';
+      var k = Math.min(1, Math.abs(dx) / (KOYOMI_SWIPE_THRESHOLD * 1.3));
+      tags.yes.style.opacity = dx > 0 ? (k * 0.95) : 0;
+      tags.no.style.opacity = dx < 0 ? (k * 0.95) : 0;
+    };
+    card.addEventListener('pointerdown', function(e) {
+      if (busy) return;
+      startX = e.clientX; startY = e.clientY; dx = 0; dy = 0; lastX = e.clientX; lastT = performance.now(); vx = 0;
+      card.style.transition = 'none';
+      card.style.cursor = 'grabbing';
+      try { card.setPointerCapture(e.pointerId); } catch (eP) {}
+    });
     card.addEventListener('pointermove', function(e) {
       if (startX === null) return;
-      dx = e.clientX - startX;
-      card.style.transition = 'none';
-      card.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx / 18) + 'deg)';
-      tags.yes.style.opacity = Math.max(0, Math.min(1, dx / KOYOMI_SWIPE_THRESHOLD));
-      tags.no.style.opacity = Math.max(0, Math.min(1, -dx / KOYOMI_SWIPE_THRESHOLD));
+      dx = e.clientX - startX; dy = e.clientY - startY;
+      var now = performance.now(), dt = now - lastT;
+      if (dt > 0) vx = 0.8 * ((e.clientX - lastX) / dt) + 0.2 * vx;   // はなす直前の速さ（少しならす）
+      lastX = e.clientX; lastT = now;
+      if (!raf) raf = requestAnimationFrame(paint);
     });
     var end = function() {
       if (startX === null) return;
       startX = null;
-      var d = koyomiSwipeDecide(dx);
-      if (d) answer(d); else { card.style.transition = 'transform 0.25s ease'; card.style.transform = ''; tags.yes.style.opacity = 0; tags.no.style.opacity = 0; }
-      dx = 0;
+      card.style.cursor = 'grab';
+      if (performance.now() - lastT > 80) vx = 0;   // 止めてからはなしたら、速さは無し
+      var d = koyomiSwipeDecide(dx, vx);
+      if (d) answer(d);
+      else {   // 少し弾んで戻る
+        card.style.transition = 'transform 0.42s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+        card.style.transform = '';
+        tags.yes.style.transition = tags.no.style.transition = 'opacity 0.2s ease';
+        tags.yes.style.opacity = 0; tags.no.style.opacity = 0;
+        setTimeout(function() { tags.yes.style.transition = tags.no.style.transition = ''; }, 220);
+      }
+      dx = 0; dy = 0;
     };
     card.addEventListener('pointerup', end);
     card.addEventListener('pointercancel', end);
     ov.querySelector('[data-ls="yes"]').onclick = function() { answer('yes'); };
     ov.querySelector('[data-ls="no"]').onclick = function() { answer('no'); };
-    ov.querySelector('[data-ls="skip"]').onclick = function() { if (queue.length > 1) { queue.push(queue.shift()); render(); } else close(); };
+    ov.querySelector('[data-ls="skip"]').onclick = function() { if (queue.length > 1) { queue.push(queue.shift()); render(true); } else close(); };
     ov.querySelector('[data-ls="close"]').onclick = close;
     ov.querySelector('[data-ls="help"]').onclick = function() {
       if (typeof showToast === 'function') showToast(KOYOMI_LIFE_BETA_NOTE, { type: 'info', duration: 6000 });
@@ -22689,7 +22751,15 @@ function renderKazeKoyomi(col, opts) {
   }
   var parts = koyomiKazeParts(v, order, esc);
   topEl.innerHTML = parts.top; botEl.innerHTML = parts.bottom;
-  try { bindKoyomiLife(v, function() { renderKazeKoyomi(col, Object.assign({}, opts, { answer: true })); }); } catch (eL) {}
+  var _rerender = function() { renderKazeKoyomi(col, Object.assign({}, opts, { answer: true, noLifeAuto: true })); };
+  try { bindKoyomiLife(v, _rerender); } catch (eL) {}
+  // v0.59.3: いきなり払う画面（季節の風だよりが見えているときだけ）
+  if (!opts.noLifeAuto && !opts.date) {
+    setTimeout(function() {
+      var m = document.getElementById('kazedayoriModal');
+      if (m && m.style.display !== 'none') koyomiLifeAutoOpen({ onClose: _rerender });
+    }, 450);
+  }
   if (order.moon === 'none') { show(moonRow, false); show(moonLabel, false); }
   else if (order.moon === 'half' && moonLabel) moonLabel.textContent = v.moonName;
   var w = botEl.querySelector('[data-kz="word"]');
@@ -54846,6 +54916,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.59.3', date: '2026-10-19',
+    items: [
+      { icon:'🍃', t:'暮らしの問いを、いきなり払えるようにしました',
+        before:'「答える」を押してから払う画面が開きました。カードを寄せても、小さな印が出るだけで、動きもぎこちないところがありました',
+        after:'めくると、すぐに払う画面が出ます。寄せるとカード全体が色づいて「はい」「いいえ」と大きく出ます。さっと払えば短くても答えになり、戻すときは少し弾み、次のカードは後ろから前に出てきます' }
+    ]
+  },
+  {
     ver: 'v0.59.2', date: '2026-10-19',
     items: [
       { icon:'🍃', t:'暮らしの問いを、画面いっぱいのカードで答えるようにしました',
@@ -81051,9 +81129,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-472·①: 七十二候すべてに、暮らしの問いが1つずつある（仮の数字は1〜99）')
          : ng('ST-472·①: 暮らしの問いが足りない', _miss.join(','));
        // ② 払った量で答えを決める（80px より多く払えば答え、少しなら戻る）
-       var _sw = [koyomiSwipeDecide(100), koyomiSwipeDecide(-90), koyomiSwipeDecide(40), koyomiSwipeDecide(-79)].join(',');
-       (_sw === 'yes,no,,')
-         ? ok('ST-472·②: 右に払えば「はい」、左に払えば「いいえ」、少しだけなら答えにしない')
+       // v0.59.3: はなした瞬間の速さも見る（さっと払えば、距離が短くても答え）
+       var _sw = [koyomiSwipeDecide(100), koyomiSwipeDecide(-90), koyomiSwipeDecide(40), koyomiSwipeDecide(-79),
+                  koyomiSwipeDecide(50, 0.9), koyomiSwipeDecide(-40, -0.7), koyomiSwipeDecide(50, 0.2), koyomiSwipeDecide(10, 2), koyomiSwipeDecide(50, -0.9)].join(',');
+       (_sw === 'yes,no,,,yes,no,,,')
+         ? ok('ST-472·②: 右に払えば「はい」、左なら「いいえ」。少しだけなら戻る。さっと払えば短くても答え（逆向きの勢いや、ほんの少しは答えにしない）')
          : ng('ST-472·②: 払った量の判断が違う', _sw);
        // ③ v0.59.2：答えていない問いの列（今日と、ここ7日のうち答えていない候）。季節の風だよりの中は「つぎにやること」、全部答えたら結果
        delete allSettings.ui.koyomiLifeAnswers;
@@ -81080,7 +81160,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _tick = function() { return new Promise(function(r) { setTimeout(r, 320); }); };
        var _o4 = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'basic' });
        var _parts = koyomiKazeParts(koyomiTodayData(_d), _o4, _e);
+       var _tagY = _ov.querySelector('[data-life-tag="yes"]'), _tagN = _ov.querySelector('[data-life-tag="no"]');
        (_t1.indexOf('みんなはどうしてる？') !== -1 && _t1.indexOf('残り 2 問') !== -1 && _t1.indexOf('β版・仮の数字') !== -1 && _has &&
+        _tagY && _tagY.textContent === 'はい' && /inset:\s*0/.test(_tagY.getAttribute('style')) && _tagN && _tagN.textContent === 'いいえ' &&   /* v0.59.3: カード全体に大きく */
+        /koyomiLifeAutoOpen\(\{ onClose: _rerender \}\)/.test(renderKazeKoyomi.toString()) && koyomiLifeAutoOpen() === false &&   /* いきなり払う画面（テスト中は出さない） */
         /id="kazeLifeQ"/.test(_parts.bottom) && /openKoyomiLifeSwipe\(\{ onClose: rerender \}\)/.test(bindKoyomiLife.toString()))
          ? ok('ST-472·④: 払う画面は「みんなはどうしてる？（β版・仮の数字）」「残り○問」の大きなカード・左右・スキップ・閉じる。季節の風だよりの「答える」から開く')
          : ng('ST-472·④: 払う画面の作りが違う', _t1.slice(0, 60));
