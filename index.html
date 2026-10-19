@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.59.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.59.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.59.1';
+    const APP_VERSION = 'v0.59.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22390,73 +22390,191 @@ window.setKoyomiLifeAnswer = setKoyomiLifeAnswer;
 // みんなの割合（今は仮の数字。本物が集まったら、ここが本物を返す）
 function koyomiLifeShare(kou) { var q = KOYOMI_LIFE_QUESTIONS[kou]; return q ? { yes: q[1], beta: true } : null; }
 window.koyomiLifeShare = koyomiLifeShare;
-// 暮らしの問いの中身（まだ答えていなければ払うカード、答えたら結果）
+// 季節の風だよりの中：まだ答えていなければ「つぎにやること」、今日の分を答えたら結果
+// v0.59.2: 【権威】2026-10-19、「UIが違う。タックスナップのUIをまねたい」との指示と、実物の画面2枚。
+// 払う手つきは、季節の風だよりの中ではなく、画面いっぱいの専用の画面（openKoyomiLifeSwipe）で行う
 function koyomiLifeHtml(v, esc) {
   var q = KOYOMI_LIFE_QUESTIONS[v.kou];
   if (!q) return '';
-  var done = koyomiLifeAnswer(v.ymd);
   var wrap = function(inner) { return '<div id="kazeLifeQ" style="margin:6px 0 14px;">' + inner + '</div>'; };
-  if (done && done.kou === v.kou) {
+  var done = koyomiLifeAnswer(v.ymd);
+  var left = koyomiLifeQueue(v.date || new Date()).length;
+  if (done && done.kou === v.kou && !left) {
     var sh = koyomiLifeShare(v.kou), yes = sh ? sh.yes : 0, no = 100 - yes;
     return wrap('<div style="background:rgba(255,255,255,0.55);border-radius:16px;padding:12px 14px;">' +
       '<div style="font-weight:700;text-align:center;">' + esc(q[0]) + '</div>' +
       '<div style="text-align:center;font-size:0.85em;opacity:0.8;margin:4px 0 8px;">あなた：<b>' + (done.ans === 'yes' ? 'はい' : 'いいえ') + '</b></div>' +
-      '<div style="display:flex;height:22px;border-radius:999px;overflow:hidden;font-size:0.78em;font-weight:700;color:#fff;">' +
-        '<div style="width:' + no + '%;background:rgba(0,0,0,0.35);display:flex;align-items:center;padding-left:8px;white-space:nowrap;">いいえ ' + no + '%</div>' +
-        '<div style="width:' + yes + '%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;white-space:nowrap;">はい ' + yes + '%</div></div>' +
-      '<div style="text-align:center;font-size:0.82em;margin-top:6px;">みんな：<b>はい ' + yes + '％</b></div>' +
-      (sh && sh.beta ? '<div style="text-align:center;font-size:0.68em;opacity:0.65;margin-top:4px;line-height:1.5;">' + esc(KOYOMI_LIFE_BETA_NOTE) + '</div>' : '') + '</div>');
+      koyomiLifeBar(yes, true) +
+      (sh && sh.beta ? '<div style="text-align:center;font-size:0.68em;opacity:0.65;margin-top:6px;line-height:1.5;">' + esc(KOYOMI_LIFE_BETA_NOTE) + '</div>' : '') + '</div>');
   }
-  return wrap('<div style="text-align:center;font-size:0.75em;opacity:0.7;margin-bottom:4px;">暮らしの問い　左右に払って答える</div>' +
-    '<div data-life-card style="position:relative;background:rgba(255,255,255,0.75);border-radius:18px;padding:22px 16px;text-align:center;font-weight:800;font-size:1.05em;line-height:1.6;box-shadow:0 6px 18px rgba(0,0,0,0.12);touch-action:pan-y;user-select:none;cursor:grab;transition:transform 0.25s ease;">' +
-      '<span data-life-tag="no" style="position:absolute;left:12px;top:10px;font-size:0.7em;opacity:0;border:2px solid currentColor;border-radius:6px;padding:0 6px;">いいえ</span>' +
-      '<span data-life-tag="yes" style="position:absolute;right:12px;top:10px;font-size:0.7em;opacity:0;border:2px solid currentColor;border-radius:6px;padding:0 6px;">はい</span>' +
-      esc(q[0]) + '</div>' +
-    '<div style="display:flex;justify-content:space-between;margin-top:8px;">' +
-      '<button type="button" data-life="no" style="padding:7px 16px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.5);color:inherit;font-size:0.85em;cursor:pointer;">← いいえ</button>' +
-      '<button type="button" data-life="yes" style="padding:7px 16px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.5);color:inherit;font-size:0.85em;cursor:pointer;">はい →</button></div>');
+  return wrap('<div style="background:#fff;border-radius:16px;padding:12px 14px;box-shadow:0 4px 14px rgba(0,0,0,0.08);color:#333;">' +
+    '<div style="font-weight:800;font-size:0.95em;margin-bottom:6px;">つぎにやること</div>' +
+    '<div style="display:flex;align-items:flex-end;justify-content:space-between;">' +
+      '<div style="font-weight:800;font-size:1.1em;">🍃 暮らしの問い</div>' +
+      '<div style="text-align:right;"><div style="font-size:0.7em;opacity:0.6;">のこり</div><div style="font-weight:800;font-size:1.5em;line-height:1;">' + left + '問</div></div></div>' +
+    '<button type="button" data-life-open style="margin-top:10px;width:100%;padding:11px;border:none;border-radius:10px;background:' + koyomiLifeColor(v.kou).accent + ';color:#fff;font-weight:800;font-size:1em;cursor:pointer;">答える</button></div>');
 }
 window.koyomiLifeHtml = koyomiLifeHtml;
-// 払う手つき（指・マウス・ボタン・左右の矢印のキー）
+// みんなはどうしてる？の帯（左＝いいえ、右＝はい）
+function koyomiLifeBar(yes, small) {
+  var no = 100 - yes, h = small ? 22 : 40, fs = small ? '0.78em' : '1.4em';
+  return '<div style="display:flex;height:' + h + 'px;border-radius:999px;overflow:hidden;font-weight:800;color:#fff;font-size:' + fs + ';">' +
+      '<div style="width:' + no + '%;background:#bb93c0;display:flex;align-items:center;padding-left:' + (small ? 8 : 14) + 'px;white-space:nowrap;">' + no + '%</div>' +
+      '<div style="width:' + yes + '%;background:#66a0d6;display:flex;align-items:center;justify-content:flex-end;padding-right:' + (small ? 8 : 14) + 'px;white-space:nowrap;">' + yes + '%</div></div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:' + (small ? '0.72em' : '0.9em') + ';font-weight:700;margin-top:4px;"><span>いいえ</span><span>はい</span></div>';
+}
+window.koyomiLifeBar = koyomiLifeBar;
+// その候の季節の色（季節の風だよりと同じ色）。濃い方を、払う画面の地の色と、カードの文字の色に使う
+function koyomiLifeColor(kouName) {
+  var k = (typeof SHICHIJUNI_KOU !== 'undefined') ? SHICHIJUNI_KOU.filter(function(x) { return x.name === kouName; })[0] : null;
+  var c = (k && typeof getShichijuniKouColor === 'function') ? getShichijuniKouColor(k.sekki, k.order) : { from: '#f5f5f5', to: '#eeeeee', text: '#333333' };
+  return { from: c.from, to: c.to, accent: c.text, sekki: k ? k.sekki : '', reading: k ? k.reading : '' };
+}
+window.koyomiLifeColor = koyomiLifeColor;
+// 答えていない問いの列（今日と、ここ7日のうち答えていない候。同じ候は1つだけ。新しい順に5問まで）
+function koyomiLifeQueue(today) {
+  var out = [], seen = {};
+  var base = today || new Date();
+  var answers = (allSettings && allSettings.ui && allSettings.ui.koyomiLifeAnswers) || {};
+  var answeredKou = {};
+  Object.keys(answers).forEach(function(d) { if (answers[d] && answers[d].kou) answeredKou[answers[d].kou + '@' + String(d).slice(0, 4)] = true; });
+  for (var i = 0; i < 7 && out.length < 5; i++) {
+    var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() - i, 12, 0, 0);
+    var k = (typeof getCurrentShichijuniKou === 'function') ? getCurrentShichijuniKou(d) : null;
+    if (!k || seen[k.name] || !KOYOMI_LIFE_QUESTIONS[k.name]) continue;
+    seen[k.name] = true;
+    var ymd = getLocalDateStr(d);
+    if (answeredKou[k.name + '@' + ymd.slice(0, 4)]) continue;
+    out.push({ ymd: ymd, kou: k.name, kouDay: k.dayInKou, sekki: k.sekkiName, sekkiDay: k.sekkiDay, q: KOYOMI_LIFE_QUESTIONS[k.name][0] });
+  }
+  return out;
+}
+window.koyomiLifeQueue = koyomiLifeQueue;
+// 季節の風だよりの中の「答える」をつなぐ
 function bindKoyomiLife(v, rerender) {
   var box = document.getElementById('kazeLifeQ'); if (!box) return;
-  var card = box.querySelector('[data-life-card]'); if (!card) return;
-  var answer = function(ans) {
-    card.style.transform = 'translateX(' + (ans === 'yes' ? 140 : -140) + '%) rotate(' + (ans === 'yes' ? 12 : -12) + 'deg)';
-    setKoyomiLifeAnswer(v.ymd, v.kou, ans);
-    document.removeEventListener('keydown', onKey);
-    setTimeout(rerender, 260);
-  };
-  var startX = null, dx = 0;
-  var tags = { yes: card.querySelector('[data-life-tag="yes"]'), no: card.querySelector('[data-life-tag="no"]') };
-  var move = function(x) {
-    dx = x - startX;
-    card.style.transition = 'none';
-    card.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx / 20) + 'deg)';
-    tags.yes.style.opacity = Math.max(0, Math.min(1, dx / KOYOMI_SWIPE_THRESHOLD));
-    tags.no.style.opacity = Math.max(0, Math.min(1, -dx / KOYOMI_SWIPE_THRESHOLD));
-  };
-  var end = function() {
-    if (startX === null) return;
-    startX = null;
-    card.style.transition = 'transform 0.25s ease';
-    var d = koyomiSwipeDecide(dx);
-    if (d) answer(d); else { card.style.transform = ''; tags.yes.style.opacity = 0; tags.no.style.opacity = 0; }
-    dx = 0;
-  };
-  card.addEventListener('pointerdown', function(e) { startX = e.clientX; dx = 0; try { card.setPointerCapture(e.pointerId); } catch (eP) {} });
-  card.addEventListener('pointermove', function(e) { if (startX !== null) move(e.clientX); });
-  card.addEventListener('pointerup', end);
-  card.addEventListener('pointercancel', end);
-  box.querySelectorAll('[data-life]').forEach(function(b) { b.onclick = function() { answer(b.getAttribute('data-life')); }; });
-  var onKey = function(e) {
-    var m = document.getElementById('kazedayoriModal');
-    if (!m || m.style.display === 'none' || !document.getElementById('kazeLifeQ')) { document.removeEventListener('keydown', onKey); return; }
-    if (e.key === 'ArrowRight') answer('yes'); else if (e.key === 'ArrowLeft') answer('no');
-  };
-  document.addEventListener('keydown', onKey);
+  var b = box.querySelector('[data-life-open]');
+  if (b) b.onclick = function() { openKoyomiLifeSwipe({ onClose: rerender }); };
 }
 window.bindKoyomiLife = bindKoyomiLife;
+// 払う画面（画面いっぱい）。タックスナップの仕分け画面の作りに合わせる：
+// 季節の色の地（下はゆるく丸く切る）・上に「みんなはどうしてる？ ?」と2色の帯・「残り ○ 問」の札のついた大きな白いカード・
+// 左右の ‹ › ・下に丸いボタン（スキップ・閉じる）
+function openKoyomiLifeSwipe(opts) {
+  opts = opts || {};
+  var old = document.getElementById('koyomiLifeSwipe'); if (old) old.remove();
+  var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var queue = opts.queue || koyomiLifeQueue(opts.date || new Date());
+  var ov = document.createElement('div');
+  ov.id = 'koyomiLifeSwipe';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100005;background:#fff;display:flex;flex-direction:column;font-family:inherit;overflow:hidden;';
+  var close = function() {
+    document.removeEventListener('keydown', onKey);
+    ov.remove();
+    if (typeof opts.onClose === 'function') { try { opts.onClose(); } catch (e) {} }
+  };
+  var big = window.innerWidth >= 760;
+  var render = function() {
+    var cur = queue[0];
+    var col = koyomiLifeColor(cur ? cur.kou : '');
+    if (!cur) {
+      ov.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,' + col.from + ',' + col.to + ');padding:24px;text-align:center;">' +
+        '<div style="font-size:1.3em;font-weight:800;color:#333;">今日の暮らしの問いは、ここまで</div>' +
+        '<div style="margin-top:8px;font-size:0.9em;color:#555;">季節を、外で探してみてください。</div>' +
+        '<button type="button" data-ls="close" style="margin-top:22px;padding:12px 40px;border:none;border-radius:999px;background:#333;color:#fff;font-weight:800;cursor:pointer;">閉じる</button></div>';
+      ov.querySelector('[data-ls="close"]').onclick = close;
+      return;
+    }
+    var sh = koyomiLifeShare(cur.kou), yes = sh ? sh.yes : 50;
+    var p = cur.ymd.split('-');
+    ov.innerHTML =
+      '<div style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;background:linear-gradient(160deg,' + col.from + ',' + col.to + ');border-radius:0 0 50% 50% / 0 0 ' + (big ? '60px' : '36px') + ' ' + (big ? '60px' : '36px') + ';padding:calc(env(safe-area-inset-top, 0px) + 18px) 16px 26px;">' +
+        // みんなはどうしてる？
+        // こよみるの季節の色は淡いので、白い字ではなく季節の濃い方の色の字にする（見やすさ命）
+        '<div style="width:100%;max-width:' + (big ? 520 : 400) + 'px;background:rgba(255,255,255,0.6);border-radius:22px;padding:12px 16px 10px;color:' + col.accent + ';">' +
+          '<div style="text-align:center;font-weight:800;font-size:1.05em;margin-bottom:8px;">みんなはどうしてる？ <button type="button" data-ls="help" style="width:24px;height:24px;border:none;border-radius:50%;background:' + col.accent + ';color:#fff;font-weight:800;cursor:pointer;vertical-align:1px;">?</button></div>' +
+          koyomiLifeBar(yes, false) +
+          (sh && sh.beta ? '<div data-ls-beta style="text-align:center;font-size:0.72em;margin-top:2px;opacity:0.85;">β版・仮の数字</div>' : '') +
+        '</div>' +
+        // カード
+        '<div style="position:relative;flex:1;width:100%;max-width:' + (big ? 520 : 400) + 'px;display:flex;align-items:center;justify-content:center;margin-top:30px;">' +
+          '<button type="button" data-ls="no" aria-label="いいえ" style="position:absolute;left:-6px;top:50%;transform:translateY(-50%);border:none;background:none;color:' + col.accent + ';opacity:0.7;font-size:2.4em;cursor:pointer;z-index:2;">‹</button>' +
+          '<button type="button" data-ls="yes" aria-label="はい" style="position:absolute;right:-6px;top:50%;transform:translateY(-50%);border:none;background:none;color:' + col.accent + ';opacity:0.7;font-size:2.4em;cursor:pointer;z-index:2;">›</button>' +
+          // 前のカードと同じ大きさの入れ物に、後ろのカード（次の問いがあるとき・少し下に小さく）と前のカードを重ねる
+          '<div style="position:relative;width:calc(100% - 52px);height:' + (big ? 400 : 380) + 'px;max-height:100%;">' +
+          (queue.length > 1 ? '<div style="position:absolute;left:14px;right:14px;top:14px;bottom:-14px;background:rgba(255,255,255,0.55);border-radius:30px;"></div>' : '') +
+          '<div data-life-card style="position:relative;width:100%;height:100%;background:#fff;border-radius:30px;box-shadow:0 10px 30px rgba(0,0,0,0.15);padding:30px 22px 20px;box-sizing:border-box;display:flex;flex-direction:column;touch-action:pan-y;user-select:none;cursor:grab;transition:transform 0.25s ease;">' +
+            '<div style="position:absolute;left:50%;top:-22px;transform:translateX(-50%);background:' + col.accent + ';color:#fff;border:2px solid #fff;border-radius:999px;padding:6px 22px;font-weight:800;font-size:0.95em;white-space:nowrap;">残り <span style="font-size:1.3em;">' + queue.length + '</span> 問</div>' +
+            // 払う向きと反対側に印を出す（右に払うと右端は画面の外に出るので、「はい」は左上・「いいえ」は右上）
+            '<span data-life-tag="yes" style="position:absolute;left:18px;top:34px;opacity:0;color:#66a0d6;background:#fff;border:3px solid #66a0d6;border-radius:8px;padding:2px 10px;font-weight:800;font-size:1.2em;transform:rotate(-12deg);z-index:1;">はい</span>' +
+            '<span data-life-tag="no" style="position:absolute;right:18px;top:34px;opacity:0;color:#bb93c0;background:#fff;border:3px solid #bb93c0;border-radius:8px;padding:2px 10px;font-weight:800;font-size:1.2em;transform:rotate(12deg);z-index:1;">いいえ</span>' +
+            '<div style="font-weight:800;font-size:1.5em;color:' + col.accent + ';">' + p[0] + '.' + Number(p[1]) + '.' + Number(p[2]) + '</div>' +
+            '<div style="margin-top:8px;font-size:0.9em;color:#999;font-weight:700;">七十二候「' + esc(cur.kou) + '」</div>' +
+            '<div style="margin-top:12px;font-size:1.6em;font-weight:800;color:#333;line-height:1.45;">' + esc(cur.q) + '</div>' +
+            '<div style="margin-top:14px;font-size:1.25em;font-weight:800;color:' + col.accent + ';">#' + esc(cur.sekki) + '</div>' +
+            '<div style="margin-top:auto;text-align:right;font-weight:800;font-size:1.6em;color:' + col.accent + ';">' + (cur.kouDay || '') + '<span style="font-size:0.55em;">日目</span></div>' +
+          '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      // 下の丸いボタン
+      '<div style="display:flex;justify-content:center;gap:56px;padding:18px 0 calc(env(safe-area-inset-bottom, 0px) + 22px);">' +
+        '<button type="button" data-ls="skip" style="display:flex;flex-direction:column;align-items:center;border:none;background:none;cursor:pointer;color:#333;font-weight:800;font-size:0.85em;">' +
+          '<span style="width:64px;height:64px;border-radius:50%;box-shadow:0 4px 14px rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;font-size:1.5em;margin-bottom:8px;">⏭</span>スキップ</button>' +
+        '<button type="button" data-ls="close" style="display:flex;flex-direction:column;align-items:center;border:none;background:none;cursor:pointer;color:#333;font-weight:800;font-size:0.85em;">' +
+          '<span style="width:64px;height:64px;border-radius:50%;box-shadow:0 4px 14px rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;font-size:1.5em;margin-bottom:8px;">✕</span>閉じる</button>' +
+      '</div>';
+    bindCard();
+  };
+  var answer = function(ans) {
+    var cur = queue[0]; if (!cur) return;
+    var card = ov.querySelector('[data-life-card]');
+    if (card) { card.style.transition = 'transform 0.28s ease'; card.style.transform = 'translateX(' + (ans === 'yes' ? 150 : -150) + '%) rotate(' + (ans === 'yes' ? 14 : -14) + 'deg)'; }
+    setKoyomiLifeAnswer(cur.ymd, cur.kou, ans);
+    queue.shift();
+    setTimeout(render, 280);
+  };
+  var bindCard = function() {
+    var card = ov.querySelector('[data-life-card]'); if (!card) return;
+    var tags = { yes: card.querySelector('[data-life-tag="yes"]'), no: card.querySelector('[data-life-tag="no"]') };
+    var startX = null, dx = 0;
+    card.addEventListener('pointerdown', function(e) { startX = e.clientX; dx = 0; try { card.setPointerCapture(e.pointerId); } catch (eP) {} });
+    card.addEventListener('pointermove', function(e) {
+      if (startX === null) return;
+      dx = e.clientX - startX;
+      card.style.transition = 'none';
+      card.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx / 18) + 'deg)';
+      tags.yes.style.opacity = Math.max(0, Math.min(1, dx / KOYOMI_SWIPE_THRESHOLD));
+      tags.no.style.opacity = Math.max(0, Math.min(1, -dx / KOYOMI_SWIPE_THRESHOLD));
+    });
+    var end = function() {
+      if (startX === null) return;
+      startX = null;
+      var d = koyomiSwipeDecide(dx);
+      if (d) answer(d); else { card.style.transition = 'transform 0.25s ease'; card.style.transform = ''; tags.yes.style.opacity = 0; tags.no.style.opacity = 0; }
+      dx = 0;
+    };
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+    ov.querySelector('[data-ls="yes"]').onclick = function() { answer('yes'); };
+    ov.querySelector('[data-ls="no"]').onclick = function() { answer('no'); };
+    ov.querySelector('[data-ls="skip"]').onclick = function() { if (queue.length > 1) { queue.push(queue.shift()); render(); } else close(); };
+    ov.querySelector('[data-ls="close"]').onclick = close;
+    ov.querySelector('[data-ls="help"]').onclick = function() {
+      if (typeof showToast === 'function') showToast(KOYOMI_LIFE_BETA_NOTE, { type: 'info', duration: 6000 });
+    };
+  };
+  var onKey = function(e) {
+    if (!document.getElementById('koyomiLifeSwipe')) { document.removeEventListener('keydown', onKey); return; }
+    if (e.key === 'ArrowRight') answer('yes'); else if (e.key === 'ArrowLeft') answer('no'); else if (e.key === 'Escape') close();
+  };
+  document.addEventListener('keydown', onKey);
+  render();
+  document.body.appendChild(ov);
+  return ov;
+}
+window.openKoyomiLifeSwipe = openKoyomiLifeSwipe;
+
 
 // ---- 季節の風だよりに、注文の暦を足す（v0.59.0） ----
 // 【権威】2026-10-19、今日の暦のカードと季節の風だよりは中身がかぶる。「季節の風だよりに一本化して、その内容を充実させれば？」
@@ -54728,6 +54846,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.59.2', date: '2026-10-19',
+    items: [
+      { icon:'🍃', t:'暮らしの問いを、画面いっぱいのカードで答えるようにしました',
+        before:'季節の風だよりの中に、小さなカードが1枚あるだけでした',
+        after:'季節の風だよりの「つぎにやること」で「答える」を押すと、画面いっぱいに大きなカードが出ます。右に払えば「はい」、左なら「いいえ」。上に「みんなはどうしてる？」（β版・仮の数字）。ここ数日で答えていない問いも、まとめて答えられます' }
+    ]
+  },
+  {
     ver: 'v0.59.1', date: '2026-10-19',
     items: [
       { icon:'🍃', t:'暮らしの問い（β版）',
@@ -80929,24 +81055,52 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_sw === 'yes,no,,')
          ? ok('ST-472·②: 右に払えば「はい」、左に払えば「いいえ」、少しだけなら答えにしない')
          : ng('ST-472·②: 払った量の判断が違う', _sw);
-       // ③ 答える前はカードと左右のボタン、答えたら「あなた」と「みんな」とβ版の断り。答えは120日分だけ持つ
+       // ③ v0.59.2：答えていない問いの列（今日と、ここ7日のうち答えていない候）。季節の風だよりの中は「つぎにやること」、全部答えたら結果
        delete allSettings.ui.koyomiLifeAnswers;
-       var _v = { ymd: '2026-10-19', kou: '蟋蟀在戸' }, _e = function(x) { return String(x); };
+       var _d = new Date(2026, 9, 19, 9, 0, 0), _e = function(x) { return String(x); };
+       var _v = { ymd: '2026-10-19', kou: '蟋蟀在戸', date: _d };
+       var _q0 = koyomiLifeQueue(_d).map(function(x) { return x.kou; }).join(',');
        var _before = koyomiLifeHtml(_v, _e);
        setKoyomiLifeAnswer('2026-10-19', '蟋蟀在戸', 'yes');
+       var _q1 = koyomiLifeQueue(_d).map(function(x) { return x.kou; }).join(',');
+       setKoyomiLifeAnswer('2026-10-14', '菊花開', 'no');
        var _after = koyomiLifeHtml(_v, _e);
        for (var _i = 0; _i < 130; _i++) setKoyomiLifeAnswer('2020-01-' + String(_i).padStart(3, '0'), '蟋蟀在戸', 'no');
        var _kept = Object.keys(allSettings.ui.koyomiLifeAnswers).length;
-       (/data-life-card/.test(_before) && /data-life="yes"/.test(_before) && /data-life="no"/.test(_before) &&
-        _after.indexOf('あなた：<b>はい</b>') !== -1 && _after.indexOf('みんな：<b>はい 64％</b>') !== -1 && _after.indexOf('β版') !== -1 && !/data-life-card/.test(_after) && _kept === 120)
-         ? ok('ST-472·③: 答える前は払うカードと左右のボタン、答えたら「あなた」「みんな」とβ版の断り（答えは120日分だけ持つ）')
-         : ng('ST-472·③: 暮らしの問いの出し方が違う', String(_kept));
-       // ④ 繋がっているか（第76条）：季節の風だよりのめくったあとに入り、払う手つきがつながる
-       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'basic' });
-       var _parts = koyomiKazeParts(koyomiTodayData(new Date(2026, 9, 19, 9, 0, 0)), _o, _e);
-       (/id="kazeLifeQ"/.test(_parts.bottom) && /bindKoyomiLife\(v, function\(\)/.test(renderKazeKoyomi.toString()))
-         ? ok('ST-472·④: 暮らしの問いは、季節の風だよりのめくったあとに入り、払う手つきがつながる')
-         : ng('ST-472·④: 暮らしの問いのつながりが違う', '');
+       (_q0 === '蟋蟀在戸,菊花開' && _q1 === '菊花開' && /data-life-open/.test(_before) && _before.indexOf('つぎにやること') !== -1 && _before.indexOf('2問') !== -1 &&
+        _after.indexOf('あなた：<b>はい</b>') !== -1 && _after.indexOf('64%') !== -1 && _after.indexOf('β版') !== -1 && !/data-life-open/.test(_after) && _kept === 120)
+         ? ok('ST-472·③: 答えていない問いを並べ（今日と、ここ7日の候）、季節の風だよりには「つぎにやること・のこり○問」、全部答えたら「あなた」「みんな」とβ版の断り')
+         : ng('ST-472·③: 暮らしの問いの出し方が違う', [_q0, _q1, _kept].join(' / '));
+       // ④ 繋がっているか（第76条）：払う画面（みんなはどうしてる？・残り○問・左右・スキップ・閉じる）。押して答えると次へ、全部で「ここまで」
+       delete allSettings.ui.koyomiLifeAnswers;
+       var _closed = 0;
+       var _ov = openKoyomiLifeSwipe({ date: _d, onClose: function() { _closed++; } });
+       var _t1 = _ov.textContent;
+       var _has = ['[data-life-card]', '[data-ls="yes"]', '[data-ls="no"]', '[data-ls="skip"]', '[data-ls="close"]', '[data-ls="help"]'].every(function(x) { return !!_ov.querySelector(x); });
+       var _tick = function() { return new Promise(function(r) { setTimeout(r, 320); }); };
+       var _o4 = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'basic' });
+       var _parts = koyomiKazeParts(koyomiTodayData(_d), _o4, _e);
+       (_t1.indexOf('みんなはどうしてる？') !== -1 && _t1.indexOf('残り 2 問') !== -1 && _t1.indexOf('β版・仮の数字') !== -1 && _has &&
+        /id="kazeLifeQ"/.test(_parts.bottom) && /openKoyomiLifeSwipe\(\{ onClose: rerender \}\)/.test(bindKoyomiLife.toString()))
+         ? ok('ST-472·④: 払う画面は「みんなはどうしてる？（β版・仮の数字）」「残り○問」の大きなカード・左右・スキップ・閉じる。季節の風だよりの「答える」から開く')
+         : ng('ST-472·④: 払う画面の作りが違う', _t1.slice(0, 60));
+       _ov.querySelector('[data-ls="yes"]').click();
+       var _a1now = JSON.parse(JSON.stringify((allSettings.ui.koyomiLifeAnswers || {})['2026-10-19'] || null));   // 押した直後に確かめる（後片づけより先に）
+       enqueueSmokeAsyncTest('ST-472·⑤', function() {
+         return _tick().then(function() {
+           var t2 = document.getElementById('koyomiLifeSwipe') ? document.getElementById('koyomiLifeSwipe').textContent : '';
+           var a1 = _a1now;
+           var b2 = document.querySelector('#koyomiLifeSwipe [data-ls="no"]'); if (b2) b2.click();
+           return _tick().then(function() {
+             var t3 = document.getElementById('koyomiLifeSwipe') ? document.getElementById('koyomiLifeSwipe').textContent : '';
+             var c = document.querySelector('#koyomiLifeSwipe [data-ls="close"]'); if (c) c.click();
+             (t2.indexOf('残り 1 問') !== -1 && a1 && a1.ans === 'yes' && t3.indexOf('ここまで') !== -1 && _closed === 1 && !document.getElementById('koyomiLifeSwipe'))
+               ? ok('ST-472·⑤: 答えると次の問いへ（残り○問が減る）、全部答えると「ここまで」、閉じると季節の風だよりへ戻る')
+               : ng('ST-472·⑤: 払う画面の進み方が違う', [t2.slice(0, 40), t3.slice(0, 40), _closed].join(' / '));
+             allSettings.ui = _st472ui;
+           });
+         });
+       });
      } catch(e) {
        ng('ST-472: 例外', e.message);
      } finally {
