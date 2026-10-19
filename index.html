@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.59.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.59.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.59.3';
+    const APP_VERSION = 'v0.59.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40852,87 +40852,79 @@ function renderMonthlyMoneyLine() {
           _sum[slot].out += r.out; _sum[slot]['in'] += r['in']; bad += r.unreadable;
         });
         var y = function(n) { return n.toLocaleString('ja-JP'); };
-        var _row = function(label, s) {
-          if (s.out === 0 && s['in'] === 0) return '';
-          var d = s['in'] - s.out;
-          return '<div><span style="color:#8e8e8e;">' + label + '</span>　' +
-            '<span style="color:#c0392b;font-weight:700;">▲ 出る ' + y(s.out) + '</span>' +
-            '　<span style="color:#1b5e20;font-weight:700;">▽ 入る ' + y(s['in']) + '</span>' +
-            '　<span style="color:' + (d < 0 ? '#c0392b' : '#1b5e20') + ';">差 ' +
-            (d >= 0 ? '+' : '') + y(d) + '</span></div>';
-        };
-        // v0.46.13: 【権威】2026-09-07、金額計算が壊れた、との報告。
-        // 調べると壊れていない。9/4の ▼1,000,000 は「過ぎた予定」なので数えていない。
-        // 仕様どおりだが、画面が「9月」としか書いていないので、
-        // 月の合計だと読める。過ぎた分が抜けていることが分からない。
-        // 数字は合っていても、読めなければ壊れているのと同じである。
-        var html = _row(_m + '月（今日から）', _sum.cur) + _row(_nm + '月', _sum.next);
+        var sg = function(n) { return (n > 0 ? '+' : '') + y(n); };
+        var RED = '#c0392b', GREEN = '#1b5e20', GRAY = '#8e8e8e';
+        // v0.59.4: 【権威】2026-10-19、「出る入るを整えて。計算の根拠を調べて」との指示。
+        // スマホで1行が長く「差」が次の行に落ちていたので、表にする（月・出る・入る・差）。
+        // 計算の決まりは変えない（今月は今日から月末、来月はまるごと。見込み＝手持ち＋入る−出る）
+        var _rowsT = [];
+        if (_sum.cur.out || _sum.cur['in']) _rowsT.push([_m + '月（今日〜）', _sum.cur]);
+        if (_sum.next.out || _sum.next['in']) _rowsT.push([_nm + '月', _sum.next]);
+        var html = '';
+        if (_rowsT.length) {
+          // PCで横に広がりすぎないよう、幅に上限を付ける
+          html += '<div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:2px 14px;align-items:baseline;margin-top:6px;max-width:460px;">' +
+            '<div></div><div style="text-align:right;color:' + RED + ';font-size:0.85em;font-weight:700;">▲ 出る</div>' +
+            '<div style="text-align:right;color:' + GREEN + ';font-size:0.85em;font-weight:700;">▽ 入る</div>' +
+            '<div style="text-align:right;color:' + GRAY + ';font-size:0.85em;">差</div>' +
+            _rowsT.map(function(r) {
+              var d = r[1]['in'] - r[1].out;
+              return '<div style="color:' + GRAY + ';white-space:nowrap;">' + r[0] + '</div>' +
+                '<div style="text-align:right;color:' + RED + ';font-weight:700;">' + y(r[1].out) + '</div>' +
+                '<div style="text-align:right;color:' + GREEN + ';font-weight:700;">' + y(r[1]['in']) + '</div>' +
+                '<div style="text-align:right;color:' + (d < 0 ? RED : GREEN) + ';">' + sg(d) + '</div>';
+            }).join('') + '</div>';
+        }
 
-        // v0.47.35: 手持ち（財布・銀行）。1件も無ければ何も足さない（今までの画面を変えない）。
-        // 月末の見込み＝いまの手持ち ＋ 今日から今月末の（入る−出る）。
-        // 読めない残高があるときは見込みを出さない。合っていない数字を出さないため。
+        // 手持ち（財布・銀行）。1件も無ければ何も足さない。月末の見込み＝いまの手持ち ＋ 今日から今月末の（入る−出る）。
+        // 読めない残高があるときは見込みを出さない（合っていない数字を出さないため）
+        var _pt = { count: 0, total: 0, unreadable: 0 };
+        try { if (typeof getMoneyPursesTotal === 'function') _pt = getMoneyPursesTotal(); } catch (ePt) {}
+        var _fore = null;
+        if (_pt.count > 0 && _pt.unreadable === 0 && (_sum.cur.out > 0 || _sum.cur['in'] > 0)) _fore = _pt.total + _sum.cur['in'] - _sum.cur.out;
         var _purseHtml = '';
         try {
-          var _pt = (typeof getMoneyPursesTotal === 'function') ? getMoneyPursesTotal() : { count: 0 };
           if (_pt.count > 0) {
             var _plist = getMoneyPurses().map(function(t) {
               var n = Number(t.amount);
-              return '<span style="color:#8e8e8e;">' + _escapeHtml(String(t.name || '（名前なし）')) + '</span> ' +
-                     (isFinite(n) ? y(n) : '—');
-            }).join('　');
-            _purseHtml =
-              '<div><span style="color:#8e8e8e;">手持ち</span>　' +
-              '<span style="color:#1b5e20;font-weight:700;">合計 ' + y(_pt.total) + '</span>' +
-              (_pt.unreadable > 0 ? '<span style="color:#c07a2a;">　⚠️ 読めない残高が' + _pt.unreadable + '件</span>' : '') +
-              '</div>' +
-              '<div style="font-size:0.9em;margin-top:1px;">' + _plist + '</div>';
-            if (_pt.unreadable === 0 && (_sum.cur.out > 0 || _sum.cur['in'] > 0)) {
-              var _fore = _pt.total + _sum.cur['in'] - _sum.cur.out;
-              _purseHtml += '<div><span style="color:#8e8e8e;">→ ' + _m + '月末の見込み</span>　' +
-                '<span style="color:' + (_fore < 0 ? '#c0392b' : '#1b5e20') + ';font-weight:700;">' + y(_fore) + '</span></div>';
-            }
+              return '<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">' + _escapeHtml(String(t.name || '（名前なし）')) + '</span> ' + (isFinite(n) ? y(n) : '—') + '</span>';
+            }).join('<span style="color:#ccc;">・</span>');
+            _purseHtml = '<div style="font-size:0.88em;line-height:1.7;">' + _plist +
+              (_pt.unreadable > 0 ? '<div style="color:#c07a2a;">⚠️ 読めない残高が' + _pt.unreadable + '件</div>' : '') + '</div>';
           }
         } catch (ePurse) { console.warn('[お金] 手持ちの表示に失敗:', ePurse && ePurse.message); }
-        html = _purseHtml + html;
+        var _foreHtml = (_fore === null) ? '' :
+          '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #e5e5e5;">' +
+            '<span style="color:' + GRAY + ';">→ ' + _m + '月末の見込み</span>　' +
+            '<span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;font-size:1.1em;">' + y(_fore) + '</span>' +
+            '<div style="color:' + GRAY + ';font-size:0.78em;">＝ 手持ち ' + y(_pt.total) + ' ＋ 入る ' + y(_sum.cur['in']) + ' − 出る ' + y(_sum.cur.out) + '（' + _m + '月の今日から月末まで）</div>' +
+          '</div>';
+        html = _purseHtml + html + _foreHtml;
 
-        // v0.47.35: 手持ちの出し入れ口。設定画面は増やさず、ここから開く（第56条）。
-        // 手持ちが無い人にも見えるように、金額の行が出ているときは常に置く。
-        html += '<div style="margin-top:3px;">' +
+        // 手持ちの出し入れ口と、月ごとの決算の入口
+        html += '<div style="margin-top:8px;">' +
           '<span onclick="openMoneyPurseModal()" style="cursor:pointer;color:#2f6fed;">' +
-          '💰 手持ちを' + ((typeof getMoneyPursesTotal === 'function' && getMoneyPursesTotal().count > 0) ? '直す' : '入れる') +
-          '</span>' +
+          '💰 手持ちを' + (_pt.count > 0 ? '直す' : '入れる') + '</span>' +
           '<span style="color:#ddd;">　|　</span>' +
           '<span onclick="openMoneyReportModal()" style="cursor:pointer;color:#2f6fed;">📊 月ごとの決算</span>' +
           '</div>';
 
-        if (!html && bad === 0) { el.style.display = 'none'; return; }
-        if (bad > 0) {
-          html += '<div style="color:#c07a2a;">⚠️ ▲▽が' + bad + '件、金額を読めませんでした</div>';
-        }
+        if (!_rowsT.length && _pt.count === 0 && bad === 0) { el.style.display = 'none'; return; }
+        if (bad > 0) html += '<div style="color:#c07a2a;">⚠️ ▲▽が' + bad + '件、金額を読めませんでした</div>';
 
-        // v0.47.43: 【権威】2026-09-18、金額が5行を取り、カレンダーが押し下げられて見づらい、との報告。
-        // 手持ち（v0.47.35）と決算の入口（v0.47.36）を足したぶん、行が増えた。
-        //
-        // 畳んだときは1行だけにする。「いくらあって、今月どうなるか」は、
-        // 手持ちの合計と今月の差の2つで足りる。内訳・見込み・入口は開いたときに出す。
-        // 開いたままにしたい人もいるので、状態は覚える（次に開いたときも同じ）。
-        // 「金額を隠す」（まるごと消す）は別のものとして残す。
+        // 畳んだときの1行：手持ち → 月末の見込み（手持ちが無い人は、今月の差）。
+        // v0.59.4: 前は「手持ち」と「今月の差」だったが、差だけでは「月末にいくら残るか」が分からない
         var _moneyOpen = false;
         try { _moneyOpen = localStorage.getItem('moneyLineOpen') === '1'; } catch (eLs) {}
         var _curDiff = _sum.cur['in'] - _sum.cur.out;
-        var _ptShort = (typeof getMoneyPursesTotal === 'function') ? getMoneyPursesTotal() : { count: 0, total: 0 };
         var _short =
-          '<div onclick="toggleMoneyLineOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-            (_ptShort.count > 0
-              ? '<span><span style="color:#8e8e8e;">💰</span> <span style="color:#1b5e20;font-weight:700;">' + y(_ptShort.total) + '</span></span>'
-              : '') +
-            ((_sum.cur.out > 0 || _sum.cur['in'] > 0)
-              ? '<span><span style="color:#8e8e8e;">' + _m + '月</span> ' +
-                '<span style="color:' + (_curDiff < 0 ? '#c0392b' : '#1b5e20') + ';font-weight:700;">' +
-                (_curDiff >= 0 ? '+' : '') + y(_curDiff) + '</span></span>'
-              : '') +
+          '<div onclick="toggleMoneyLineOpen()" style="cursor:pointer;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
+            (_pt.count > 0 ? '<span><span style="color:' + GRAY + ';">💰 手持ち</span> <span style="color:' + GREEN + ';font-weight:800;font-size:1.1em;">' + y(_pt.total) + '</span></span>' : '') +
+            (_fore !== null
+              ? '<span><span style="color:' + GRAY + ';">→ ' + _m + '月末</span> <span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;font-size:1.1em;">' + y(_fore) + '</span></span>'
+              : ((_sum.cur.out > 0 || _sum.cur['in'] > 0) ? '<span><span style="color:' + GRAY + ';">' + _m + '月の差</span> <span style="color:' + (_curDiff < 0 ? RED : GREEN) + ';font-weight:800;">' + sg(_curDiff) + '</span></span>' : '')) +
             (bad > 0 ? '<span style="color:#c07a2a;">⚠️' + bad + '</span>' : '') +
-            '<span style="color:#2f6fed;">' + (_moneyOpen ? '▾ 畳む' : '▸ くわしく') + '</span>' +
+            '<span style="color:#2f6fed;margin-left:auto;">' + (_moneyOpen ? '▾ 畳む' : '▸ くわしく') + '</span>' +
           '</div>';
         el.innerHTML = _short + (_moneyOpen ? '<div style="margin-top:4px;">' + html + '</div>' : '');
         el.style.display = '';
@@ -54915,6 +54907,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.59.4', date: '2026-10-19',
+    items: [
+      { icon:'💰', t:'月間のお金の欄を、表にして読みやすくしました',
+        before:'出る・入る・差が1行に並び、スマホでは「差」が次の行に落ちて読みにくくなっていました',
+        after:'月ごとに「出る・入る・差」を表で並べました。畳んだときは「手持ち → 月末の見込み」の1行です。見込みの下には、どう計算したか（手持ち ＋ 入る − 出る）も出ます' }
+    ]
+  },
   {
     ver: 'v0.59.3', date: '2026-10-19',
     items: [
