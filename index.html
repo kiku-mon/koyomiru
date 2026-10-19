@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.58.12 ★ -->
+<!-- ★ CURRENT VERSION: v0.58.13 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.58.12';
+    const APP_VERSION = 'v0.58.13';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -11594,7 +11594,30 @@ function _showInviteWelcome() {
     //
     // 精度：太陽・月とも低精度の公式（誤差およそ1度以内）。
     // 絵を回すのに使う角度なので、この精度で足りる。秒単位の正確さは要らない。
-    function _calcMoonTiltDeg(date, geo) {
+    // v0.58.13: 【権威】2026-10-18、見上げた月とダッシュボードの月の傾きがほとんど同じだった。たまたまか検査しよう、との指示。
+// 高い精度の天文計算（astronomy-engine）と半年分・1時間ごとに突き合わせると、満月・新月の前後を除いて平均1.4度・95%で4.6度以内、
+// まれに明け方の高い空で13.8度ずれた。月の位置を「いちばん大きな揺れ（約6.3度）だけ」で出していたため。
+// お手本：ミーウス『天文アルゴリズム』第47章。月の揺れを大きい順に足す（経度10項・緯度6項・距離4項）。
+// 月の傾きと月の高さの2か所に別々に書いてあった同じ計算を、ここ1つにまとめる（第71条④）
+function _moonGeoPosition(jd) {
+  var rad = Math.PI / 180;
+  var T = (jd - 2451545.0) / 36525;
+  var Lp = 218.3164477 + 481267.88123421 * T;   // 月の平均黄経
+  var D  = (297.8501921 + 445267.1114034 * T) * rad;   // 月と太陽の離れ
+  var M  = (357.5291092 + 35999.0502909 * T) * rad;    // 太陽の平均近点角
+  var Mp = (134.9633964 + 477198.8675055 * T) * rad;   // 月の平均近点角
+  var F  = (93.2720950 + 483202.0175233 * T) * rad;    // 月の昇交点からの離れ
+  var lon = Lp + 6.288774 * Math.sin(Mp) + 1.274027 * Math.sin(2 * D - Mp) + 0.658314 * Math.sin(2 * D) + 0.213618 * Math.sin(2 * Mp)
+    - 0.185116 * Math.sin(M) - 0.114332 * Math.sin(2 * F) + 0.058793 * Math.sin(2 * D - 2 * Mp) + 0.057066 * Math.sin(2 * D - M - Mp)
+    + 0.053322 * Math.sin(2 * D + Mp) + 0.045758 * Math.sin(2 * D - M);
+  var lat = 5.128122 * Math.sin(F) + 0.280602 * Math.sin(Mp + F) + 0.277693 * Math.sin(Mp - F) + 0.173237 * Math.sin(2 * D - F)
+    + 0.055413 * Math.sin(2 * D - F + Mp) + 0.046271 * Math.sin(2 * D - F - Mp);
+  var distKm = 385000.56 - 20905.355 * Math.cos(Mp) - 3699.111 * Math.cos(2 * D - Mp) - 2955.968 * Math.cos(2 * D) - 569.925 * Math.cos(2 * Mp);
+  return { lon: lon, lat: lat, parallax: Math.asin(6378.14 / distKm) };   // parallax はラジアン（地上から見たずれの大きさ）
+}
+window._moonGeoPosition = _moonGeoPosition;
+
+function _calcMoonTiltDeg(date, geo) {
       var rad = Math.PI / 180, deg = 180 / Math.PI;
       var g = (geo && typeof geo.lat === 'number') ? geo : _TOKYO_GEO;
       var d = (date instanceof Date) ? date : new Date();
@@ -11608,12 +11631,9 @@ function _showInviteWelcome() {
       var C  = (1.914602 - 0.004817 * T) * Math.sin(M * rad) + 0.019993 * Math.sin(2 * M * rad);
       var sunLon = (L0 + C) % 360;
 
-      // 月の黄経・黄緯（低精度。主要な項のみ）
-      var Lm = 218.316 + 481267.8813 * T;
-      var Mm = 134.963 + 477198.8676 * T;
-      var Fm = 93.272 + 483202.0175 * T;
-      var moonLon = Lm + 6.289 * Math.sin(Mm * rad);
-      var moonLat = 5.128 * Math.sin(Fm * rad);
+      // 月の黄経・黄緯（v0.58.13: 補正の項を足した共通の道具から）
+      var _mp = _moonGeoPosition(jd);
+      var moonLon = _mp.lon, moonLat = _mp.lat;
 
       var eps = 23.439 - 0.0000004 * (jd - 2451545.0);   // 地軸の傾き
 
@@ -11634,6 +11654,15 @@ function _showInviteWelcome() {
       var lstDeg = ((gmst + g.lng) % 360 + 360) % 360;
       var Hdeg = ((lstDeg - Mo.ra * deg + 540) % 360) - 180;
       var H = Hdeg * rad;
+      // v0.58.13: 地上から見たずれ（視差）。月は近いので、地球の中心から見た位置と、地上から見た位置が最大で約1度ずれる（ミーウス第40章）
+      (function() {
+        var phi = g.lat * rad, sp = Math.sin(_mp.parallax);
+        var den = Math.cos(Mo.dec) - Math.cos(phi) * sp * Math.cos(H);
+        var dA = Math.atan2(-Math.cos(phi) * sp * Math.sin(H), den);
+        var decT = Math.atan2((Math.sin(Mo.dec) - Math.sin(phi) * sp) * Math.cos(dA), den);
+        Mo = { ra: Mo.ra + dA, dec: decT };
+        H = H - dA;
+      })();
 
       // ① 太陽の向き（月から見て、天の北極を0度として東回りに測る角度）
       // 分子は「太陽の赤経が月よりどれだけ東にあるか」。
@@ -11670,8 +11699,8 @@ function _showInviteWelcome() {
       var L0 = 280.46646 + 36000.76983 * T, M = 357.52911 + 35999.05029 * T;
       var C = (1.914602 - 0.004817 * T) * Math.sin(M * rad) + 0.019993 * Math.sin(2 * M * rad);
       var sunLon = L0 + C;
-      var Lm = 218.316 + 481267.8813 * T, Mm = 134.963 + 477198.8676 * T, Fm = 93.272 + 483202.0175 * T;
-      var moonLon = Lm + 6.289 * Math.sin(Mm * rad), moonLat = 5.128 * Math.sin(Fm * rad);
+      var _mp = _moonGeoPosition(jd);   // v0.58.13: 補正の項を足した共通の道具から
+      var moonLon = _mp.lon, moonLat = _mp.lat;
       var e = 23.439 * rad, p = g.lat * rad;
       var gmst = 280.46061837 + 360.98564736629 * (jd - 2451545.0);
       var lst = (((gmst + g.lng) % 360) + 360) % 360 * rad;
@@ -11682,7 +11711,9 @@ function _showInviteWelcome() {
         var H = lst - ra;
         return Math.asin(Math.sin(dec) * Math.sin(p) + Math.cos(dec) * Math.cos(H) * Math.cos(p)) * deg;
       }
-      return { moon: alt(moonLon, moonLat), sun: alt(sunLon, 0) };
+      var mAlt = alt(moonLon, moonLat);
+      mAlt -= (_mp.parallax * deg) * Math.cos(mAlt * rad);   // v0.58.13: 地上から見ると、月は少し低く見える（視差）
+      return { moon: mAlt, sun: alt(sunLon, 0) };
     }
     window._moonSunAltDeg = _moonSunAltDeg;
 
@@ -54605,6 +54636,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.58.13', date: '2026-10-18',
+    items: [
+      { icon:'🌙', t:'月の傾きと高さの計算を、より正確にしました',
+        before:'月の向きは、たいていは本物とほぼ同じでしたが、まれに10度ほどずれることがありました',
+        after:'月の位置の細かな揺れと、地上から見たずれを計算に入れました。半年分を確かめて、ずれは平均0.1度ほどになりました' }
+    ]
+  },
+  {
     ver: 'v0.58.12', date: '2026-10-16',
     items: [
       { icon:'🍜', t:'注文票の見出しで、答えを先に言わないようにしました',
@@ -59333,7 +59372,10 @@ window.renderLedgerDashboardCard = renderLedgerDashboardCard;
 // 作り直さず、管理者の訪問統計の計算と描き方（_buildVisitOverview・_renderVisitOverviewHtml）をそのまま使い回す。
 // 「古い版」「機械」は番頭には関係ないので出さない。呼び名（お得意さま）で書く。
 function _buildLedgerOverview(d, todayYmd) {
-  var since14 = new Date(); since14.setDate(since14.getDate() - 13);
+  // v0.58.13: 「この14日」は、受け取った今日（todayYmd）から数える。前は本当の今日から数えていて、
+  // 「今日＝10/4」で書いたテストが、本当の今日が14日進んだ 10/18 に落ちた（ふだんは同じ日なので、利用者への影響は無い）
+  var since14 = /^\d{4}-\d{2}-\d{2}$/.test(String(todayYmd || '')) ? new Date(todayYmd + 'T12:00:00') : new Date();
+  since14.setDate(since14.getDate() - 13);
   var since14Ymd = (typeof getLocalDateStr === 'function') ? getLocalDateStr(since14) : since14.toISOString().slice(0, 10);
   var hm = function(iso) { var t = new Date(iso); return isNaN(t) ? '' : String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0'); };
   var firstDay = {};
@@ -80744,6 +80786,21 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-470·①: 予定の盛り方の並びが違う', _ord);
      } catch(e) {
        ng('ST-470: 例外', e.message);
+     }
+
+     // ===== ST-471: 月の傾きは、高い精度の天文計算に合っている（v0.58.13〜） =====
+     // 【権威】2026-10-18、見上げた月とダッシュボードの月が同じだった。たまたまか検査しよう、との指示。
+     // 高い精度の天文計算（astronomy-engine・地上から見た位置）で出した答え。半年分の突き合わせでは平均0.09度（満月・新月の前後を除く）
+     try {
+       var _g = { lat: 35.6895, lng: 139.6917 };
+       var _ref = [['2026-10-18T10:00:00Z', -29.22], ['2026-11-20T11:00:00Z', -25.95], ['2026-12-02T20:00:00Z', -126.50], ['2027-01-10T21:00:00Z', 37.52]];
+       var _bad = _ref.filter(function(r) { var df = _calcMoonTiltDeg(new Date(r[0]), _g) - r[1]; while (df > 180) df -= 360; while (df < -180) df += 360; return Math.abs(df) > 0.5; });
+       var _alt = _moonSunAltDeg(new Date('2026-10-18T10:00:00Z'), _g).moon;   // 基準 25.43度（astronomy-engine）
+       (_bad.length === 0 && typeof _moonGeoPosition === 'function' && Math.abs(_alt - 25.43) < 0.5)
+         ? ok('ST-471·①: 月の傾き（4つの時刻）と月の高さは、高い精度の天文計算から0.5度以内（補正の項と、地上から見たずれを入れた）')
+         : ng('ST-471·①: 月の計算が、高い精度の答えから離れている', _bad.map(function(r) { return r[0]; }).join(',') + ' / 高さ ' + _alt.toFixed(2));
+     } catch(e) {
+       ng('ST-471: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
