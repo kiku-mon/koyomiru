@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.9 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.8';
+    const APP_VERSION = 'v0.60.9';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22284,13 +22284,13 @@ function koyomiBlueEraLabel(id, d) {
 window.koyomiBlueEraLabel = koyomiBlueEraLabel;
 // 月の満ち欠けの日付（その年と翌年から、今日より後の次の満月・新月、今月の4つ）
 function _koyomiMoonEvents(d) {
-  var ymd = getLocalDateStr(d), ym = ymd.slice(0, 7), all = [];
+  var ymd = getLocalDateStr(d), all = [];
   try { all = (typeof getMoonPhaseEvents === 'function') ? getMoonPhaseEvents(d.getFullYear()).concat(getMoonPhaseEvents(d.getFullYear() + 1)) : []; } catch (e) {}
   var daysTo = function(x) { var p = x.split('-').map(Number), q = ymd.split('-').map(Number); return Math.round((new Date(p[0], p[1] - 1, p[2]) - new Date(q[0], q[1] - 1, q[2])) / 86400000); };
   var next = function(type) { var e = all.filter(function(x) { return x.type === type && x.date > ymd; })[0]; return e ? { date: e.date, days: daysTo(e.date) } : null; };
   // v0.60.8: 「これから先の満ち欠け」（今日より後、近い順）。（ ）倍の数だけ出す
   var upcoming = all.filter(function(x) { return x.date > ymd; }).sort(function(a, b) { return a.date < b.date ? -1 : 1; }).map(function(x) { return { name: x.name, date: x.date }; });
-  return { nextFull: next(2), nextNew: next(0), upcoming: upcoming, thisMonth: all.filter(function(x) { return x.date.slice(0, 7) === ym; }).map(function(x) { return { name: x.name, date: x.date }; }) };
+  return { nextFull: next(2), nextNew: next(0), upcoming: upcoming };   // v0.60.8 の掃除：今月の分（thisMonth）は使わなくなった
 }
 function koyomiTodayData(dateObj) {
   var d = dateObj || new Date();
@@ -22339,14 +22339,6 @@ function koyomiTodayData(dateObj) {
   };
 }
 window.koyomiTodayData = koyomiTodayData;
-// 年の数え方（ねぎ）で添える年
-function koyomiYearLabels(v, order) {
-  var out = [];
-  if (order.yearNegi.white) out.push('西暦' + (v.date || new Date()).getFullYear() + '年');   // v0.60.2: 白ねぎ＝西暦
-  if (order.yearNegi.blue) { var b = koyomiBlueEraLabel(order.blueEra, v.date || new Date()); if (b) out.push(b); }
-  return out;
-}
-window.koyomiYearLabels = koyomiYearLabels;
 // 問い（問いの数で決まる。注文に無いもの＝候なし・月なしは問わない）
 // v0.60.2: 年の問い（青ねぎがあれば選んだ暦、青ねぎが無くて白ねぎなら西暦、どちらも無ければ問わない）
 var KOYOMI_YEAR_Q = { koki: '今年は、皇紀何年？', wareki: '今年は、令和何年？', eto: '今年の干支は？', butsureki: '今年は、仏暦何年？',
@@ -22704,8 +22696,7 @@ function _koyomiMarkFlipped() {
 }
 // 注文の暦の部分。上（節気と候）は月の絵の上に、下（月の続き・年・予定・どう生きる？）は月の名前の下に置く。
 // 文字の色は季節の風だよりの季節の色に任せ、薄くしたいところは opacity で（見やすさ命）
-function koyomiKazeParts(v, order, esc, asked) {
-  asked = asked || {};   // v0.60.0: 問いの箱で答えたもの（日付・皇紀）は、下の行に重ねて出さない
+function koyomiKazeParts(v, order, esc) {
   var line = function(html, style) { return '<div style="' + (style || '') + '">' + html + '</div>'; };
   var top = '', bottom = '';
   top += line(esc(v.sekki), 'font-size:2.1em;font-weight:800;letter-spacing:.08em;line-height:1.2;');
@@ -22775,7 +22766,8 @@ window.saveKoyomiTodayWord = saveKoyomiTodayWord;
 // 問いの面では、問いを1つずつ箱に入れて答えの所は「？」。めくると、同じ箱の「？」が答えに変わる（位置が変わらないので探さなくてよい）
 // v0.60.0: 【権威】2026-10-21、「何月？何日？何曜日？も聞いちゃう？ 睦月や神無月も。皇紀2686年の10/21の水曜日を生きた実感がわく」との指示。
 // 3つに分けると箱が増えすぎるので1つの問いにし、皇紀のすぐ次に置く（皇紀2686年 → 10月（神無月）21日 水曜日 と続けて読める）
-var KOYOMI_Q = { sekki: '今日の二十四節気は？', kou: '今日の七十二候は？', kouDay: '今日は、その候の何日目？', moon: '今夜の月の形は？', koki: '今年は、皇紀何年？', date: '今日は、何月何日、何曜日？' };
+// 年の問いは、ねぎで変わるので KOYOMI_YEAR_Q にまとめてある（答えの箱の名前は、どの暦でも 'year'）
+var KOYOMI_Q = { sekki: '今日の二十四節気は？', kou: '今日の七十二候は？', kouDay: '今日は、その候の何日目？', moon: '今夜の月の形は？', date: '今日は、何月何日、何曜日？' };
 var WAFU_MONTHS = [['睦月', 'むつき'], ['如月', 'きさらぎ'], ['弥生', 'やよい'], ['卯月', 'うづき'], ['皐月', 'さつき'], ['水無月', 'みなづき'],
   ['文月', 'ふみづき'], ['葉月', 'はづき'], ['長月', 'ながつき'], ['神無月', 'かんなづき'], ['霜月', 'しもつき'], ['師走', 'しわす']];
 window.WAFU_MONTHS = WAFU_MONTHS;
@@ -22807,7 +22799,7 @@ function koyomiQaAnswer(key, v, order, esc) {
     var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? '月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
     return { main: esc(mi.name || v.moonName), sub: ms, moon: true, view: koyomiMoonViewNote() };
   }
-  if (key === 'koki' || key === 'year') {   // v0.60.2: ねぎに合わせた年の答え
+  if (key === 'year') {   // v0.60.2: ねぎに合わせた年の答え
     var _d = v.date || new Date();
     var _ans = (order.yearNegi.blue && KOYOMI_YEAR_Q[order.blueEra]) ? koyomiBlueEraLabel(order.blueEra, _d) : ('西暦' + _d.getFullYear() + '年');
     return { main: esc(_ans), sub: '' };
@@ -22957,7 +22949,8 @@ function renderKazeKoyomi(col, opts) {
   var _greetHtml = _greetTxt ? '<div data-kz-greet style="text-align:left;font-size:0.9em;line-height:1.6;margin:-6px 0 14px;opacity:0.85;white-space:pre-line;">' + esc(_greetTxt) + '</div>' : '';
   var v = koyomiTodayData(opts.date || new Date());
   var questions = koyomiQuestions(order);
-  var asking = order.richness !== 'light' && questions.length > 0 && !opts.answer && !koyomiFlippedToday();
+  // v0.60.9: opts.again ＝「もう一度、問いから」を押したとき（その日にもうめくっていても、問いの面に戻る）
+  var asking = order.richness !== 'light' && questions.length > 0 && !opts.answer && (opts.again || !koyomiFlippedToday());
   var txt = (col && col.text) || '#333333';
   if (asking) {
     // v0.59.9: 問いを1つずつ箱に入れる。答えの所は「？」（めくると、同じ箱が答えに変わる）
@@ -22971,18 +22964,24 @@ function renderKazeKoyomi(col, opts) {
     topEl.querySelector('[data-kz="flip"]').onclick = function() {
       _koyomiMarkFlipped();
       try { renderKoyomiChips(); } catch (e) {}
-      renderKazeKoyomi(col, Object.assign({}, opts, { answer: true }));
+      renderKazeKoyomi(col, Object.assign({}, opts, { answer: true, again: false }));
     };
     return 'question';
   }
-  var _askedKeys = {};
-  if (order.richness !== 'light') questions.forEach(function(q) { var k = _koyomiQKey(q); if (k) _askedKeys[k] = true; });
-  var parts = koyomiKazeParts(v, order, esc, _askedKeys);
+  var parts = koyomiKazeParts(v, order, esc);
   // v0.59.9: 問いがある注文なら、問いの面と同じ箱に答えを入れる（答えを探さなくてよい）。問わない注文（あっさり・問いの数なし）は今までの並び
   var _qaOn = order.richness !== 'light' && questions.length > 0;
   topEl.innerHTML = _greetHtml + (_qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top) + parts.sentence;
   var _sp = topEl.querySelector('[data-kz="speak"]');
   if (_sp) _sp.onclick = function() { speakKoyomiText(_sp.getAttribute('data-speech')); };
+  // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
+  if (_qaOn) {
+    topEl.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin:-6px 0 12px;"><button type="button" data-kz="again" style="border:none;background:none;color:inherit;opacity:0.65;font-size:0.8em;text-decoration:underline;cursor:pointer;">もう一度、問いから</button></div>');
+    topEl.querySelector('[data-kz="again"]').onclick = function() {
+      renderKazeKoyomi(col, Object.assign({}, opts, { answer: false, again: true, noLifeAuto: true }));
+      var sc = document.getElementById('kazedayoriScroll'); if (sc) sc.scrollTop = 0;
+    };
+  }
   botEl.innerHTML = parts.bottom;
   var _moonAsked = _qaOn && questions.indexOf(KOYOMI_Q.moon) !== -1;
   if (_moonAsked) {
@@ -55154,6 +55153,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.60.9', date: '2026-10-21',
+    items: [
+      { icon:'🌸', t:'「もう一度、問いから」を付けました',
+        before:'その日に一度めくると、同じ日のうちは答えの面だけが出て、問いからやり直せませんでした',
+        after:'答えの面の一文の下にある「もう一度、問いから」を押すと、問いの面に戻ります' }
+    ]
+  },
+  {
     ver: 'v0.60.8', date: '2026-10-21',
     items: [
       { icon:'🌙', t:'月の（ ）倍で、何倍かによって出る中身が変わるようにしました',
@@ -81649,7 +81656,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
        var _yq = [koyomiYearQuestion(_o({})), koyomiYearQuestion(_o({ blueEra: 'wareki' })), koyomiYearQuestion(_o({ yearNegi: { white: true, blue: false } })), koyomiYearQuestion(_o({ yearNegi: { white: false, blue: false } }))].join('|');
        var _v = koyomiTodayData(new Date(2026, 9, 21, 9, 0, 0));
-       var _yl = koyomiYearLabels(_v, _o({})).join('・');
+       var _ts = koyomiTodaySentence(_v, _o({})), _yl = [_ts.seireki, _ts.year].join('・');   // v0.60.8 の掃除：年は一文で確かめる
        var _ans = koyomiQaAnswer('year', _v, _o({ yearNegi: { white: true, blue: false } }), function(x) { return String(x); }).main;
        // 前の注文（白ねぎ＝皇紀に〇）は、青ねぎの皇紀に読み替える
        allSettings.ui.koyomiOrder = { sekkiStrength: 'basic', yearNegi: { white: true, blue: false }, blueEra: 'wareki' };
@@ -81732,6 +81739,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-481·①: （ ）倍の出し方が違う', [_c3, _c10, _first].join(','));
      } catch(e) {
        ng('ST-481: 例外', e.message);
+     }
+
+     // ===== ST-482: 「もう一度、問いから」（v0.60.9〜） =====
+     // 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { questionCount: 'all' });
+       var _d = new Date(2026, 9, 21, 9, 0, 0);
+       var _f1 = renderKazeKoyomi({ text: '#333333' }, { order: _o, date: _d, answer: true });
+       var _btn = document.querySelector('#kazedayoriKoyomiTop [data-kz="again"]');
+       if (_btn) _btn.click();
+       var _q = !!document.querySelector('#kazedayoriKoyomiTop [data-kz="flip"]');
+       var _f = document.querySelector('#kazedayoriKoyomiTop [data-kz="flip"]'); if (_f) _f.click();
+       var _back = !!document.querySelector('#kazedayoriKoyomiTop [data-kz="again"]');
+       renderKazeKoyomi({ text: '#333333' }, { order: Object.assign({}, _o, { richness: 'none' }) });
+       (_f1 === 'answer' && !!_btn && _q && _back)
+         ? ok('ST-482·①: 答えの面に「もう一度、問いから」。押すと問いの面に戻り、めくると答えの面に戻る')
+         : ng('ST-482·①: もう一度、問いからの動きが違う', [_f1, !!_btn, _q, _back].join(','));
+     } catch(e) {
+       ng('ST-482: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
