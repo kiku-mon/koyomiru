@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.59.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.59.9 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.59.8';
+    const APP_VERSION = 'v0.59.9';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22124,17 +22124,21 @@ function checkShichijuniKouChangeAndShowToast() {
 //   秘伝のたれ（5段・（ ）倍）＝月（丼の真ん中の赤い一点＝暦の空に浮かぶ月）・麺のかたさ（5段）＝今日の予定の盛り方。
 //   「出てくる時」は丼の中身ではなく、いつ店に入るかなので、注文票の下に別の1行で置く。
 // 言葉はこよみるのもの（お店の名前・言い回しは使わない）。注文は allSettings.ui.koyomiOrder に1つのまとまりで持つ（第41条・第71条④）。
-var MOON_SHAPE_NAMES = [
-  [1, '新月'], [2, '二日月'], [4, '三日月'], [6.5, '夕月'], [8.5, '上弦の月'], [11.5, '十日夜の月'], [13.5, '十三夜の月'],
-  [15.5, '満月'], [16.5, '十六夜の月'], [17.5, '立待月'], [18.5, '居待月'], [19.5, '寝待月'], [21.5, '更待月'],
-  [23.5, '下弦の月'], [27.5, '有明の月'], [29, '晦日の月'], [99, '新月']
-];
-function moonShapeName(age) {
+// v0.59.9: 【権威】2026-10-21、今日の暦の月の名前が、季節の風だよりの月の名前と食い違っていた（同じ月齢10.5で「十日夜の月」と「十三夜月」）。
+// 今日の暦だけ独自の表を使っていたため（第71条④の違反）。季節の風だより・ダッシュボードと同じ表（月齢を四捨五入して引く）にそろえる
+var MOON_PHASE_NAMES_JA = ['🌑新月（しんげつ）','🌒繊月（せんげつ）','🌒繊月（せんげつ）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌓弓張月（ゆみはりづき）※上弦','🌓弓張月（ゆみはりづき）※上弦','🌔十日月（とおかつき）','🌔十日月（とおかつき）','🌔十三夜月（じゅうさんやづき）','🌔十三夜月（じゅうさんやづき）','🌔小望月（こもちづき）','🌕満月（まんげつ）・望月（もちづき）','🌕満月（まんげつ）・望月（もちづき）','🌖十六夜（いざよい）','🌖立待月（たちまちづき）','🌖居待月（いまちづき）','🌖寝待月（ねまちづき）','🌗更待月（ふけまちづき）','🌗更待月（ふけまちづき）','🌗弓張月（ゆみはりづき）※下弦','🌘弓張月（ゆみはりづき）※下弦','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌑晦日月（みそかづき）'];
+window.MOON_PHASE_NAMES_JA = MOON_PHASE_NAMES_JA;
+// 月齢から、名前・読み・添え書きを返す（例：十三夜月・じゅうさんやづき／弓張月・ゆみはりづき・※上弦）
+function moonShapeInfo(age) {
   var a = Number(age);
-  if (!isFinite(a)) return '';
-  for (var i = 0; i < MOON_SHAPE_NAMES.length; i++) if (a < MOON_SHAPE_NAMES[i][0]) return MOON_SHAPE_NAMES[i][1];
-  return '新月';
+  if (!isFinite(a)) return { name: '', reading: '', note: '', label: '' };
+  var raw = MOON_PHASE_NAMES_JA[Math.min(Math.round(Math.round(a * 10) / 10), 29)] || '';
+  var label = raw.replace(/^[\uD83C][\uDF00-\uDFFF]/, '');
+  var m = label.match(/^([^（]+)（([^）]*)）(.*)$/);
+  return m ? { name: m[1], reading: m[2], note: m[3].replace(/^・/, ''), label: label } : { name: label, reading: '', note: '', label: label };
 }
+window.moonShapeInfo = moonShapeInfo;
+function moonShapeName(age) { return moonShapeInfo(age).name; }
 window.moonShapeName = moonShapeName;
 
 var KOYOMI_ORDER_DEFAULT = {
@@ -22278,7 +22282,9 @@ function koyomiTodayData(dateObj) {
   var ymd = getLocalDateStr(d);
   var noon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   var kou = (typeof getCurrentShichijuniKou === 'function') ? getCurrentShichijuniKou(noon) : null;
-  var age = (typeof calcMoonAgeNAOJ === 'function') ? calcMoonAgeNAOJ(noon) : null;
+  // v0.59.9: 今日なら今の時刻の月齢（季節の風だよりの月の名前と同じ時刻で引く）。ほかの日はその日の正午
+  var _isToday = getLocalDateStr(d) === getLocalDateStr(new Date());
+  var age = (typeof calcMoonAgeNAOJ === 'function') ? calcMoonAgeNAOJ(_isToday ? new Date() : noon) : null;
   var wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
   var nextKou = null;
   if (kou && kou.totalDays && kou.dayInKou) {
@@ -22302,6 +22308,7 @@ function koyomiTodayData(dateObj) {
     kouReading: kou ? kou.reading : '',
     kouDesc: kou ? (kou.desc || '') : '',
     kouDay: kou ? kou.dayInKou : null,
+    kouTotal: kou ? (kou.totalDays || null) : null,   // v0.59.9: その候が何日続くか
     nextKou: nextKou,
     moonAge: age,
     moonName: moonShapeName(age),
@@ -22428,6 +22435,12 @@ function koyomiLifeHtml(v, esc) {
   if (!q) return '';
   var wrap = function(inner) { return '<div id="kazeLifeQ" style="margin:6px 0 14px;">' + inner + '</div>'; };
   var done = koyomiLifeAnswer(v.ymd);
+  // v0.59.9: 同じ候の問いには、その年に一度答えれば十分（候は5日ほど続くので、ほかの日に答えたものも数える）。
+  // 前は今日の日付で答えたかだけを見ていて、「のこり0問」なのに「答える」が出ていた
+  if (!(done && done.kou === v.kou)) {
+    var _all = (allSettings && allSettings.ui && allSettings.ui.koyomiLifeAnswers) || {}, _yr = String(v.ymd || '').slice(0, 4);
+    Object.keys(_all).sort().forEach(function(d) { if (_all[d] && _all[d].kou === v.kou && d.slice(0, 4) === _yr) done = _all[d]; });
+  }
   var left = koyomiLifeQueue(v.date || new Date()).length;
   if (done && done.kou === v.kou && !left) {
     var sh = koyomiLifeShare(v.kou), yes = sh ? sh.yes : 0, no = 100 - yes;
@@ -22725,6 +22738,53 @@ function saveKoyomiTodayWord(text) {
   return true;
 }
 window.saveKoyomiTodayWord = saveKoyomiTodayWord;
+// ---- 問いと答えを、同じ箱で（v0.59.9） ----
+// 【権威】2026-10-21、「問いに対する答えという風に見せたい。答えがどこに対応しているか、自分で読み込んで探させている。設計しなおして」との指示。
+// 問いの面では、問いを1つずつ箱に入れて答えの所は「？」。めくると、同じ箱の「？」が答えに変わる（位置が変わらないので探さなくてよい）
+var KOYOMI_Q = { sekki: '今日の二十四節気は？', kou: '今日の七十二候は？', kouDay: '今日は、その候の何日目？', moon: '今夜の月の形は？', koki: '今年は、皇紀何年？' };
+window.KOYOMI_Q = KOYOMI_Q;
+function _koyomiQKey(q) { for (var k in KOYOMI_Q) if (KOYOMI_Q[k] === q) return k; return ''; }
+// 1つの問いの答え（大きな答えと、小さな添え書き）
+function koyomiQaAnswer(key, v, order, esc) {
+  if (key === 'sekki') {
+    var sub = [];
+    if (v.sekkiReading) sub.push(esc(v.sekkiReading));
+    if (order.sekkiStrength !== 'light' && v.sekkiDay) sub.push(v.sekkiDay + '日目');
+    var rich = [];
+    if (order.sekkiStrength === 'rich') {
+      if (v.zassetsu && v.zassetsu.length) rich.push(esc(v.zassetsu.join('・')));
+      if (v.rokuyo) rich.push(esc(v.rokuyo));
+      if (v.kanshi) rich.push(esc(v.kanshi) + 'の日');
+    }
+    return { main: esc(v.sekki), sub: sub.join('・') + (rich.length ? '<br>' + rich.join('　') : '') };
+  }
+  if (key === 'kou') return { main: esc(v.kou), sub: [v.kouReading ? esc(v.kouReading) : '', v.kouDesc ? esc(v.kouDesc) : ''].filter(Boolean).join('・') };
+  if (key === 'kouDay') return { main: v.kouDay + '日目', sub: '「' + esc(v.kou) + '」' + (v.kouTotal ? '（全' + v.kouTotal + '日）のうち' : '') };
+  if (key === 'moon') {
+    var mi = moonShapeInfo(v.moonAge);
+    var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? '月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
+    return { main: esc(mi.name || v.moonName), sub: ms, moon: true };
+  }
+  if (key === 'koki') return { main: esc(v.koki), sub: '' };
+  return { main: '', sub: '' };
+}
+window.koyomiQaAnswer = koyomiQaAnswer;
+// 問いの箱を並べる（revealed：答えを出すか）
+function koyomiQaHtml(questions, v, order, esc, revealed) {
+  return questions.map(function(q, i) {
+    var key = _koyomiQKey(q), a = revealed ? koyomiQaAnswer(key, v, order, esc) : null;
+    var ans = revealed
+      ? ('<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">' +
+          (a.moon ? '<canvas id="kazeQaMoonCanvas" width="160" height="160" style="width:56px;height:56px;border-radius:50%;flex:none;"></canvas>' : '') +
+          '<div style="min-width:0;"><div style="font-size:1.5em;font-weight:800;line-height:1.25;">' + a.main + '</div>' +
+          (a.sub ? '<div style="font-size:0.8em;opacity:0.75;line-height:1.5;margin-top:2px;">' + a.sub + '</div>' : '') + '</div></div>')
+      : '<div style="font-size:1.5em;font-weight:800;opacity:0.35;margin-top:4px;">？</div>';
+    return '<div data-qa="' + key + '" style="background:rgba(255,255,255,0.6);border-radius:14px;padding:10px 14px;margin:0 0 8px;text-align:left;">' +
+      '<div style="font-size:0.85em;font-weight:700;opacity:0.8;">' + (i + 1) + '. ' + esc(q) + '</div>' + ans + '</div>';
+  }).join('');
+}
+window.koyomiQaHtml = koyomiQaHtml;
+
 // 季節の風だよりの中に、注文の暦を描く。戻り値：'none'（足さない）・'question'（問いの面）・'answer'（答えの面）。
 // opts.order・opts.date・opts.answer はテスト用
 function renderKazeKoyomi(col, opts) {
@@ -22745,8 +22805,9 @@ function renderKazeKoyomi(col, opts) {
   var asking = order.richness !== 'light' && questions.length > 0 && !opts.answer && !koyomiFlippedToday();
   var txt = (col && col.text) || '#333333';
   if (asking) {
+    // v0.59.9: 問いを1つずつ箱に入れる。答えの所は「？」（めくると、同じ箱が答えに変わる）
     topEl.innerHTML = '<div style="text-align:center;margin:4px 0 12px;">' +
-      '<div style="font-size:1.15em;font-weight:800;line-height:1.9;">' + questions.map(esc).join('<br>') + '</div>' +
+      koyomiQaHtml(questions, v, order, esc, false) +
       '<div style="font-size:0.8em;opacity:0.7;margin:6px 0 14px;">頭の中で思い出してから、めくってください</div>' +
       '<button type="button" data-kz="flip" style="padding:11px 36px;border:none;border-radius:999px;background:' + txt + ';color:#fff;font-weight:800;font-size:1em;cursor:pointer;">めくる</button></div>';
     // 月の形を問うときは、月の絵と名前も伏せる。答えが書いてある「文章を読む」も伏せる
@@ -22760,7 +22821,15 @@ function renderKazeKoyomi(col, opts) {
     return 'question';
   }
   var parts = koyomiKazeParts(v, order, esc);
-  topEl.innerHTML = parts.top; botEl.innerHTML = parts.bottom;
+  // v0.59.9: 問いがある注文なら、問いの面と同じ箱に答えを入れる（答えを探さなくてよい）。問わない注文（あっさり・問いの数なし）は今までの並び
+  var _qaOn = order.richness !== 'light' && questions.length > 0;
+  topEl.innerHTML = _qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top;
+  botEl.innerHTML = parts.bottom;
+  var _moonAsked = _qaOn && questions.indexOf(KOYOMI_Q.moon) !== -1;
+  if (_moonAsked) {
+    // 月の形を問うたときは、月の絵を答えの箱の中に入れ、大きな月の絵は出さない（二重にしない）
+    setTimeout(function() { try { if (document.getElementById('kazeQaMoonCanvas') && typeof _drawMoonCanvas === 'function') _drawMoonCanvas('kazeQaMoonCanvas', v.moonAge, (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0); } catch (eQm) {} }, 0);
+  }
   var _rerender = function() { renderKazeKoyomi(col, Object.assign({}, opts, { answer: true, noLifeAuto: true })); };
   try { bindKoyomiLife(v, _rerender); } catch (eL) {}
   // v0.59.3: いきなり払う画面（季節の風だよりが見えているときだけ）
@@ -22770,7 +22839,7 @@ function renderKazeKoyomi(col, opts) {
       if (m && m.style.display !== 'none') koyomiLifeAutoOpen({ onClose: _rerender });
     }, 450);
   }
-  if (order.moon === 'none') { show(moonRow, false); show(moonLabel, false); }
+  if (order.moon === 'none' || _moonAsked) { show(moonRow, false); show(moonLabel, false); }
   else if (order.moon === 'half' && moonLabel) moonLabel.textContent = v.moonName;
   var w = botEl.querySelector('[data-kz="word"]');
   if (w) w.onclick = function() {
@@ -54919,6 +54988,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.59.9', date: '2026-10-21',
+    items: [
+      { icon:'🌸', t:'問いと答えを、同じ箱に並べました',
+        before:'めくると問いが消えて暦の並びに変わり、どの問いの答えがどこにあるかを探す必要がありました',
+        after:'問いを1つずつ箱に入れ、めくると同じ箱の「？」が答えに変わります。月の形を問うたときは、月の絵もその答えの箱に入ります' },
+      { icon:'🍃', t:'「のこり0問」なのに「答える」が出ていたのを直しました',
+        before:'同じ七十二候の暮らしの問いに、ほかの日に答えていても、今日の分として「答える」が出ていました',
+        after:'同じ候の問いに答えていれば、答えた結果が出ます' }
+    ]
+  },
+  {
     ver: 'v0.59.8', date: '2026-10-21',
     items: [
       { icon:'📋', t:'畳んだ案件にも、依頼してくれた方の名前を出しました',
@@ -80784,9 +80864,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        // ① 月の形の名前
        // 境目の近く（3.5＝まだ三日月、7.0＝上弦、15.3＝満月）も確かめる
+       // v0.59.9: 【第67条④】季節の風だよりと同じ表にそろえた（上弦・下弦は「弓張月」、晦日は「晦日月」）
        var _m = [0, 2.8, 3.5, 7.0, 7.4, 14.8, 15.3, 22, 28].map(moonShapeName).join(',');
-       (_m === '新月,三日月,三日月,上弦の月,上弦の月,満月,満月,下弦の月,晦日の月')
-         ? ok('ST-459·①: 月齢から月の形の名前を出す（新月・三日月・上弦・満月・下弦・晦日）')
+       var _n = [7.0, 22].map(function(a) { return moonShapeInfo(a).note; }).join(',');
+       (_m === '新月,三日月,三日月,弓張月,弓張月,満月,満月,弓張月,晦日月' && _n === '※上弦,※下弦')
+         ? ok('ST-459·①: 月齢から月の形の名前を出す（季節の風だよりと同じ表。新月・三日月・弓張月（上弦）・満月・弓張月（下弦）・晦日月）')
          : ng('ST-459·①: 月の形の名前が違う', _m);
        // ② 中身：2026年10月13日は、寒露・菊花開の1日目・皇紀2686年。今日の予定がその暦の中に入る
        allTasks = allTasks.concat([{ id: 'st459-a', kind: 'task', text: 'ST459のTEL', date: '2026-10-13', time: '10:00', section: 1, createdAt: '2026-10-01T00:00:00Z' },
@@ -81291,6 +81373,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-475·①: 畳んだ案件の依頼者の出し方が違う', _h.slice(0, 120));
      } catch(e) {
        ng('ST-475: 例外', e.message);
+     }
+
+     // ===== ST-476: 問いと答えが同じ箱・月の名前は季節の風だよりと同じ表（v0.59.9〜） =====
+     // 【権威】2026-10-21、「答えがどこに対応しているか、自分で探させている。設計しなおして」との指示。あわせて、月の名前の食い違いを直した
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { questionCount: 'all' });
+       var _v = koyomiTodayData(new Date(2026, 9, 21, 9, 0, 0)), _e = function(x) { return String(x); };
+       var _qs = koyomiQuestions(_o);
+       var _q = koyomiQaHtml(_qs, _v, _o, _e, false), _a = koyomiQaHtml(_qs, _v, _o, _e, true);
+       var _boxQ = (_q.match(/data-qa=/g) || []).length, _boxA = (_a.match(/data-qa=/g) || []).length;
+       var _keysQ = (_q.match(/data-qa="(\w+)"/g) || []).join(','), _keysA = (_a.match(/data-qa="(\w+)"/g) || []).join(',');
+       (_boxQ === 5 && _boxA === 5 && _keysQ === _keysA && _q.indexOf('寒露') === -1 && _a.indexOf('寒露') !== -1 && _a.indexOf('蟋蟀在戸') !== -1 && /kazeQaMoonCanvas/.test(_a) &&
+        moonShapeName(10.5) === '十三夜月' && moonShapeName(10.4) === '十日月' && moonShapeInfo(7.2).note === '※上弦' && moonShapeInfo(14.9).name === '満月')
+         ? ok('ST-476·①: 問いの箱と答えの箱は同じ並び（めくると同じ箱の「？」が答えになる）。月の名前は季節の風だよりと同じ表（月齢10.5は十三夜月）')
+         : ng('ST-476·①: 問いと答えの箱か、月の名前が違う', [_boxQ, _boxA, moonShapeName(10.5)].join(','));
+       // ② 同じ候の暮らしの問いに、ほかの日に答えていれば、答えた結果を出す（「のこり0問」なのに「答える」を出さない）
+       var _ui = JSON.parse(JSON.stringify(allSettings.ui || {}));
+       allSettings.ui.koyomiLifeAnswers = { '2026-10-19': { kou: '蟋蟀在戸', ans: 'yes' }, '2026-10-14': { kou: '菊花開', ans: 'no' } };
+       var _lh = koyomiLifeHtml({ ymd: '2026-10-21', kou: '蟋蟀在戸', date: new Date(2026, 9, 21, 9, 0, 0) }, _e);
+       allSettings.ui = _ui;
+       (_lh.indexOf('あなた：<b>はい</b>') !== -1 && !/data-life-open/.test(_lh))
+         ? ok('ST-476·②: 同じ候の暮らしの問いに、ほかの日に答えていれば、答えた結果を出す')
+         : ng('ST-476·②: 同じ候の答えを見ていない', _lh.slice(0, 80));
+     } catch(e) {
+       ng('ST-476: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
