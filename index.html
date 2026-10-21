@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.6 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.5';
+    const APP_VERSION = 'v0.60.6';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22321,6 +22321,8 @@ function koyomiTodayData(dateObj) {
     kouDesc: kou ? (kou.desc || '') : '',
     kouDay: kou ? kou.dayInKou : null,
     kouTotal: kou ? (kou.totalDays || null) : null,   // v0.59.9: その候が何日続くか
+    sekkiTotal: kou ? (kou.sekkiTotalDays || null) : null,   // v0.60.6: 進み具合の棒のため
+    sekkiStart: kou ? kou.sekkiStart : '', sekkiEnd: kou ? kou.sekkiEnd : '', kouStart: kou ? kou.kouStart : '', kouEnd: kou ? kou.kouEnd : '',
     nextKou: nextKou,
     moonAge: age,
     moonName: moonShapeName(age),
@@ -22744,8 +22746,10 @@ function koyomiKazeParts(v, order, esc, asked) {
     // 【権威】2026-10-16、「これだけじゃわからない」との指摘で数字にした（地球の公転は秒速約30km、太陽系は銀河の中を秒速約220km）
     bottom += line('地球は今日一日で、太陽のまわりを約257万km進みます。太陽も、銀河の中を約1900万km進んでいます。<br>今日あなたがいるこの場所に、地球が戻ってくることは、二度とありません。', 'text-align:center;margin-top:8px;font-size:0.8em;line-height:1.7;opacity:0.8;');
     bottom += '<div style="margin:10px 0 4px;display:flex;gap:6px;align-items:flex-end;"><textarea id="koyomiTodayWord" rows="2" placeholder="今日の一言（日誌に残ります）" style="flex:1;box-sizing:border-box;padding:8px;border:1px solid rgba(0,0,0,0.18);border-radius:10px;font-size:16px;font-family:inherit;background:rgba(255,255,255,0.75);"></textarea>' +
-      '<button type="button" data-kz="word" style="padding:7px 10px;border:1px solid currentColor;border-radius:10px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.8em;cursor:pointer;white-space:nowrap;">残す</button></div>';
+      '<button type="button" data-kz="word" style="padding:7px 10px;border:1px solid currentColor;border-radius:10px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.8em;cursor:pointer;white-space:nowrap;">書きとめる</button></div>';   // v0.60.6: 「残す」は重い
   }
+  // v0.60.6: 締めの一言まで、一続きの儀式として畳まずに
+  bottom += '<div style="text-align:center;margin:22px 0 4px;font-size:1.1em;font-weight:800;">今日もおつかれさま！</div>';
   return { top: top, bottom: bottom, sentence: koyomiTodaySentenceHtml(v, order, esc) };
 }
 window.koyomiKazeParts = koyomiKazeParts;
@@ -22781,17 +22785,18 @@ function koyomiQaAnswer(key, v, order, esc) {
   if (key === 'sekki') {
     var sub = [];
     if (v.sekkiReading) sub.push(esc(v.sekkiReading));
-    if (order.sekkiStrength !== 'light' && v.sekkiDay) sub.push(v.sekkiDay + '日目');
+    // v0.60.6: 何日目は、下の進み具合の棒（14日目 / 15日間）に任せる（同じことを2回言わない）
+    if (order.sekkiStrength !== 'light' && v.sekkiDay && !v.sekkiTotal) sub.push(v.sekkiDay + '日目');
     var rich = [];
     if (order.sekkiStrength === 'rich') {
       if (v.zassetsu && v.zassetsu.length) rich.push(esc(v.zassetsu.join('・')));
       if (v.rokuyo) rich.push(esc(v.rokuyo));
       if (v.kanshi) rich.push(esc(v.kanshi) + 'の日');
     }
-    return { main: esc(v.sekki), sub: sub.join('・') + (rich.length ? '<br>' + rich.join('　') : '') };
+    return { main: esc(v.sekki), sub: sub.join('・') + (rich.length ? '<br>' + rich.join('　') : ''), bar: koyomiProgressBar(v.sekkiDay, v.sekkiTotal, v.sekkiStart, v.sekkiEnd) };
   }
-  if (key === 'kou') return { main: esc(v.kou), sub: [v.kouReading ? esc(v.kouReading) : '', v.kouDesc ? esc(v.kouDesc) : ''].filter(Boolean).join('・') };
-  if (key === 'kouDay') return { main: v.kouDay + '日目', sub: '「' + esc(v.kou) + '」' + (v.kouTotal ? '（全' + v.kouTotal + '日）のうち' : '') };
+  if (key === 'kou') return { main: esc(v.kou), sub: [v.kouReading ? esc(v.kouReading) : '', v.kouDesc ? esc(v.kouDesc) : ''].filter(Boolean).join('・'), barKou: true };
+  if (key === 'kouDay') return { main: v.kouDay + '日目', sub: '七十二候「' + esc(v.kou) + '」', bar: koyomiProgressBar(v.kouDay, v.kouTotal, v.kouStart, v.kouEnd) };   // 全何日かは棒に任せる
   if (key === 'moon') {
     var mi = moonShapeInfo(v.moonAge);
     var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? '月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
@@ -22864,6 +22869,18 @@ function speakKoyomiText(text) {
   } catch (e) { return false; }
 }
 window.speakKoyomiText = speakKoyomiText;
+// v0.60.6: 【権威】2026-10-21、「今日もおつかれさま！までが一連の儀式。畳まなくてよくね」との指示。
+// 畳んでいた「節気と候の進み具合」の棒は、答えの箱の中に入れる（節気の箱・何日目の箱。何日目を問わなければ七十二候の箱）
+function koyomiProgressBar(day, total, start, end) {
+  if (!day || !total) return '';
+  var pct = Math.max(0, Math.min(100, Math.round(day / total * 100)));
+  // 始まり・終わりの日は「10/18」の形で来る（年-月-日の形でも読めるようにしておく）
+  var md = function(x) { var t = String(x || ''); var p = t.split('-'); if (p.length === 3) return Number(p[1]) + '/' + Number(p[2]); var q = t.split('/'); return q.length === 2 ? Number(q[0]) + '/' + Number(q[1]) : ''; };
+  return '<div style="margin-top:6px;">' +
+    '<div style="height:6px;border-radius:999px;background:rgba(0,0,0,0.12);overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:currentColor;opacity:0.75;"></div></div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:0.72em;opacity:0.65;margin-top:2px;"><span>' + day + '日目 / ' + total + '日間</span><span>' + (start && end ? md(start) + '〜' + md(end) : '') + '</span></div></div>';
+}
+window.koyomiProgressBar = koyomiProgressBar;
 // 月の絵の傾きは、どの時刻に空で見たときの向きか（_currentMoonTiltDeg と同じ選び方：いま月が出ていればいま、出ていなければ見える時刻）
 function koyomiMoonViewNote() {
   try {
@@ -22879,8 +22896,10 @@ function koyomiMoonViewNote() {
 window.koyomiMoonViewNote = koyomiMoonViewNote;
 // 問いの箱を並べる（revealed：答えを出すか）
 function koyomiQaHtml(questions, v, order, esc, revealed) {
+  var _kouDayAsked = questions.indexOf(KOYOMI_Q.kouDay) !== -1;
   return questions.map(function(q, i) {
     var key = _koyomiQKey(q), a = revealed ? koyomiQaAnswer(key, v, order, esc) : null;
+    if (a && a.barKou && !_kouDayAsked) a.bar = koyomiProgressBar(v.kouDay, v.kouTotal, v.kouStart, v.kouEnd);   // 何日目を問わなければ、七十二候の箱に
     // v0.60.5: 【権威】2026-10-21、月の答えは、季節の風だより・ダッシュボードと同じ大きな月の絵（空で見る傾き）で。小さいと傾きが分からない
     if (revealed && a.moon) {
       return '<div data-qa="' + key + '" style="background:rgba(255,255,255,0.6);border-radius:14px;padding:10px 14px;margin:0 0 8px;text-align:center;">' +
@@ -22893,7 +22912,7 @@ function koyomiQaHtml(questions, v, order, esc, revealed) {
     var ans = revealed
       ? ('<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">' +
           '<div style="min-width:0;"><div style="font-size:' + (a.size || '1.5em') + ';font-weight:800;line-height:1.5;">' + a.main + '</div>' +
-          (a.sub ? '<div style="font-size:0.8em;opacity:0.75;line-height:1.5;margin-top:2px;">' + a.sub + '</div>' : '') + '</div></div>')
+          (a.sub ? '<div style="font-size:0.8em;opacity:0.75;line-height:1.5;margin-top:2px;">' + a.sub + '</div>' : '') + '</div></div>' + (a.bar || ''))
       : '<div style="font-size:1.5em;font-weight:800;opacity:0.35;margin-top:4px;">？</div>';
     return '<div data-qa="' + key + '" style="background:rgba(255,255,255,0.6);border-radius:14px;padding:10px 14px;margin:0 0 8px;text-align:left;">' +
       '<div style="font-size:0.85em;font-weight:700;opacity:0.8;">' + (i + 1) + '. ' + esc(q) + '</div>' + ans + '</div>';
@@ -22919,6 +22938,7 @@ function renderKazeKoyomi(col, opts) {
   var _togLabel = document.getElementById('kazedayoriTextToggleLabel');
   if (_greetEl) _greetEl.style.display = '';
   if (_bodyEl && _bodyEl.firstElementChild) _bodyEl.firstElementChild.style.display = '';
+  var _ft0 = document.getElementById('kazedayoriFooter'); if (_ft0) _ft0.style.display = '';
   if (order.richness === 'none') return 'none';   // 今までの季節の風だよりのまま
   // v0.60.5: 【権威】2026-10-21、「文章を読む」の扱いを見直す。あいさつは畳まずに上へ（名前で呼びかける一言は風だよりの温かさの芯）。
   // 「今日は寒露で、蟋蟀在戸です」は問いの答えと重なるので外し、畳む中は節気と候の進み具合の棒だけ。見出しもそれに合わせる
@@ -22975,6 +22995,9 @@ function renderKazeKoyomi(col, opts) {
   }
   if (order.moon === 'none' || _moonAsked) { show(moonRow, false); show(moonLabel, false); }
   else if (order.moon === 'half' && moonLabel) moonLabel.textContent = v.moonName;
+  // v0.60.6: 問いの箱があるときは、進み具合が箱の中に入ったので、畳む所（と、その中の締めの一言）は出さない
+  if (_qaOn) { show(toggle, false); if (textArea) textArea.style.display = 'none'; }
+  else { var _ft = document.getElementById('kazedayoriFooter'); if (_ft) _ft.style.display = 'none'; }   // 締めは下のいちばん後ろに出すので、畳む中の締めは重ねない
   var w = botEl.querySelector('[data-kz="word"]');
   if (w) w.onclick = function() {
     var ta = document.getElementById('koyomiTodayWord');
@@ -42393,9 +42416,9 @@ function renderMonthlyMoneyLine() {
           var _ageRound = Math.round(_age * 10) / 10;
           var _phaseNames = ['🌑新月（しんげつ）','🌒繊月（せんげつ）','🌒繊月（せんげつ）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌓弓張月（ゆみはりづき）※上弦','🌓弓張月（ゆみはりづき）※上弦','🌔十日月（とおかつき）','🌔十日月（とおかつき）','🌔十三夜月（じゅうさんやづき）','🌔十三夜月（じゅうさんやづき）','🌔小望月（こもちづき）','🌕満月（まんげつ）・望月（もちづき）','🌕満月（まんげつ）・望月（もちづき）','🌖十六夜（いざよい）','🌖立待月（たちまちづき）','🌖居待月（いまちづき）','🌖寝待月（ねまちづき）','🌗更待月（ふけまちづき）','🌗更待月（ふけまちづき）','🌗弓張月（ゆみはりづき）※下弦','🌘弓張月（ゆみはりづき）※下弦','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌑晦日月（みそかづき）'];
           var _phase = _phaseNames[Math.min(Math.round(_ageRound), 29)] || '';
-          _moonFooter = '今日もおつかれさま。'; // v0.45.1400: 月齢はkazedayoriMoonLabelで常時表示するため、折りたたみ内での重複記載をやめる
+          _moonFooter = '今日もおつかれさま！'; // v0.60.6: 【権威】2026-10-21、締めは「！」で。 v0.45.1400: 月齢はkazedayoriMoonLabelで常時表示するため、折りたたみ内での重複記載をやめる
         } else {
-          _moonFooter = '今日もおつかれさま。';
+          _moonFooter = '今日もおつかれさま！';
         }
         // v0.45.1400: 常に見える月齢ラベル用（_moonFooterとは別に、短い一目で分かる形にする）
         var _moonLabelText = (typeof _ageRound !== 'undefined' && typeof _phase !== 'undefined')
@@ -55121,6 +55144,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.60.6', date: '2026-10-21',
+    items: [
+      { icon:'🌸', t:'季節の風だよりを、最後まで一続きで読めるようにしました',
+        before:'節気と候の進み具合と「今日もおつかれさま」が、畳んだ中に入っていました',
+        after:'進み具合の棒は、節気・候の答えの箱の中に入れました。最後は「今日もおつかれさま！」で締めます。日誌への一言のボタンは「書きとめる」にしました' }
+    ]
+  },
   {
     ver: 'v0.60.5', date: '2026-10-21',
     items: [
@@ -81643,6 +81674,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-479·①: 季節の風だよりの整理が違う', '');
      } catch(e) {
        ng('ST-479: 例外', e.message);
+     }
+
+     // ===== ST-480: 一続きの儀式（進み具合は答えの箱に・締めは「今日もおつかれさま！」・書きとめる）（v0.60.6〜） =====
+     // 【権威】2026-10-21、「残すは重い」「おつかれさまは！がいい」「今日もおつかれさま！までが一連の儀式。畳まなくてよくね」との指示
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { questionCount: 'all', richness: 'extraRich' });
+       var _v = koyomiTodayData(new Date(2026, 9, 21, 9, 0, 0)), _e = function(x) { return String(x); };
+       var _a = koyomiQaHtml(koyomiQuestions(_o), _v, _o, _e, true);
+       var _aBasic = koyomiQaHtml(koyomiQuestions(Object.assign({}, _o, { questionCount: 'basic' })), _v, _o, _e, true);
+       var _p = koyomiKazeParts(_v, _o, _e);
+       var _bars = (_a.match(/日目 \/ /g) || []).length, _barsB = (_aBasic.match(/日目 \/ /g) || []).length;
+       (_bars === 2 && _a.indexOf('14日目 / 15日間') !== -1 && _a.indexOf('4日目 / 5日間') !== -1 && _a.indexOf('10/18〜10/22') !== -1 &&
+        _barsB === 2 && _p.bottom.indexOf('今日もおつかれさま！') !== -1 && _p.bottom.indexOf('>書きとめる<') !== -1 && _p.bottom.indexOf('>残す<') === -1 &&
+        /if \(_qaOn\) \{ show\(toggle, false\);/.test(renderKazeKoyomi.toString()))
+         ? ok('ST-480·①: 進み具合の棒は答えの箱の中（節気の箱と、何日目の箱。問わなければ七十二候の箱）。締めは「今日もおつかれさま！」、一言のボタンは「書きとめる」')
+         : ng('ST-480·①: 一続きの儀式の作りが違う', [_bars, _barsB].join(','));
+     } catch(e) {
+       ng('ST-480: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
