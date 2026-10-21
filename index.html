@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.5 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.4';
+    const APP_VERSION = 'v0.60.5';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22795,7 +22795,7 @@ function koyomiQaAnswer(key, v, order, esc) {
   if (key === 'moon') {
     var mi = moonShapeInfo(v.moonAge);
     var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? '月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
-    return { main: esc(mi.name || v.moonName), sub: ms, moon: true };
+    return { main: esc(mi.name || v.moonName), sub: ms, moon: true, view: koyomiMoonViewNote() };
   }
   if (key === 'koki' || key === 'year') {   // v0.60.2: ねぎに合わせた年の答え
     var _d = v.date || new Date();
@@ -22864,13 +22864,34 @@ function speakKoyomiText(text) {
   } catch (e) { return false; }
 }
 window.speakKoyomiText = speakKoyomiText;
+// 月の絵の傾きは、どの時刻に空で見たときの向きか（_currentMoonTiltDeg と同じ選び方：いま月が出ていればいま、出ていなければ見える時刻）
+function koyomiMoonViewNote() {
+  try {
+    var geo = (window._userGeoLocation && typeof window._userGeoLocation.lat === 'number') ? window._userGeoLocation : null;
+    var now = new Date();
+    if (_moonSunAltDeg(now, geo).moon >= 5) return 'いま空で見ると、この傾きです';
+    var t = _moonViewTime(now, geo);
+    if (!t) return '';
+    var dayWord = getLocalDateStr(t) === getLocalDateStr(now) ? (t.getHours() >= 17 ? '今夜' : '今日') : '明け方';
+    return dayWord + t.getHours() + '時ごろ、空で見るとこの傾きです';
+  } catch (e) { return ''; }
+}
+window.koyomiMoonViewNote = koyomiMoonViewNote;
 // 問いの箱を並べる（revealed：答えを出すか）
 function koyomiQaHtml(questions, v, order, esc, revealed) {
   return questions.map(function(q, i) {
     var key = _koyomiQKey(q), a = revealed ? koyomiQaAnswer(key, v, order, esc) : null;
+    // v0.60.5: 【権威】2026-10-21、月の答えは、季節の風だより・ダッシュボードと同じ大きな月の絵（空で見る傾き）で。小さいと傾きが分からない
+    if (revealed && a.moon) {
+      return '<div data-qa="' + key + '" style="background:rgba(255,255,255,0.6);border-radius:14px;padding:10px 14px;margin:0 0 8px;text-align:center;">' +
+        '<div style="font-size:0.85em;font-weight:700;opacity:0.8;text-align:left;">' + (i + 1) + '. ' + esc(q) + '</div>' +
+        '<canvas id="kazeQaMoonCanvas" width="160" height="160" style="width:150px;height:150px;border-radius:50%;margin:8px auto 4px;display:block;"></canvas>' +
+        '<div style="font-size:1.5em;font-weight:800;line-height:1.25;">' + a.main + '</div>' +
+        (a.sub ? '<div style="font-size:0.8em;opacity:0.75;line-height:1.5;margin-top:2px;">' + a.sub + '</div>' : '') +
+        (a.view ? '<div style="font-size:0.78em;opacity:0.7;margin-top:4px;">' + a.view + '</div>' : '') + '</div>';
+    }
     var ans = revealed
       ? ('<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">' +
-          (a.moon ? '<canvas id="kazeQaMoonCanvas" width="160" height="160" style="width:56px;height:56px;border-radius:50%;flex:none;"></canvas>' : '') +
           '<div style="min-width:0;"><div style="font-size:' + (a.size || '1.5em') + ';font-weight:800;line-height:1.5;">' + a.main + '</div>' +
           (a.sub ? '<div style="font-size:0.8em;opacity:0.75;line-height:1.5;margin-top:2px;">' + a.sub + '</div>' : '') + '</div></div>')
       : '<div style="font-size:1.5em;font-weight:800;opacity:0.35;margin-top:4px;">？</div>';
@@ -22894,14 +22915,28 @@ function renderKazeKoyomi(col, opts) {
   var show = function(el, on) { if (el) el.style.display = on ? '' : 'none'; };
   topEl.innerHTML = ''; botEl.innerHTML = '';
   show(moonRow, true); show(moonLabel, true); show(toggle, true);
+  var _greetEl = document.getElementById('kazedayoriGreet'), _bodyEl = document.getElementById('kazedayoriBody');
+  var _togLabel = document.getElementById('kazedayoriTextToggleLabel');
+  if (_greetEl) _greetEl.style.display = '';
+  if (_bodyEl && _bodyEl.firstElementChild) _bodyEl.firstElementChild.style.display = '';
   if (order.richness === 'none') return 'none';   // 今までの季節の風だよりのまま
+  // v0.60.5: 【権威】2026-10-21、「文章を読む」の扱いを見直す。あいさつは畳まずに上へ（名前で呼びかける一言は風だよりの温かさの芯）。
+  // 「今日は寒露で、蟋蟀在戸です」は問いの答えと重なるので外し、畳む中は節気と候の進み具合の棒だけ。見出しもそれに合わせる
+  var _greetTxt = _greetEl ? _greetEl.textContent : '';
+  if (_greetEl) _greetEl.style.display = 'none';
+  if (_bodyEl && _bodyEl.firstElementChild) _bodyEl.firstElementChild.style.display = 'none';
+  if (_togLabel) {
+    _togLabel.setAttribute('data-closed', '節気と候の進み具合 ▼'); _togLabel.setAttribute('data-open', '節気と候の進み具合 ▲');
+    _togLabel.textContent = (textArea && textArea.style.display === 'block') ? '節気と候の進み具合 ▲' : '節気と候の進み具合 ▼';
+  }
+  var _greetHtml = _greetTxt ? '<div data-kz-greet style="text-align:left;font-size:0.9em;line-height:1.6;margin:-6px 0 14px;opacity:0.85;white-space:pre-line;">' + esc(_greetTxt) + '</div>' : '';
   var v = koyomiTodayData(opts.date || new Date());
   var questions = koyomiQuestions(order);
   var asking = order.richness !== 'light' && questions.length > 0 && !opts.answer && !koyomiFlippedToday();
   var txt = (col && col.text) || '#333333';
   if (asking) {
     // v0.59.9: 問いを1つずつ箱に入れる。答えの所は「？」（めくると、同じ箱が答えに変わる）
-    topEl.innerHTML = '<div style="text-align:center;margin:4px 0 12px;">' +
+    topEl.innerHTML = _greetHtml + '<div style="text-align:center;margin:4px 0 12px;">' +
       koyomiQaHtml(questions, v, order, esc, false) +
       '<div style="font-size:0.8em;opacity:0.7;margin:6px 0 14px;">頭の中で思い出してから、めくってください</div>' +
       '<button type="button" data-kz="flip" style="padding:11px 36px;border:none;border-radius:999px;background:' + txt + ';color:#fff;font-weight:800;font-size:1em;cursor:pointer;">めくる</button></div>';
@@ -22920,7 +22955,7 @@ function renderKazeKoyomi(col, opts) {
   var parts = koyomiKazeParts(v, order, esc, _askedKeys);
   // v0.59.9: 問いがある注文なら、問いの面と同じ箱に答えを入れる（答えを探さなくてよい）。問わない注文（あっさり・問いの数なし）は今までの並び
   var _qaOn = order.richness !== 'light' && questions.length > 0;
-  topEl.innerHTML = (_qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top) + parts.sentence;
+  topEl.innerHTML = _greetHtml + (_qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top) + parts.sentence;
   var _sp = topEl.querySelector('[data-kz="speak"]');
   if (_sp) _sp.onclick = function() { speakKoyomiText(_sp.getAttribute('data-speech')); };
   botEl.innerHTML = parts.bottom;
@@ -42380,7 +42415,7 @@ function renderMonthlyMoneyLine() {
         var _kzTextArea = document.getElementById('kazedayoriTextArea');
         var _kzToggleLabel = document.getElementById('kazedayoriTextToggleLabel');
         if (_kzTextArea) _kzTextArea.style.display = 'none';
-        if (_kzToggleLabel) _kzToggleLabel.textContent = '文章を読む ▼';
+        if (_kzToggleLabel) { _kzToggleLabel.textContent = '文章を読む ▼'; _kzToggleLabel.removeAttribute('data-open'); _kzToggleLabel.removeAttribute('data-closed'); }   // v0.60.5: 注文の暦を足すときは、下で言葉を差し替える
 
         // 候カラーを適用
         _card.style.background = 'linear-gradient(160deg,' + _col.from + ' 0%,' + _col.to + ' 100%)';
@@ -46421,7 +46456,7 @@ window.addEventListener('afterprint', function() {
         <!-- v0.59.0: こよみの注文の暦（月の名前の下：月の続き・年・予定・どう生きる？） -->
         <div id="kazedayoriKoyomiBottom" style="margin-bottom:14px;"></div>
         <div id="kazedayoriTextToggleRow" style="text-align:center;margin-bottom:4px;">
-          <a onclick="var b=document.getElementById('kazedayoriTextArea');var t=document.getElementById('kazedayoriTextToggleLabel');if(b.style.display==='none'){b.style.display='block';t.textContent='文章をたたむ ▲';}else{b.style.display='none';t.textContent='文章を読む ▼';}" style="font-size:0.85em;opacity:0.75;cursor:pointer;text-decoration:underline;" id="kazedayoriTextToggleLabel">文章を読む ▼</a>
+          <a onclick="var b=document.getElementById('kazedayoriTextArea');var t=document.getElementById('kazedayoriTextToggleLabel');var lo=t.getAttribute('data-open')||'文章をたたむ ▲',lc=t.getAttribute('data-closed')||'文章を読む ▼';if(b.style.display==='none'){b.style.display='block';t.textContent=lo;}else{b.style.display='none';t.textContent=lc;}" style="font-size:0.85em;opacity:0.75;cursor:pointer;text-decoration:underline;" id="kazedayoriTextToggleLabel">文章を読む ▼</a>
         </div>
         <div id="kazedayoriTextArea" style="display:none;">
           <div style="font-size:0.98em;font-weight:700;margin-bottom:18px;line-height:1.6;margin-top:14px;" id="kazedayoriGreet"></div>
@@ -55086,6 +55121,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.60.5', date: '2026-10-21',
+    items: [
+      { icon:'🌙', t:'月の答えを、大きな月の絵で出すようにしました',
+        before:'「今夜の月の形は？」の答えの月の絵が小さく、空で見る傾きが分かりにくくなっていました',
+        after:'答えの箱の中に、季節の風だよりと同じ大きな月の絵が出ます。何時ごろ空で見るとその傾きかも添えます' },
+      { icon:'🌸', t:'季節の風だよりの「文章を読む」を整理しました',
+        before:'あいさつも、問いの答えと重なる文も、畳んだ中に入っていました',
+        after:'あいさつは上に出し、畳んだ中は「節気と候の進み具合」だけにしました' }
+    ]
+  },
   {
     ver: 'v0.60.4', date: '2026-10-21',
     items: [
@@ -81576,11 +81622,27 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
         koyomiQaAnswer('date', _v, _o({ yearNegi: { white: true, blue: false } }), _e).main.indexOf('神無月') === -1 &&
         koyomiQaAnswer('date', _v, _o({}), _e).main.indexOf('神無月') !== -1 &&
         /<ruby>神無月<rt[^>]*>かんなづき<\/rt><\/ruby>の21日、/.test(_h) && _h.indexOf('（西暦2026年）') !== -1 &&
-        _parts.bottom.indexOf('2026年10月21日') === -1 && /topEl\.innerHTML = \(_qaOn[\s\S]*?\+ parts\.sentence;/.test(renderKazeKoyomi.toString()))
+        _parts.bottom.indexOf('2026年10月21日') === -1 && /topEl\.innerHTML = _greetHtml \+ \(_qaOn[\s\S]*?\+ parts\.sentence;/.test(renderKazeKoyomi.toString())   /* v0.60.5: あいさつが前に */)
          ? ok('ST-478·①: 答えをつないだ一文（皇紀2686年、10月、神無月の21日、水曜日）。和風月名は青ねぎのときだけ（白ねぎだけなら 西暦2026年10月21日、水曜日）。下の日付の行は出さない')
          : ng('ST-478·①: 一文が違う', [_t1.speech, _t2.speech, _t3.year].join(' / '));
      } catch(e) {
        ng('ST-478: 例外', e.message);
+     }
+
+     // ===== ST-479: 季節の風だよりの整理（あいさつは上・畳む中は進み具合・月の答えは大きな月）（v0.60.5〜） =====
+     // 【権威】2026-10-21、「文章を読む」の見直しと、「せっかくダッシュボードで月を見せているのに、今の形だと見えない」との指摘
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { questionCount: 'all' });
+       var _v = koyomiTodayData(new Date(2026, 9, 21, 9, 0, 0)), _e = function(x) { return String(x); };
+       var _a = koyomiQaHtml(koyomiQuestions(_o), _v, _o, _e, true);
+       var _src = renderKazeKoyomi.toString();
+       (/kazeQaMoonCanvas" width="160" height="160" style="width:150px;height:150px;/.test(_a) &&
+        /節気と候の進み具合 ▼/.test(_src) && /_greetEl\.style\.display = 'none'/.test(_src) && /firstElementChild\.style\.display = 'none'/.test(_src) &&
+        /t\.getAttribute\('data-open'\)/.test(document.documentElement.outerHTML) && typeof koyomiMoonViewNote === 'function')
+         ? ok('ST-479·①: あいさつは上に出し、畳む中は節気と候の進み具合だけ（見出しも合わせる）。月の答えは大きな月の絵（直径150）と、空で見る時刻')
+         : ng('ST-479·①: 季節の風だよりの整理が違う', '');
+     } catch(e) {
+       ng('ST-479: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
