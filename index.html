@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.3';
+    const APP_VERSION = 'v0.60.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22807,8 +22807,11 @@ function koyomiQaAnswer(key, v, order, esc) {
     // v0.60.1: 【権威】2026-10-21、「神無月がおまけに見える。発音させたい。10月、神無月の21日、水曜日とするべき」との指示。
     // 月の名前を文の中に入れ、読み仮名を上に振る（ひと続きで声に出して読める）
     // 区切り（10月、／神無月の21日、／水曜日）の途中では折り返さない
+    // v0.60.4: 【権威】2026-10-21、和風月名はいつも入れるのではなく選べるように、との指示。青ねぎ（和の暦）に〇があるときだけ入れる
     var nw = function(x) { return '<span style="white-space:nowrap;">' + x + '</span>'; };
-    return { main: nw((dd.getMonth() + 1) + '月、') + nw('<ruby>' + esc(wm[0]) + '<rt style="font-size:0.45em;font-weight:700;">' + esc(wm[1]) + '</rt></ruby>の' + dd.getDate() + '日、') + nw(['日', '月', '火', '水', '木', '金', '土'][dd.getDay()] + '曜日'), sub: '', size: '1.3em' };
+    var wdn = ['日', '月', '火', '水', '木', '金', '土'][dd.getDay()] + '曜日';
+    if (!order.yearNegi.blue) return { main: nw((dd.getMonth() + 1) + '月' + dd.getDate() + '日、') + nw(wdn), sub: '', size: '1.3em' };
+    return { main: nw((dd.getMonth() + 1) + '月、') + nw('<ruby>' + esc(wm[0]) + '<rt style="font-size:0.45em;font-weight:700;">' + esc(wm[1]) + '</rt></ruby>の' + dd.getDate() + '日、') + nw(wdn), sub: '', size: '1.3em' };
   }
   return { main: '', sub: '' };
 }
@@ -22821,11 +22824,16 @@ function koyomiTodaySentence(v, order) {
   var wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()] + '曜日';
   var seireki = '西暦' + d.getFullYear() + '年';
   var year = order.yearNegi.blue ? (koyomiBlueEraLabel(order.blueEra, d) || '') : (order.yearNegi.white ? seireki : '');
-  var rest = (d.getMonth() + 1) + '月、';
+  // v0.60.4: 和風月名（神無月など）は、青ねぎ（和の暦）に〇があるときだけ。
+  // 青ねぎ：皇紀2686年、10月、神無月の21日、水曜日／白ねぎだけ：西暦2026年10月21日、水曜日／ねぎなし：10月21日、水曜日
+  var wafuOn = !!order.yearNegi.blue;
+  var md = (d.getMonth() + 1) + '月' + d.getDate() + '日、';
   return {
-    year: year, month: rest, wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', weekday: wd,
+    year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
     seireki: (order.yearNegi.blue && order.yearNegi.white) ? seireki : '',
-    speech: (year ? year + '、' : '') + rest + wm[1] + 'の' + d.getDate() + '日、' + wd   // 読み上げは、月の名前を読み仮名で
+    speech: wafuOn
+      ? (year ? year + '、' : '') + (d.getMonth() + 1) + '月、' + wm[1] + 'の' + d.getDate() + '日、' + wd   // 読み上げは、月の名前を読み仮名で
+      : (year || '') + md + wd
   };
 }
 window.koyomiTodaySentence = koyomiTodaySentence;
@@ -22836,7 +22844,9 @@ function koyomiTodaySentenceHtml(v, order, esc) {
   return '<div data-today-sentence style="margin:6px 0 14px;padding:14px 12px;border-radius:16px;background:rgba(255,255,255,0.75);text-align:center;">' +
     '<div style="font-size:0.75em;opacity:0.7;margin-bottom:4px;">今日を、声に出して</div>' +
     '<div style="font-size:1.25em;font-weight:800;line-height:1.7;">' +
-      (t.year ? nw(esc(t.year) + '、') : '') + nw(t.month) + nw('<ruby>' + esc(t.wafu) + '<rt style="font-size:0.45em;font-weight:700;">' + esc(t.wafuReading) + '</rt></ruby>の' + t.day) + nw(t.weekday) +
+      (t.wafuOn
+        ? (t.year ? nw(esc(t.year) + '、') : '') + nw(t.month) + nw('<ruby>' + esc(t.wafu) + '<rt style="font-size:0.45em;font-weight:700;">' + esc(t.wafuReading) + '</rt></ruby>の' + t.day) + nw(t.weekday)
+        : nw(esc(t.year || '') + t.md) + nw(t.weekday)) +
     '</div>' +
     (t.seireki ? '<div style="font-size:0.8em;opacity:0.7;margin-top:2px;">（' + esc(t.seireki) + '）</div>' : '') +
     (canSpeak ? '<button type="button" data-kz="speak" data-speech="' + esc(t.speech) + '" style="margin-top:8px;padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🔊 読み上げる</button>' : '') +
@@ -55077,6 +55087,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.60.4', date: '2026-10-21',
+    items: [
+      { icon:'📅', t:'神無月などの月の名前は、和の暦を選んだときだけ添えるようにしました',
+        before:'年の数え方に関係なく、いつも月の名前（和風月名）が入っていました',
+        after:'青ねぎ（皇紀・和暦など）に〇があるときだけ「10月、神無月の21日」。白ねぎ（西暦）だけなら「西暦2026年10月21日、水曜日」です' }
+    ]
+  },
+  {
     ver: 'v0.60.3', date: '2026-10-21',
     items: [
       { icon:'🔊', t:'「今日を、声に出して」の一文を置きました',
@@ -81553,10 +81571,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(_v, _o({}), _e);
        var _parts = koyomiKazeParts(_v, _o({}), _e);
        (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日' && _t1.seireki === '西暦2026年' &&
-        _t2.speech === '西暦2026年、10月、かんなづきの21日、水曜日' && _t2.seireki === '' && _t3.year === '令和8年' &&
+        _t2.speech === '西暦2026年10月21日、水曜日' && _t2.seireki === '' && _t3.year === '令和8年' &&   /* v0.60.4: 白ねぎだけなら和風月名なし */
+        koyomiTodaySentence(_v, _o({ yearNegi: { white: false, blue: false } })).speech === '10月21日、水曜日' &&
+        koyomiQaAnswer('date', _v, _o({ yearNegi: { white: true, blue: false } }), _e).main.indexOf('神無月') === -1 &&
+        koyomiQaAnswer('date', _v, _o({}), _e).main.indexOf('神無月') !== -1 &&
         /<ruby>神無月<rt[^>]*>かんなづき<\/rt><\/ruby>の21日、/.test(_h) && _h.indexOf('（西暦2026年）') !== -1 &&
         _parts.bottom.indexOf('2026年10月21日') === -1 && /topEl\.innerHTML = \(_qaOn[\s\S]*?\+ parts\.sentence;/.test(renderKazeKoyomi.toString()))
-         ? ok('ST-478·①: 答えをつないだ一文（皇紀2686年、10月、神無月の21日、水曜日）。年は青ねぎの暦・無ければ西暦、西暦は小さく添える。下の日付の行は出さない。問いの箱のすぐ下に置く')
+         ? ok('ST-478·①: 答えをつないだ一文（皇紀2686年、10月、神無月の21日、水曜日）。和風月名は青ねぎのときだけ（白ねぎだけなら 西暦2026年10月21日、水曜日）。下の日付の行は出さない')
          : ng('ST-478·①: 一文が違う', [_t1.speech, _t2.speech, _t3.year].join(' / '));
      } catch(e) {
        ng('ST-478: 例外', e.message);
