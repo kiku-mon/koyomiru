@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.59.6 ★ -->
+<!-- ★ CURRENT VERSION: v0.59.7 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.59.6';
+    const APP_VERSION = 'v0.59.7';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22331,7 +22331,14 @@ function koyomiQuestions(order) {
   if (order.kou72) deep.push('今日は、その候の何日目？');
   if (order.yearNegi.white) deep.push('今年は、皇紀何年？');
   var n = { one: 1, basic: 2, three: 3, all: 99 }[c] || 2;
-  return pool.concat(c === 'all' ? deep : []).slice(0, n);
+  if (c !== 'all') return pool.slice(0, n);
+  // v0.59.7: 【権威】2026-10-21、「候の何日目は、流れが月より先だろ」との指摘。
+  // 全部のときは、節気 → 候 → その候の何日目 → 月の形 → 皇紀（めくったあとの答えの並びとも同じ）
+  var all = ['今日の二十四節気は？'];
+  if (order.kou72) all.push('今日の七十二候は？', '今日は、その候の何日目？');
+  if (order.moon !== 'none') all.push('今夜の月の形は？');
+  if (order.yearNegi.white) all.push('今年は、皇紀何年？');
+  return all;
 }
 window.koyomiQuestions = koyomiQuestions;
 
@@ -54909,6 +54916,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.59.7', date: '2026-10-21',
+    items: [
+      { icon:'🍜', t:'問いの並びを直しました',
+        before:'問いの数が「全部」のとき、月の形の問いが、七十二候とその何日目の間に入っていました',
+        after:'二十四節気 → 七十二候 → その候の何日目 → 月の形 → 皇紀 の順に問います' }
+    ]
+  },
+  {
     ver: 'v0.59.6', date: '2026-10-20',
     items: [
       { icon:'💰', t:'お金の表を、左に詰めてすっきりさせました',
@@ -81236,6 +81251,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _st473tasks;
        try { if (_st473open === null) localStorage.removeItem('moneyLineOpen'); else localStorage.setItem('moneyLineOpen', _st473open); } catch (e1) {}
        try { renderMonthlyMoneyLine(); } catch (e2) {}
+     }
+
+     // ===== ST-474: 問いの並び（全部のとき、候の何日目は候のすぐ次）（v0.59.7〜） =====
+     // 【権威】2026-10-21、「候の何日目は、流れが月より先だろ」との指摘
+     try {
+       var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
+       var _all = koyomiQuestions(_o({ questionCount: 'all' })).join('|');
+       var _three = koyomiQuestions(_o({ questionCount: 'three' })).join('|');
+       (_all === '今日の二十四節気は？|今日の七十二候は？|今日は、その候の何日目？|今夜の月の形は？|今年は、皇紀何年？' &&
+        _three === '今日の二十四節気は？|今日の七十二候は？|今夜の月の形は？')
+         ? ok('ST-474·①: 全部のときは 節気 → 候 → その候の何日目 → 月の形 → 皇紀。3問のときは 節気・候・月の形')
+         : ng('ST-474·①: 問いの並びが違う', _all + ' / ' + _three);
+     } catch(e) {
+       ng('ST-474: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
