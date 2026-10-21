@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.59.9 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.59.9';
+    const APP_VERSION = 'v0.60.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22145,8 +22145,9 @@ var KOYOMI_ORDER_DEFAULT = {
   sekkiStrength: 'basic',                       // 二十四節気（ラーメンなら味の濃さ）
   richness: 'basic',                            // 今日の一回の深さ（こってり度）
   questionCount: 'basic',                       // 問いの数（にんにく）
-  yearNegi: { white: true, blue: true },        // 年の数え方（ねぎ）。白ねぎ＝皇紀・青ねぎ＝他の暦（両方に〇も可）
-  blueEra: 'wareki',                            // 青ねぎで添える暦
+  // v0.60.2: 【権威】2026-10-21、「白ねぎを西暦にしたい。皇紀は青ねぎのが良くね？」との指示。白ねぎ＝西暦、青ねぎ＝和の暦（初めは皇紀）
+  yearNegi: { white: true, blue: true },        // 年の数え方（ねぎ）。白ねぎ＝西暦・青ねぎ＝和の暦から1つ（両方に〇も可）
+  blueEra: 'koki',                              // 青ねぎで添える暦（初めは皇紀）
   kou72: true,                                  // 七十二候（チャーシュー）
   moon: 'basic',                                // 月（秘伝のたれ）
   moonTimes: 3,                                 // 「（ ）倍」の数（3〜10）
@@ -22156,6 +22157,7 @@ var KOYOMI_ORDER_DEFAULT = {
 window.KOYOMI_ORDER_DEFAULT = KOYOMI_ORDER_DEFAULT;
 // 青ねぎで選べる年の数え方（他の暦の計算をそのまま使う）
 var KOYOMI_BLUE_ERAS = [
+  ['koki', '皇紀'],   // v0.60.2: 皇紀は青ねぎで（初めはこれ）
   ['wareki', '和暦（令和）'], ['eto', '年の干支'], ['butsureki', '仏暦'], ['minkoku', '民国暦'], ['hijri', 'ヒジュラ暦'], ['hebrew', 'ヘブライ暦']
 ];
 window.KOYOMI_BLUE_ERAS = KOYOMI_BLUE_ERAS;
@@ -22170,7 +22172,7 @@ var KOYOMI_ORDER_ITEMS = [
     ['none', 'なし', '問わずに、すぐ答え'], ['one', '1問', '節気'], ['basic', '基本', '節気と候'],
     ['three', '3問', '＋月の形'], ['all', '全部', '＋候の何日目・年'] ] },
   { key: 'yearNegi', name: '年の数え方', ramen: 'ねぎ', multi: true, options: [
-    ['none', 'なし', ''], ['white', '白ねぎ', '皇紀'], ['blue', '青ねぎ', '他の暦から選ぶ'] ] },   // v0.58.5: ラーメン店の注文票に合わせて「なし」も
+    ['none', 'なし', ''], ['white', '白ねぎ', '西暦'], ['blue', '青ねぎ', '和の暦から選ぶ（皇紀・令和など）'] ] },   // v0.60.2: 白ねぎ＝西暦・青ねぎ＝和の暦   // v0.58.5: ラーメン店の注文票に合わせて「なし」も
   { key: 'kou72', name: '七十二候', ramen: 'チャーシュー', options: [
     [false, 'なし', ''], [true, 'あり', '候の名前・何日目・読み方・意味'] ] },
   { key: 'moon', name: '月', ramen: '秘伝のたれ', options: [
@@ -22215,6 +22217,14 @@ function getKoyomiOrder() {
     // v0.59.0: 前の版の「1日1回、いつか」（初めの値）は、季節の風だよりがほとんど出なくなるので「開くたびに」に読み替える（第48条）
     if (!saved.timingV2 && saved.timing === 'basic') o.timing = 'everyOpen';
     if (saved.yearNegi && typeof saved.yearNegi === 'object') o.yearNegi = { white: saved.yearNegi.white === true, blue: saved.yearNegi.blue === true };
+    // v0.60.2: 前は白ねぎ＝皇紀・青ねぎ＝他の暦だった。皇紀に〇があった人は青ねぎの皇紀に読み替え（皇紀が消えないように）、
+    // 何か年に〇があった人には西暦（白ねぎ）も添える（第48条）
+    if (!saved.yearV2) {
+      var _ow = o.yearNegi.white, _ob = o.yearNegi.blue;
+      o.yearNegi = { white: _ow || _ob, blue: _ow || _ob };
+      if (_ow) o.blueEra = 'koki';
+      else if (!_koyomiOrderValid('blueEra', o.blueEra)) o.blueEra = 'koki';
+    }
     var n = parseInt(saved.moonTimes, 10);
     if (n >= 3 && n <= 10) o.moonTimes = n;
   } else if (ui.koyomiToday === false) {
@@ -22233,6 +22243,7 @@ function setKoyomiOrder(order) {
     if (order.moonTimes !== undefined) { var n = parseInt(order.moonTimes, 10); next.moonTimes = Math.max(3, Math.min(10, isFinite(n) ? n : 3)); }
   }
   next.timingV2 = true;   // v0.59.0 からの出てくる時の意味で保存した印
+  next.yearV2 = true;     // v0.60.2 からのねぎの意味（白ねぎ＝西暦・青ねぎ＝和の暦）で保存した印
   allSettings.ui.koyomiOrder = next;
   saveAllSettings();
   try { renderKoyomiChips(); } catch (e) {}
@@ -22259,6 +22270,7 @@ var _JIKKAN = '甲乙丙丁戊己庚辛壬癸', _JUNISHI = '子丑寅卯辰巳�
 function koyomiBlueEraLabel(id, d) {
   var y = d.getFullYear(), m = d.getMonth() + 1, dd = d.getDate();
   try {
+    if (id === 'koki') return typeof _toKoki === 'function' ? _toKoki(y) : '';
     if (id === 'wareki') return (typeof _toWareki === 'function' ? _toWareki(y, m, dd) : '') || '';
     if (id === 'eto') { var i = ((y - 4) % 60 + 60) % 60; return _JIKKAN.charAt(i % 10) + _JUNISHI.charAt(i % 12) + 'の年'; }
     if (id === 'butsureki') return typeof _toButsureki === 'function' ? _toButsureki(y) : '';
@@ -22325,12 +22337,22 @@ window.koyomiTodayData = koyomiTodayData;
 // 年の数え方（ねぎ）で添える年
 function koyomiYearLabels(v, order) {
   var out = [];
-  if (order.yearNegi.white && v.koki) out.push(v.koki);
+  if (order.yearNegi.white) out.push('西暦' + (v.date || new Date()).getFullYear() + '年');   // v0.60.2: 白ねぎ＝西暦
   if (order.yearNegi.blue) { var b = koyomiBlueEraLabel(order.blueEra, v.date || new Date()); if (b) out.push(b); }
   return out;
 }
 window.koyomiYearLabels = koyomiYearLabels;
 // 問い（問いの数で決まる。注文に無いもの＝候なし・月なしは問わない）
+// v0.60.2: 年の問い（青ねぎがあれば選んだ暦、青ねぎが無くて白ねぎなら西暦、どちらも無ければ問わない）
+var KOYOMI_YEAR_Q = { koki: '今年は、皇紀何年？', wareki: '今年は、令和何年？', eto: '今年の干支は？', butsureki: '今年は、仏暦何年？',
+  minkoku: '今年は、民国何年？', hijri: '今年は、ヒジュラ暦で何年？', hebrew: '今年は、ヘブライ暦で何年？', seireki: '今年は、西暦何年？' };
+window.KOYOMI_YEAR_Q = KOYOMI_YEAR_Q;
+function koyomiYearQuestion(order) {
+  if (order.yearNegi.blue && KOYOMI_YEAR_Q[order.blueEra]) return KOYOMI_YEAR_Q[order.blueEra];
+  if (order.yearNegi.white) return KOYOMI_YEAR_Q.seireki;
+  return '';
+}
+window.koyomiYearQuestion = koyomiYearQuestion;
 function koyomiQuestions(order) {
   var c = order.questionCount;
   if (c === 'none') return [];
@@ -22339,7 +22361,7 @@ function koyomiQuestions(order) {
   if (order.moon !== 'none') pool.push('今夜の月の形は？');
   var deep = [];
   if (order.kou72) deep.push('今日は、その候の何日目？');
-  if (order.yearNegi.white) deep.push('今年は、皇紀何年？');
+  var _yq = koyomiYearQuestion(order); if (_yq) deep.push(_yq);
   var n = { one: 1, basic: 2, three: 3, all: 99 }[c] || 2;
   if (c !== 'all') return pool.slice(0, n);
   // v0.59.7: 【権威】2026-10-21、「候の何日目は、流れが月より先だろ」との指摘。
@@ -22347,7 +22369,8 @@ function koyomiQuestions(order) {
   var all = ['今日の二十四節気は？'];
   if (order.kou72) all.push('今日の七十二候は？', '今日は、その候の何日目？');
   if (order.moon !== 'none') all.push('今夜の月の形は？');
-  if (order.yearNegi.white) all.push('今年は、皇紀何年？');
+  var _yq2 = koyomiYearQuestion(order); if (_yq2) all.push(_yq2);   // v0.60.2: ねぎに合わせた年の問い
+  all.push(KOYOMI_Q.date);   // v0.60.0: 何月何日、何曜日（皇紀のすぐ次）
   return all;
 }
 window.koyomiQuestions = koyomiQuestions;
@@ -22676,7 +22699,8 @@ function _koyomiMarkFlipped() {
 }
 // 注文の暦の部分。上（節気と候）は月の絵の上に、下（月の続き・年・予定・どう生きる？）は月の名前の下に置く。
 // 文字の色は季節の風だよりの季節の色に任せ、薄くしたいところは opacity で（見やすさ命）
-function koyomiKazeParts(v, order, esc) {
+function koyomiKazeParts(v, order, esc, asked) {
+  asked = asked || {};   // v0.60.0: 問いの箱で答えたもの（日付・皇紀）は、下の行に重ねて出さない
   var line = function(html, style) { return '<div style="' + (style || '') + '">' + html + '</div>'; };
   var top = '', bottom = '';
   top += line(esc(v.sekki), 'font-size:2.1em;font-weight:800;letter-spacing:.08em;line-height:1.2;');
@@ -22703,8 +22727,11 @@ function koyomiKazeParts(v, order, esc) {
       bottom += line(esc(ev.thisMonth.map(function(e) { return e.name + ' ' + e.date.slice(5).replace('-', '/'); }).join('・')), 'text-align:center;font-size:0.76em;opacity:0.7;');
   }
   bottom += '<div style="margin-top:12px;">' + koyomiLifeHtml(v, esc) + '</div>';   // v0.59.1: 暮らしの問い（月の続きの下）
-  var years = koyomiYearLabels(v, order);
-  bottom += line(esc(v.dateText) + (years.length ? '<br><span style="font-size:0.9em;opacity:0.75;">' + esc(years.join('・')) + '</span>' : ''), 'text-align:center;margin-top:12px;font-size:0.92em;line-height:1.6;');
+  var _askedYear = asked.year ? ((order.yearNegi.blue && KOYOMI_YEAR_Q[order.blueEra]) ? koyomiBlueEraLabel(order.blueEra, v.date || new Date()) : '西暦' + (v.date || new Date()).getFullYear() + '年') : '';
+  var years = koyomiYearLabels(v, order).filter(function(y) { return !(asked.year && y === _askedYear); });
+  var _dateLine = asked.date ? '' : esc(v.dateText);
+  var _yearLine = years.length ? '<span style="font-size:0.9em;opacity:0.75;">' + esc(years.join('・')) + '</span>' : '';
+  if (_dateLine || _yearLine) bottom += line(_dateLine + (_dateLine && _yearLine ? '<br>' : '') + _yearLine, 'text-align:center;margin-top:12px;font-size:0.92em;line-height:1.6;');
   if (order.schedule !== 'none') {
     var its = (v.items || []).filter(function(x) { return order.schedule !== 'timed' || x.timed; });
     var cap = { all: 999, more: 10, basic: 5, timed: 999 }[order.schedule] || 5;
@@ -22741,9 +22768,18 @@ window.saveKoyomiTodayWord = saveKoyomiTodayWord;
 // ---- 問いと答えを、同じ箱で（v0.59.9） ----
 // 【権威】2026-10-21、「問いに対する答えという風に見せたい。答えがどこに対応しているか、自分で読み込んで探させている。設計しなおして」との指示。
 // 問いの面では、問いを1つずつ箱に入れて答えの所は「？」。めくると、同じ箱の「？」が答えに変わる（位置が変わらないので探さなくてよい）
-var KOYOMI_Q = { sekki: '今日の二十四節気は？', kou: '今日の七十二候は？', kouDay: '今日は、その候の何日目？', moon: '今夜の月の形は？', koki: '今年は、皇紀何年？' };
+// v0.60.0: 【権威】2026-10-21、「何月？何日？何曜日？も聞いちゃう？ 睦月や神無月も。皇紀2686年の10/21の水曜日を生きた実感がわく」との指示。
+// 3つに分けると箱が増えすぎるので1つの問いにし、皇紀のすぐ次に置く（皇紀2686年 → 10月（神無月）21日 水曜日 と続けて読める）
+var KOYOMI_Q = { sekki: '今日の二十四節気は？', kou: '今日の七十二候は？', kouDay: '今日は、その候の何日目？', moon: '今夜の月の形は？', koki: '今年は、皇紀何年？', date: '今日は、何月何日、何曜日？' };
+var WAFU_MONTHS = [['睦月', 'むつき'], ['如月', 'きさらぎ'], ['弥生', 'やよい'], ['卯月', 'うづき'], ['皐月', 'さつき'], ['水無月', 'みなづき'],
+  ['文月', 'ふみづき'], ['葉月', 'はづき'], ['長月', 'ながつき'], ['神無月', 'かんなづき'], ['霜月', 'しもつき'], ['師走', 'しわす']];
+window.WAFU_MONTHS = WAFU_MONTHS;
 window.KOYOMI_Q = KOYOMI_Q;
-function _koyomiQKey(q) { for (var k in KOYOMI_Q) if (KOYOMI_Q[k] === q) return k; return ''; }
+function _koyomiQKey(q) {
+  for (var k in KOYOMI_Q) if (KOYOMI_Q[k] === q) return k;
+  for (var y in KOYOMI_YEAR_Q) if (KOYOMI_YEAR_Q[y] === q) return 'year';   // v0.60.2: 年の問いは、ねぎで変わる
+  return '';
+}
 // 1つの問いの答え（大きな答えと、小さな添え書き）
 function koyomiQaAnswer(key, v, order, esc) {
   if (key === 'sekki') {
@@ -22765,7 +22801,19 @@ function koyomiQaAnswer(key, v, order, esc) {
     var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? '月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
     return { main: esc(mi.name || v.moonName), sub: ms, moon: true };
   }
-  if (key === 'koki') return { main: esc(v.koki), sub: '' };
+  if (key === 'koki' || key === 'year') {   // v0.60.2: ねぎに合わせた年の答え
+    var _d = v.date || new Date();
+    var _ans = (order.yearNegi.blue && KOYOMI_YEAR_Q[order.blueEra]) ? koyomiBlueEraLabel(order.blueEra, _d) : ('西暦' + _d.getFullYear() + '年');
+    return { main: esc(_ans), sub: '' };
+  }
+  if (key === 'date') {
+    var dd = v.date || new Date(), wm = WAFU_MONTHS[dd.getMonth()];
+    // v0.60.1: 【権威】2026-10-21、「神無月がおまけに見える。発音させたい。10月、神無月の21日、水曜日とするべき」との指示。
+    // 月の名前を文の中に入れ、読み仮名を上に振る（ひと続きで声に出して読める）
+    // 区切り（10月、／神無月の21日、／水曜日）の途中では折り返さない
+    var nw = function(x) { return '<span style="white-space:nowrap;">' + x + '</span>'; };
+    return { main: nw((dd.getMonth() + 1) + '月、') + nw('<ruby>' + esc(wm[0]) + '<rt style="font-size:0.45em;font-weight:700;">' + esc(wm[1]) + '</rt></ruby>の' + dd.getDate() + '日、') + nw(['日', '月', '火', '水', '木', '金', '土'][dd.getDay()] + '曜日'), sub: '', size: '1.3em' };
+  }
   return { main: '', sub: '' };
 }
 window.koyomiQaAnswer = koyomiQaAnswer;
@@ -22776,7 +22824,7 @@ function koyomiQaHtml(questions, v, order, esc, revealed) {
     var ans = revealed
       ? ('<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">' +
           (a.moon ? '<canvas id="kazeQaMoonCanvas" width="160" height="160" style="width:56px;height:56px;border-radius:50%;flex:none;"></canvas>' : '') +
-          '<div style="min-width:0;"><div style="font-size:1.5em;font-weight:800;line-height:1.25;">' + a.main + '</div>' +
+          '<div style="min-width:0;"><div style="font-size:' + (a.size || '1.5em') + ';font-weight:800;line-height:1.5;">' + a.main + '</div>' +
           (a.sub ? '<div style="font-size:0.8em;opacity:0.75;line-height:1.5;margin-top:2px;">' + a.sub + '</div>' : '') + '</div></div>')
       : '<div style="font-size:1.5em;font-weight:800;opacity:0.35;margin-top:4px;">？</div>';
     return '<div data-qa="' + key + '" style="background:rgba(255,255,255,0.6);border-radius:14px;padding:10px 14px;margin:0 0 8px;text-align:left;">' +
@@ -22820,7 +22868,9 @@ function renderKazeKoyomi(col, opts) {
     };
     return 'question';
   }
-  var parts = koyomiKazeParts(v, order, esc);
+  var _askedKeys = {};
+  if (order.richness !== 'light') questions.forEach(function(q) { var k = _koyomiQKey(q); if (k) _askedKeys[k] = true; });
+  var parts = koyomiKazeParts(v, order, esc, _askedKeys);
   // v0.59.9: 問いがある注文なら、問いの面と同じ箱に答えを入れる（答えを探さなくてよい）。問わない注文（あっさり・問いの数なし）は今までの並び
   var _qaOn = order.richness !== 'light' && questions.length > 0;
   topEl.innerHTML = _qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top;
@@ -23042,7 +23092,7 @@ function openKoyomiOrderSheet(opts) {
       var note = '';
       if (it.multi && draft.yearNegi) {
         var parts = [];
-        if (draft.yearNegi.white) parts.push('白ねぎ＝皇紀');
+        if (draft.yearNegi.white) parts.push('白ねぎ＝西暦');
         if (draft.yearNegi.blue) parts.push('青ねぎ＝<select data-ko-blue style="font-size:12px;padding:0 2px;">' + KOYOMI_BLUE_ERAS.map(function(e) { return '<option value="' + e[0] + '"' + (draft.blueEra === e[0] ? ' selected' : '') + '>' + esc(e[1]) + '</option>'; }).join('') + '</select>');
         note = parts.length ? parts.join('　') : 'ねぎなし';
       } else if (!it.multi && draft[it.key] !== null) {
@@ -54988,6 +55038,30 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.60.2', date: '2026-10-21',
+    items: [
+      { icon:'🍜', t:'年の数え方（ねぎ）を入れ替えました',
+        before:'白ねぎ＝皇紀、青ねぎ＝ほかの暦でした',
+        after:'白ねぎ＝西暦、青ねぎ＝和の暦（初めは皇紀。令和・干支なども選べます）。年の問いも、選んだ暦で聞きます（皇紀なら「今年は、皇紀何年？」）。前に白ねぎ（皇紀）を選んでいた方は、青ねぎの皇紀に読み替えています' }
+    ]
+  },
+  {
+    ver: 'v0.60.1', date: '2026-10-21',
+    items: [
+      { icon:'📅', t:'月の名前を、日付の文の中に入れました',
+        before:'「10月21日 水曜日」の下に、神無月（かんなづき）が小さく添えてありました',
+        after:'「10月、神無月の21日、水曜日」と、ひと続きで読めるようにし、神無月には読み仮名を振りました' }
+    ]
+  },
+  {
+    ver: 'v0.60.0', date: '2026-10-21',
+    items: [
+      { icon:'📅', t:'「今日は、何月何日、何曜日？」を問いに足しました',
+        before:'問いは、節気・候・何日目・月の形・皇紀まででした',
+        after:'問いの数を「全部」にすると、皇紀のすぐ次に「今日は、何月何日、何曜日？」が出ます。答えには、神無月・霜月などの月の名前も添えます' }
+    ]
+  },
+  {
     ver: 'v0.59.9', date: '2026-10-21',
     items: [
       { icon:'🌸', t:'問いと答えを、同じ箱に並べました',
@@ -81051,7 +81125,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        delete allSettings.ui.koyomiOrder; delete allSettings.ui.koyomiToday;
        var _d = getKoyomiOrder();
        (KOYOMI_ORDER_ITEMS.length === 7 && _n === '3,5,5,3,2,5,5' &&   /* v0.58.5: ねぎに「なし」 */ _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定の盛り方' &&
-        _d.richness === 'basic' && _d.moon === 'basic' && _d.kou72 === true && _d.yearNegi.white && _d.yearNegi.blue && _d.blueEra === 'wareki' && _d.timing === 'everyOpen' &&   /* v0.59.0: 今までどおり毎回出す */
+        _d.richness === 'basic' && _d.moon === 'basic' && _d.kou72 === true && _d.yearNegi.white && _d.yearNegi.blue && _d.blueEra === 'koki' &&   /* v0.60.2: 青ねぎの皇紀 */ _d.timing === 'everyOpen' &&   /* v0.59.0: 今までどおり毎回出す */
         KOYOMI_TIMING_OPTIONS.length === 5 && typeof koyomiOwnerWords === 'undefined')
          ? ok('ST-466·①: 注文票は7項目（3・5・5・ねぎ（なし・白・青）・あり/なし・5・5）で、全部が暦。店主の一言は無い。出てくる時は別の1行（5つ）')
          : ng('ST-466·①: 注文票の項目か初期値が違う', _n + ' / ' + _names);
@@ -81073,10 +81147,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _v = koyomiTodayData(new Date(2026, 9, 15, 9, 0, 0));
        var _esc = function(x) { return String(x); };
        var _light = _ah(_v, _o({ sekkiStrength: 'light', kou72: false, moon: 'none', yearNegi: { white: false, blue: false }, schedule: 'none' }), _esc);
-       var _rich = _ah(_v, _o({ sekkiStrength: 'rich', richness: 'extraRich', moon: 'times', yearNegi: { white: true, blue: true }, blueEra: 'eto' }), _esc);
-       (_qs === '0,1,2,3,5' && _qNoKou === '今日の二十四節気は？' &&
+       var _rich = _ah(_v, _o({ sekkiStrength: 'rich', richness: 'extraRich', moon: 'times', yearNegi: { white: true, blue: true }, blueEra: 'eto' }), _esc);   // v0.60.2: 白ねぎ＝西暦
+       (_qs === '0,1,2,3,6' && _qNoKou === '今日の二十四節気は？|今年は、皇紀何年？|今日は、何月何日、何曜日？' &&   /* v0.60.2: 青ねぎ（皇紀）だけでも年を問う */   /* v0.60.0: 全部は6問 */
         _light.indexOf('寒露') !== -1 && _light.indexOf('かんろ') === -1 && _light.indexOf('菊花開') === -1 && _light.indexOf('皇紀') === -1 && _light.indexOf('まっさら') === -1 &&
-        _rich.indexOf('かんろ') !== -1 && _rich.indexOf('菊花開') !== -1 && _rich.indexOf('皇紀2686年') !== -1 && _rich.indexOf('丙午の年') !== -1 && 
+        _rich.indexOf('かんろ') !== -1 && _rich.indexOf('菊花開') !== -1 && _rich.indexOf('西暦2026年') !== -1 && _rich.indexOf('丙午の年') !== -1 && 
         _rich.indexOf('満月まで') !== -1 && _rich.indexOf('今日という一回を、どう生きる？') !== -1 && _rich.indexOf('二度とありません') !== -1 && _rich.indexOf('店主') === -1)
          ? ok('ST-466·③: 問いの数（注文に無い暦は問わない）・二十四節気・七十二候・月（秘伝のたれ）・年の数え方（皇紀と年の干支など）・深さで中身が変わる。店主の一言は無い')
          : ng('ST-466·③: 注文と中身のつながりが違う', _qs + ' / ' + _qNoKou);
@@ -81352,9 +81426,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
        var _all = koyomiQuestions(_o({ questionCount: 'all' })).join('|');
        var _three = koyomiQuestions(_o({ questionCount: 'three' })).join('|');
-       (_all === '今日の二十四節気は？|今日の七十二候は？|今日は、その候の何日目？|今夜の月の形は？|今年は、皇紀何年？' &&
+       (_all === '今日の二十四節気は？|今日の七十二候は？|今日は、その候の何日目？|今夜の月の形は？|今年は、皇紀何年？|今日は、何月何日、何曜日？' &&   /* v0.60.0 */
         _three === '今日の二十四節気は？|今日の七十二候は？|今夜の月の形は？')
-         ? ok('ST-474·①: 全部のときは 節気 → 候 → その候の何日目 → 月の形 → 皇紀。3問のときは 節気・候・月の形')
+         ? ok('ST-474·①: 全部のときは 節気 → 候 → その候の何日目 → 月の形 → 皇紀 → 何月何日何曜日。3問のときは 節気・候・月の形')
          : ng('ST-474·①: 問いの並びが違う', _all + ' / ' + _three);
      } catch(e) {
        ng('ST-474: 例外', e.message);
@@ -81384,7 +81458,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _q = koyomiQaHtml(_qs, _v, _o, _e, false), _a = koyomiQaHtml(_qs, _v, _o, _e, true);
        var _boxQ = (_q.match(/data-qa=/g) || []).length, _boxA = (_a.match(/data-qa=/g) || []).length;
        var _keysQ = (_q.match(/data-qa="(\w+)"/g) || []).join(','), _keysA = (_a.match(/data-qa="(\w+)"/g) || []).join(',');
-       (_boxQ === 5 && _boxA === 5 && _keysQ === _keysA && _q.indexOf('寒露') === -1 && _a.indexOf('寒露') !== -1 && _a.indexOf('蟋蟀在戸') !== -1 && /kazeQaMoonCanvas/.test(_a) &&
+       (_boxQ === 6 && _boxA === 6 && _keysQ === _keysA && /10月、<\/span><span[^>]*><ruby>神無月<rt[^>]*>かんなづき<\/rt><\/ruby>の21日、<\/span><span[^>]*>水曜日/.test(_a) &&   /* v0.60.1: 文の中で読む */ _q.indexOf('寒露') === -1 && _a.indexOf('寒露') !== -1 && _a.indexOf('蟋蟀在戸') !== -1 && /kazeQaMoonCanvas/.test(_a) &&
         moonShapeName(10.5) === '十三夜月' && moonShapeName(10.4) === '十日月' && moonShapeInfo(7.2).note === '※上弦' && moonShapeInfo(14.9).name === '満月')
          ? ok('ST-476·①: 問いの箱と答えの箱は同じ並び（めくると同じ箱の「？」が答えになる）。月の名前は季節の風だよりと同じ表（月齢10.5は十三夜月）')
          : ng('ST-476·①: 問いと答えの箱か、月の名前が違う', [_boxQ, _boxA, moonShapeName(10.5)].join(','));
@@ -81398,6 +81472,29 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-476·②: 同じ候の答えを見ていない', _lh.slice(0, 80));
      } catch(e) {
        ng('ST-476: 例外', e.message);
+     }
+
+     // ===== ST-477: 年の数え方（白ねぎ＝西暦・青ねぎ＝和の暦、初めは皇紀）と年の問い（v0.60.2〜） =====
+     // 【権威】2026-10-21、「白ねぎを西暦にしたい。皇紀は青ねぎのが良くね？」との指示
+     var _st477ui = JSON.parse(JSON.stringify(allSettings.ui || {})), _st477save = window.saveAllSettings;
+     try {
+       window.saveAllSettings = function() {};
+       var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
+       var _yq = [koyomiYearQuestion(_o({})), koyomiYearQuestion(_o({ blueEra: 'wareki' })), koyomiYearQuestion(_o({ yearNegi: { white: true, blue: false } })), koyomiYearQuestion(_o({ yearNegi: { white: false, blue: false } }))].join('|');
+       var _v = koyomiTodayData(new Date(2026, 9, 21, 9, 0, 0));
+       var _yl = koyomiYearLabels(_v, _o({})).join('・');
+       var _ans = koyomiQaAnswer('year', _v, _o({ yearNegi: { white: true, blue: false } }), function(x) { return String(x); }).main;
+       // 前の注文（白ねぎ＝皇紀に〇）は、青ねぎの皇紀に読み替える
+       allSettings.ui.koyomiOrder = { sekkiStrength: 'basic', yearNegi: { white: true, blue: false }, blueEra: 'wareki' };
+       var _mig = getKoyomiOrder();
+       (_yq === '今年は、皇紀何年？|今年は、令和何年？|今年は、西暦何年？|' && _yl === '西暦2026年・皇紀2686年' && _ans === '西暦2026年' &&
+        _mig.yearNegi.blue === true && _mig.blueEra === 'koki' && KOYOMI_BLUE_ERAS[0][0] === 'koki' && KOYOMI_ORDER_DEFAULT.blueEra === 'koki')
+         ? ok('ST-477·①: 白ねぎ＝西暦・青ねぎ＝和の暦（初めは皇紀）。年の問いは青ねぎの暦、無ければ西暦。前の白ねぎ（皇紀）は青ねぎの皇紀に読み替え')
+         : ng('ST-477·①: ねぎと年の問いが違う', [_yq, _yl, _ans, JSON.stringify(_mig.yearNegi), _mig.blueEra].join(' / '));
+     } catch(e) {
+       ng('ST-477: 例外', e.message);
+     } finally {
+       allSettings.ui = _st477ui; window.saveAllSettings = _st477save;
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
