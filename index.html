@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.2';
+    const APP_VERSION = 'v0.60.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22727,11 +22727,7 @@ function koyomiKazeParts(v, order, esc, asked) {
       bottom += line(esc(ev.thisMonth.map(function(e) { return e.name + ' ' + e.date.slice(5).replace('-', '/'); }).join('・')), 'text-align:center;font-size:0.76em;opacity:0.7;');
   }
   bottom += '<div style="margin-top:12px;">' + koyomiLifeHtml(v, esc) + '</div>';   // v0.59.1: 暮らしの問い（月の続きの下）
-  var _askedYear = asked.year ? ((order.yearNegi.blue && KOYOMI_YEAR_Q[order.blueEra]) ? koyomiBlueEraLabel(order.blueEra, v.date || new Date()) : '西暦' + (v.date || new Date()).getFullYear() + '年') : '';
-  var years = koyomiYearLabels(v, order).filter(function(y) { return !(asked.year && y === _askedYear); });
-  var _dateLine = asked.date ? '' : esc(v.dateText);
-  var _yearLine = years.length ? '<span style="font-size:0.9em;opacity:0.75;">' + esc(years.join('・')) + '</span>' : '';
-  if (_dateLine || _yearLine) bottom += line(_dateLine + (_dateLine && _yearLine ? '<br>' : '') + _yearLine, 'text-align:center;margin-top:12px;font-size:0.92em;line-height:1.6;');
+  // v0.60.3: 日付と年は「今日を、声に出して」の一文にまとめたので、ここでは出さない（ばらけさせない）
   if (order.schedule !== 'none') {
     var its = (v.items || []).filter(function(x) { return order.schedule !== 'timed' || x.timed; });
     var cap = { all: 999, more: 10, basic: 5, timed: 999 }[order.schedule] || 5;
@@ -22750,7 +22746,7 @@ function koyomiKazeParts(v, order, esc, asked) {
     bottom += '<div style="margin:10px 0 4px;display:flex;gap:6px;align-items:flex-end;"><textarea id="koyomiTodayWord" rows="2" placeholder="今日の一言（日誌に残ります）" style="flex:1;box-sizing:border-box;padding:8px;border:1px solid rgba(0,0,0,0.18);border-radius:10px;font-size:16px;font-family:inherit;background:rgba(255,255,255,0.75);"></textarea>' +
       '<button type="button" data-kz="word" style="padding:7px 10px;border:1px solid currentColor;border-radius:10px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.8em;cursor:pointer;white-space:nowrap;">残す</button></div>';
   }
-  return { top: top, bottom: bottom };
+  return { top: top, bottom: bottom, sentence: koyomiTodaySentenceHtml(v, order, esc) };
 }
 window.koyomiKazeParts = koyomiKazeParts;
 // 超こってりの一言を、今日の日誌に残す
@@ -22817,6 +22813,47 @@ function koyomiQaAnswer(key, v, order, esc) {
   return { main: '', sub: '' };
 }
 window.koyomiQaAnswer = koyomiQaAnswer;
+// v0.60.3: 【権威】2026-10-21、「皇紀2686年、10月、神無月の21日、水曜日、これを読ませたい。今はばらけちゃってる」との指示。
+// 問いの箱のすぐ下に、答えをつないだ一文を大きく置く（めくったあとだけ。めくる前に出すと答えが見えてしまう）。
+// 年は青ねぎで選んだ暦、青ねぎが無ければ西暦。白ねぎ（西暦）は一文の下に小さく添える。🔊 で読み上げる
+function koyomiTodaySentence(v, order) {
+  var d = v.date || new Date(), wm = WAFU_MONTHS[d.getMonth()];
+  var wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()] + '曜日';
+  var seireki = '西暦' + d.getFullYear() + '年';
+  var year = order.yearNegi.blue ? (koyomiBlueEraLabel(order.blueEra, d) || '') : (order.yearNegi.white ? seireki : '');
+  var rest = (d.getMonth() + 1) + '月、';
+  return {
+    year: year, month: rest, wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', weekday: wd,
+    seireki: (order.yearNegi.blue && order.yearNegi.white) ? seireki : '',
+    speech: (year ? year + '、' : '') + rest + wm[1] + 'の' + d.getDate() + '日、' + wd   // 読み上げは、月の名前を読み仮名で
+  };
+}
+window.koyomiTodaySentence = koyomiTodaySentence;
+function koyomiTodaySentenceHtml(v, order, esc) {
+  var t = koyomiTodaySentence(v, order);
+  var nw = function(x) { return '<span style="white-space:nowrap;">' + x + '</span>'; };
+  var canSpeak = (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined');
+  return '<div data-today-sentence style="margin:6px 0 14px;padding:14px 12px;border-radius:16px;background:rgba(255,255,255,0.75);text-align:center;">' +
+    '<div style="font-size:0.75em;opacity:0.7;margin-bottom:4px;">今日を、声に出して</div>' +
+    '<div style="font-size:1.25em;font-weight:800;line-height:1.7;">' +
+      (t.year ? nw(esc(t.year) + '、') : '') + nw(t.month) + nw('<ruby>' + esc(t.wafu) + '<rt style="font-size:0.45em;font-weight:700;">' + esc(t.wafuReading) + '</rt></ruby>の' + t.day) + nw(t.weekday) +
+    '</div>' +
+    (t.seireki ? '<div style="font-size:0.8em;opacity:0.7;margin-top:2px;">（' + esc(t.seireki) + '）</div>' : '') +
+    (canSpeak ? '<button type="button" data-kz="speak" data-speech="' + esc(t.speech) + '" style="margin-top:8px;padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🔊 読み上げる</button>' : '') +
+  '</div>';
+}
+window.koyomiTodaySentenceHtml = koyomiTodaySentenceHtml;
+function speakKoyomiText(text) {
+  try {
+    if (!('speechSynthesis' in window)) return false;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(String(text || ''));
+    u.lang = 'ja-JP'; u.rate = 0.9;
+    window.speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+window.speakKoyomiText = speakKoyomiText;
 // 問いの箱を並べる（revealed：答えを出すか）
 function koyomiQaHtml(questions, v, order, esc, revealed) {
   return questions.map(function(q, i) {
@@ -22873,7 +22910,9 @@ function renderKazeKoyomi(col, opts) {
   var parts = koyomiKazeParts(v, order, esc, _askedKeys);
   // v0.59.9: 問いがある注文なら、問いの面と同じ箱に答えを入れる（答えを探さなくてよい）。問わない注文（あっさり・問いの数なし）は今までの並び
   var _qaOn = order.richness !== 'light' && questions.length > 0;
-  topEl.innerHTML = _qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top;
+  topEl.innerHTML = (_qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top) + parts.sentence;
+  var _sp = topEl.querySelector('[data-kz="speak"]');
+  if (_sp) _sp.onclick = function() { speakKoyomiText(_sp.getAttribute('data-speech')); };
   botEl.innerHTML = parts.bottom;
   var _moonAsked = _qaOn && questions.indexOf(KOYOMI_Q.moon) !== -1;
   if (_moonAsked) {
@@ -55038,6 +55077,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.60.3', date: '2026-10-21',
+    items: [
+      { icon:'🔊', t:'「今日を、声に出して」の一文を置きました',
+        before:'年と日付が、問いの答えと下の行に分かれて出ていて、ひと続きで読めませんでした',
+        after:'めくったあと、問いの答えのすぐ下に「皇紀2686年、10月、神無月の21日、水曜日」と一文で出ます。🔊 を押すと読み上げます' }
+    ]
+  },
+  {
     ver: 'v0.60.2', date: '2026-10-21',
     items: [
       { icon:'🍜', t:'年の数え方（ねぎ）を入れ替えました',
@@ -81141,7 +81188,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-466·②: 注文の読み書きが違う', JSON.stringify([_mig, _old, _set]));
        // ③ 注文で中身が変わる（全部、暦）
        var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
-       var _ah = function(v, o, e) { var pp = koyomiKazeParts(v, o, e); return pp.top + pp.bottom; };   // v0.59.0: 季節の風だよりに足す暦
+       var _ah = function(v, o, e) { var pp = koyomiKazeParts(v, o, e); return pp.top + pp.sentence + pp.bottom; };   // v0.60.3: 一文も   // v0.59.0: 季節の風だよりに足す暦
        var _qs = ['none', 'one', 'basic', 'three', 'all'].map(function(c) { return koyomiQuestions(_o({ questionCount: c })).length; }).join(',');
        var _qNoKou = koyomiQuestions(_o({ questionCount: 'all', kou72: false, moon: 'none', yearNegi: { white: false, blue: true } })).join('|');
        var _v = koyomiTodayData(new Date(2026, 9, 15, 9, 0, 0));
@@ -81495,6 +81542,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-477: 例外', e.message);
      } finally {
        allSettings.ui = _st477ui; window.saveAllSettings = _st477save;
+     }
+
+     // ===== ST-478: 今日を、声に出して（答えをつないだ一文）（v0.60.3〜） =====
+     // 【権威】2026-10-21、「皇紀2686年、10月、神無月の21日、水曜日、これを読ませたい。今はばらけちゃってる」との指示
+     try {
+       var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
+       var _v = koyomiTodayData(new Date(2026, 9, 21, 9, 0, 0)), _e = function(x) { return String(x); };
+       var _t1 = koyomiTodaySentence(_v, _o({})), _t2 = koyomiTodaySentence(_v, _o({ yearNegi: { white: true, blue: false } })), _t3 = koyomiTodaySentence(_v, _o({ blueEra: 'wareki' }));
+       var _h = koyomiTodaySentenceHtml(_v, _o({}), _e);
+       var _parts = koyomiKazeParts(_v, _o({}), _e);
+       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日' && _t1.seireki === '西暦2026年' &&
+        _t2.speech === '西暦2026年、10月、かんなづきの21日、水曜日' && _t2.seireki === '' && _t3.year === '令和8年' &&
+        /<ruby>神無月<rt[^>]*>かんなづき<\/rt><\/ruby>の21日、/.test(_h) && _h.indexOf('（西暦2026年）') !== -1 &&
+        _parts.bottom.indexOf('2026年10月21日') === -1 && /topEl\.innerHTML = \(_qaOn[\s\S]*?\+ parts\.sentence;/.test(renderKazeKoyomi.toString()))
+         ? ok('ST-478·①: 答えをつないだ一文（皇紀2686年、10月、神無月の21日、水曜日）。年は青ねぎの暦・無ければ西暦、西暦は小さく添える。下の日付の行は出さない。問いの箱のすぐ下に置く')
+         : ng('ST-478·①: 一文が違う', [_t1.speech, _t2.speech, _t3.year].join(' / '));
+     } catch(e) {
+       ng('ST-478: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
