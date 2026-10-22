@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.10 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.11 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.10';
+    const APP_VERSION = 'v0.60.11';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7606,7 +7606,9 @@ function _showInviteWelcome() {
     <button class="matrix-quad-tab" data-quad="3" onclick="switchMatrixQuadTab(3)">緊急なこと</button>
     <button class="matrix-quad-tab" data-quad="4" onclick="switchMatrixQuadTab(4)">その他</button>
   </div>
-  <div class="container" style="position:relative;">
+  <!-- v0.60.11: 【権威】2026-10-22、noteの記事のリンクから開くと、一瞬マトリクスが映ってから月間になる、との報告。
+     マトリクスの入れ物だけ最初から見える作りだった。最初は隠し、起動の処理が最初の画面を決めてから出す（日次を開くときは switchView が grid にする） -->
+<div class="container" style="position:relative;display:none;">
     <!-- 左上: 緊急かつ重要 -->
     <div class="section" id="section1">
       <div class="header-row">
@@ -44497,7 +44499,10 @@ function renderDashboardView() {
     // craftは起動時に即Three.jsロードが走るためmonthlyにフォールバック
     // legalは起動時に表示しない（前回法的情報ページを開いたまま閉じた場合の対策）
     const _safeViews = ['daily','weekly','monthly','yearly','settings','dashboard','journal','timeline','notebook','photo'];
-    const startView = (savedView && _safeViews.indexOf(savedView) !== -1) ? savedView : (allSettings.ui.initialView || 'daily');
+    // v0.60.11: 【権威】2026-10-22、設定には「アプリを開いたときに最初に表示するビュー」とあるのに、前回開いていた画面が優先されていた。
+    // 設定どおり、最初の画面は「アプリ起動時のビュー」で決める（招待・見るだけのリンクは、それぞれの処理があとで画面を出す）
+    const _ivSet = allSettings && allSettings.ui && allSettings.ui.initialView;
+    const startView = (_ivSet && _safeViews.indexOf(_ivSet) !== -1) ? _ivSet : 'daily';
     switchView(startView);
     // setTimeout 200：全スクリプトブロック定義完了＋初期化処理完了後に実行
     // renderUnivCourseListはL35000以降の別スクリプトで定義されるため、
@@ -55157,6 +55162,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.60.11', date: '2026-10-22',
+    items: [
+      { icon:'🚪', t:'開いたときの画面の出方を直しました',
+        before:'開いた直後に、一瞬だけ別の画面（4つの箱の画面）が映ってから、いつもの画面に切り替わることがありました。また、設定の「アプリ起動時のビュー」よりも、前回開いていた画面が優先されていました',
+        after:'開いたときは、はじめから設定の「アプリ起動時のビュー」で選んだ画面が出ます' }
+    ]
+  },
   {
     ver: 'v0.60.10', date: '2026-10-22',
     items: [
@@ -81774,6 +81787,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-482·①: もう一度、問いからの動きが違う', [_f1, !!_btn, _q, _back].join(','));
      } catch(e) {
        ng('ST-482: 例外', e.message);
+     }
+
+     // ===== ST-483: 起動のとき、マトリクスを一瞬見せない・最初の画面は設定どおり（v0.60.11〜） =====
+     // 【権威】2026-10-22、noteのリンクから開くと一瞬マトリクスが映る、設定の最初の画面が効いていない、との報告
+     try {
+       var _html = document.documentElement.outerHTML;
+       var _bootSrc = (function() { var i = _html.indexOf('const _ivSet = allSettings'); return i > 0 ? _html.slice(i - 50, i + 400) : ''; })();
+       (/<div class="container" style="position:relative;display:none;">/.test(_html) &&
+        /dailyView\.style\.display = 'grid'/.test(switchView.toString()) &&
+        /const startView = \(_ivSet && _safeViews\.indexOf\(_ivSet\) !== -1\) \? _ivSet : 'daily';/.test(_bootSrc))
+         ? ok('ST-483·①: マトリクスの入れ物は最初は隠し、日次を開くときに出す。最初の画面は設定の「アプリ起動時のビュー」で決める')
+         : ng('ST-483·①: 起動の画面の出し方が違う', '');
+     } catch(e) {
+       ng('ST-483: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
