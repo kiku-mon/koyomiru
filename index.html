@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.11 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.14 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.11';
+    const APP_VERSION = 'v0.60.14';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -2577,16 +2577,22 @@ function _showInviteWelcome() {
       }
     }
     @media screen and (max-width: 768px) {
-      /* ===== グリッド：2×2固定高さ ===== */
+      /* v0.60.12: 【権威】2026-10-22、「スマホの十字の枠（古い4分割）は廃止したのに、どこかに生き残っている」との指摘。
+         スマホの土台は、象限タブ（1つずつ）にする。古い2×2の指定は消した。
+         前は土台が2×2で、JS（applyMatrixQuadTabMode）があとから象限タブに切り替えていたので、
+         切り替えの前の一瞬や、切り替えを通らない道で、古い2×2が顔を出していた */
       .container {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: 1fr 1fr;
+        display: block;
         height: calc(var(--vh, 1vh) * 100 - 50px);
+        overflow: hidden;
       }
-      /* 日次表示中のみgridを有効化（非表示時はJSのdisplay:noneが勝つ） */
-      .container.daily-active {
-        display: grid !important;
+      .container .section {
+        display: none;
+        height: 100%;
+        border: none;
+      }
+      .container .section.quad-tab-current {
+        display: block;
       }
 
       /* ===== セクション共通 ===== */
@@ -7610,7 +7616,7 @@ function _showInviteWelcome() {
      マトリクスの入れ物だけ最初から見える作りだった。最初は隠し、起動の処理が最初の画面を決めてから出す（日次を開くときは switchView が grid にする） -->
 <div class="container" style="position:relative;display:none;">
     <!-- 左上: 緊急かつ重要 -->
-    <div class="section" id="section1">
+    <div class="section quad-tab-current" id="section1">
       <div class="header-row">
         <h4>【緊急かつ重要】</h4><button onclick="openQuadZoomModal(1,'緊急かつ重要')" style="background:none;border:none;cursor:pointer;font-size:0.9em;flex-shrink:0;" title="魚の目モードで開く">🐟</button>
         <!-- スマホ縦画面用：日付を第1象限に表示 -->
@@ -22894,9 +22900,11 @@ function koyomiMoonViewNote() {
 }
 window.koyomiMoonViewNote = koyomiMoonViewNote;
 // 問いの箱を並べる（revealed：答えを出すか）
-function koyomiQaHtml(questions, v, order, esc, revealed) {
+// v0.60.13: onlyIndex を渡すと、その箱1つだけを作る（1つずつめくるとき、めくった箱だけを差し替えるため）
+function koyomiQaHtml(questions, v, order, esc, revealed, onlyIndex) {
   var _kouDayAsked = questions.indexOf(KOYOMI_Q.kouDay) !== -1;
   return questions.map(function(q, i) {
+    if (typeof onlyIndex === 'number' && i !== onlyIndex) return '';
     var key = _koyomiQKey(q), a = revealed ? koyomiQaAnswer(key, v, order, esc) : null;
     if (a && a.barKou && !_kouDayAsked) a.bar = koyomiProgressBar(v.kouDay, v.kouTotal, v.kouStart, v.kouEnd);   // 何日目を問わなければ、七十二候の箱に
     // v0.60.5: 【権威】2026-10-21、月の答えは、季節の風だより・ダッシュボードと同じ大きな月の絵（空で見る傾き）で。小さいと傾きが分からない
@@ -22912,8 +22920,8 @@ function koyomiQaHtml(questions, v, order, esc, revealed) {
       ? ('<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">' +
           '<div style="min-width:0;"><div style="font-size:' + (a.size || '1.5em') + ';font-weight:800;line-height:1.5;">' + a.main + '</div>' +
           (a.sub ? '<div style="font-size:0.8em;opacity:0.75;line-height:1.5;margin-top:2px;">' + a.sub + '</div>' : '') + '</div></div>' + (a.bar || ''))
-      : '<div style="font-size:1.5em;font-weight:800;opacity:0.35;margin-top:4px;">？</div>';
-    return '<div data-qa="' + key + '" style="background:rgba(255,255,255,0.6);border-radius:14px;padding:10px 14px;margin:0 0 8px;text-align:left;">' +
+      : '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:4px;"><span style="font-size:1.5em;font-weight:800;opacity:0.35;">？</span><span style="font-size:0.72em;opacity:0.5;">押してめくる</span></div>';
+    return '<div data-qa="' + key + '" data-qa-idx="' + i + '"' + (revealed ? '' : ' data-qa-hidden="1" role="button" tabindex="0"') + ' style="background:rgba(255,255,255,0.6);border-radius:14px;padding:10px 14px;margin:0 0 8px;text-align:left;' + (revealed ? '' : 'cursor:pointer;') + '">' +
       '<div style="font-size:0.85em;font-weight:700;opacity:0.8;">' + (i + 1) + '. ' + esc(q) + '</div>' + ans + '</div>';
   }).join('');
 }
@@ -22958,16 +22966,49 @@ function renderKazeKoyomi(col, opts) {
     // v0.59.9: 問いを1つずつ箱に入れる。答えの所は「？」（めくると、同じ箱が答えに変わる）
     topEl.innerHTML = _greetHtml + '<div style="text-align:center;margin:4px 0 12px;">' +
       koyomiQaHtml(questions, v, order, esc, false) +
-      '<div style="font-size:0.8em;opacity:0.7;margin:6px 0 14px;">頭の中で思い出してから、めくってください</div>' +
-      '<button type="button" data-kz="flip" style="padding:11px 36px;border:none;border-radius:999px;background:' + txt + ';color:#fff;font-weight:800;font-size:1em;cursor:pointer;">めくる</button></div>';
+      '<div style="font-size:0.8em;opacity:0.7;margin:6px 0 14px;">頭の中で思い出してから、1つずつ押してめくるか、全部めくってください</div>' +
+      '<button type="button" data-kz="flip" style="padding:11px 36px;border:none;border-radius:999px;background:' + txt + ';color:#fff;font-weight:800;font-size:1em;cursor:pointer;">全部めくる</button></div>';
     // 月の形を問うときは、月の絵と名前も伏せる。答えが書いてある「文章を読む」も伏せる
     if (questions.join('').indexOf('月の形') !== -1) { show(moonRow, false); show(moonLabel, false); }
     show(toggle, false); if (textArea) textArea.style.display = 'none';
-    topEl.querySelector('[data-kz="flip"]').onclick = function() {
+    var _flipAll = function() {
       _koyomiMarkFlipped();
       try { renderKoyomiChips(); } catch (e) {}
       renderKazeKoyomi(col, Object.assign({}, opts, { answer: true, again: false }));
     };
+    topEl.querySelector('[data-kz="flip"]').onclick = _flipAll;
+    // v0.60.13: 【権威】2026-10-23、「めくるが一番下に1個だけ。そこを押したら、それがめくれるような、スクラッチみたいにしたい。
+    // 全部めくるも残して、個別でもポンポン触るとめくれるように」との指示。
+    // 箱を押すと、その箱だけがくるっと回って答えに変わる。全部の箱がめくれたら、答えの面に進む
+    var _revealedN = 0, _total = questions.length;
+    var _revealOne = function(box) {
+      if (!box || box.getAttribute('data-qa-hidden') !== '1' || box.getAttribute('data-qa-busy') === '1') return;
+      box.setAttribute('data-qa-busy', '1');
+      var idx = Number(box.getAttribute('data-qa-idx'));
+      box.style.transition = 'transform 0.18s ease-in';
+      box.style.transform = 'perspective(600px) rotateX(90deg)';
+      setTimeout(function() {
+        var holder = document.createElement('div');
+        holder.innerHTML = koyomiQaHtml(questions, v, order, esc, true, idx);
+        var nb = holder.firstElementChild;
+        if (!nb || !box.parentNode) return;
+        nb.style.transform = 'perspective(600px) rotateX(-90deg)';
+        box.parentNode.replaceChild(nb, box);
+        if (nb.getAttribute('data-qa') === 'moon') {
+          try { if (typeof _drawMoonCanvas === 'function') _drawMoonCanvas('kazeQaMoonCanvas', v.moonAge, (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0); } catch (eM) {}
+        }
+        requestAnimationFrame(function() { requestAnimationFrame(function() {
+          nb.style.transition = 'transform 0.22s ease-out';
+          nb.style.transform = 'perspective(600px) rotateX(0deg)';
+        }); });
+        _revealedN++;
+        if (_revealedN >= _total) setTimeout(_flipAll, 900);   // 全部めくれたら、少し見せてから答えの面へ
+      }, 180);
+    };
+    topEl.querySelectorAll('[data-qa-hidden="1"]').forEach(function(box) {
+      box.onclick = function() { _revealOne(box); };
+      box.onkeydown = function(e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _revealOne(box); } };
+    });
     return 'question';
   }
   var parts = koyomiKazeParts(v, order, esc);
@@ -30056,7 +30097,7 @@ function saveMsbEdit() {
         }
         _calSection.style.display = 'block';
         _calSel.innerHTML = _calList.map(function(cal) {
-          return '<option value="' + cal.id + '">' + cal.name + '</option>';
+          return '<option value="' + _escapeHtml(cal.id) + '">' + _escapeHtml(cal.name) + '</option>';   // v0.60.14: 共有カレンダーの名前は他人が付けられる
         }).join('');
         _calSel.value = task.calendarId || getMainCalendarId(_calList) || (_calList[0] ? _calList[0].id : '');   // v0.55.42
       })();
@@ -41626,7 +41667,7 @@ function renderMonthlyMoneyLine() {
       var currentGvId = bp.grandvisionId || '';
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f5f3ff;border-radius:10px;';
-      row.innerHTML = '<div style="flex:1;font-size:0.9em;font-weight:600;color:#3730a3;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (bp.emoji||'📌') + ' ' + (bp.title||'') + '</div>'
+      row.innerHTML = '<div style="flex:1;font-size:0.9em;font-weight:600;color:#3730a3;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _escapeHtml(bp.emoji||'📌') + ' ' + _escapeHtml(bp.title||'') + '</div>'
         + '<select data-bpid="' + bp.id + '" style="background:#fff;border:1px solid #c4b5fd;border-radius:8px;color:#4c1d95;font-size:0.8em;padding:4px 6px;cursor:pointer;flex-shrink:0;max-width:160px;width:160px;">'
         + optionsHtml.replace('value="' + currentGvId + '"', 'value="' + currentGvId + '" selected')
         + '</select>';
@@ -43970,9 +44011,11 @@ function renderDashboardView() {
         var _lineColor = (typeof getTaskCalendarColor === 'function') ? getTaskCalendarColor(t) : '';
         if (_lineColor) { item.style.borderLeft = '3px solid ' + _lineColor; item.style.paddingLeft = '6px'; }
         // Fタグ
-        var fTag = t.fTag ? '<span style="font-size:0.8em;color:#4facfe;font-weight:700;margin-right:2px;">' + t.fTag + '</span>' : '';
+        // v0.60.14: 【権威】2026-10-23、レッドチーム演習。魚の目には共有カレンダーの予定（他人が書ける）も並ぶので、
+        // 文字はすべて無害にしてから入れる（前は予定の題名をそのまま入れていて、仕掛けが動いた）
+        var fTag = t.fTag ? '<span style="font-size:0.8em;color:#4facfe;font-weight:700;margin-right:2px;">' + _escapeHtml(t.fTag) + '</span>' : '';
         // テキスト
-        var displayText = (_sym ? _sym + ' ' : '') + (_instIcon ? _instIcon + ' ' : '') + (t.time ? t.time + ' ' : '') + (t.title || t.text || '');
+        var displayText = _escapeHtml((_sym ? _sym + ' ' : '') + (_instIcon ? _instIcon + ' ' : '') + (t.time ? t.time + ' ' : '') + (t.title || t.text || ''));
         var textSpan = document.createElement('span');
         textSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;';
         textSpan.innerHTML = fTag + displayText;
@@ -44202,11 +44245,12 @@ function renderDashboardView() {
           } else {
             item.onclick = function() { if (typeof toggleTaskById === 'function') toggleTaskById(t.id); renderQuadZoomBody(sectionNum); };
           }
-          var fTag = t.fTag ? '<span style="color:#4facfe;font-weight:700;margin-right:2px;font-size:0.85em;">' + t.fTag + '</span>' : '';
+          // v0.60.14: 【権威】2026-10-23、レッドチーム演習。共有カレンダーの予定の題名は他人が書けるので、無害にしてから入れる
+          var fTag = t.fTag ? '<span style="color:#4facfe;font-weight:700;margin-right:2px;font-size:0.85em;">' + _escapeHtml(t.fTag) + '</span>' : '';
           var sym = (typeof getCalendarSymbol === 'function') ? getCalendarSymbol(t.calendarId) : '';
           var textS = document.createElement('span');
           textS.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-          textS.innerHTML = fTag + (sym ? sym + ' ' : '') + (t.title || t.text || '');
+          textS.innerHTML = fTag + (sym ? _escapeHtml(sym) + ' ' : '') + _escapeHtml(t.title || t.text || '');
           item.appendChild(textS);
           var delB = document.createElement('span');
           delB.textContent = '×'; delB.style.cssText = 'color:#aaa;cursor:pointer;flex-shrink:0;';
@@ -52818,14 +52862,14 @@ async function loadAdminSharedCalMembers() {
       .select('display_name, user_id, joined_at')
       .eq('calendar_id', cal.id)
       .order('joined_at', { ascending: true });
-    html += '<div style="margin-bottom:10px;"><b>' + (cal.name || '(無題)') + '</b><br>';
+    html += '<div style="margin-bottom:10px;"><b>' + _escapeHtml(cal.name || '(無題)') + '</b><br>';   // v0.60.14: 管理者の画面をねらわれないよう、他人が付けた名前は無害にする
     if (memRes.error || !memRes.data || memRes.data.length === 0) {
       html += '<span style="color:#888;">（メンバー情報の取得に失敗、または0件）</span>';
     } else {
       memRes.data.forEach(function(m) {
         var _isMe = m.user_id === window._cloudUserId;
         var _dt = m.joined_at ? new Date(m.joined_at).toLocaleString('ja-JP') : '';
-        html += '・' + (m.display_name || '(名前未設定)') + (_isMe ? '（自分）' : '') + ' — ' + _dt + '<br>';
+        html += '・' + _escapeHtml(m.display_name || '(名前未設定)') + (_isMe ? '（自分）' : '') + ' — ' + _escapeHtml(_dt) + '<br>';
       });
     }
     html += '</div>';
@@ -54113,7 +54157,7 @@ async function _loadGardenVisitList() {
     return;
   }
   listEl.innerHTML = r.data.map(function(c) {
-    return '<div style="padding:5px 0;border-top:1px solid rgba(243,234,217,0.12);">🌱 ' + (c.name || '(無題)') + '</div>';
+    return '<div style="padding:5px 0;border-top:1px solid rgba(243,234,217,0.12);">🌱 ' + _escapeHtml(c.name || '(無題)') + '</div>';   // v0.60.14
   }).join('');
   // v0.47.37: 件数は札に出す。開かなくても、何件あるか分かるようにするため。
   var cntEl = document.getElementById('gardenVisitCount');
@@ -55162,6 +55206,30 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.60.14', date: '2026-10-23',
+    items: [
+      { icon:'🛡', t:'表示の安全性を高めました',
+        before:'一部の画面で、予定の題名などの文字の扱いに、念のため見直したい所がありました',
+        after:'どの画面でも、文字はそのまま文字として表示するように整えました。ふだんの使い方は変わりません' }
+    ]
+  },
+  {
+    ver: 'v0.60.13', date: '2026-10-23',
+    items: [
+      { icon:'🌸', t:'問いの箱を、1つずつめくれるようにしました',
+        before:'問いの答えは、いちばん下の「めくる」で全部まとめてしか見られませんでした',
+        after:'問いの箱を押すと、その箱だけがくるっとめくれて答えが出ます。下の「全部めくる」で、まとめてめくることもできます。全部めくれたら、今日の暦の続きに進みます' }
+    ]
+  },
+  {
+    ver: 'v0.60.12', date: '2026-10-22',
+    items: [
+      { icon:'📱', t:'スマホの日次の古い4分割を、なくしました',
+        before:'スマホで、もう使っていない古い4分割（十字の枠）の画面が、ときどき顔を出すことがありました',
+        after:'スマホの日次は、いつもタブで1つずつ見る形です' }
+    ]
+  },
   {
     ver: 'v0.60.11', date: '2026-10-22',
     items: [
@@ -81803,6 +81871,74 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-483: 例外', e.message);
      }
 
+     // ===== ST-484: スマホのマトリクスの土台は象限タブ（古い2×2は無い）（v0.60.12〜） =====
+     // 【権威】2026-10-22、「スマホの十字の枠（古い4分割）は廃止したのに、どこかに生き残っている」との指摘
+     try {
+       var _css = [].map.call(document.querySelectorAll('style'), function(x) { return x.textContent; }).join('\n');
+       var _m = _css.match(/@media screen and \(max-width: 768px\) \{\s*\/\*[\s\S]*?\*\/\s*\.container \{([^}]*)\}/);
+       var _base = _m ? _m[1] : '';
+       (_base && /display:\s*block/.test(_base) && !/grid-template-columns/.test(_base) &&
+        /\.container \.section\.quad-tab-current \{\s*display:\s*block/.test(_css) &&   /* PCの幅では切り替えの処理が印を外すので、CSSの決まりで確かめる */
+        !/@media screen and \(max-width: 768px\)[^@]*\.container\.daily-active\s*\{\s*display:\s*grid !important/.test(_css))
+         ? ok('ST-484·①: スマホのマトリクスの土台は象限タブ（1つずつ）。古い2×2（十字の枠）の指定は無い。最初は「緊急かつ重要」だけ')
+         : ng('ST-484·①: スマホのマトリクスの土台が違う', _base.slice(0, 80));
+     } catch(e) {
+       ng('ST-484: 例外', e.message);
+     }
+
+     // ===== ST-485: 問いの箱を1つずつめくる・全部めくる（v0.60.13〜） =====
+     // 【権威】2026-10-23、「スクラッチみたいに、押したらその箱がめくれるように。全部めくるも残して」との指示
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { questionCount: 'all' });
+       var _d = new Date(2026, 9, 21, 9, 0, 0);
+       var _f = renderKazeKoyomi({ text: '#333333' }, { order: _o, date: _d, again: true });
+       var _top = document.getElementById('kazedayoriKoyomiTop');
+       var _boxes = _top.querySelectorAll('[data-qa-hidden="1"]').length;
+       var _btn = _top.querySelector('[data-kz="flip"]');
+       var _one = koyomiQaHtml(koyomiQuestions(_o), koyomiTodayData(_d), _o, function(x) { return String(x); }, true, 0);
+       var _oneBoxes = (_one.match(/data-qa=/g) || []).length;
+       (_f === 'question' && _boxes === 6 && _btn && _btn.textContent === '全部めくる' && _oneBoxes === 1 && _one.indexOf('寒露') !== -1 && !/data-qa-hidden/.test(_one))
+         ? ok('ST-485·①: 問いの箱は押すとめくれる印つき（6つ）。下のボタンは「全部めくる」。1つの箱だけの答えを作れる')
+         : ng('ST-485·①: 1つずつめくる作りが違う', [_f, _boxes, _btn && _btn.textContent, _oneBoxes].join(','));
+       enqueueSmokeAsyncTest('ST-485·②', function() {
+         // ほかのテストが描き直さないよう、ここで描いてから押す
+         renderKazeKoyomi({ text: '#333333' }, { order: _o, date: _d, again: true });
+         var _first = document.querySelector('#kazedayoriKoyomiTop [data-qa-hidden="1"]'); if (_first) _first.click();
+         return new Promise(function(r) { setTimeout(r, 500); }).then(function() {
+           var t = document.getElementById('kazedayoriKoyomiTop');
+           var revealed = t.querySelector('[data-qa-idx="0"]');
+           var still = t.querySelectorAll('[data-qa-hidden="1"]').length;
+           (revealed && !revealed.getAttribute('data-qa-hidden') && revealed.textContent.indexOf('寒露') !== -1 && still === 5)
+             ? ok('ST-485·②: 1つ押すと、その箱だけがめくれて答えになる（ほかの5つは「？」のまま）')
+             : ng('ST-485·②: 1つ押したときのめくれ方が違う', String(still));
+           renderKazeKoyomi({ text: '#333333' }, { order: Object.assign({}, _o, { richness: 'none' }) });
+         });
+       });
+     } catch(e) {
+       ng('ST-485: 例外', e.message);
+     }
+
+     // ===== ST-486: 他人が書ける文字は、無害にしてから画面に入れる（レッドチーム演習 v0.60.14〜） =====
+     // 【権威】2026-10-23、レッドチーム演習。魚の目の拡大画面の予定の題名と、便り（デッキ）の題名・作者名が、無害にせずに入っていた
+     try {
+       var _ps = '<img src=x onerror="window.__st486=1">';
+       window.__st486 = 0;
+       var _tasks = allTasks.slice();
+       allTasks.push({ id: 'st486', kind: 'task', text: _ps, title: _ps, date: getLocalDateStr(new Date()), quadrant: 1, section: 1 });
+       try { if (typeof renderQuadZoomBody === 'function') renderQuadZoomBody(1); } catch (eZ) {}
+       allTasks = _tasks;
+       var _src = renderQuadZoomBody.toString() + importDeckFromSettings.toString();
+       var _all = document.documentElement.outerHTML;
+       (window.__st486 === 0 && /_escapeHtml\(t\.title \|\| t\.text \|\| ''\)/.test(_src) && /_escapeHtml\(deck\.title\|\|'デッキ'\)/.test(_src) && /_escapeHtml\(deck\.createdBy\)/.test(_src) &&
+        /var displayText = _escapeHtml\(/.test(_all) &&   /* 魚の目（_quadTaskItem） */
+        /_escapeHtml\(m\.display_name \|\| '\(名前未設定\)'\)/.test(_all) && /_escapeHtml\(cal\.name\)/.test(_all) &&   /* 管理者の画面・編集画面のカレンダー */
+        /const preview = _escapeHtml\(/.test(_all))   /* 日誌の一覧 */
+         ? ok('ST-486·①: 魚の目の拡大画面の予定の題名、便りの題名と作者名は、無害にしてから入れる（仕掛けが動かない）')
+         : ng('ST-486·①: 他人が書ける文字が、無害にせずに入っている', String(window.__st486));
+     } catch(e) {
+       ng('ST-486: 例外', e.message);
+     }
+
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
      // 後から結果が返るテストはキューに並んでいるので、1本ずつ順番に走らせ、
@@ -88027,8 +88163,9 @@ function importDeckFromSettings() {
           toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.88);color:#ffd700;padding:18px 32px;border-radius:16px;font-size:1.05em;font-weight:bold;z-index:99999;text-align:center;pointer-events:none;border:1.5px solid rgba(255,215,0,0.5);box-shadow:0 0 24px rgba(255,215,0,0.2);';
           document.body.appendChild(toast);
         }
-        var _author = deck.createdBy ? '<br><span style="font-size:0.72em;color:#aaa;">by ' + deck.createdBy + '</span>' : '';
-        toast.innerHTML = '✨ 便りが届きました<br><span style="font-size:0.82em;color:#ffcc66;">' + (deck.title||'デッキ') + 'を取り込んだ！</span>' + _author;
+        // v0.60.14: 【権威】2026-10-23、レッドチーム演習。便りはほかの人から届くので、題名と作者名を無害にしてから入れる
+        var _author = deck.createdBy ? '<br><span style="font-size:0.72em;color:#aaa;">by ' + _escapeHtml(deck.createdBy) + '</span>' : '';
+        toast.innerHTML = '✨ 便りが届きました<br><span style="font-size:0.82em;color:#ffcc66;">' + _escapeHtml(deck.title||'デッキ') + 'を取り込んだ！</span>' + _author;
         toast.style.display = 'block';
         clearTimeout(toast._t);
         toast._t = setTimeout(function(){ toast.style.display = 'none'; }, 3500);
@@ -88408,10 +88545,11 @@ document.addEventListener('DOMContentLoaded', function() {
           const _wday = WEEKDAY[new Date(j.date.replace(/-/g,'/')).getDay()];
           const _monthDay = parseInt(_dp[1]) + '月' + parseInt(_dp[2]) + '日';
           const _year = parseInt(_dp[0]) + '年';
-          const preview = (j.text || '').replace(/\n/g,' ').slice(0,55) + ((j.text||'').length > 55 ? '…' : '');
+          // v0.60.14: 【権威】2026-10-23、レッドチーム演習。日誌の文と天気も、無害にしてから入れる
+          const preview = _escapeHtml((j.text || '').replace(/\n/g,' ').slice(0,55) + ((j.text||'').length > 55 ? '…' : ''));
           const _hasMeta = j.weather || j.mood || j.condition;
           const _metaHtml = _hasMeta
-            ? '<div style="font-size:0.95em;opacity:0.75;">' + (j.weather||'') + (j.mood ? MOOD_E[j.mood] : '') + (j.condition ? COND_E[j.condition] : '') + '</div>'
+            ? '<div style="font-size:0.95em;opacity:0.75;">' + _escapeHtml(j.weather||'') + (j.mood ? MOOD_E[j.mood] : '') + (j.condition ? COND_E[j.condition] : '') + '</div>'
             : '';
           const _thoughtBadge = _thoughts.length > 0
             ? '<span style="font-size:0.62em;background:rgba(74,96,128,0.07);color:var(--washi-blue);border:1px solid rgba(74,96,128,0.18);border-radius:3px;padding:1px 7px;margin-left:7px;font-family:sans-serif;vertical-align:middle;">💭 ' + _thoughts.length + '</span>'
@@ -88421,7 +88559,7 @@ document.addEventListener('DOMContentLoaded', function() {
             + '<div style="font-size:0.58em;color:var(--ink-faint);font-family:serif;letter-spacing:0.05em;">' + _year + '</div>'
             + '<div style="font-size:0.88em;font-weight:700;color:var(--ink);font-family:\'Noto Serif JP\',serif;letter-spacing:0.03em;">' + parseInt(_dp[1]) + '/' + parseInt(_dp[2]) + '</div>'
             + '<div style="font-size:0.68em;color:var(--ink-light);font-family:serif;">(' + _wday + ')</div>'
-            + (_hasMeta ? '<div style="font-size:0.85em;margin-top:4px;opacity:0.7;">' + (j.weather||'') + '</div>' : '')
+            + (_hasMeta ? '<div style="font-size:0.85em;margin-top:4px;opacity:0.7;">' + _escapeHtml(j.weather||'') + '</div>' : '')
             + '</div>'
             + '<div style="flex:1;padding:13px 14px 12px;min-width:0;">'
             + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">'
@@ -91861,7 +91999,7 @@ function _restoreAudiosFromFilesProcess(files) {
           _idbPutAudio(existingMeta.id, blob, function() {
             existingMeta.lastDownloadedAt = new Date().toISOString();
             stats.linked++;
-            logEl.innerHTML += '🔗 紐付け: ' + file.name + ' → "' + parsed.title + '" (' + parsed.date + ')<br>';
+            logEl.innerHTML += '🔗 紐付け: ' + _escapeHtml(file.name) + ' → "' + _escapeHtml(parsed.title) + '" (' + _escapeHtml(parsed.date) + ')<br>';
             logEl.scrollTop = logEl.scrollHeight;
             setTimeout(_next, 100);
           });
@@ -91882,14 +92020,14 @@ function _restoreAudiosFromFilesProcess(files) {
           metaByTitleDate[titleDateKey] = newAudio;
           _idbPutAudio(newId, blob, function() {
             stats.created++;
-            logEl.innerHTML += '✨ 新規: ' + file.name + ' → "' + parsed.title + '" (' + parsed.date + ')<br>';
+            logEl.innerHTML += '✨ 新規: ' + _escapeHtml(file.name) + ' → "' + _escapeHtml(parsed.title) + '" (' + _escapeHtml(parsed.date) + ')<br>';
             logEl.scrollTop = logEl.scrollHeight;
             setTimeout(_next, 100);
           });
         }
       } catch(e) {
         stats.failed++;
-        logEl.innerHTML += '❌ 失敗: ' + file.name + ' (' + e.message + ')<br>';
+        logEl.innerHTML += '❌ 失敗: ' + _escapeHtml(file.name) + ' (' + _escapeHtml(e.message) + ')<br>';
         setTimeout(_next, 100);
       }
     }
@@ -92005,7 +92143,7 @@ function openAddVideoModal() {
         if (f.size > 100 * 1024 * 1024) {
           warningHtml = '<div style="color:#c0392b;font-weight:700;margin-top:3px;">⚠️ 100MB超：ストレージ容量に注意</div>';
         }
-        info.innerHTML = '<strong>' + f.name + '</strong><br>サイズ: ' + sizeMB + 'MB / タイプ: ' + (f.type || '不明') + warningHtml;
+        info.innerHTML = '<strong>' + _escapeHtml(f.name) + '</strong><br>サイズ: ' + sizeMB + 'MB / タイプ: ' + _escapeHtml(f.type || '不明') + warningHtml;
         info.style.display = 'block';
         if (titleInput && !titleInput.value) {
           titleInput.value = f.name.replace(/\.[^.]+$/, '').slice(0, 50);
@@ -97932,9 +98070,9 @@ function printTravelItinerary(travelId) {
     contacts.forEach(function(c){
       var def = (window.TRAVEL_CONTACT_TYPES && window.TRAVEL_CONTACT_TYPES[c.type]) || { label:'連絡', icon:'📌' };
       html += '<div style="padding:6px 0;border-bottom:1px solid #eee;">'
-        + '<div style="font-weight:bold;font-size:10.5pt;color:#222;">' + def.icon + ' ' + (c.label||def.label) + '</div>';
-      if (c.body) html += '<div style="font-size:10pt;color:#444;white-space:pre-wrap;margin-top:2px;">' + c.body + '</div>';
-      if (c.tel)  html += '<div style="font-size:10pt;color:#c0392b;margin-top:2px;">☎ ' + c.tel + '</div>';
+        + '<div style="font-weight:bold;font-size:10.5pt;color:#222;">' + def.icon + ' ' + _escapeHtml(c.label||def.label) + '</div>';
+      if (c.body) html += '<div style="font-size:10pt;color:#444;white-space:pre-wrap;margin-top:2px;">' + _escapeHtml(c.body) + '</div>';
+      if (c.tel)  html += '<div style="font-size:10pt;color:#c0392b;margin-top:2px;">☎ ' + _escapeHtml(c.tel) + '</div>';
       if (c.url)  html += '<div style="font-size:9pt;color:#666;margin-top:2px;word-break:break-all;">' + c.url + '</div>';
       html += '</div>';
     });
@@ -98754,7 +98892,7 @@ function renderTravelListView() {
     travelExpenses.forEach(function(r){
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:0.85em;';
-      row.innerHTML = '<span style="color:#333;">' + (r.title||'') + '</span><span style="color:#c0392b;font-weight:600;">¥' + (r.amount||0).toLocaleString() + '</span>';
+      row.innerHTML = '<span style="color:#333;">' + _escapeHtml(r.title||'') + '</span><span style="color:#c0392b;font-weight:600;">¥' + (r.amount||0).toLocaleString() + '</span>';
       expBox.appendChild(row);
     });
     var totalRow = document.createElement('div');
@@ -98801,7 +98939,7 @@ function renderTravelListView() {
       img.onclick = function(){ if(window.openPhotoViewer) window.openPhotoViewer(p.id); };
       var meta = document.createElement('div');
       meta.style.cssText = 'flex:1;min-width:0;';
-      meta.innerHTML = '<div style="font-size:0.78em;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (p.title || '（無題）') + '</div><div style="font-size:0.68em;color:#aaa;">' + (p.date||'') + '</div>';
+      meta.innerHTML = '<div style="font-size:0.78em;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escapeHtml(p.title || '（無題）') + '</div><div style="font-size:0.68em;color:#aaa;">' + (p.date||'') + '</div>';
       var btns = document.createElement('div');
       btns.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
       var sortRow = document.createElement('div');
@@ -98865,7 +99003,7 @@ function renderTravelListView() {
       icon.onclick = function(){ if(window.openVideoPlayer) window.openVideoPlayer(v.id); else if(window.playVideo) window.playVideo(v.id); };
       var meta = document.createElement('div');
       meta.style.cssText = 'flex:1;min-width:0;';
-      meta.innerHTML = '<div style="font-size:0.78em;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (v.title || v.filename || '（無題）') + '</div><div style="font-size:0.68em;color:#aaa;">' + (v.date||'') + '</div>';
+      meta.innerHTML = '<div style="font-size:0.78em;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escapeHtml(v.title || v.filename || '（無題）') + '</div><div style="font-size:0.68em;color:#aaa;">' + (v.date||'') + '</div>';
       var btns = document.createElement('div');
       btns.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
       var sortRow = document.createElement('div');
@@ -98927,7 +99065,7 @@ function renderTravelListView() {
       var meta = document.createElement('div');
       meta.style.cssText = 'flex:1;min-width:0;';
       var dur = a.duration ? (Math.floor(a.duration/60) + ':' + String(a.duration%60).padStart(2,'0')) : '';
-      meta.innerHTML = '<div style="font-size:0.78em;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (a.title || '（無題）') + '</div><div style="font-size:0.68em;color:#aaa;">' + (a.date||'') + (dur ? ' ・ ' + dur : '') + '</div>';
+      meta.innerHTML = '<div style="font-size:0.78em;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escapeHtml(a.title || '（無題）') + '</div><div style="font-size:0.68em;color:#aaa;">' + (a.date||'') + (dur ? ' ・ ' + dur : '') + '</div>';
       var btns = document.createElement('div');
       btns.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
       var sortRow = document.createElement('div');
