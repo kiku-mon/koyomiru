@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.60.14 ★ -->
+<!-- ★ CURRENT VERSION: v0.60.16 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.60.14';
+    const APP_VERSION = 'v0.60.16';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45951,7 +45951,7 @@ function renderDeckShop(filterCategory) {
 
         function _sdfHistoryDelete(id) {
       showChoiceModal('この深考を削除しますか？', function() {
-        allTasks = allTasks.filter(function(t){ return t.id !== id; });
+        allTasks = allTasks.filter(function(t){ return t.id !== id; }); if (typeof _propagateDeletion === 'function') _propagateDeletion(id); /* v0.60.15: 消したことを伝える（同期で戻らないように） */
         saveAllTasks();
         _sdfShowHistory();
         showToast('削除しました', {type:'success'});
@@ -55206,6 +55206,25 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.60.16', date: '2026-10-23',
+    items: [
+      { icon:'🧳', t:'旅行の持ち物の、3つの丸の意味が分かるようにしました',
+        before:'丸の上の説明が「必須／実際に見に行く／用意した」と1行にまとまっていて、どの丸のことか分かりにくくなっていました',
+        after:'3つの丸の真上に「要る（持っていく）」「確かめた（手入れ済み）」「用意した（入れた）」と、それぞれの数を出しました' },
+      { icon:'🔌', t:'充電まわりを、どの旅行にも分けて入れました',
+        before:'「スマホ・充電器」のようにまとめて書かれていて、ケーブルの種類まで確かめられませんでした',
+        after:'スマートフォン・電源アダプター（コンセントに挿す四角い頭）・充電ケーブル C-C・充電ケーブル A-C を、どの旅行の持ち物にも入れました' }
+    ]
+  },
+  {
+    ver: 'v0.60.15', date: '2026-10-23',
+    items: [
+      { icon:'🧳', t:'旅行の持ち物を消したのに、また出てくることがあったのを直しました',
+        before:'持ち物や準備を ✕ で消したあと、ほかの操作をすると、消したはずのものが戻ってくることがありました',
+        after:'消したものは、ほかの端末やあとの操作でも戻ってきません' }
+    ]
+  },
   {
     ver: 'v0.60.14', date: '2026-10-23',
     items: [
@@ -81939,6 +81958,52 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-486: 例外', e.message);
      }
 
+     // ===== ST-487: 旅行の持ち物・準備・旅行そのものを消したら、消したことを伝える（v0.60.15〜） =====
+     // 【権威】2026-10-23、旅行の持ち物を消したあと、緑の丸を押すと消したものが戻ってくる、との報告
+     try {
+       var _src487 = _stAllSrc();
+       var _c1 = /allTasks = allTasks\.filter\(function\(t\)\{ return t\.id!==id; \}\);\s*if \(typeof _propagateDeletion === 'function'\) _propagateDeletion\(id\);\s*saveAllTasks\(\); renderTravelListView\(\);/.test(_src487);
+       var _c2 = /del\.onclick = function\(\)\{ allTasks = allTasks\.filter\(function\(t\)\{ return t\.id ?!== ?\w+; \}\); if \(typeof _propagateDeletion === 'function'\) _propagateDeletion\(\w+\);/.test(_src487);
+       var _c3 = /var _tvDelIds = allTasks\.filter[\s\S]{0,600}_tvDelIds\.forEach\(function\(x\)\{ _propagateDeletion\(x\); \}\);/.test(_src487);
+       // 実物：消す道具を見張って、旅行の持ち物の ✕ を押すと呼ばれるか
+       var _calls = [], _orig = window._propagateDeletion, _tasks = allTasks.slice();
+       window._propagateDeletion = function(id) { _calls.push(id); };
+       var _tv = { id: 'st487tv', kind: 'travel', title: 'ST487', dateStart: '2026-11-01' };
+       var _it = { id: 'st487it', kind: 'task', text: 'ST487持ち物', travelId: 'st487tv', travelItemType: 'pack' };
+       allTasks.push(_tv, _it);
+       var _clicked = false;
+       try {
+         if (typeof switchView === 'function') switchView('travel');
+         if (typeof openTravelDetail === 'function') openTravelDetail('st487tv');
+         var _row = document.querySelector('[data-item-id="st487it"]');
+         var _x = _row ? [].filter.call(_row.querySelectorAll('button'), function(b) { return b.title === '削除'; })[0] : null;
+         if (_x) { _x.click(); _clicked = true; }
+       } catch (eR) {}
+       window._propagateDeletion = _orig; allTasks = _tasks;
+       (_c1 && _c2 && _c3 && (!_clicked || _calls.indexOf('st487it') !== -1))
+         ? ok('ST-487·①: 旅行の持ち物・準備・旅行そのものを消すと、消したことをクラウドと墓石に伝える（同期で戻ってこない）' + (_clicked ? '。✕を押して確かめた' : ''))
+         : ng('ST-487·①: 旅行で消したことを伝えていない', [_c1, _c2, _c3, _clicked, _calls.join('/')].join(','));
+     } catch(e) {
+       ng('ST-487: 例外', e.message);
+     }
+
+     // ===== ST-488: 旅行の持ち物（3つの丸の見出し・充電まわり4点・片づけも伝える）（v0.60.16〜） =====
+     // 【権威】2026-10-23、丸の見出しがスラッシュの1行で分からない／充電器・ケーブル（A-C・C-C）を分けて全区分に、との指示
+     try {
+       var _tp = (_travelUIState && _travelUIState.templates) || {};
+       var _need = ['スマートフォン', '電源アダプター（コンセントに挿す四角い頭）', '充電ケーブル C-C（両端が USB-C）', '充電ケーブル A-C（USB-A と USB-C）'];
+       var _bad = Object.keys(_tp).filter(function(k) { var it = _tp[k].items || []; return !_need.every(function(n) { return it.indexOf(n) !== -1; }) || it.indexOf('スマホ・充電器') !== -1 || it.indexOf('充電ケーブル') !== -1; });
+       var _src = _stAllSrc();
+       (Object.keys(_tp).length >= 15 && _bad.length === 0 &&
+        /\[\['要る', '持っていく', _prog\.required\], \['確かめた', '手入れ済み', _prog\.visited\], \['用意した', '入れた', _prog\.prepared\]\]/.test(_src) &&
+        /width:' \+ _stCellW \+ 'px;height:28px;display:flex;align-items:center;justify-content:center/.test(_src) &&
+        /Object\.keys\(ids\)\.forEach\(function\(x\) \{ _propagateDeletion\(x\); \}\)/.test(_removeStaleTravelTemplateItems.toString()))
+         ? ok('ST-488·①: 3つの丸の真上に「要る・確かめた・用意した」と意味と数。全区分に充電まわり4点（電源アダプター・C-C・A-C）。古い持ち物の片づけも消したことを伝える')
+         : ng('ST-488·①: 旅行の持ち物の作りが違う', _bad.join(','));
+     } catch(e) {
+       ng('ST-488: 例外', e.message);
+     }
+
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
      // 後から結果が返るテストはキューに並んでいるので、1本ずつ順番に走らせ、
@@ -84637,7 +84702,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ['function deleteAudio(id)', '_propagateDeletion'],
          ['window.zenLogDelete = function(id)', '_propagateDeletion'],
          ['function deleteInlineItem(div, item)', '_propagateDeletion'],
-         ['function deleteRepeatFutureTasks(groupId, fromDate)', '_propagateDeletion']
+         ['function deleteRepeatFutureTasks(groupId, fromDate)', '_propagateDeletion'],
+         ['function _sdfHistoryDelete(id)', '_propagateDeletion']   // v0.60.15
        ];
        _st276deleteChecks.forEach(function(c, i) {
          // v0.45.1791: 固定窓が残っていた。関数の終わりまで正しく切り出す。
@@ -96157,22 +96223,24 @@ var TRAVEL_CONTACT_TYPES = {
 };
 
 var _travelUIState = {
+  // v0.60.16: 【権威】2026-10-23、充電まわりは「電源アダプター（コンセントに挿す頭）・充電ケーブル C-C・A-C」を分けて全区分に。
+  // A-C のケーブルを忘れて困ったことがある、との話から。呼び名は携帯会社・メーカーの説明書の言い方にそろえた
   templates: {
-    onsen: {label:'温泉旅行', emoji:'♨️', items:['財布・カード・現金','保険証','スマホ・充電器','モバイルバッテリー','着替え','タオル・バスタオル','洗面用具','常備薬','カメラ','おみやげ予算']},
-    shrine: {label:'神事・参拝', emoji:'⛩️', items:['財布・カード・現金','初穂料（新札）','のし袋','ふくさ','白ワイシャツ','白ネクタイ','ダークスーツ','黒革靴','黒ベルト','タイピン','数珠・お守り','ハンカチ','スマホ・充電器','常備薬']},
-    overseas: {label:'海外旅行', emoji:'✈️', items:['パスポート','クレジットカード複数枚','現地通貨','ビザ（必要な場合）','航空券（印刷/アプリ）','海外旅行保険証','SIMカード or Wi-Fi','変換プラグ','モバイルバッテリー','充電ケーブル','着替え','洗面用具','常備薬','胃腸薬']},
-    camp: {label:'キャンプ', emoji:'⛺', items:['財布・カード・現金','保険証','テント','寝袋・マット','ランタン・ヘッドライト','焚き火台＋薪','バーナー＋燃料','クッカー・食器','食材・調味料','飲み水','クーラーボックス＋氷','虫除け・常備薬','タオル','着替え（防寒含む）','レインウェア','軍手','ゴミ袋','モバイルバッテリー']},
-    outdoor: {label:'アウトドア', emoji:'🏕️', items:['財布・カード・現金','保険証','レジャーシート','折りたたみチェア','クーラーボックス＋氷','飲み物・軽食','帽子・日焼け止め','虫除けスプレー','タオル','ウェットティッシュ','ゴミ袋','モバイルバッテリー','レインウェア','着替え']},
-    hiking: {label:'山・登山', emoji:'🏔️', items:['財布・カード・現金','保険証','登山靴','リュック','レインウェア','ヘッドライト','地図・コンパス','行動食','水（多め）','救急セット','手袋・帽子','日焼け止め','モバイルバッテリー','ゴミ袋']},
-    fishing: {label:'釣り旅行', emoji:'🎣', items:['財布・カード・現金','保険証','ライフジャケット','釣り竿＋リール','バケツ','クーラーボックス＋氷','サビキ仕掛け','アミエビ','イソメ（餌）','偏光サングラス','磯靴','帽子・日焼け止め','飲み物','モバイルバッテリー','着替え','ゴミ袋']},
-    golf: {label:'ゴルフ', emoji:'⛳', items:['財布・カード・現金','クラブ一式','ゴルフシューズ','グローブ','ボール（多め）','ティー','マーカー','グリーンフォーク','距離計・GPS','キャディバッグの名札','ポロシャツ（襟付き）','ゴルフパンツ','着替え・下着','タオル','帽子・サンバイザー','日焼け止め','サングラス','雨具（上下）','飲み物','塩分タブレット','絆創膏','スマホ・充電器','ロッカーの小銭','メンバーズカード'], prep:'golf'},
-    business: {label:'仕事・出張', emoji:'💼', items:['財布・カード・現金','名刺','社員証','資料（印刷）','ノートPC＋電源','スマホ・充電器','モバイルバッテリー','筆記具・メモ','着替え（日数分）','ワイシャツ','ネクタイ','革靴・靴べら','洗面用具','常備薬','折りたたみ傘','領収書入れ'], prep:'business'},
-    homecoming: {label:'帰省', emoji:'🏠', items:['財布・カード・現金','帰省みやげ','着替え（日数分）','洗面用具','充電ケーブル','スマホ','常備薬','実家への手土産リスト']},
-    sports: {label:'スポーツ観戦', emoji:'⚽', items:['財布・カード・現金','チケット（印刷/アプリ）','スマホ','モバイルバッテリー','応援グッズ','雨具（ポンチョ）','飲み物','軽食','着替え（汗対策）']},
-    gourmet: {label:'グルメ旅', emoji:'🍜', items:['財布・カード・現金','スマホ','モバイルバッテリー','胃薬','メモ（お店リスト）','カメラ','エコバッグ','おみやげ予算']},
-    general: {label:'一般旅行', emoji:'🧳', items:['財布・カード・現金','保険証','スマホ','モバイルバッテリー','充電ケーブル','着替え（日数分）','洗面用具','タオル','常備薬','ゴミ袋']},
-    nearby: {label:'近場', emoji:'🚃', items:['財布・カード・現金','交通系ICカード','スマホ','モバイルバッテリー','エコバッグ','常備薬','折りたたみ傘']},
-    daytrip: {label:'日帰り', emoji:'🌅', items:['財布・カード・現金','スマホ','モバイルバッテリー','飲み物','軽食・おやつ','ハンカチ・ティッシュ','常備薬','折りたたみ傘']}
+    onsen: {label:'温泉旅行', emoji:'♨️', items:['財布・カード・現金','保険証','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','モバイルバッテリー','着替え','タオル・バスタオル','洗面用具','常備薬','カメラ','おみやげ予算']},
+    shrine: {label:'神事・参拝', emoji:'⛩️', items:['財布・カード・現金','初穂料（新札）','のし袋','ふくさ','白ワイシャツ','白ネクタイ','ダークスーツ','黒革靴','黒ベルト','タイピン','数珠・お守り','ハンカチ','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','常備薬']},
+    overseas: {label:'海外旅行', emoji:'✈️', items:['パスポート','クレジットカード複数枚','現地通貨','ビザ（必要な場合）','航空券（印刷/アプリ）','海外旅行保険証','SIMカード or Wi-Fi','変換プラグ','モバイルバッテリー','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','着替え','洗面用具','常備薬','胃腸薬']},
+    camp: {label:'キャンプ', emoji:'⛺', items:['財布・カード・現金','保険証','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','テント','寝袋・マット','ランタン・ヘッドライト','焚き火台＋薪','バーナー＋燃料','クッカー・食器','食材・調味料','飲み水','クーラーボックス＋氷','虫除け・常備薬','タオル','着替え（防寒含む）','レインウェア','軍手','ゴミ袋','モバイルバッテリー']},
+    outdoor: {label:'アウトドア', emoji:'🏕️', items:['財布・カード・現金','保険証','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','レジャーシート','折りたたみチェア','クーラーボックス＋氷','飲み物・軽食','帽子・日焼け止め','虫除けスプレー','タオル','ウェットティッシュ','ゴミ袋','モバイルバッテリー','レインウェア','着替え']},
+    hiking: {label:'山・登山', emoji:'🏔️', items:['財布・カード・現金','保険証','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','登山靴','リュック','レインウェア','ヘッドライト','地図・コンパス','行動食','水（多め）','救急セット','手袋・帽子','日焼け止め','モバイルバッテリー','ゴミ袋']},
+    fishing: {label:'釣り旅行', emoji:'🎣', items:['財布・カード・現金','保険証','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','ライフジャケット','釣り竿＋リール','バケツ','クーラーボックス＋氷','サビキ仕掛け','アミエビ','イソメ（餌）','偏光サングラス','磯靴','帽子・日焼け止め','飲み物','モバイルバッテリー','着替え','ゴミ袋']},
+    golf: {label:'ゴルフ', emoji:'⛳', items:['財布・カード・現金','クラブ一式','ゴルフシューズ','グローブ','ボール（多め）','ティー','マーカー','グリーンフォーク','距離計・GPS','キャディバッグの名札','ポロシャツ（襟付き）','ゴルフパンツ','着替え・下着','タオル','帽子・サンバイザー','日焼け止め','サングラス','雨具（上下）','飲み物','塩分タブレット','絆創膏','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','ロッカーの小銭','メンバーズカード'], prep:'golf'},
+    business: {label:'仕事・出張', emoji:'💼', items:['財布・カード・現金','名刺','社員証','資料（印刷）','ノートPC＋電源','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','モバイルバッテリー','筆記具・メモ','着替え（日数分）','ワイシャツ','ネクタイ','革靴・靴べら','洗面用具','常備薬','折りたたみ傘','領収書入れ'], prep:'business'},
+    homecoming: {label:'帰省', emoji:'🏠', items:['財布・カード・現金','帰省みやげ','着替え（日数分）','洗面用具','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','常備薬','実家への手土産リスト']},
+    sports: {label:'スポーツ観戦', emoji:'⚽', items:['財布・カード・現金','チケット（印刷/アプリ）','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','モバイルバッテリー','応援グッズ','雨具（ポンチョ）','飲み物','軽食','着替え（汗対策）']},
+    gourmet: {label:'グルメ旅', emoji:'🍜', items:['財布・カード・現金','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','モバイルバッテリー','胃薬','メモ（お店リスト）','カメラ','エコバッグ','おみやげ予算']},
+    general: {label:'一般旅行', emoji:'🧳', items:['財布・カード・現金','保険証','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','モバイルバッテリー','着替え（日数分）','洗面用具','タオル','常備薬','ゴミ袋']},
+    nearby: {label:'近場', emoji:'🚃', items:['財布・カード・現金','交通系ICカード','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','モバイルバッテリー','エコバッグ','常備薬','折りたたみ傘']},
+    daytrip: {label:'日帰り', emoji:'🌅', items:['財布・カード・現金','スマートフォン','電源アダプター（コンセントに挿す四角い頭）','充電ケーブル C-C（両端が USB-C）','充電ケーブル A-C（USB-A と USB-C）','モバイルバッテリー','飲み物','軽食・おやつ','ハンカチ・ティッシュ','常備薬','折りたたみ傘']}
   },
   // v0.45.1692: 【権威】2026-08-20、事前にやることのプリセットが貧弱、との指摘。
   // 持ち物には13種のテンプレがあるのに、事前準備は空のままだった。
@@ -96572,10 +96640,17 @@ function _renderTravelChecklistTab(area, travel) {
   // 2カラムレイアウト
   var layout = document.createElement('div');
   layout.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;';
+  // v0.60.16: 【権威】2026-10-23、スマホで持ち物の名前の幅が29pxしかなく、縦に折れて読めなかった。
+  // スマホでは、旅行の区分のボタンを一覧の上に横に並べ（横に指で送る）、一覧が画面の幅いっぱいを使えるようにする
+  var _stNarrow = (window.innerWidth || 1000) < 600;
+  var _stGap = _stNarrow ? 4 : 8;
+  if (_stNarrow) layout.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:10px;';
 
   // 左：テンプレ選択（縦）。⠿ハンドルを掴んだ時だけD&D有効化＝縦スクロールと非競合（持ち物リストと同方式・第38条）
   var leftCol = document.createElement('div');
-  leftCol.style.cssText = 'flex-shrink:0;width:84px;display:flex;flex-direction:column;gap:6px;';
+  leftCol.style.cssText = _stNarrow
+    ? 'display:flex;flex-direction:row;gap:6px;overflow-x:auto;width:100%;padding-bottom:4px;-webkit-overflow-scrolling:touch;'
+    : 'flex-shrink:0;width:84px;display:flex;flex-direction:column;gap:6px;';
   var _tmplDragSrcKey = null;
   var _tmplTouchKey = null;
   tmplKeys.forEach(function(key, ti) {
@@ -96629,6 +96704,8 @@ function _renderTravelChecklistTab(area, travel) {
       });
     })(key);
 
+    // v0.60.16: スマホで横に並べるときは、ボタンを縮ませず、名前を1行に
+    if (_stNarrow) { row.style.flexShrink = '0'; btn.style.whiteSpace = 'nowrap'; btn.style.width = 'auto'; btn.style.minWidth = '0'; }
     row.appendChild(handle); row.appendChild(btn);
     leftCol.appendChild(row);
   });
@@ -96651,7 +96728,8 @@ function _renderTravelChecklistTab(area, travel) {
 
   var progCounts = document.createElement('div');
   progCounts.style.cssText = 'font-size:0.82em;color:#666;margin-bottom:6px;';
-  progCounts.textContent = '全' + totalCount + '件　／　必須 ' + _prog.required + '　／　実際に見に行く ' + _prog.visited + '　／　用意した ' + _prog.prepared;
+  // v0.60.16: 3つの数は丸の真上の見出しへ移した。ここは用意の進み具合だけ
+  progCounts.textContent = '全' + totalCount + '件のうち、' + _prog.prepared + '件を用意した';
   progWrap.appendChild(progCounts);
 
   // 横棒グラフ（大きめ・見やすく・新芽グリーン）
@@ -96667,6 +96745,44 @@ function _renderTravelChecklistTab(area, travel) {
   progWrap.appendChild(barTrack);
 
   rightCol.appendChild(progWrap);
+
+  // v0.60.16: 【権威】2026-10-23、「必須／実際に見た／準備した」がスラッシュの1行で、どの丸のことか分からない、との指摘。
+  // 3つの丸の真上に、名前と意味と数を置く（要る→確かめた（手入れも済んだ）→用意した（かばんに入れた））
+  // 狭い画面（スマホ）では丸の枠を細くする（持ち物の名前の幅を確保する）。_stNarrow は上で決めた
+  var _stCellW = _stNarrow ? 34 : 46;
+  if (allItems.length && _stNarrow) {
+    var _stLegend = document.createElement('div');
+    _stLegend.style.cssText = 'font-size:0.68em;color:#888;margin:2px 0 6px;line-height:1.5;';
+    _stLegend.innerHTML = '<b style="color:#2e6b4a;">要る</b> 持っていく　<b style="color:#2e6b4a;">確認</b> 現物を見て手入れも済んだ　<b style="color:#2e6b4a;">用意</b> かばんに入れた';
+    rightCol.appendChild(_stLegend);
+  }
+  if (allItems.length) {
+    var _stageHead = document.createElement('div');
+    _stageHead.setAttribute('data-stage-head', '1');
+    _stageHead.style.cssText = 'display:flex;align-items:flex-end;gap:' + _stGap + 'px;padding:0 0 6px;border-bottom:1px solid #eee;';
+    var _hSp = document.createElement('span');
+    _hSp.textContent = '⠿';
+    _hSp.style.cssText = 'font-size:1.2em;padding:4px 6px;margin:-4px 0;visibility:hidden;flex-shrink:0;';
+    _stageHead.appendChild(_hSp);
+    var _hGroup = document.createElement('div');
+    _hGroup.setAttribute('data-stage-group', '1');
+    _hGroup.style.cssText = 'display:flex;flex-shrink:0;';
+    [['要る', '持っていく', _prog.required], ['確かめた', '手入れ済み', _prog.visited], ['用意した', '入れた', _prog.prepared]].forEach(function(h) {
+      var c = document.createElement('div');
+      c.style.cssText = 'flex-shrink:0;width:' + _stCellW + 'px;text-align:center;line-height:1.25;white-space:nowrap;';
+      // スマホは細い枠でもぶつからないよう2文字（要る・確認・用意）。意味は上の1行で添える
+      c.innerHTML = '<div style="font-size:0.7em;font-weight:800;color:#2e6b4a;">' + (_stNarrow ? ({ '確かめた': '確認', '用意した': '用意' }[h[0]] || h[0]) : h[0]) + '</div>' +
+        (_stNarrow ? '' : '<div style="font-size:0.58em;color:#999;">' + h[1] + '</div>') +
+        '<div style="font-size:0.75em;font-weight:800;color:#1FA463;">' + h[2] + '</div>';
+      _hGroup.appendChild(c);
+    });
+    _stageHead.appendChild(_hGroup);
+    var _hRest = document.createElement('div');
+    _hRest.style.cssText = 'flex:1;font-size:0.7em;color:#999;padding-bottom:2px;';
+    _hRest.textContent = '全' + totalCount + '件';
+    _stageHead.appendChild(_hRest);
+    rightCol.appendChild(_stageHead);
+  }
 
   // 追加済みアイテム（チェックボックス＋DnD並び替え＋削除ボタン付き）
   // orderフィールドがなければ付与
@@ -96706,9 +96822,9 @@ function _renderTravelChecklistTab(area, travel) {
     var _isRemindHi = (window._travelRemindHighlightId === travel.id) && (item.prepared !== true);
     if (_isRemindHi) {
       r.setAttribute('data-remind-hi', '1');
-      r.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 6px;border-bottom:1px solid #f8f8f8;cursor:default;transition:background 0.3s;background:#fff8e1;border-radius:8px;box-shadow:inset 0 0 0 1px #ffd54f;';
+      r.style.cssText = 'display:flex;align-items:center;gap:' + _stGap + 'px;padding:6px 6px;border-bottom:1px solid #f8f8f8;cursor:default;transition:background 0.3s;background:#fff8e1;border-radius:8px;box-shadow:inset 0 0 0 1px #ffd54f;';
     } else {
-      r.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f8f8f8;cursor:default;transition:opacity 0.15s;';
+      r.style.cssText = 'display:flex;align-items:center;gap:' + _stGap + 'px;padding:6px 0;border-bottom:1px solid #f8f8f8;cursor:default;transition:opacity 0.15s;';
     }
 
     // ドラッグハンドル
@@ -96725,16 +96841,20 @@ function _renderTravelChecklistTab(area, travel) {
     // 段階丸ビルダー：外枠（outlineColor）は点灯/消灯に関わらず常に表示＝くっきり見える。
     // 点灯時のみ fillColor で塗る。3段階は明度差をはっきり付ける（淡→中→濃）。
     function _mkStageCircle(on, outlineColor, fillColor, titleStr, onclickFn) {
+      // v0.60.16: 46px の枠の真ん中に丸を置く（真上の見出しと横の位置をそろえる。押せる範囲も広がる）
+      var w = document.createElement('span');
+      w.style.cssText = 'flex-shrink:0;width:' + _stCellW + 'px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;';
       var c = document.createElement('span');
-      c.style.cssText = 'flex-shrink:0;width:20px;height:20px;box-sizing:border-box;border:2px solid '+outlineColor+';background:'+(on?fillColor:'#fff')+';border-radius:50%;cursor:pointer;transition:background 0.2s;';
-      c.title = titleStr;
-      c.onclick = onclickFn;
-      return c;
+      c.style.cssText = 'width:20px;height:20px;box-sizing:border-box;border:2px solid '+outlineColor+';background:'+(on?fillColor:'#fff')+';border-radius:50%;transition:background 0.2s;';
+      w.appendChild(c);
+      w.title = titleStr;
+      w.onclick = onclickFn;
+      return w;
     }
     // 必須=淡#D7F5E3(枠#7FCBA0) / 実際に見に行く=中#5CCB8E(枠#2E9E68) / 用意した=濃#1FA463(枠#147A48)
-    var reqCircle = _mkStageCircle(item.required === true, '#7FCBA0', '#D7F5E3', '必須（いるもの・タップで切替）',
+    var reqCircle = _mkStageCircle(item.required === true, '#7FCBA0', '#D7F5E3', '要る（持っていくと決めた・タップで切替）',
       (function(id){ return function(){ window.toggleTravelChecklistItemRequired(id); }; })(item.id));
-    var visitCircle = _mkStageCircle(item.visited === true, '#2E9E68', '#5CCB8E', '実際に見に行く（現物・在庫・サイズを確認・タップで切替）',
+    var visitCircle = _mkStageCircle(item.visited === true, '#2E9E68', '#5CCB8E', '確かめた（現物を見て、充電などの手入れも済んだ・タップで切替）',
       (function(id){ return function(){ window.toggleTravelChecklistItemVisited(id); }; })(item.id));
 
     // テキスト（タップでinline編集・第57条：prompt禁止）
@@ -96778,7 +96898,10 @@ function _renderTravelChecklistTab(area, travel) {
     del.style.cssText = 'background:none;border:none;color:#ddd;font-size:0.9em;cursor:pointer;padding:2px 4px;flex-shrink:0;';
     del.title = '削除';
     (function(id){ del.onclick = function(){
+      // v0.60.15: 【権威】2026-10-23、旅行の持ち物を消したあと、緑の丸を押すと消したものが戻ってくる、との報告。
+      // 手元から消すだけで、墓石もクラウドへの連絡もしていなかったので、同期でクラウドの古い控えから戻っていた。消したことを伝える
       allTasks = allTasks.filter(function(t){ return t.id!==id; });
+      if (typeof _propagateDeletion === 'function') _propagateDeletion(id);
       saveAllTasks(); renderTravelListView();
     }; })(item.id);
 
@@ -96817,7 +96940,7 @@ function _renderTravelChecklistTab(area, travel) {
     })(item.id);
 
     // 用意した丸（最終段階・濃緑#3DD982）。点くと取り消し線も同期（toggle側でchecked連動）。
-    var prepCircle = _mkStageCircle(item.prepared === true, '#147A48', '#1FA463', '用意した（手元に揃った・タップで切替）',
+    var prepCircle = _mkStageCircle(item.prepared === true, '#147A48', '#1FA463', '用意した（かばんに入れた・タップで切替）',
       (function(id){ return function(){ window.toggleTravelChecklistItemPrepared(id); }; })(item.id));
 
     // 通し番号バッジ（第37条：表示インデックス=ソート後allItems配列のidx。idx+1を表示。
@@ -96826,8 +96949,11 @@ function _renderTravelChecklistTab(area, travel) {
     seqNumBadge.textContent = (idx + 1) + '.';
     seqNumBadge.style.cssText = 'flex-shrink:0;min-width:1.6em;text-align:right;font-size:0.78em;color:#bbb;font-variant-numeric:tabular-nums;user-select:none;-webkit-user-select:none;';
     seqNumBadge.title = '通し番号（ドラッグで並び替えると自動で振り直されます）';
+    if (_stNarrow) seqNumBadge.style.display = 'none';   // v0.60.16: スマホは名前の幅を優先する
 
-    r.appendChild(handle); r.appendChild(reqCircle); r.appendChild(visitCircle); r.appendChild(prepCircle); r.appendChild(seqNumBadge); r.appendChild(lbl); r.appendChild(editBtn); r.appendChild(del);
+    var _stGroup = document.createElement('div'); _stGroup.setAttribute('data-stage-group', '1'); _stGroup.style.cssText = 'display:flex;flex-shrink:0;';   // v0.60.16: 3つの丸はすき間なしでひとまとめ（見出しとそろえる）
+    _stGroup.appendChild(reqCircle); _stGroup.appendChild(visitCircle); _stGroup.appendChild(prepCircle);
+    r.appendChild(handle); r.appendChild(_stGroup); r.appendChild(seqNumBadge); r.appendChild(lbl); r.appendChild(editBtn); r.appendChild(del);
     rightCol.appendChild(r);
   });
 
@@ -97107,7 +97233,7 @@ function _renderTravelPrepTab(area, travel) {
     del.textContent = '✕';
     del.style.cssText = 'background:none;border:none;color:#ddd;font-size:0.9em;cursor:pointer;padding:2px 4px;flex-shrink:0;';
     del.title = '削除';
-    (function(id){ del.onclick = function(){ allTasks = allTasks.filter(function(t){ return t.id!==id; }); saveAllTasks(); renderTravelListView(); }; })(item.id);
+    (function(id){ del.onclick = function(){ allTasks = allTasks.filter(function(t){ return t.id!==id; }); if (typeof _propagateDeletion === 'function') _propagateDeletion(id); /* v0.60.15: 消したことを伝える */ saveAllTasks(); renderTravelListView(); }; })(item.id);
 
     (function(itemId){
       r.addEventListener('dragstart', function(e){ dragSrcId=itemId; r.style.opacity='0.4'; if(e.dataTransfer) e.dataTransfer.effectAllowed='move'; });
@@ -97664,6 +97790,8 @@ function _removeStaleTravelTemplateItems(travelId, keepKey) {
   for (var i = allTasks.length - 1; i >= 0; i--) {
     if (ids[allTasks[i].id]) allTasks.splice(i, 1);
   }
+  // v0.60.16: 片づけたことも伝える（伝えないと、同期でクラウドの古い控えから戻ってくる。v0.60.15 と同じ穴）
+  if (typeof _propagateDeletion === 'function') Object.keys(ids).forEach(function(x) { _propagateDeletion(x); });
   return stale.length;
 }
 
@@ -98536,7 +98664,10 @@ function renderTravelListView() {
           // 消すものを先に控えてから、1件ずつクラウドへ伝える。
           // 旅行の持ち物や準備アイテムも一緒に消えるので、それらも忘れず伝える。
           var _delTargets = allTasks.filter(function(t){ return t && (t.id === id || t.travelId === id); });
+          // v0.60.15: 旅行と、その中の持ち物・準備・予定の全部に、消したことを伝える（同期で戻ってこないように）
+          var _tvDelIds = allTasks.filter(function(t){ return t.id === id || t.travelId === id; }).map(function(t){ return t.id; });
           allTasks = allTasks.filter(function(t){ return t.id !== id && t.travelId !== id; });
+          if (typeof _propagateDeletion === 'function') _tvDelIds.forEach(function(x){ _propagateDeletion(x); });
           if (_travelUIState.selectedId === id) _travelUIState.selectedId = null;
           saveAllTasks();
           try {
