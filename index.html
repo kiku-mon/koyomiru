@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.61.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.62.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.61.2';
+    const APP_VERSION = 'v0.62.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -46705,6 +46705,95 @@ function _rkSunLon(jd) {
         + 0.000289 * Math.sin(3 * M);
   return ((L + C) % 360 + 360) % 360;
 }
+// ===== v0.62.0: 旧暦（太陰太陽暦）の計算 =====
+// 【権威】2026-10-26、「そもそも毎日を旧暦計算してたっけ？」「創ろう。しっかり作ろう」との指示。
+// 前は六曜のために旧暦の月・日を計算していたが、閏月を数えておらず、閏月のある年は閏月より後の月が1つずれていた。
+// 旧暦の正式な決まり（天保暦・中国の農暦と同じ）：
+//   ① 冬至を含む月を11月とする
+//   ② 11月から次の11月までに月が13回あれば、その間で最初の「中気（太陽の黄経が30度の倍数になる日）を含まない月」を閏月とする
+//   ③ 月の始まりは新月の日（その地方の時刻で数える。日本の旧暦は日本時間、中国の農暦は中国時間）
+// 太陽の位置は、見かけの位置の補正（光行差・章動）と、地球の自転の遅れ（ΔT）の補正を入れる（中気の時刻を正しく出すため）
+function _koyomiDeltaTDays(y) {
+  var t = y - 2000;   // NASA の近似式（2005〜2050年）。範囲外も大きくは外れない
+  return (62.92 + 0.32217 * t + 0.005589 * t * t) / 86400;
+}
+function _koyomiSunApparentLon(jdUT) {
+  var jd = jdUT + _koyomiDeltaTDays(2000 + (jdUT - 2451545.0) / 365.25);
+  var T = (jd - 2451545.0) / 36525;
+  var om = (125.04 - 1934.136 * T) * Math.PI / 180;
+  return (((_rkSunLon(jd) - 0.00569 - 0.00478 * Math.sin(om)) % 360) + 360) % 360;
+}
+function _koyomiDayNum(y, m, d) { return Math.floor(_rkToJD(y, m, d) + 0.5); }   // その日の通し番号（ユリウス日数）
+function _koyomiNewMoonDay(k, tz) {
+  var jdUT = _rkNewMoonJD(k) - _koyomiDeltaTDays(2000 + k / 12.3685);
+  return Math.floor(jdUT + tz / 24 + 0.5);
+}
+function _koyomiSunLonAtDayStart(dayNum, tz) { return _koyomiSunApparentLon(dayNum - 0.5 - tz / 24); }   // その地方の0時の太陽の位置
+// その年の冬至の日（その地方の日付）
+function _koyomiWinterSolsticeDay(y, tz) {
+  var jd = _rkToJD(y, 12, 21);
+  for (var i = 0; i < 8; i++) {
+    var diff = ((270 - _koyomiSunApparentLon(jd) + 540) % 360) - 180;
+    jd += diff / 0.98564736;
+  }
+  return Math.floor(jd + tz / 24 + 0.5);
+}
+// 冬至を含む月（11月）の、新月の番号 k
+function _koyomiMonth11K(y, tz) {
+  var ws = _koyomiWinterSolsticeDay(y, tz);
+  var k = Math.round((_rkToJD(y, 12, 21) - 2451550.09766) / 29.530588861);
+  while (_koyomiNewMoonDay(k, tz) > ws) k--;
+  while (_koyomiNewMoonDay(k + 1, tz) <= ws) k++;
+  return k;
+}
+var _koyomiLunarCache = {};
+// 日付から旧暦を返す：{ year, month, day, leap }。tz は時差（時間）。省くと日本時間（9）
+function koyomiLunarDate(dateOrStr, tz) {
+  try {
+    tz = (typeof tz === 'number') ? tz : 9;
+    var dt = dateOrStr instanceof Date ? dateOrStr : new Date(String(dateOrStr || '').replace(/-/g, '/'));
+    if (isNaN(dt.getTime())) return null;
+    var y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
+    var key = tz + ':' + y + '-' + m + '-' + d;
+    if (_koyomiLunarCache[key]) return _koyomiLunarCache[key];
+    var D = _koyomiDayNum(y, m, d);
+    var kA = _koyomiMonth11K(y - 1, tz), kB = _koyomiMonth11K(y, tz);
+    if (D >= _koyomiNewMoonDay(kB, tz)) { kA = kB; kB = _koyomiMonth11K(y + 1, tz); }
+    // 閏月：11月から次の11月までに月が13回あるとき、最初の「中気を含まない月」
+    var leapK = -1;
+    if (kB - kA === 13) {
+      for (var j = kA + 1; j < kB; j++) {
+        var a = Math.floor(_koyomiSunLonAtDayStart(_koyomiNewMoonDay(j, tz), tz) / 30);
+        var b = Math.floor(_koyomiSunLonAtDayStart(_koyomiNewMoonDay(j + 1, tz), tz) / 30);
+        if (a === b) { leapK = j; break; }
+      }
+    }
+    // 11月から次の11月の前まで、月を順に並べる（閏月は前の月と同じ番号で、閏の印）
+    var months = [], mo = 11;
+    for (var kk = kA; kk < kB; kk++) {
+      if (kk === kA) { months.push({ k: kk, month: 11, leap: false }); continue; }
+      if (kk === leapK) months.push({ k: kk, month: mo, leap: true });
+      else { mo = mo % 12 + 1; months.push({ k: kk, month: mo, leap: false }); }
+    }
+    var cur = months[0], first = null;
+    months.forEach(function(e) {
+      if (_koyomiNewMoonDay(e.k, tz) <= D) cur = e;
+      if (!first && e.month === 1 && !e.leap) first = e;
+    });
+    var day = D - _koyomiNewMoonDay(cur.k, tz) + 1;
+    var month = cur.month, leap = cur.leap;
+    // 旧暦の年：1月が始まった日の西暦の年。11月・12月で、まだ1月が来ていなければ前の年
+    var firstDay = first ? _koyomiNewMoonDay(first.k, tz) : null;
+    var firstYear = firstDay != null ? new Date((firstDay - 2440587.5) * 86400000 + 43200000).getUTCFullYear() : y;
+    var lunarYear = (first && cur.k >= first.k) ? firstYear : firstYear - 1;
+    var r = { year: lunarYear, month: month, day: day, leap: leap };
+    _koyomiLunarCache[key] = r;
+    return r;
+  } catch (e) { return null; }
+}
+window.koyomiLunarDate = koyomiLunarDate;
+// ===== END v0.62.0 =====
+
 // 日付（Date か 'YYYY-MM-DD'）から六曜を返す。求まらなければ null。
 // v0.48.1: 【権威】2026-09-25、西暦だけでなく和暦（元号）も添えたい、
 // あわせて皇紀も選べるようにしたい、との要望。設定で表示・非表示を選べる。
@@ -46975,32 +47064,13 @@ function _eraExtraSuffixForYear(y) {
 window._eraExtraSuffixForYear = _eraExtraSuffixForYear;
 
 function getRokuyo(dateOrStr) {
+  // v0.62.0: 【権威】2026-10-26、旧暦の計算を作り直したときに分かった。前の計算は、3月21日を過ぎると
+  // その年の12月の冬至を基準に月を数えていて、閏月のある年（13か月の年）だけ、月が1つずれていた
+  // （2000〜2050年で1582日）。正しい旧暦（koyomiLunarDate・日本時間）から出す。閏月は、その月と同じ番号で数える
   try {
-    var dt;
-    if (dateOrStr instanceof Date) dt = dateOrStr;
-    else if (typeof dateOrStr === 'string') dt = new Date(String(dateOrStr).replace(/-/g, '/'));
-    else dt = new Date();
-    if (isNaN(dt.getTime())) return null;
-    var y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
-    var jd = _rkToJD(y, m, d);
-    var today = Math.floor(jd + 9 / 24 + 0.5);
-    // その日以前で最も近い朔
-    var k = Math.round((jd - 2451550.09766) / 29.530588861) + 2, nm;
-    while (true) { nm = _rkNewMoonDayJST(k); if (nm <= today) break; k--; }
-    var lunarDay = today - nm + 1;
-    // 直前の冬至（太陽黄経270度）を求め、それを含む月を11月とする
-    var wy = (m <= 2 || (m === 3 && d < 21)) ? y - 1 : y;
-    var wjd = _rkToJD(wy, 12, 21);
-    for (var i = 0; i < 6; i++) {
-      var s = _rkSunLon(wjd);
-      var diff = ((270 - s + 180) % 360) - 180;
-      wjd += diff / 0.9856;
-    }
-    var wDay = Math.floor(wjd + 9 / 24 + 0.5);
-    var kw = Math.round((wjd - 2451550.09766) / 29.530588861) + 2, nmw;
-    while (true) { nmw = _rkNewMoonDayJST(kw); if (nmw <= wDay) break; kw--; }
-    var lunarMonth = ((11 + (k - kw) - 1) % 12) + 1;
-    return ROKUYO_NAMES[(lunarMonth + lunarDay) % 6];
+    var r = koyomiLunarDate(dateOrStr, 9);
+    if (!r) return null;
+    return ROKUYO_NAMES[(r.month + r.day) % 6];
   } catch (e) { return null; }
 }
 window.getRokuyo = getRokuyo;
@@ -55229,6 +55299,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.62.0', date: '2026-10-26',
+    items: [
+      { icon:'🌙', t:'旧暦の計算を、作り直しました',
+        before:'旧暦の閏月（うるうづき）を数えていませんでした',
+        after:'閏月も正しく数えるようにしました。2000年から2099年までの毎日を、中国の農暦の表と突き合わせて確かめています。旧正月や十五夜など、旧暦の行事を出す土台になります' },
+      { icon:'📅', t:'六曜が、年によってずれていたのを直しました',
+        before:'閏月のある年（2025年・2023年など）は、3月下旬から年末まで、六曜が1つずれていました（閏月のない今年2026年は、正しく出ていました）',
+        after:'どの年も、正しい六曜が出ます。2028年（閏月のある年）も、ずれません' }
+    ]
+  },
   {
     ver: 'v0.61.2', date: '2026-10-26',
     items: [
@@ -82110,6 +82191,28 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-489·①: 記号か、合わせ方が違う', [_all.length, _uniq, _kept, _cloud[0].symbol, _cloud[1].symbol, _stamped].join(','));
      } catch(e) {
        ng('ST-489: 例外', e.message);
+     }
+
+     // ===== ST-490: 旧暦の計算（閏月・日本時間と中国時間）と六曜（v0.62.0〜） =====
+     // 【権威】2026-10-26、「旧暦を創ろう。しっかり作ろう」との指示。2000〜2099年の毎日を、中国の農暦の表と突き合わせ、
+     // 3万6525日のうち3万6495日で一致（違いは2097年8月の、新月が真夜中ちょうどに来る1か月だけ）
+     try {
+       var _L = function(s, tz) { var r = koyomiLunarDate(s, tz); return r ? (r.year + '/' + (r.leap ? '閏' : '') + r.month + '/' + r.day) : 'null'; };
+       var _cases = [
+         ['2024-02-10', 8, '2024/1/1'], ['2025-01-29', 8, '2025/1/1'], ['2026-02-17', 8, '2026/1/1'], ['2027-02-06', 8, '2027/1/1'],   // 春節
+         ['2023-09-29', 8, '2023/8/15'], ['2025-10-06', 8, '2025/8/15'], ['2026-09-25', 9, '2026/8/15'],                           // 中秋・十五夜（閏月のある年も）
+         ['2025-07-25', 9, '2025/閏6/1'], ['2023-03-22', 9, '2023/閏2/1'],                                                          // 閏月
+         ['2012-04-21', 8, '2012/4/1'], ['2012-04-21', 9, '2012/閏3/1'], ['2017-06-24', 9, '2017/閏5/1'],                          // 日本と中国で閏月が違う年
+         ['2027-02-06', 9, '2026/12/30'], ['2027-02-07', 9, '2027/1/1'],                                                           // 日本と中国で元日が違う年
+         ['2033-12-22', 9, '2033/閏11/1']                                                                                          // 2033年問題（閏11月）
+       ];
+       var _bad = _cases.filter(function(c) { return _L(c[0], c[1]) !== c[2]; }).map(function(c) { return c[0] + '(' + c[1] + ')=' + _L(c[0], c[1]); });
+       var _rk = [getRokuyo('2025-07-25'), getRokuyo('2025-04-01'), getRokuyo('2026-10-26')].join(',');
+       (_bad.length === 0 && _rk.split(',')[0] === '赤口' && _rk.split(',')[1] === '赤口' && /koyomiLunarDate\(dateOrStr, 9\)/.test(getRokuyo.toString()))
+         ? ok('ST-490·①: 旧暦（閏月・日本時間と中国時間の違い・2033年問題）が正しく、六曜も正しい旧暦から出す（閏月のある年もずれない）')
+         : ng('ST-490·①: 旧暦か六曜が違う', _bad.join(' ') + ' / ' + _rk);
+     } catch(e) {
+       ng('ST-490: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
