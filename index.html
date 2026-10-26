@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.62.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.62.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.62.0';
+    const APP_VERSION = 'v0.62.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22859,13 +22859,17 @@ function koyomiTodaySentence(v, order) {
     // v0.61.2: 【権威】2026-10-26、「月が十六夜だけでなく、月齢も欲しい」との指示。月の注文が 1/2（名前だけ）の人には入れない
     if (mi && mi.name) moon = { name: mi.name, reading: mi.reading || '', age: order.moon === 'half' ? null : Math.round(v.moonAge * 10) / 10 };
   }
+  // v0.62.1: 【権威】2026-10-26、「旧暦を知りたい、潜在的ニーズあるのでは？入れちゃえば？」との指示。日付のすぐ下に、旧暦の日付を添える
+  var lu = (typeof koyomiLunarDate === 'function') ? koyomiLunarDate(d, 9) : null;
+  var kyureki = lu ? '旧暦' + (lu.leap ? '閏' : '') + lu.month + '月' + lu.day + '日' : '';
+  var kyurekiSpeech = lu ? '旧暦では、' + (lu.leap ? 'うるう' : '') + lu.month + '月' + lu.day + '日。' : '';
   var dateSpeech = wafuOn
     ? (year ? year + '、' : '') + (seirekiAdd ? seirekiAdd + '、' : '') + (d.getMonth() + 1) + '月、' + wm[1] + 'の' + d.getDate() + '日、' + wd   // 読み上げは、月の名前を読み仮名で
     : (year || '') + md + wd;
   return {
     year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
-    seireki: seirekiAdd, season: season, moon: moon,
-    speech: dateSpeech + '。' + (seasonSpeech.length ? seasonSpeech.join('。') + '。' : '') + (moon ? '今夜は、' + (moon.reading || moon.name) + '。' + (moon.age != null ? '月齢' + moon.age + '。' : '') : '')
+    seireki: seirekiAdd, season: season, moon: moon, kyureki: kyureki,
+    speech: dateSpeech + '。' + kyurekiSpeech + (seasonSpeech.length ? seasonSpeech.join('。') + '。' : '') + (moon ? '今夜は、' + (moon.reading || moon.name) + '。' + (moon.age != null ? '月齢' + moon.age + '。' : '') : '')
   };
 }
 window.koyomiTodaySentence = koyomiTodaySentence;
@@ -22886,7 +22890,14 @@ function koyomiTodaySentenceHtml(v, order, esc) {
         ? (t.year ? nw(esc(t.year) + '、') : '') + nw(t.month) + nw('<ruby>' + esc(t.wafu) + '<rt style="font-size:0.45em;font-weight:700;">' + esc(t.wafuReading) + '</rt></ruby>の' + t.day) + nw(t.weekday)
         : nw(esc(t.year || '') + t.md) + nw(t.weekday)) +
     '</div>' +
-    (t.seireki ? '<div style="font-size:0.8em;opacity:0.7;margin-top:2px;">（' + esc(t.seireki) + '）</div>' : '') +
+    // v0.62.1: 西暦と旧暦を、日付のすぐ下に（ ）でまとめる。「旧暦って？」を押すと短い説明が開く
+    ((t.seireki || t.kyureki) ? '<div style="font-size:0.8em;opacity:0.75;margin-top:2px;">（' + esc([t.seireki, t.kyureki].filter(Boolean).join('・')) + '）' +
+      (t.kyureki ? ' <button type="button" data-kz="kyureki-help" style="border:none;background:none;color:inherit;opacity:0.8;font-size:0.95em;text-decoration:underline;cursor:pointer;padding:0;">旧暦って？</button>' : '') + '</div>' +
+      (t.kyureki ? '<div data-kyureki-help style="display:none;text-align:left;font-size:0.78em;font-weight:500;line-height:1.7;margin:8px 4px 2px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.7);">' +
+        '・<b>旧暦</b>は、月の満ち欠けで日を数える暦です。新月の日が1日、満月はだいたい15日。こよみるの月の絵と、くらべてみてください。<br>' +
+        '・明治5年（1872年）の12月3日が、いきなり明治6年1月1日になり、今の暦（太陽の暦）に切り替わりました。<br>' +
+        '・中国・台湾・韓国・ベトナムなどでは、旧正月（春節）や中秋が、今も大事な祝日です。日本でも、十五夜（お月見）は旧暦8月15日です。' +
+      '</div>' : '') : '') +
     // v0.61.1: 2つ目の文（季節）と3つ目の文（月）
     (t.season && t.season.length ? '<div data-sentence-season style="font-size:1.0em;font-weight:800;line-height:2.2;margin-top:8px;">' +
       t.season.map(function(x) {
@@ -23051,6 +23062,8 @@ function renderKazeKoyomi(col, opts) {
   topEl.innerHTML = _greetHtml + (_qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top) + parts.sentence;
   var _sp = topEl.querySelector('[data-kz="speak"]');
   if (_sp) _sp.onclick = function() { speakKoyomiText(_sp.getAttribute('data-speech')); };
+  var _kh = topEl.querySelector('[data-kz="kyureki-help"]'), _khBox = topEl.querySelector('[data-kyureki-help]');
+  if (_kh && _khBox) _kh.onclick = function() { _khBox.style.display = _khBox.style.display === 'none' ? 'block' : 'none'; };
   // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
   if (_qaOn) {
     topEl.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin:-6px 0 12px;"><button type="button" data-kz="again" style="border:none;background:none;color:inherit;opacity:0.65;font-size:0.8em;text-decoration:underline;cursor:pointer;">もう一度、問いから</button></div>');
@@ -55300,6 +55313,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.62.1', date: '2026-10-26',
+    items: [
+      { icon:'🌙', t:'「今日を、声に出して」に、旧暦の日付を添えました',
+        before:'旧暦の日付は、どこにも出ていませんでした',
+        after:'日付のすぐ下に「（西暦2026年・旧暦9月16日）」と出し、読み上げでも「旧暦では、9月16日」と読みます。「旧暦って？」を押すと、短い説明が開きます' }
+    ]
+  },
+  {
     ver: 'v0.62.0', date: '2026-10-26',
     items: [
       { icon:'🌙', t:'旧暦の計算を、作り直しました',
@@ -81969,7 +81990,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
         koyomiTodaySentence(_v, _o({ kou72: false, moon: 'none' })).speech.indexOf('七十二候') === -1 && koyomiTodaySentence(_v, _o({ kou72: false, moon: 'none' })).speech.indexOf('今夜は') === -1 &&
         koyomiQaAnswer('date', _v, _o({ yearNegi: { white: true, blue: false } }), _e).main.indexOf('神無月') === -1 &&
         koyomiQaAnswer('date', _v, _o({}), _e).main.indexOf('神無月') !== -1 &&
-        /<ruby>神無月<rt[^>]*>かんなづき<\/rt><\/ruby>の21日、/.test(_h) && _h.indexOf('（西暦2026年）') !== -1 &&
+        /<ruby>神無月<rt[^>]*>かんなづき<\/rt><\/ruby>の21日、/.test(_h) && _h.indexOf('（西暦2026年・旧暦') !== -1   /* v0.62.1: 旧暦も添える */ &&
         _parts.bottom.indexOf('2026年10月21日') === -1 && /topEl\.innerHTML = _greetHtml \+ \(_qaOn[\s\S]*?\+ parts\.sentence;/.test(renderKazeKoyomi.toString())   /* v0.60.5: あいさつが前に */)
          ? ok('ST-478·①: 答えをつないだ一文（皇紀2686年、10月、神無月の21日、水曜日）。和風月名は青ねぎのときだけ（白ねぎだけなら 西暦2026年10月21日、水曜日）。下の日付の行は出さない')
          : ng('ST-478·①: 一文が違う', [_t1.speech, _t2.speech, _t3.year].join(' / '));
@@ -82088,18 +82109,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_f === 'question' && _boxes === 6 && _btn && _btn.textContent === '全部めくる' && _oneBoxes === 1 && _one.indexOf('寒露') !== -1 && !/data-qa-hidden/.test(_one))
          ? ok('ST-485·①: 問いの箱は押すとめくれる印つき（6つ）。下のボタンは「全部めくる」。1つの箱だけの答えを作れる')
          : ng('ST-485·①: 1つずつめくる作りが違う', [_f, _boxes, _btn && _btn.textContent, _oneBoxes].join(','));
+       // v0.62.1: 後から読むので、注文と日付は自分だけの名前に写しておく（同じ名前の _o を、あとのテストが書き換えるため）
+       var _o485 = _o, _d485 = _d;
        enqueueSmokeAsyncTest('ST-485·②', function() {
          // ほかのテストが描き直さないよう、ここで描いてから押す
-         renderKazeKoyomi({ text: '#333333' }, { order: _o, date: _d, again: true });
-         var _first = document.querySelector('#kazedayoriKoyomiTop [data-qa-hidden="1"]'); if (_first) _first.click();
+         renderKazeKoyomi({ text: '#333333' }, { order: _o485, date: _d485, again: true });
+         var _first = document.querySelector('#kazedayoriKoyomiTop [data-qa-hidden="1"]');
+         var _wrap = _first ? _first.parentNode : null;   // 押した箱の入れ物をつかんでおく（ほかのテストが描き直しても、ここは変わらない）
+         if (_first) _first.click();
          return new Promise(function(r) { setTimeout(r, 500); }).then(function() {
-           var t = document.getElementById('kazedayoriKoyomiTop');
+           var t = _wrap || document.getElementById('kazedayoriKoyomiTop');
            var revealed = t.querySelector('[data-qa-idx="0"]');
            var still = t.querySelectorAll('[data-qa-hidden="1"]').length;
            (revealed && !revealed.getAttribute('data-qa-hidden') && revealed.textContent.indexOf('寒露') !== -1 && still === 5)
              ? ok('ST-485·②: 1つ押すと、その箱だけがめくれて答えになる（ほかの5つは「？」のまま）')
              : ng('ST-485·②: 1つ押したときのめくれ方が違う', String(still));
-           renderKazeKoyomi({ text: '#333333' }, { order: Object.assign({}, _o, { richness: 'none' }) });
+           renderKazeKoyomi({ text: '#333333' }, { order: Object.assign({}, _o485, { richness: 'none' }) });
          });
        });
      } catch(e) {
@@ -82213,6 +82238,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-490·①: 旧暦か六曜が違う', _bad.join(' ') + ' / ' + _rk);
      } catch(e) {
        ng('ST-490: 例外', e.message);
+     }
+
+     // ===== ST-491: 「今日を、声に出して」に旧暦の日付（v0.62.1〜） =====
+     // 【権威】2026-10-26、「旧暦を知りたい、潜在的ニーズあるのでは？入れちゃえば？」との指示
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), {});
+       var _t = koyomiTodaySentence(koyomiTodayData(new Date(2026, 9, 26, 9, 0, 0)), _o);
+       var _tl = koyomiTodaySentence(koyomiTodayData(new Date(2025, 6, 25, 9, 0, 0)), _o);
+       var _h = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 9, 26, 9, 0, 0)), _o, function(x) { return String(x); });
+       (_t.kyureki === '旧暦9月16日' && _t.speech.indexOf('月曜日。旧暦では、9月16日。') !== -1 &&
+        _tl.kyureki === '旧暦閏6月1日' && _tl.speech.indexOf('旧暦では、うるう6月1日。') !== -1 &&
+        _h.indexOf('（西暦2026年・旧暦9月16日）') !== -1 && /data-kz="kyureki-help"/.test(_h) && /data-kyureki-help/.test(_h) && _h.indexOf('明治5年') !== -1)
+         ? ok('ST-491·①: 日付の下に（西暦・旧暦）。閏月は「閏6月1日」、読み上げは「うるう」。「旧暦って？」で短い説明が開く')
+         : ng('ST-491·①: 旧暦の出し方が違う', [_t.kyureki, _tl.kyureki].join(' / '));
+     } catch(e) {
+       ng('ST-491: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
