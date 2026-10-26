@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.61.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.61.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.61.1';
+    const APP_VERSION = 'v0.61.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22856,7 +22856,8 @@ function koyomiTodaySentence(v, order) {
   var moon = null;
   if (order.moon !== 'none' && typeof moonShapeInfo === 'function' && v.moonAge != null) {
     var mi = moonShapeInfo(v.moonAge);
-    if (mi && mi.name) moon = { name: mi.name, reading: mi.reading || '' };
+    // v0.61.2: 【権威】2026-10-26、「月が十六夜だけでなく、月齢も欲しい」との指示。月の注文が 1/2（名前だけ）の人には入れない
+    if (mi && mi.name) moon = { name: mi.name, reading: mi.reading || '', age: order.moon === 'half' ? null : Math.round(v.moonAge * 10) / 10 };
   }
   var dateSpeech = wafuOn
     ? (year ? year + '、' : '') + (seirekiAdd ? seirekiAdd + '、' : '') + (d.getMonth() + 1) + '月、' + wm[1] + 'の' + d.getDate() + '日、' + wd   // 読み上げは、月の名前を読み仮名で
@@ -22864,10 +22865,16 @@ function koyomiTodaySentence(v, order) {
   return {
     year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
     seireki: seirekiAdd, season: season, moon: moon,
-    speech: dateSpeech + '。' + (seasonSpeech.length ? seasonSpeech.join('。') + '。' : '') + (moon ? '今夜は、' + (moon.reading || moon.name) + '。' : '')
+    speech: dateSpeech + '。' + (seasonSpeech.length ? seasonSpeech.join('。') + '。' : '') + (moon ? '今夜は、' + (moon.reading || moon.name) + '。' + (moon.age != null ? '月齢' + moon.age + '。' : '') : '')
   };
 }
 window.koyomiTodaySentence = koyomiTodaySentence;
+// v0.61.2: 読み仮名を、漢字の幅を広げずに上に乗せる（ruby だと「霜 始 降」のように漢字の間が空いた）
+function _koyomiRubyTight(base, reading, esc) {
+  if (!reading) return esc(base);
+  return '<span style="position:relative;display:inline-block;">' +
+    '<span style="position:absolute;left:50%;bottom:100%;transform:translateX(-50%);white-space:nowrap;font-size:0.5em;font-weight:700;line-height:1.2;">' + esc(reading) + '</span>' + esc(base) + '</span>';
+}
 function koyomiTodaySentenceHtml(v, order, esc) {
   var t = koyomiTodaySentence(v, order);
   var nw = function(x) { return '<span style="white-space:nowrap;">' + x + '</span>'; };
@@ -22881,11 +22888,11 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     '</div>' +
     (t.seireki ? '<div style="font-size:0.8em;opacity:0.7;margin-top:2px;">（' + esc(t.seireki) + '）</div>' : '') +
     // v0.61.1: 2つ目の文（季節）と3つ目の文（月）
-    (t.season && t.season.length ? '<div data-sentence-season style="font-size:1.0em;font-weight:800;line-height:1.9;margin-top:8px;">' +
+    (t.season && t.season.length ? '<div data-sentence-season style="font-size:1.0em;font-weight:800;line-height:2.2;margin-top:8px;">' +
       t.season.map(function(x) {
-        return nw(x.label + '<ruby>' + esc(x.name) + (x.reading ? '<rt style="font-size:0.5em;font-weight:700;">' + esc(x.reading) + '</rt>' : '') + '</ruby>' + (x.day ? 'の' + x.day + '日目' : '') + '。');
+        return nw(x.label + _koyomiRubyTight(x.name, x.reading, esc) + (x.day ? 'の' + x.day + '日目' : '') + '。');
       }).join(' ') + '</div>' : '') +
-    (t.moon ? '<div data-sentence-moon style="font-size:1.0em;font-weight:800;line-height:1.9;">' + nw('今夜は、<ruby>' + esc(t.moon.name) + (t.moon.reading ? '<rt style="font-size:0.5em;font-weight:700;">' + esc(t.moon.reading) + '</rt>' : '') + '</ruby>。') + '</div>' : '') +
+    (t.moon ? '<div data-sentence-moon style="font-size:1.0em;font-weight:800;line-height:2.2;">' + nw('今夜は、' + _koyomiRubyTight(t.moon.name, t.moon.reading, esc) + (t.moon.age != null ? '（月齢' + t.moon.age + '）' : '') + '。') + '</div>' : '') +
     (canSpeak ? '<button type="button" data-kz="speak" data-speech="' + esc(t.speech) + '" style="margin-top:8px;padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🔊 読み上げる</button>' : '') +
   '</div>';
 }
@@ -55223,6 +55230,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.61.2', date: '2026-10-26',
+    items: [
+      { icon:'🌕', t:'「今日を、声に出して」に、月齢も添えました',
+        before:'月は「今夜は、十六夜。」と名前だけでした',
+        after:'「今夜は、十六夜（月齢15.4）。」と、月齢も添えて読み上げます。読み仮名で漢字の間が空いていたのも直しました' }
+    ]
+  },
+  {
     ver: 'v0.61.1', date: '2026-10-26',
     items: [
       { icon:'🔊', t:'「今日を、声に出して」に、季節と月を足しました',
@@ -81866,7 +81881,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _parts = koyomiKazeParts(_v, _o({}), _e);
        // v0.61.1: 読み上げは 日付。季節。月。の3つの文（西暦も読む）
        (_t1.speech.indexOf('皇紀2686年、西暦2026年、10月、かんなづきの21日、水曜日。') === 0 && _t1.seireki === '西暦2026年' &&
-        /二十四節気は、かんろの14日目。/.test(_t1.speech) && /七十二候は、きりぎりすとにありの4日目。/.test(_t1.speech) && /今夜は、/.test(_t1.speech) &&
+        /二十四節気は、かんろの14日目。/.test(_t1.speech) && /七十二候は、きりぎりすとにありの4日目。/.test(_t1.speech) && /今夜は、[^。]+。月齢\d+(\.\d)?。/.test(_t1.speech) &&   /* v0.61.2: 月齢も */
+        koyomiTodaySentence(_v, _o({ moon: 'half' })).speech.indexOf('月齢') === -1 &&
         _t2.speech.indexOf('西暦2026年10月21日、水曜日。') === 0 && _t2.seireki === '' && _t3.year === '令和8年' &&   /* v0.60.4: 白ねぎだけなら和風月名なし */
         koyomiTodaySentence(_v, _o({ yearNegi: { white: false, blue: false } })).speech.indexOf('10月21日、水曜日。') === 0 &&
         koyomiTodaySentence(_v, _o({ kou72: false, moon: 'none' })).speech.indexOf('七十二候') === -1 && koyomiTodaySentence(_v, _o({ kou72: false, moon: 'none' })).speech.indexOf('今夜は') === -1 &&
