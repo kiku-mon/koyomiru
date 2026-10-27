@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.63.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.63.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.63.0';
+    const APP_VERSION = 'v0.63.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10534,7 +10534,7 @@ function _showInviteWelcome() {
           <!-- v0.62.5: 月間の日の欄に旧暦を出す。既定は出さない -->
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <input type="checkbox" id="showKyurekiChk" onchange="window.toggleShowKyureki(this.checked)" style="width:18px;height:18px;accent-color:#4facfe;cursor:pointer;">
-            <span style="font-size:0.9em;color:#333;font-weight:600;">🌙 旧暦（月間に 旧9/17 のように）</span>
+            <span style="font-size:0.9em;color:#333;font-weight:600;">🌙 旧暦（月間に 旧9/17 のように・注文票の たまご「こい」と同じ）</span>
           </label>
           <!-- v0.45.1699: 旅行の表示切り替え。若木以上で使える。 -->
           <label id="settingsLabelTravel" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
@@ -19695,7 +19695,7 @@ function myDeckApply(idx) {
         dayNum.textContent = dayNumber;
         dayRow.appendChild(dayNum);
         // v0.62.5: 旧暦（設定でオンのときだけ）。日付のすぐ右に小さく。行は増やさない
-        if (!isOtherMonth && allSettings.ui && allSettings.ui.showKyureki === true && isKoyomiVisible()) {
+        if (!isOtherMonth && getKoyomiOrder().kyureki === 'rich' && isKoyomiVisible()) {   // v0.63.1: 注文票の旧暦（たまご）が「こい」のとき
           var _kyS = koyomiKyurekiShort(dateStr);
           if (_kyS) {
             var _kyDiv = document.createElement('div');
@@ -22178,6 +22178,7 @@ var KOYOMI_ORDER_DEFAULT = {
   kou72: true,                                  // 七十二候（チャーシュー）
   moon: 'basic',                                // 月（秘伝のたれ）
   moonTimes: 3,                                 // 「（ ）倍」の数（3〜10）
+  kyureki: 'basic',                             // 旧暦（たまご）。v0.63.1
   schedule: 'basic',                            // 今日の予定（タスク）（麺のかたさ）
   timing: 'everyOpen'                           // 出てくる時（季節の風だよりが起動のときに出るか。v0.59.0: 今までどおり毎回出す）
 };
@@ -22205,6 +22206,10 @@ var KOYOMI_ORDER_ITEMS = [
   { key: 'moon', name: '月', ramen: '秘伝のたれ', options: [
     ['none', 'なし', ''], ['half', '1/2', '月の形'], ['basic', '基本', '＋月齢'],
     ['double', '2倍', '＋次の満月・新月まで何日'], ['times', '（　）倍', '＋これからの満ち欠けを、その回数だけ'] ] },
+  // v0.63.1: 【権威】2026-10-27、「こよみの注文票で、制御できるようにしてある？」「たまごとめんま、どっちがいい？」との問い。
+  // 旧暦は月の満ち欠けの暦なので、満月や半月に見える、たまご。月（秘伝のたれ）のすぐ後ろに置く
+  { key: 'kyureki', name: '旧暦', ramen: 'たまご', options: [
+    ['none', 'なし', '出さない'], ['basic', '基本', '＋旧暦でいうと…の文と、旧暦の行事の札'], ['rich', 'こい', '＋月間の日付の横にも 旧9/17'] ] },
   // v0.58.10: 【権威】2026-10-16、ほかの項目は左が少なく右が多い。予定の盛り方だけ逆だったので、そろえる。
   // やわらかい麺ほどスープ（暦）をよく吸う＝やわらかいほど、予定が暦にたっぷり染み込む。保存している中身（all・none など）の意味は変わらない
   // v0.60.7: 【権威】2026-10-21、「今日の予定の盛り方」はタスクのことと分かりにくい、との指摘で名前を変えた
@@ -22225,7 +22230,7 @@ function _koyomiOrderValid(key, val) {
   var it = KOYOMI_ORDER_ITEMS.filter(function(x) { return x.key === key; })[0];
   return !!it && it.options.some(function(o) { return o[0] === val; });
 }
-var _KOYOMI_ORDER_ENUM_KEYS = ['sekkiStrength', 'richness', 'questionCount', 'moon', 'schedule', 'timing', 'blueEra'];
+var _KOYOMI_ORDER_ENUM_KEYS = ['sekkiStrength', 'richness', 'questionCount', 'moon', 'schedule', 'timing', 'blueEra', 'kyureki'];
 // 今の注文（保存が無ければ基本）。
 // 第48条：前の版（v0.56）で「今日の暦の問いかけ」を外していた人は、深さ「なし」から。
 // v0.58.0 で保存した注文（暦の濃さ・ねぎ＝和/空・今日の予定・店主の一言）は、新しい対応に読み替える
@@ -22242,6 +22247,8 @@ function getKoyomiOrder() {
     }
     _KOYOMI_ORDER_ENUM_KEYS.forEach(function(k) { if (_koyomiOrderValid(k, saved[k])) o[k] = saved[k]; });
     if (typeof saved.kou72 === 'boolean') o.kou72 = saved.kou72;
+    // v0.63.1: v0.62.5 で設定の「🌙 旧暦」をオンにしていた人は、たまご「こい」に読み替える（第48条）
+    if (saved.kyureki === undefined && ui.showKyureki === true) o.kyureki = 'rich';
     // v0.59.0: 前の版の「1日1回、いつか」（初めの値）は、季節の風だよりがほとんど出なくなるので「開くたびに」に読み替える（第48条）
     if (!saved.timingV2 && saved.timing === 'basic') o.timing = 'everyOpen';
     if (saved.yearNegi && typeof saved.yearNegi === 'object') o.yearNegi = { white: saved.yearNegi.white === true, blue: saved.yearNegi.blue === true };
@@ -22289,7 +22296,7 @@ function koyomiOrderSummary(o) {
   var negi = (o.yearNegi.white && o.yearNegi.blue) ? '白ねぎ・青ねぎ' : o.yearNegi.white ? '白ねぎ' : o.yearNegi.blue ? '青ねぎ' : 'ねぎなし';
   var moon = o.moon === 'times' ? o.moonTimes + '倍' : _koyomiOptLabel('moon', o.moon);
   return '節気 ' + _koyomiOptLabel('sekkiStrength', o.sekkiStrength) + '・深さ ' + _koyomiOptLabel('richness', o.richness) + '・問い ' + _koyomiOptLabel('questionCount', o.questionCount) +
-    '・' + negi + '・七十二候 ' + (o.kou72 ? 'あり' : 'なし') + '・月 ' + moon + '・予定 ' + _koyomiOptLabel('schedule', o.schedule);
+    '・' + negi + '・七十二候 ' + (o.kou72 ? 'あり' : 'なし') + '・月 ' + moon + '・旧暦 ' + _koyomiOptLabel('kyureki', o.kyureki || 'basic') + '・予定 ' + _koyomiOptLabel('schedule', o.schedule);
 }
 window.koyomiOrderSummary = koyomiOrderSummary;
 
@@ -22747,9 +22754,10 @@ var KOYOMI_SEKKI_STORIES = {
   '春分': { icon: '🌸', title: '春分', text: '昼と夜の長さが、ほぼ同じになる日です。太陽が真東から昇って真西に沈み、春のお彼岸の中日でもあります。' },
   '秋分': { icon: '🍂', title: '秋分', text: '昼と夜の長さが、ほぼ同じになる日です。ここから夜が長くなっていきます。秋のお彼岸の中日でもあります。' }
 };
-function koyomiCalendarCards(v) {
+function koyomiCalendarCards(v, order) {
   var cards = [], d = (v && v.date) || new Date(), seen = {};
   try {
+    if (order && order.kyureki === 'none') throw 0;   // v0.63.1: 旧暦（たまご）なしなら、旧暦の行事は出さない
     var jp = koyomiLunarDate(d, 9), cn = koyomiLunarDate(d, 8);
     KOYOMI_LUNAR_EVENTS.forEach(function(e) {
       var inJp = jp && !jp.leap && jp.month === e.m && jp.day === e.d;
@@ -22769,8 +22777,8 @@ function koyomiCalendarCards(v) {
   return cards;
 }
 window.koyomiCalendarCards = koyomiCalendarCards;
-function koyomiCalendarCardsHtml(v, esc) {
-  return koyomiCalendarCards(v).map(function(c) {
+function koyomiCalendarCardsHtml(v, esc, order) {
+  return koyomiCalendarCards(v, order).map(function(c) {
     return '<div data-cal-card style="margin:12px 0 0;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.7);text-align:left;">' +
       '<div style="font-weight:800;font-size:0.95em;margin-bottom:4px;">' + c.icon + ' ' + esc(c.title) + '</div>' +
       '<div style="font-size:0.85em;line-height:1.75;">' + esc(c.text) + '</div></div>';
@@ -22807,7 +22815,7 @@ function koyomiKazeParts(v, order, esc) {
     if (order.moon === 'times' && ev.upcoming && ev.upcoming.length)
       bottom += line('これからの満ち欠け：' + esc(ev.upcoming.slice(0, order.moonTimes || 3).map(function(e) { var p = e.date.split('-'); return e.name + ' ' + Number(p[1]) + '/' + Number(p[2]); }).join('・')), 'text-align:center;font-size:0.76em;opacity:0.7;line-height:1.6;');
   }
-  if (order.richness !== 'light') bottom += koyomiCalendarCardsHtml(v, esc);   // v0.62.5: その日だけの、旧暦の行事の札と暦のこばなし
+  if (order.richness !== 'light') bottom += koyomiCalendarCardsHtml(v, esc, order);   // v0.62.5: その日だけの、旧暦の行事の札と暦のこばなし
   bottom += '<div style="margin-top:12px;">' + koyomiLifeHtml(v, esc) + '</div>';   // v0.59.1: 暮らしの問い（月の続きの下）
   // v0.60.3: 日付と年は「今日を、声に出して」の一文にまとめたので、ここでは出さない（ばらけさせない）
   if (order.schedule !== 'none') {
@@ -22946,7 +22954,8 @@ function koyomiTodaySentence(v, order) {
   // 西暦でいうと（1つ目の文がもう西暦なら出さない）
   var seirekiLine = mainIsSeireki ? '' : '西暦でいうと、' + d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日、' + wd + '。';
   // 旧暦でいうと（年は旧暦の年の数字と干支。閏月は「閏」）
-  var lu = (typeof koyomiLunarDate === 'function') ? koyomiLunarDate(d, 9) : null, kyureki = null, kyurekiSpeech = '';
+  // v0.63.1: 注文票の旧暦（たまご）が「なし」なら、旧暦の文は出さない
+  var lu = (order.kyureki !== 'none' && typeof koyomiLunarDate === 'function') ? koyomiLunarDate(d, 9) : null, kyureki = null, kyurekiSpeech = '';
   if (lu) {
     var ei = ((lu.year - 4) % 60 + 60) % 60;
     // v0.62.3: 【権威】2026-10-27、「旧暦でも2026年なの？旧暦が生きていれば、何年とかではないの？」との指摘。
@@ -23186,7 +23195,7 @@ function renderKazeKoyomi(col, opts) {
   // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
   // v0.62.3: 一文の下の1行に「もう一度、問いから」と「旧暦って？」を並べる（旧暦って？を押すと、その下に説明が開く）
   var _linkBtn = function(kz, label) { return '<button type="button" data-kz="' + kz + '" style="border:none;background:none;color:inherit;opacity:0.65;font-size:0.8em;text-decoration:underline;cursor:pointer;margin:0 8px;">' + label + '</button>'; };
-  topEl.insertAdjacentHTML('beforeend', '<div data-sentence-links style="text-align:center;margin:-6px 0 8px;">' + (_qaOn ? _linkBtn('again', 'もう一度、問いから') : '') + _linkBtn('kyureki-help', '旧暦って？') + '</div>' + koyomiKyurekiHelpHtml(esc));
+  topEl.insertAdjacentHTML('beforeend', '<div data-sentence-links style="text-align:center;margin:-6px 0 8px;">' + (_qaOn ? _linkBtn('again', 'もう一度、問いから') : '') + (order.kyureki !== 'none' ? _linkBtn('kyureki-help', '旧暦って？') : '') + '</div>' + (order.kyureki !== 'none' ? koyomiKyurekiHelpHtml(esc) : ''));
   var _kh = topEl.querySelector('[data-kz="kyureki-help"]'), _khBox = topEl.querySelector('[data-kyureki-help]');
   if (_kh && _khBox) _kh.onclick = function() { _khBox.style.display = _khBox.style.display === 'none' ? 'block' : 'none'; };
   if (_qaOn) {
@@ -25405,7 +25414,7 @@ function applySettingsSectionVisibility() {
   var _rkChk = document.getElementById('showRokuyoChk');
   if (_rkChk) _rkChk.checked = !(allSettings && allSettings.ui && allSettings.ui.showRokuyo === false);
   var _kyChk = document.getElementById('showKyurekiChk');   // v0.62.5
-  if (_kyChk) _kyChk.checked = !!(allSettings && allSettings.ui && allSettings.ui.showKyureki === true);
+  if (_kyChk) _kyChk.checked = getKoyomiOrder().kyureki === 'rich';   // v0.63.1: 注文票の旧暦（たまご）が「こい」なら
   // v0.45.1699: ナビタブ：旅行（若木以上で表示）
   var labelTravel = document.getElementById('settingsLabelTravel');
   var _travelAvailable = (_effectiveModeKey === 'town' || _effectiveModeKey === 'kingdom');
@@ -47262,9 +47271,9 @@ window.toggleShowRokuyo = toggleShowRokuyo;
 // v0.62.5: 【権威】2026-10-27、「全部やれ」（月間の日の欄に旧暦）。旧暦を出すかどうか。既定は出さない
 function toggleShowKyureki(on) {
   try {
-    if (!allSettings.ui) allSettings.ui = {};
-    allSettings.ui.showKyureki = !!on;
-    saveAllSettings();
+    // v0.63.1: 注文票の旧暦（たまご）とつなげる。オン＝こい。オフ＝基本（なしだった人は、なしのまま）
+    var cur = getKoyomiOrder().kyureki || 'basic';
+    setKoyomiOrder({ kyureki: on ? 'rich' : (cur === 'rich' ? 'basic' : cur) });
     if (typeof renderMonthlyView === 'function') renderMonthlyView();
     if (typeof showToast === 'function') showToast(on ? '月間に旧暦を出します' : '月間の旧暦を隠しました', {type:'ok'});
   } catch (e) {}
@@ -55487,6 +55496,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.63.1', date: '2026-10-27',
+    items: [
+      { icon:'🥚', t:'こよみの注文票に「旧暦（たまご）」を足しました',
+        before:'旧暦の文や行事の札は、注文票で選べませんでした',
+        after:'たまごの「なし・基本・こい」で選べます。なし＝旧暦を出さない、基本＝旧暦の文と行事の札、こい＝月間の日付の横にも旧暦。設定の「🌙 旧暦」は、たまご「こい」と同じです' }
+    ]
+  },
   {
     ver: 'v0.63.0', date: '2026-10-27',
     items: [
@@ -81815,10 +81832,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _names = KOYOMI_ORDER_ITEMS.map(function(it) { return it.name; }).join('・');
        delete allSettings.ui.koyomiOrder; delete allSettings.ui.koyomiToday;
        var _d = getKoyomiOrder();
-       (KOYOMI_ORDER_ITEMS.length === 7 && _n === '3,5,5,3,2,5,5' &&   /* v0.58.5: ねぎに「なし」 */ _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定（タスク）' &&   /* v0.60.7 */
+       // v0.63.1: 【権威】2026-10-27、注文票に「旧暦（たまご）」を足して8項目
+       (KOYOMI_ORDER_ITEMS.length === 8 && _n === '3,5,5,3,2,5,3,5' &&   /* v0.58.5: ねぎに「なし」 */ _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・旧暦・今日の予定（タスク）' &&   /* v0.60.7・v0.63.1 */
+        _d.kyureki === 'basic' &&
         _d.richness === 'basic' && _d.moon === 'basic' && _d.kou72 === true && _d.yearNegi.white && _d.yearNegi.blue && _d.blueEra === 'koki' &&   /* v0.60.2: 青ねぎの皇紀 */ _d.timing === 'everyOpen' &&   /* v0.59.0: 今までどおり毎回出す */
         KOYOMI_TIMING_OPTIONS.length === 5 && typeof koyomiOwnerWords === 'undefined')
-         ? ok('ST-466·①: 注文票は7項目（3・5・5・ねぎ（なし・白・青）・あり/なし・5・5）で、全部が暦。店主の一言は無い。出てくる時は別の1行（5つ）')
+         ? ok('ST-466·①: 注文票は8項目（3・5・5・ねぎ（なし・白・青）・あり/なし・5・旧暦3・5）で、全部が暦。店主の一言は無い。出てくる時は別の1行（5つ）')
          : ng('ST-466·①: 注文票の項目か初期値が違う', _n + ' / ' + _names);
        // ② 前の版の引き継ぎ：問いかけを外していた人は「なし」から。v0.58.0 の注文（店主の一言など）は新しい対応に読み替える。変な値ははじく
        allSettings.ui.koyomiToday = false;
@@ -81886,7 +81905,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        if (_sh) { _q('[data-ko-key="moon"][data-ko-val="double"]').click(); _q('[data-ko-key="kou72"][data-ko-val="false"]').click(); _q('[data-ko-act="save"]').click(); }
        var _after = getKoyomiOrder();
        var _img = drawKoyomiOrderCanvas(_after).toDataURL('image/png');   // v0.58.6: 画像は注文票だけ
-       (_rows === 28 && _filled0 === 8 && _stillOpen && _hasTiming && _txt.indexOf('こよみの注文票') !== -1 && _txt.indexOf('秘伝のたれ') !== -1 && _txt.indexOf('店主') === -1 &&
+       (_rows === 31 && _filled0 === 9 && _stillOpen   /* v0.63.1: 旧暦（たまご）の3段と、その〇 */ && _hasTiming && _txt.indexOf('こよみの注文票') !== -1 && _txt.indexOf('秘伝のたれ') !== -1 && _txt.indexOf('店主') === -1 &&
         _after.moon === 'double' && _after.kou72 === false && /^data:image\/png/.test(_img) && !document.getElementById('koyomiOrderOverlay'))
          ? ok('ST-466·⑥: 注文票は前の注文（無ければ基本）に〇が付いて出る。付け直して決めると保存され、画像にできる')
          : ng('ST-466·⑥: 注文票の紙のつながりが違う', [_rows, _filled0, _stillOpen, _hasTiming, _after.moon, _after.kou72].join(','));
@@ -81940,8 +81959,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _titles = [koyomiAskTitle('daily'), koyomiAskTitle('kou'), koyomiAskTitle('sekki')].join('|');
        (_t0 === false && _t1 === true && _t2 === false && _t3 === false && _t4 === false && _t5 === true && _t6 === false &&
         _keys === 'day:2026-10-15|sekki:2026:寒露|' && _titles === 'いらっしゃいませ。今日のご注文は？|七十二候が変わりました。ご注文は？|二十四節気が変わりました。ご注文は？' &&   /* v0.58.12: 名前を先に言わない */
-        !!document.getElementById('koyomiAskFreqSelect') && KOYOMI_ORDER_ITEMS.length === 7)
-         ? ok('ST-468·①: お聞きする頻度（毎日・候・節気・聞かない）で、今の区切りでまだ聞いていなければ聞く。見出しは変わったことだけ（節気・候の名前は先に言わない）。頻度は設定で選び、注文票の項目は7つのまま')
+        // v0.63.1: 決まりの意図は「聞く頻度を、注文票の項目に入れない」。数（7つ）ではなく、意図で見張る（旧暦を足して8つになったため）
+        !!document.getElementById('koyomiAskFreqSelect') && !KOYOMI_ORDER_ITEMS.some(function(it) { return /頻度|聞く/.test(it.name); }))
+         ? ok('ST-468·①: お聞きする頻度（毎日・候・節気・聞かない）で、今の区切りでまだ聞いていなければ聞く。見出しは変わったことだけ（節気・候の名前は先に言わない）。頻度は設定で選び、注文票の項目には入れない')
          : ng('ST-468·①: 聞くかの判断が違う', [_t0, _t1, _t2, _t3, _t4, _t5].join(','));
        // ② 聞くときの紙：「今日から『〇〇』。ご注文は？」と「いつもので」。押しても注文は変わらない
        allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'rich' });
@@ -82519,6 +82539,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-493·①: 一文の画像が違う', (_t.lines || []).join(' | '));
      } catch(e) {
        ng('ST-493: 例外', e.message);
+     }
+
+     // ===== ST-494: 注文票の旧暦（たまご）で、旧暦の文・行事の札・月間の旧暦が決まる（v0.63.1〜） =====
+     // 【権威】2026-10-27、「こよみの注文票で、制御できるようにしてある？」「たまごとめんま、どっちがいい？」との問い
+     try {
+       var _o = function(k) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { kyureki: k }); };
+       var _v = koyomiTodayData(new Date(2026, 8, 25, 21, 0, 0));   // 十五夜
+       var _n = koyomiTodaySentence(_v, _o('none')), _b = koyomiTodaySentence(_v, _o('basic'));
+       var _cn = koyomiCalendarCards(_v, _o('none')).length, _cb = koyomiCalendarCards(_v, _o('basic')).length;
+       var _it = KOYOMI_ORDER_ITEMS.filter(function(x) { return x.key === 'kyureki'; })[0];
+       var _src = renderMonthlyView.toString();
+       (_it && _it.ramen === 'たまご' && _n.speech.indexOf('旧暦') === -1 && !_n.kyureki && _b.speech.indexOf('旧暦でいうと') !== -1 &&
+        _cn === 0 && _cb === 1 && /getKoyomiOrder\(\)\.kyureki === 'rich'/.test(_src) &&
+        /setKoyomiOrder\(\{ kyureki: on \? 'rich'/.test(toggleShowKyureki.toString()) && koyomiOrderSummary(_o('rich')).indexOf('旧暦 こい') !== -1)
+         ? ok('ST-494·①: 注文票の旧暦（たまご）：なし＝旧暦を出さない／基本＝旧暦の文と行事の札／こい＝月間にも。設定の🌙旧暦は、たまご「こい」とつながる')
+         : ng('ST-494·①: 旧暦の注文のつながりが違う', [_n.speech.indexOf('旧暦'), _cn, _cb].join(','));
+     } catch(e) {
+       ng('ST-494: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
