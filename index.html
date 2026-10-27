@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.63.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.63.6 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.63.5';
+    const APP_VERSION = 'v0.63.6';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -23609,17 +23609,31 @@ function shareKoyomiCanvas(cv, fileName, text) {
 window.shareKoyomiCanvas = shareKoyomiCanvas;
 // v0.62.5: 【権威】2026-10-27、「全部やれ」（今日を、声に出しての一文を、画像にして持ち帰る）。注文票の画像と同じ仕組み
 function drawKoyomiTodayCanvas(v, order) {
-  var t = koyomiTodaySentence(v, order || getKoyomiOrder());
-  var b = _koyomiCanvasBase('今日を、声に出して'), g = b.g, y = 270, maxW = 860;
-  var wrap = function(text, font, lh, color) {   // 日本語は1文字ずつ測って折り返す（読点のすぐ後ろで折れやすくする）
-    g.font = font; g.fillStyle = color; g.textAlign = 'center';
-    // 少しだけはみ出す行は、字を少し小さくして1行に収める（「目。」だけが次の行に落ちないように）
-    var px = Number((font.match(/(\d+)px/) || [0, 40])[1]);
+  // v0.63.6: 【権威】2026-10-27、「声に出して、とあるが、逆に映えるかな？」との問いに、
+  // 月の絵・今日の季節の色・文字の強弱・koyomiru.com の4つを足した（「はい」との指示）
+  order = order || getKoyomiOrder();
+  var t = koyomiTodaySentence(v, order);
+  var d = v.date || new Date();
+  var cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350;
+  var g = cv.getContext('2d'), W = 1080, H = 1350, maxW = 880;
+  // 背景：今日の七十二候の色
+  var col = { from: '#fdf3e7', to: '#f6d9bd', text: '#7a3b1e' };
+  try {
+    var kk = getCurrentShichijuniKou(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12));
+    if (kk && typeof getShichijuniKouColor === 'function') col = getShichijuniKouColor(kk.sekkiName, kk.kouOrder) || col;
+  } catch (e) {}
+  var bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, col.from); bg.addColorStop(1, col.to);
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(255,255,255,0.55)';
+  (function(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); })(60, 60, W - 120, H - 120, 48);
+  var tc = col.text || '#7a3b1e';
+  // 文字を、幅に合わせて分ける（少しだけはみ出す行は字を小さくして1行に。読点の後ろで折れやすく）
+  var layout = function(text, px) {
     for (var sz = px; sz >= Math.round(px * 0.82); sz -= 2) {
-      g.font = font.replace(/\d+px/, sz + 'px');
-      if (g.measureText(text).width <= maxW) { g.fillText(text, 540, y); y += lh; return; }
+      g.font = 'bold ' + sz + 'px sans-serif';
+      if (g.measureText(text).width <= maxW) return { size: sz, lines: [text] };
     }
-    g.font = font;
+    g.font = 'bold ' + px + 'px sans-serif';
     var line = '', out = [];
     for (var i = 0; i < text.length; i++) {
       var c = text.charAt(i);
@@ -23630,13 +23644,52 @@ function drawKoyomiTodayCanvas(v, order) {
       } else line += c;
     }
     if (line) out.push(line);
-    out.forEach(function(l) { g.fillText(l, 540, y); y += lh; });
+    return { size: px, lines: out };
   };
-  t.lines.forEach(function(l, i) {
-    if (i === 0) { wrap(l, 'bold 56px sans-serif', 78, '#b0443a'); y += 30; }
-    else { wrap(l, 'bold 40px sans-serif', 60, '#6b4f2a'); y += 22; }
+  // 文の強弱：日付がいちばん大きく、季節と月は中くらい、言い直し（西暦・旧暦・干支）は小さめ
+  // 文が長いときは、先に文字を少し小さくし、月の絵はできるだけ大きく残す
+  var makeBlocks = function(scale) {
+    return t.lines.map(function(l, i) {
+      var re = /^(西暦でいうと|旧暦でいうと|干支でいうと)/.test(l);
+      var px = Math.round((i === 0 ? 60 : (re ? 34 : 40)) * scale);
+      var lay = layout(l, px);
+      return { lay: lay, lh: Math.round(lay.size * 1.45), gap: Math.round((i === 0 ? 34 : 16) * scale), alpha: re ? 0.8 : 1 };
+    });
+  };
+  var heightOf = function(bl) { return bl.reduce(function(sum, b) { return sum + b.lay.lines.length * b.lh + b.gap; }, 0); };
+  var headTop = 130, footH = 200, room = H - 40 - headTop - footH - (60 + 20 + 40);
+  var blocks = null, bodyH = 0, moonD = 230;
+  [1, 0.94, 0.88, 0.82].some(function(sc) {
+    blocks = makeBlocks(sc); bodyH = heightOf(blocks);
+    if (bodyH + 230 <= room) { moonD = 230; return true; }
+    if (bodyH + 180 <= room) { moonD = Math.min(230, room - bodyH); return true; }
+    return false;
   });
-  return b.cv;
+  if (bodyH + moonD > room) moonD = Math.max(120, room - bodyH);
+  var headH = 60 + 20 + moonD + 40;
+  var y = headTop + Math.max(0, ((H - footH - headTop) - (headH + bodyH)) / 2);
+  g.textAlign = 'center'; g.fillStyle = tc; g.font = 'bold 44px sans-serif'; g.fillText('今日を、声に出して', W / 2, y + 44);
+  y += 60 + 20;
+  // 月の絵（季節の風だよりと同じ描き方を、丸く切り抜いて）
+  try {
+    var tmp = document.createElement('canvas'); tmp.id = '__koyomiImgMoon'; tmp.style.display = 'none'; document.body.appendChild(tmp);
+    _drawMoonCanvas('__koyomiImgMoon', v.moonAge, (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg() : 0);
+    g.save(); g.beginPath(); g.arc(W / 2, y + moonD / 2, moonD / 2, 0, Math.PI * 2); g.closePath(); g.clip();
+    g.drawImage(tmp, W / 2 - moonD / 2, y, moonD, moonD); g.restore();
+    tmp.remove();
+  } catch (e) {}
+  y += moonD + 40;
+  blocks.forEach(function(b) {
+    g.font = 'bold ' + b.lay.size + 'px sans-serif'; g.globalAlpha = b.alpha; g.fillStyle = tc;
+    b.lay.lines.forEach(function(l) { y += b.lh; g.fillText(l, W / 2, y - Math.round(b.lh * 0.28)); });
+    y += b.gap; g.globalAlpha = 1;
+  });
+  // 下：店の名前と入口
+  g.globalAlpha = 0.75; g.fillStyle = tc;
+  g.font = 'bold 30px sans-serif'; g.fillText('天然こよみ専門店　こよみる', W / 2, H - 140);
+  g.font = 'bold 36px sans-serif'; g.fillText('koyomiru.com', W / 2, H - 92);
+  g.globalAlpha = 1;
+  return cv;
 }
 window.drawKoyomiTodayCanvas = drawKoyomiTodayCanvas;
 // ===== END v0.58.0 =====
@@ -55548,6 +55601,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.63.6', date: '2026-10-27',
+    items: [
+      { icon:'🖼', t:'「画像にして持ち帰る」の1枚を、季節の色と月の絵で作り直しました',
+        before:'白い紙に文字だけの画像でした',
+        after:'今日の七十二候の色の背景に、今夜の月の絵を入れ、日付を大きく、言い直しを小さく描きます。いちばん下に koyomiru.com も入ります' }
+    ]
+  },
+  {
     ver: 'v0.63.5', date: '2026-10-27',
     items: [
       { icon:'🐎', t:'「干支でいうと」を、いちばん最後にしました',
@@ -82617,7 +82678,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_cv && _cv.width === 1080 && _cv.height === 1350 && _t.lines.length === 6 &&
         _t.lines[0] === '皇紀2686年、10月、神無月（かんなづき）の27日、火曜日。' &&
         _t.lines[5] === '旧暦でいうと、令和8年、丙午（ひのえうま）の年の、9月17日。' &&
-        /data-kz="sentence-image"/.test(_h) && /shareKoyomiCanvas\(drawKoyomiTodayCanvas\(v, order\)/.test(renderKazeKoyomi.toString()))
+        /data-kz="sentence-image"/.test(_h) && /shareKoyomiCanvas\(drawKoyomiTodayCanvas\(v, order\)/.test(renderKazeKoyomi.toString()) &&
+        // v0.63.6: 月の絵・今日の季節の色・文字の強弱・koyomiru.com
+        /_drawMoonCanvas\('__koyomiImgMoon'/.test(drawKoyomiTodayCanvas.toString()) && /getShichijuniKouColor/.test(drawKoyomiTodayCanvas.toString()) &&
+        /koyomiru\.com/.test(drawKoyomiTodayCanvas.toString()) && !document.getElementById('__koyomiImgMoon'))
          ? ok('ST-493·①: 一文は画面と同じ文（読みつき）で、1080×1350の1枚に描ける。「画像にして持ち帰る」で共有・保存')
          : ng('ST-493·①: 一文の画像が違う', (_t.lines || []).join(' | '));
      } catch(e) {
