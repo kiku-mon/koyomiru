@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.62.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.62.3 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.62.2';
+    const APP_VERSION = 'v0.62.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22875,8 +22875,16 @@ function koyomiTodaySentence(v, order) {
   var lu = (typeof koyomiLunarDate === 'function') ? koyomiLunarDate(d, 9) : null, kyureki = null, kyurekiSpeech = '';
   if (lu) {
     var ei = ((lu.year - 4) % 60 + 60) % 60;
-    kyureki = { year: lu.year, eto: _JIKKAN.charAt(ei % 10) + _JUNISHI.charAt(ei % 12), etoReading: _KOYOMI_JIKKAN_YOMI[ei % 10] + _KOYOMI_JUNISHI_YOMI[ei % 12], leap: lu.leap, month: lu.month, day: lu.day };
-    kyurekiSpeech = '旧暦でいうと、' + lu.year + '年、' + kyureki.etoReading + 'の年の、' + (lu.leap ? 'うるう' : '') + lu.month + '月' + lu.day + '日。';
+    // v0.62.3: 【権威】2026-10-27、「旧暦でも2026年なの？旧暦が生きていれば、何年とかではないの？」との指摘。
+    // 旧暦の時代の日本は西暦を使わず、元号と干支で年を数えた。元号の年も旧暦の正月で変わる（旧暦の年から数える）
+    var eraName = '', eraYear = null;
+    for (var ii = 0; ii < _WAREKI_ERAS.length; ii++) {
+      var e = _WAREKI_ERAS[ii], ed = new Date(e.y, e.m - 1, e.d);
+      if (d >= ed) { eraName = e.name; eraYear = lu.year - e.y + 1; break; }
+    }
+    var eraLabel = eraName ? eraName + (eraYear <= 1 ? '元' : eraYear) + '年' : lu.year + '年';
+    kyureki = { year: lu.year, era: eraLabel, eto: _JIKKAN.charAt(ei % 10) + _JUNISHI.charAt(ei % 12), etoReading: _KOYOMI_JIKKAN_YOMI[ei % 10] + _KOYOMI_JUNISHI_YOMI[ei % 12], leap: lu.leap, month: lu.month, day: lu.day };
+    kyurekiSpeech = '旧暦でいうと、' + eraLabel + '、' + kyureki.etoReading + 'の年の、' + (lu.leap ? 'うるう' : '') + lu.month + '月' + lu.day + '日。';
   }
   return {
     year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
@@ -22891,6 +22899,16 @@ function _koyomiRubyTight(base, reading, esc) {
   return '<span style="position:relative;display:inline-block;">' +
     '<span style="position:absolute;left:50%;bottom:100%;transform:translateX(-50%);white-space:nowrap;font-size:0.5em;font-weight:700;line-height:1.2;">' + esc(reading) + '</span>' + esc(base) + '</span>';
 }
+// v0.62.3: 「旧暦って？」の説明（「もう一度、問いから」の横のボタンで開く）
+function koyomiKyurekiHelpHtml(esc) {
+  return '<div data-kyureki-help style="display:none;text-align:left;font-size:0.78em;font-weight:500;line-height:2.0;margin:6px 4px 12px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.7);">' +
+    '・<b>旧暦</b>は、月の満ち欠けで日を数える暦です。新月の日が1日、満月はだいたい15日。こよみるの月の絵と、くらべてみてください。<br>' +
+    '・明治5年、1872年の12月3日が、いきなり明治6年1月1日になり、今の暦、太陽の暦に切り替わりました。<br>' +
+    '・旧暦の時代の日本は、西暦を使わず、年を元号と' + _koyomiRubyTight('干支', 'えと', esc) + 'で数えました。元号の年も、旧暦の正月で変わりました。<br>' +
+    '・中国・台湾・韓国・ベトナムなどでは、旧正月の春節や中秋が、今も大事な祝日です。日本でも、十五夜のお月見は旧暦8月15日です。' +
+  '</div>';
+}
+window.koyomiKyurekiHelpHtml = koyomiKyurekiHelpHtml;
 function koyomiTodaySentenceHtml(v, order, esc) {
   var t = koyomiTodaySentence(v, order);
   var nw = function(x) { return '<span style="white-space:nowrap;">' + x + '</span>'; };
@@ -22916,15 +22934,8 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     (t.seirekiLine ? '<div data-sentence-seireki style="' + sub + 'margin-top:4px;">' + esc(t.seirekiLine).replace(/^(西暦でいうと、)(.+?日、)(.+)$/, function(m, a, b, c) { return nw(a) + nw(b) + nw(c); }) + '</div>' : '') +
     // ⑤ 旧暦でいうと（「旧暦って？」を押すと短い説明が開く）
     (t.kyureki ? '<div data-sentence-kyureki style="' + sub + '">' +
-        nw('旧暦でいうと、' + t.kyureki.year + '年、') + nw(_koyomiRubyTight(t.kyureki.eto, t.kyureki.etoReading, esc) + 'の年の、') +
+        nw('旧暦でいうと、' + esc(t.kyureki.era) + '、') + nw(_koyomiRubyTight(t.kyureki.eto, t.kyureki.etoReading, esc) + 'の年の、') +
         nw((t.kyureki.leap ? _koyomiRubyTight('閏', 'うるう', esc) : '') + t.kyureki.month + '月' + t.kyureki.day + '日。') +
-        ' <button type="button" data-kz="kyureki-help" style="border:none;background:none;color:inherit;opacity:0.7;font-size:0.75em;font-weight:500;text-decoration:underline;cursor:pointer;padding:0;">旧暦って？</button>' +
-      '</div>' +
-      '<div data-kyureki-help style="display:none;text-align:left;font-size:0.78em;font-weight:500;line-height:1.7;margin:6px 4px 2px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.7);">' +
-        '・<b>旧暦</b>は、月の満ち欠けで日を数える暦です。新月の日が1日、満月はだいたい15日。こよみるの月の絵と、くらべてみてください。<br>' +
-        '・明治5年、1872年の12月3日が、いきなり明治6年1月1日になり、今の暦、太陽の暦に切り替わりました。<br>' +
-        '・中国・台湾・韓国・ベトナムなどでは、旧正月の春節や中秋が、今も大事な祝日です。日本でも、十五夜のお月見は旧暦8月15日です。<br>' +
-        '・旧暦の時代は、年を' + _koyomiRubyTight('干支', 'えと', esc) + 'で数えました。' +
       '</div>' : '') +
     (canSpeak ? '<button type="button" data-kz="speak" data-speech="' + esc(t.speech) + '" style="margin-top:8px;padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🔊 読み上げる</button>' : '') +
   '</div>';
@@ -23084,11 +23095,14 @@ function renderKazeKoyomi(col, opts) {
   topEl.innerHTML = _greetHtml + (_qaOn ? '<div style="margin:4px 0 12px;">' + koyomiQaHtml(questions, v, order, esc, true) + '</div>' : parts.top) + parts.sentence;
   var _sp = topEl.querySelector('[data-kz="speak"]');
   if (_sp) _sp.onclick = function() { speakKoyomiText(_sp.getAttribute('data-speech')); };
+
+  // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
+  // v0.62.3: 一文の下の1行に「もう一度、問いから」と「旧暦って？」を並べる（旧暦って？を押すと、その下に説明が開く）
+  var _linkBtn = function(kz, label) { return '<button type="button" data-kz="' + kz + '" style="border:none;background:none;color:inherit;opacity:0.65;font-size:0.8em;text-decoration:underline;cursor:pointer;margin:0 8px;">' + label + '</button>'; };
+  topEl.insertAdjacentHTML('beforeend', '<div data-sentence-links style="text-align:center;margin:-6px 0 8px;">' + (_qaOn ? _linkBtn('again', 'もう一度、問いから') : '') + _linkBtn('kyureki-help', '旧暦って？') + '</div>' + koyomiKyurekiHelpHtml(esc));
   var _kh = topEl.querySelector('[data-kz="kyureki-help"]'), _khBox = topEl.querySelector('[data-kyureki-help]');
   if (_kh && _khBox) _kh.onclick = function() { _khBox.style.display = _khBox.style.display === 'none' ? 'block' : 'none'; };
-  // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
   if (_qaOn) {
-    topEl.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin:-6px 0 12px;"><button type="button" data-kz="again" style="border:none;background:none;color:inherit;opacity:0.65;font-size:0.8em;text-decoration:underline;cursor:pointer;">もう一度、問いから</button></div>');
     topEl.querySelector('[data-kz="again"]').onclick = function() {
       renderKazeKoyomi(col, Object.assign({}, opts, { answer: false, again: true, noLifeAuto: true }));
       var sc = document.getElementById('kazedayoriScroll'); if (sc) sc.scrollTop = 0;
@@ -55335,6 +55349,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.62.3', date: '2026-10-27',
+    items: [
+      { icon:'🌙', t:'旧暦の年を、元号で言うようにしました',
+        before:'「旧暦でいうと、2026年、丙午の年の、9月17日」と、旧暦なのに西暦の年でした',
+        after:'旧暦の時代の数え方にならい、「旧暦でいうと、令和8年、丙午の年の、9月17日」と元号で言います。年は旧暦の正月で変わります。「旧暦って？」は、「もう一度、問いから」の横に移しました' }
+    ]
+  },
+  {
     ver: 'v0.62.2', date: '2026-10-27',
     items: [
       { icon:'🔊', t:'「今日を、声に出して」を、皇紀の世界で語る形にしました',
@@ -82017,13 +82039,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(_v, _o({}), _e);
        var _visible = _h.replace(/<button[^>]*data-kz="speak"[\s\S]*?<\/button>/, '').replace(/<div data-kyureki-help[\s\S]*?<\/div>/, '');
        var _parts = koyomiKazeParts(_v, _o({}), _e);
-       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今夜は、じゅうさんやづき。月齢10.8。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、2026年、ひのえうまの年の、9月11日。' &&
+       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今夜は、じゅうさんやづき。月齢10.8。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。' &&   /* v0.62.3: 旧暦の年は元号 */
         _t2.speech.indexOf('西暦2026年10月21日、水曜日。') === 0 && _t2.speech.indexOf('西暦でいうと') === -1 &&
         _t3.speech.indexOf('令和8年、10月、かんなづきの21日、水曜日。') === 0 &&
         _t4.speech.indexOf('10月21日、水曜日。') === 0 && _t4.speech.indexOf('西暦でいうと、2026年10月21日、水曜日。') !== -1 &&
         _t5.speech.indexOf('七十二候') === -1 && _t5.speech.indexOf('今夜は') === -1 &&
         !/[（）()]/.test(_visible.replace(/<[^>]+>/g, '')) &&
-        /西暦でいうと、2026年10月21日、水曜日。/.test(_h) && /旧暦でいうと、2026年、/.test(_h) && /ひのえうま/.test(_h) &&
+        /西暦でいうと、2026年10月21日、水曜日。/.test(_h) && /旧暦でいうと、令和8年、/.test(_h) && /ひのえうま/.test(_h) &&
         _parts.bottom.indexOf('2026年10月21日 水曜日') === -1 &&
         /topEl\.innerHTML = _greetHtml \+ \(_qaOn[\s\S]*?\+ parts\.sentence;/.test(renderKazeKoyomi.toString()))
          ? ok('ST-478·①: ①今日 ②季節 ③月 ④西暦でいうと ⑤旧暦でいうと（年の数字と干支）。かっこは使わず、画面と読み上げが同じ文。西暦だけの人には「西暦でいうと」を出さない')
@@ -82282,11 +82304,14 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _tl = koyomiTodaySentence(koyomiTodayData(new Date(2025, 6, 25, 9, 0, 0)), _o);
        var _tj = koyomiTodaySentence(koyomiTodayData(new Date(2027, 0, 20, 9, 0, 0)), _o);   // 西暦は2027年でも、旧暦はまだ2026年（丙午）
        var _h = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 9, 26, 9, 0, 0)), _o, function(x) { return String(x); });
-       (_t.speech.indexOf('旧暦でいうと、2026年、ひのえうまの年の、9月16日。') !== -1 && _t.kyureki.eto === '丙午' &&
-        _tl.speech.indexOf('旧暦でいうと、2025年、きのとみの年の、うるう6月1日。') !== -1 &&
-        _tj.speech.indexOf('旧暦でいうと、2026年、ひのえうまの年の、12月') !== -1 &&
-        /data-kz="kyureki-help"/.test(_h) && /data-kyureki-help/.test(_h) && _h.indexOf('明治5年') !== -1)
-         ? ok('ST-491·①: 旧暦でいうと、年の数字と干支（読み仮名つき）。閏月は「うるう」。西暦の年が変わっても、旧暦の正月までは前の年。「旧暦って？」で説明が開く')
+       // v0.62.3: 旧暦の年は元号（旧暦の正月で変わる）。「旧暦って？」は一文の下の1行（もう一度、問いからの横）
+       var _help = koyomiKyurekiHelpHtml(function(x) { return String(x); });
+       (_t.speech.indexOf('旧暦でいうと、令和8年、ひのえうまの年の、9月16日。') !== -1 && _t.kyureki.eto === '丙午' &&
+        _tl.speech.indexOf('旧暦でいうと、令和7年、きのとみの年の、うるう6月1日。') !== -1 &&
+        _tj.speech.indexOf('旧暦でいうと、令和8年、ひのえうまの年の、12月') !== -1 &&
+        !/data-kz="kyureki-help"/.test(_h) && /data-kyureki-help/.test(_help) && _help.indexOf('明治5年') !== -1 && _help.indexOf('元号') !== -1 &&
+        /_linkBtn\('kyureki-help', '旧暦って？'\)/.test(renderKazeKoyomi.toString()))
+         ? ok('ST-491·①: 旧暦でいうと、元号と干支（読み仮名つき）。閏月は「うるう」。年は旧暦の正月で変わる。「旧暦って？」は一文の下の1行で、説明が開く')
          : ng('ST-491·①: 旧暦の出し方が違う', [_t.speech.slice(-40), _tl.speech.slice(-40), _tj.speech.slice(-40)].join(' / '));
      } catch(e) {
        ng('ST-491: 例外', e.message);
