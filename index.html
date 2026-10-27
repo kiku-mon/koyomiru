@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.63.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.63.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.63.3';
+    const APP_VERSION = 'v0.63.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22191,7 +22191,7 @@ var KOYOMI_BLUE_ERAS = [
 window.KOYOMI_BLUE_ERAS = KOYOMI_BLUE_ERAS;
 var KOYOMI_ORDER_ITEMS = [
   { key: 'sekkiStrength', name: '二十四節気', ramen: '味の濃さ', options: [
-    ['light', 'うす味', '名前だけ'], ['basic', '基本', '＋読み方・何日目'], ['rich', 'こい味', '＋雑節・六曜・日の干支'] ] },
+    ['light', 'うす味', '名前だけ'], ['basic', '基本', '＋読み方・何日目'], ['rich', 'こい味', '＋雑節・六曜・年月日の干支'] ] },
   { key: 'richness', name: '今日の一回の深さ', ramen: 'こってり度', options: [
     ['none', 'なし', '今までの季節の風だよりのまま'], ['light', 'あっさり', '問わずに、季節の風だよりに暦を足す'],
     ['basic', '基本', '問う → めくる → 季節の風だよりに今日の暦'], ['rich', 'こってり', '＋「今日という一回を、どう生きる？」'],
@@ -22328,6 +22328,41 @@ function _koyomiMoonEvents(d) {
   var upcoming = all.filter(function(x) { return x.date > ymd; }).sort(function(a, b) { return a.date < b.date ? -1 : 1; }).map(function(x) { return { name: x.name, date: x.date }; });
   return { nextFull: next(2), nextNew: next(0), upcoming: upcoming };   // v0.60.8 の掃除：今月の分（thisMonth）は使わなくなった
 }
+// v0.63.4: 【権威】2026-10-27、「月干支を足し、年・月・日の干支を言い分ける（こい味の人だけ）」
+// 「干支の読みは、丙午（ひのえうま）のように訓読みで添える」との指示。
+// 月の干支は、二十四節気の「節」で月が替わる（立春から寅の月）。年の干支も、年・月・日を並べて言うときの暦の決まりにそろえ、立春で替わる
+var _KOYOMI_SEKKI_BRANCH = { '立春': 2, '雨水': 2, '啓蟄': 3, '春分': 3, '清明': 4, '穀雨': 4, '立夏': 5, '小満': 5, '芒種': 6, '夏至': 6, '小暑': 7, '大暑': 7,
+  '立秋': 8, '処暑': 8, '白露': 9, '秋分': 9, '寒露': 10, '霜降': 10, '立冬': 11, '小雪': 11, '大雪': 0, '冬至': 0, '小寒': 1, '大寒': 1 };
+var _KOYOMI_JIKKAN_YOMI0 = ['きのえ', 'きのと', 'ひのえ', 'ひのと', 'つちのえ', 'つちのと', 'かのえ', 'かのと', 'みずのえ', 'みずのと'];
+var _KOYOMI_JUNISHI_YOMI0 = ['ね', 'うし', 'とら', 'う', 'たつ', 'み', 'うま', 'ひつじ', 'さる', 'とり', 'いぬ', 'い'];
+function _koyomiEtoPart(stem, branch) {
+  return { name: _JIKKAN.charAt(stem) + _JUNISHI.charAt(branch), reading: _KOYOMI_JIKKAN_YOMI0[stem] + _KOYOMI_JUNISHI_YOMI0[branch] };
+}
+// 年・月・日の干支を、読みつきで「年 丙午（ひのえうま）・月 戊戌（つちのえいぬ）・日 甲戌（きのえいぬ）」のように並べる
+function koyomiEtoText(eto, esc) {
+  if (!eto) return '';
+  esc = esc || function(x) { return String(x); };
+  var f = function(lb, p) { return p ? lb + ' ' + esc(p.name) + '（' + esc(p.reading) + '）' : ''; };
+  return [f('年', eto.year), f('月', eto.month), f('日', eto.day)].filter(Boolean).join('・');
+}
+window.koyomiEtoText = koyomiEtoText;
+function koyomiEtoSet(d, sekkiName, dayIdx) {
+  try {
+    var br = _KOYOMI_SEKKI_BRANCH[sekkiName];
+    if (br === undefined) return null;
+    var m = d.getMonth() + 1;
+    var sy = (m <= 2 && (sekkiName === '冬至' || sekkiName === '小寒' || sekkiName === '大寒')) ? d.getFullYear() - 1 : d.getFullYear();   // 立春の前は前の年
+    var ys = ((sy - 4) % 10 + 10) % 10, yb = ((sy - 4) % 12 + 12) % 12;
+    var toraStem = ((ys % 5) * 2 + 2) % 10;   // 寅の月の十干（甲・己の年は丙寅）
+    var ms = (toraStem + ((br - 2 + 12) % 12)) % 10;
+    return {
+      year: _koyomiEtoPart(ys, yb),
+      month: _koyomiEtoPart(ms, br),
+      day: (dayIdx === null || dayIdx === undefined) ? null : _koyomiEtoPart(dayIdx % 10, dayIdx % 12)
+    };
+  } catch (e) { return null; }
+}
+window.koyomiEtoSet = koyomiEtoSet;
 function koyomiTodayData(dateObj) {
   var d = dateObj || new Date();
   var ymd = getLocalDateStr(d);
@@ -22371,6 +22406,7 @@ function koyomiTodayData(dateObj) {
     rokuyo: (typeof getRokuyo === 'function') ? (getRokuyo(ymd) || '') : '',
     zassetsu: (typeof getZassetsuOnDate === 'function') ? getZassetsuOnDate(ymd) : [],
     kanshi: kanshiIdx === null ? '' : (_JIKKAN.charAt(kanshiIdx % 10) + _JUNISHI.charAt(kanshiIdx % 12)),
+    eto: koyomiEtoSet(d, kou ? kou.sekkiName : '', kanshiIdx),   // v0.63.4: 年・月・日の干支と読み
     items: marks.concat(tasks.map(function(t) { return { text: (t.time ? t.time + '　' : '') + String(t.text || ''), timed: !!t.time }; }))
   };
 }
@@ -22798,7 +22834,7 @@ function koyomiKazeParts(v, order, esc) {
     var rich = [];
     if (v.zassetsu && v.zassetsu.length) rich.push(esc(v.zassetsu.join('・')));
     if (v.rokuyo) rich.push(esc(v.rokuyo));
-    if (v.kanshi) rich.push(esc(v.kanshi) + 'の日');
+    if (v.eto) rich.push(koyomiEtoText(v.eto, esc)); else if (v.kanshi) rich.push(esc(v.kanshi) + 'の日');   // v0.63.4: 年・月・日の干支を言い分ける
     if (rich.length) top += line(rich.join('　'), 'margin-top:6px;font-size:0.88em;opacity:0.85;');
   }
   if (order.kou72 && v.kou) {
@@ -22882,7 +22918,7 @@ function koyomiQaAnswer(key, v, order, esc) {
     if (order.sekkiStrength === 'rich') {
       if (v.zassetsu && v.zassetsu.length) rich.push(esc(v.zassetsu.join('・')));
       if (v.rokuyo) rich.push(esc(v.rokuyo));
-      if (v.kanshi) rich.push(esc(v.kanshi) + 'の日');
+      if (v.eto) rich.push(koyomiEtoText(v.eto, esc)); else if (v.kanshi) rich.push(esc(v.kanshi) + 'の日');   // v0.63.4: 年・月・日の干支を言い分ける
     }
     return { main: esc(v.sekki), sub: sub.join('・') + (rich.length ? '<br>' + rich.join('　') : ''), bar: koyomiProgressBar(v.sekkiDay, v.sekkiTotal, v.sekkiStart, v.sekkiEnd) };
   }
@@ -22944,6 +22980,13 @@ function koyomiTodaySentence(v, order) {
     season.push({ label: '七十二候は', name: v.kou, reading: v.kouReading || '', day: v.kouDay });
     seasonSpeech += '七十二候は' + (v.kouReading || v.kou) + (v.kouDay ? 'の' + v.kouDay + '日目' : '') + '。';
   }
+  // 干支（v0.63.4：こい味の人だけ。年・月・日を言い分け、訓読みを添える）
+  var etoDisp = '', etoSpeech = '';
+  if (order.sekkiStrength === 'rich' && v.eto && v.eto.year && v.eto.month) {
+    var ep = [['年は', v.eto.year], ['月は', v.eto.month], ['日は', v.eto.day]].filter(function(x) { return x[1]; });
+    etoDisp = '干支でいうと、' + ep.map(function(x) { return x[0] + x[1].name + '（' + x[1].reading + '）'; }).join('、') + '。';
+    etoSpeech = '干支でいうと、' + ep.map(function(x) { return x[0] + x[1].reading; }).join('、') + '。';
+  }
   // 月（v0.61.2：月の注文が 1/2 の人には月齢を入れない）
   var moon = null, moonSpeech = '';
   if (order.moon !== 'none' && typeof moonShapeInfo === 'function' && v.moonAge != null) {
@@ -22976,13 +23019,14 @@ function koyomiTodaySentence(v, order) {
   var lines = [];
   lines.push(wafuOn ? (year ? year + '、' : '') + (d.getMonth() + 1) + '月、' + yo(wm[0], wm[1]) + 'の' + d.getDate() + '日、' + wd + '。' : (year || '') + md + wd + '。');
   season.forEach(function(x) { lines.push(x.label + yo(x.name, x.reading) + (x.day ? 'の' + x.day + '日目' : '') + '。'); });
+  if (etoDisp) lines.push(etoDisp);
   if (moon) lines.push('今夜は、' + yo(moon.name, moon.reading) + '。' + (moon.age != null ? '月齢' + moon.age + '。' : ''));
   if (seirekiLine) lines.push(seirekiLine);
   if (kyureki) lines.push('旧暦でいうと、' + kyureki.era + '、' + yo(kyureki.eto, kyureki.etoReading) + 'の年の、' + (kyureki.leap ? yo('閏', 'うるう') : '') + kyureki.month + '月' + kyureki.day + '日。');
   return {
     year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
-    season: season, moon: moon, seirekiLine: seirekiLine, kyureki: kyureki, lines: lines,
-    speech: mainSpeech + seasonSpeech + moonSpeech + seirekiLine + kyurekiSpeech
+    season: season, moon: moon, seirekiLine: seirekiLine, kyureki: kyureki, lines: lines, etoLine: etoDisp, etoParts: etoDisp ? [['年は', v.eto.year], ['月は', v.eto.month], ['日は', v.eto.day]].filter(function(x) { return x[1]; }) : [],
+    speech: mainSpeech + seasonSpeech + etoSpeech + moonSpeech + seirekiLine + kyurekiSpeech
   };
 }
 window.koyomiTodaySentence = koyomiTodaySentence;
@@ -23016,8 +23060,12 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     // ② 季節
     (t.season && t.season.length ? '<div data-sentence-season style="' + sub + 'margin-top:6px;">' +
       t.season.map(function(x) {
-        return nw(x.label + _koyomiReadInline(x.name, x.reading, esc) + (x.day ? 'の' + x.day + '日目' : '') + '。');
+        // v0.63.4: 読みを後ろに添えると長くなるので、「七十二候は／霜始降（よみ）／の5日目。」の区切りで折り返す
+        return nw(x.label) + nw(_koyomiReadInline(x.name, x.reading, esc)) + nw((x.day ? 'の' + x.day + '日目' : '') + '。');
       }).join(' ') + '</div>' : '') +
+    // ②の2 干支（こい味の人だけ）
+    (t.etoParts && t.etoParts.length ? '<div data-sentence-eto style="' + sub + '">' + nw('干支でいうと、') +
+      t.etoParts.map(function(x, i) { return nw(x[0] + _koyomiReadInline(x[1].name, x[1].reading, esc) + (i < t.etoParts.length - 1 ? '、' : '。')); }).join('') + '</div>' : '') +
     // ③ 月
     (t.moon ? '<div data-sentence-moon style="' + sub + '">' + nw('今夜は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '。') + (t.moon.age != null ? ' ' + nw('月齢' + t.moon.age + '。') : '') + '</div>' : '') +
     // ④ 西暦でいうと
@@ -55499,6 +55547,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.63.4', date: '2026-10-27',
+    items: [
+      { icon:'🐎', t:'年・月・日の干支を、言い分けるようにしました',
+        before:'二十四節気が「こい味」の人には、日の干支だけが「甲戌の日」と出ていました',
+        after:'「年 丙午（ひのえうま）・月 戊戌（つちのえいぬ）・日 甲戌（きのえいぬ）」と、月の干支も足して、読みを添えて言い分けます。今日を、声に出してにも「干支でいうと、…」の一文が入ります' }
+    ]
+  },
+  {
     ver: 'v0.63.3', date: '2026-10-27',
     items: [
       { icon:'🥚', t:'注文票のたまごを、一番下にしました',
@@ -82575,6 +82631,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-494·①: 旧暦の注文のつながりが違う', [_n.speech.indexOf('旧暦'), _cn, _cb].join(','));
      } catch(e) {
        ng('ST-494: 例外', e.message);
+     }
+
+     // ===== ST-495: 年・月・日の干支を言い分け、訓読みを添える（こい味だけ）（v0.63.4〜） =====
+     // 【権威】2026-10-27、「月干支を足し、年・月・日の干支を言い分ける。干支の読みは丙午（ひのえうま）のように訓読みで」との指示
+     try {
+       var _e = function(y, m, d) { var e = koyomiTodayData(new Date(y, m - 1, d, 12)).eto; return [e.year.name, e.month.name, e.day.name].join('/'); };
+       var _o = function(st) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { sekkiStrength: st }); };
+       var _v = koyomiTodayData(new Date(2026, 9, 27, 12));
+       var _r = koyomiTodaySentence(_v, _o('rich')), _b = koyomiTodaySentence(_v, _o('basic'));
+       var _parts = koyomiKazeParts(_v, _o('rich'), function(x) { return String(x); });
+       (_e(2026, 10, 27) === '丙午/戊戌/甲戌' && _e(2026, 2, 3) === '乙巳/己丑/戊申' && _e(2026, 2, 4) === '丙午/庚寅/己酉' && _e(2024, 6, 15) === '甲辰/庚午/庚戌' &&
+        _r.etoLine === '干支でいうと、年は丙午（ひのえうま）、月は戊戌（つちのえいぬ）、日は甲戌（きのえいぬ）。' &&
+        _r.speech.indexOf('干支でいうと、年はひのえうま、月はつちのえいぬ、日はきのえいぬ。') !== -1 &&
+        !_b.etoLine && _b.speech.indexOf('干支でいうと') === -1 &&
+        _parts.top.indexOf('年 丙午（ひのえうま）・月 戊戌（つちのえいぬ）・日 甲戌（きのえいぬ）') !== -1)
+         ? ok('ST-495·①: 年・月・日の干支（月は節で替わる・立春で年も替わる）を言い分け、訓読みを添える。こい味の人だけ、一文と節気の欄に')
+         : ng('ST-495·①: 干支が違う', [_e(2026, 10, 27), _e(2026, 2, 3), _e(2026, 2, 4), _r.etoLine].join(' / '));
+     } catch(e) {
+       ng('ST-495: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
