@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.63.6 ★ -->
+<!-- ★ CURRENT VERSION: v0.64.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.63.6';
+    const APP_VERSION = 'v0.64.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10119,7 +10119,14 @@ function _showInviteWelcome() {
         <!-- v0.45.1413: 「自由帳のタブが謎に増殖している」との報告を受けた応急処置。
              既存の重複除去はインポート時にしか動かず、同期経由の重複には対応して
              いなかったため、いつでも手動実行できるツールを追加する。 -->
-        <div id="adminPurgeDupeArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+        <!-- v0.64.0: 暦の検算（こよみる・Astronomy Engine・国立天文台）。管理者だけ -->
+<div id="adminKoyomiCheckArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+<div style="font-size:0.85em;color:#ffd700;font-weight:700;margin-bottom:6px;">🔭 暦の検算</div>
+<div style="font-size:0.75em;color:#aaa;line-height:1.6;margin-bottom:8px;">過去・今年・未来のランダムな日時で、こよみるの計算を Astronomy Engine と国立天文台にくらべます。外の部品が読み込めなくても、こよみるの暦には影響しません。</div>
+<button id="adminKoyomiCheckBtn" onclick="runKoyomiCalendarCheck()" style="width:100%;padding:9px;background:transparent;border:1px solid #c8a050;border-radius:8px;color:#ffd700;font-size:0.85em;cursor:pointer;">🔭 ランダムな24の日時で検算する</button>
+<div id="adminKoyomiCheckList" style="font-size:0.78em;color:#ccc;line-height:1.6;margin-top:8px;overflow-x:auto;"></div>
+</div>
+<div id="adminPurgeDupeArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
           <div style="font-size:0.94em;font-weight:700;color:#ff8a65;margin-bottom:8px;">🧹 重複コンテンツを掃除</div>
           <div style="font-size:0.86em;color:#999;margin-bottom:8px;">自由帳・日誌・スタンプ等が同期の影響で増殖してしまった場合に実行してください。</div>
           <button id="adminPurgeDupeBtn" onclick="runPurgeDuplicateContentFromAdmin()" style="width:100%;padding:9px;background:transparent;border:1px solid #ff8a65;border-radius:8px;color:#ffab91;font-size:0.94em;cursor:pointer;">🧹 重複を検出して削除する</button>
@@ -12148,11 +12155,230 @@ function _calcMoonTiltDeg(date, geo) {
       }
       return { rise: diff(here.rise, tokyo.rise), set: diff(here.set, tokyo.set), dawn: diff(here.dawn, tokyo.dawn), dusk: diff(here.dusk, tokyo.dusk) };
     }
+// ===== v0.64.0: 日の出・日の入り・薄明を計算で出す =====
+// 【権威】2026-10-28、「こよみる、全部計算でやってるんでしょ？」との問いに、日の出・日の入りだけが
+// 2026年の東京の表を毎年使い回していた（年によって1〜2分ずれる）。「開発が止まっても動く」ために計算へ。
+// 太陽の位置は旧暦と同じ見かけの位置の計算（ΔT・光行差・章動の補正つき）。日の出・日の入りは太陽の上の端が
+// 地平線に接する高さ（-0.833度）、薄明は太陽の中心が-6度（今までの表と同じ意味）。日本時間の時刻（時・小数）で返す。
+// 計算できない（白夜・極夜・何かの失敗）ときは null を返し、呼ぶ側が今までの表に戻る
+function koyomiSunEvents(lat, lng, date) {
+  try {
+    var rad = Math.PI / 180;
+    var jd0 = _rkToJD(date.getFullYear(), date.getMonth() + 1, date.getDate()) - 9 / 24;   // その日の日本時間0時（世界時のユリウス日）
+    var raDec = function(jdUT) {
+      var lam = _koyomiSunApparentLon(jdUT) * rad, T = (jdUT - 2451545.0) / 36525;
+      var eps = (23.439291 - 0.0130042 * T + 0.00256 * Math.cos((125.04 - 1934.136 * T) * rad)) * rad;
+      return { ra: Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)) / rad, dec: Math.asin(Math.sin(eps) * Math.sin(lam)) };
+    };
+    var lst = function(jdUT) { return ((280.46061837 + 360.98564736629 * (jdUT - 2451545.0) + lng) % 360 + 360) % 360; };
+    var event = function(h0, rising) {
+      var t = jd0 + (rising ? 0.25 : 0.75);   // 朝6時・夕方18時から近づける
+      for (var i = 0; i < 8; i++) {
+        var p = raDec(t);
+        var cosH = (Math.sin(h0 * rad) - Math.sin(lat * rad) * Math.sin(p.dec)) / (Math.cos(lat * rad) * Math.cos(p.dec));
+        if (!(cosH >= -1 && cosH <= 1)) return null;
+        var H = Math.acos(cosH) / rad, target = rising ? p.ra - H : p.ra + H;
+        var diff = ((target - lst(t)) % 360 + 540) % 360 - 180;
+        t += diff / 360.98564736629;
+        if (Math.abs(diff) < 1e-4) break;
+      }
+      var hrs = (t - jd0) * 24;
+      return (isFinite(hrs) && hrs >= 0 && hrs < 24) ? hrs : null;
+    };
+    return { rise: event(-0.833, true), set: event(-0.833, false), dawn: event(-6, true), dusk: event(-6, false) };
+  } catch (e) { return null; }
+}
+window.koyomiSunEvents = koyomiSunEvents;
+// ===== END v0.64.0 =====
+// ===== v0.64.0: 国立天文台の答え（検算用だけ） =====
+// 国立天文台 暦計算室「暦要項」から取り込んだ値（中央標準時・分まで）。2026・2027年の朔弦望、2024・2026年の二十四節気、
+// 2026年の東京の日出入（10日ごと）。こよみるの暦の計算には使わない（検算で比べるだけ。年が過ぎても、こよみるの動きには関係しない）。
+// 出典：https://eco.mtk.nao.ac.jp/koyomi/yoko/ （国立天文台 暦計算室）
+var KOYOMI_NAOJ_REF = {"phases": [["望", 2026, 1, 3, 19, 3], ["下弦", 2026, 1, 11, 0, 48], ["朔", 2026, 1, 19, 4, 52], ["上弦", 2026, 1, 26, 13, 47], ["望", 2026, 2, 2, 7, 9], ["下弦", 2026, 2, 9, 21, 43], ["朔", 2026, 2, 17, 21, 1], ["上弦", 2026, 2, 24, 21, 28], ["望", 2026, 3, 3, 20, 38], ["下弦", 2026, 3, 11, 18, 39], ["朔", 2026, 3, 19, 10, 23], ["上弦", 2026, 3, 26, 4, 18], ["望", 2026, 4, 2, 11, 12], ["下弦", 2026, 4, 10, 13, 52], ["朔", 2026, 4, 17, 20, 52], ["上弦", 2026, 4, 24, 11, 32], ["望", 2026, 5, 2, 2, 23], ["下弦", 2026, 5, 10, 6, 10], ["朔", 2026, 5, 17, 5, 1], ["上弦", 2026, 5, 23, 20, 11], ["望", 2026, 5, 31, 17, 45], ["下弦", 2026, 6, 8, 19, 1], ["朔", 2026, 6, 15, 11, 54], ["上弦", 2026, 6, 22, 6, 55], ["望", 2026, 6, 30, 8, 57], ["下弦", 2026, 7, 8, 4, 29], ["朔", 2026, 7, 14, 18, 44], ["上弦", 2026, 7, 21, 20, 6], ["望", 2026, 7, 29, 23, 36], ["下弦", 2026, 8, 6, 11, 21], ["朔", 2026, 8, 13, 2, 37], ["上弦", 2026, 8, 20, 11, 46], ["望", 2026, 8, 28, 13, 19], ["下弦", 2026, 9, 4, 16, 51], ["朔", 2026, 9, 11, 12, 27], ["上弦", 2026, 9, 19, 5, 44], ["望", 2026, 9, 27, 1, 49], ["下弦", 2026, 10, 3, 22, 25], ["朔", 2026, 10, 11, 0, 50], ["上弦", 2026, 10, 19, 1, 13], ["望", 2026, 10, 26, 13, 12], ["下弦", 2026, 11, 2, 5, 28], ["朔", 2026, 11, 9, 16, 2], ["上弦", 2026, 11, 17, 20, 48], ["望", 2026, 11, 24, 23, 54], ["下弦", 2026, 12, 1, 15, 9], ["朔", 2026, 12, 9, 9, 52], ["上弦", 2026, 12, 17, 14, 43], ["望", 2026, 12, 24, 10, 28], ["下弦", 2026, 12, 31, 3, 59], ["朔", 2027, 1, 8, 5, 24], ["上弦", 2027, 1, 16, 5, 35], ["望", 2027, 1, 22, 21, 17], ["下弦", 2027, 1, 29, 19, 55], ["朔", 2027, 2, 7, 0, 56], ["上弦", 2027, 2, 14, 16, 58], ["望", 2027, 2, 21, 8, 24], ["下弦", 2027, 2, 28, 14, 17], ["朔", 2027, 3, 8, 18, 29], ["上弦", 2027, 3, 16, 1, 25], ["望", 2027, 3, 22, 19, 44], ["下弦", 2027, 3, 30, 9, 54], ["朔", 2027, 4, 7, 8, 51], ["上弦", 2027, 4, 14, 7, 57], ["望", 2027, 4, 21, 7, 27], ["下弦", 2027, 4, 29, 5, 18], ["朔", 2027, 5, 6, 19, 59], ["上弦", 2027, 5, 13, 13, 44], ["望", 2027, 5, 20, 19, 59], ["下弦", 2027, 5, 28, 22, 58], ["朔", 2027, 6, 5, 4, 40], ["上弦", 2027, 6, 11, 19, 56], ["望", 2027, 6, 19, 9, 44], ["下弦", 2027, 6, 27, 13, 54], ["朔", 2027, 7, 4, 12, 2], ["上弦", 2027, 7, 11, 3, 39], ["望", 2027, 7, 19, 0, 45], ["下弦", 2027, 7, 27, 1, 55], ["朔", 2027, 8, 2, 19, 5], ["上弦", 2027, 8, 9, 13, 54], ["望", 2027, 8, 17, 16, 29], ["下弦", 2027, 8, 25, 11, 27], ["朔", 2027, 9, 1, 2, 41], ["上弦", 2027, 9, 8, 3, 31], ["望", 2027, 9, 16, 8, 4], ["下弦", 2027, 9, 23, 19, 20], ["朔", 2027, 9, 30, 11, 36], ["上弦", 2027, 10, 7, 20, 47], ["望", 2027, 10, 15, 22, 47], ["下弦", 2027, 10, 23, 2, 29], ["朔", 2027, 10, 29, 22, 37], ["上弦", 2027, 11, 6, 17, 0], ["望", 2027, 11, 14, 12, 26], ["下弦", 2027, 11, 21, 9, 48], ["朔", 2027, 11, 28, 12, 24], ["上弦", 2027, 12, 6, 14, 22], ["望", 2027, 12, 14, 1, 9], ["下弦", 2027, 12, 20, 18, 11], ["朔", 2027, 12, 28, 5, 12]], "sekki": [[2026, 285, 1, 5, 17, 23], [2026, 300, 1, 20, 10, 45], [2026, 315, 2, 4, 5, 2], [2026, 330, 2, 19, 0, 52], [2026, 345, 3, 5, 22, 59], [2026, 0, 3, 20, 23, 46], [2026, 15, 4, 5, 3, 40], [2026, 30, 4, 20, 10, 39], [2026, 45, 5, 5, 20, 49], [2026, 60, 5, 21, 9, 37], [2026, 75, 6, 6, 0, 48], [2026, 90, 6, 21, 17, 25], [2026, 105, 7, 7, 10, 57], [2026, 120, 7, 23, 4, 13], [2026, 135, 8, 7, 20, 43], [2026, 150, 8, 23, 11, 19], [2026, 165, 9, 7, 23, 41], [2026, 180, 9, 23, 9, 5], [2026, 195, 10, 8, 15, 29], [2026, 210, 10, 23, 18, 38], [2026, 225, 11, 7, 18, 52], [2026, 240, 11, 22, 16, 23], [2026, 255, 12, 7, 11, 53], [2026, 270, 12, 22, 5, 50], [2024, 285, 1, 6, 5, 49], [2024, 300, 1, 20, 23, 7], [2024, 315, 2, 4, 17, 27], [2024, 330, 2, 19, 13, 13], [2024, 345, 3, 5, 11, 23], [2024, 0, 3, 20, 12, 6], [2024, 15, 4, 4, 16, 2], [2024, 30, 4, 19, 23, 0], [2024, 45, 5, 5, 9, 10], [2024, 60, 5, 20, 22, 0], [2024, 75, 6, 5, 13, 10], [2024, 90, 6, 21, 5, 51], [2024, 105, 7, 6, 23, 20], [2024, 120, 7, 22, 16, 44], [2024, 135, 8, 7, 9, 9], [2024, 150, 8, 22, 23, 55], [2024, 165, 9, 7, 12, 11], [2024, 180, 9, 22, 21, 44], [2024, 195, 10, 8, 4, 0], [2024, 210, 10, 23, 7, 15], [2024, 225, 11, 7, 7, 20], [2024, 240, 11, 22, 4, 56], [2024, 255, 12, 7, 0, 17], [2024, 270, 12, 21, 18, 21]], "sunrise": [[2026, 1, 1, 6, 51], [2026, 1, 11, 6, 51], [2026, 1, 21, 6, 48], [2026, 1, 31, 6, 42], [2026, 2, 10, 6, 33], [2026, 2, 20, 6, 23], [2026, 3, 2, 6, 10], [2026, 3, 12, 5, 57], [2026, 3, 22, 5, 42], [2026, 4, 1, 5, 28], [2026, 4, 11, 5, 14], [2026, 4, 21, 5, 1], [2026, 5, 1, 4, 50], [2026, 5, 11, 4, 40], [2026, 5, 21, 4, 32], [2026, 5, 31, 4, 27], [2026, 6, 10, 4, 25], [2026, 6, 20, 4, 25], [2026, 6, 30, 4, 28], [2026, 7, 10, 4, 33], [2026, 7, 20, 4, 40], [2026, 7, 30, 4, 47], [2026, 8, 9, 4, 55], [2026, 8, 19, 5, 3], [2026, 8, 29, 5, 10], [2026, 9, 8, 5, 18], [2026, 9, 18, 5, 25], [2026, 9, 28, 5, 33], [2026, 10, 8, 5, 41], [2026, 10, 18, 5, 50], [2026, 10, 28, 5, 59], [2026, 11, 7, 6, 8], [2026, 11, 17, 6, 18], [2026, 11, 27, 6, 28], [2026, 12, 7, 6, 37], [2026, 12, 17, 6, 44], [2026, 12, 27, 6, 49]]};
+// 国立天文台の「東京」（旧東京天文台・港区麻布台）。日の出の検算は、この場所でそろえる
+var KOYOMI_NAOJ_TOKYO = { lat: 35.6581, lng: 139.7414 };
+function _koyomiJstMs(y, m, d, h, mi) { return Date.UTC(y, m - 1, d, h, mi) - 9 * 3600000; }
+// その日時について、国立天文台の答えがあれば返す（無いものは null）
+function koyomiNaojRef(d) {
+  var R = KOYOMI_NAOJ_REF, t = d.getTime(), out = { age: null, full: null, sekki: null, rise: null };
+  try {
+    var ph = R.phases.map(function(x) { return { k: x[0], ms: _koyomiJstMs(x[1], x[2], x[3], x[4], x[5]) }; });
+    var news = ph.filter(function(x) { return x.k === '朔'; });
+    var lastNew = news.filter(function(x) { return x.ms <= t; }).pop();
+    var nextNew = news.filter(function(x) { return x.ms > t; })[0];
+    if (lastNew && nextNew) out.age = (t - lastNew.ms) / 86400000;   // 次の朔も表にあるときだけ（表の外は比べない）
+    var nf = ph.filter(function(x) { return x.k === '望' && x.ms > t; })[0];
+    if (nf && t >= ph[0].ms) out.full = nf.ms;
+  } catch (e) {}
+  try {
+    [2024, 2026].forEach(function(yy) {
+      var list = R.sekki.filter(function(x) { return x[0] === yy; }).map(function(x) { return _koyomiJstMs(x[0], x[2], x[3], x[4], x[5]); }).sort(function(a, b) { return a - b; });
+      var nx = list.filter(function(ms) { return ms > t; })[0];
+      if (nx && t >= list[0]) out.sekki = nx;
+    });
+  } catch (e) {}
+  try {
+    var hit = R.sunrise.filter(function(x) { return x[0] === d.getFullYear() && x[1] === d.getMonth() + 1 && x[2] === d.getDate(); })[0];
+    if (hit) out.rise = hit[3] + hit[4] / 60;
+  } catch (e) {}
+  return out;
+}
+window.koyomiNaojRef = koyomiNaojRef;
+// ===== END v0.64.0 国立天文台 =====
+// ===== v0.64.0: 暦の検算（管理者だけ） =====
+// 【権威】2026-10-28、「Astronomy Engine と国立天文台とこよみるで、過去・現在・未来のランダムな日時を計算させて、差分を表に。
+// 管理者モードでチェックできるように」「エラーハンドリングはしてね。外が死んでも、こよみるが動く担保が欲しい」との指示。
+// 外の部品は押したときだけ読み込み、10秒で読み込めなければあきらめる。どの計算が失敗しても、その行だけ「計算できず」にして続ける。
+// こよみるの暦そのものは、外の部品にも国立天文台の答えにも頼らない（ここは点検だけ）
+var KOYOMI_AE_URL = 'https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js';
+var _koyomiAePromise = null;
+function _koyomiLoadAstronomyEngine(timeoutMs) {
+  if (window.Astronomy && window.Astronomy.SearchMoonPhase) return Promise.resolve(window.Astronomy);
+  if (_koyomiAePromise) return _koyomiAePromise;
+  _koyomiAePromise = new Promise(function(resolve, reject) {
+    var done = false, sc = document.createElement('script');
+    var fail = function(why) { if (done) return; done = true; _koyomiAePromise = null; try { sc.remove(); } catch (e) {} reject(new Error(why)); };
+    var timer = setTimeout(function() { fail('時間切れ'); }, timeoutMs || 10000);
+    sc.src = KOYOMI_AE_URL; sc.async = true;
+    sc.onload = function() { if (done) return; clearTimeout(timer); if (window.Astronomy && window.Astronomy.SearchMoonPhase) { done = true; resolve(window.Astronomy); } else fail('中身が違う'); };
+    sc.onerror = function() { clearTimeout(timer); fail('読み込めない'); };
+    document.head.appendChild(sc);
+  });
+  return _koyomiAePromise;
+}
+// 過去6・今年4・未来10の、ランダムな日時（日本時間）
+function _koyomiCheckSamples(n) {
+  var out = [], now = new Date(), y = now.getFullYear();
+  var rnd = function(a, b) { return a + Math.random() * (b - a); };
+  var make = function(y0, y1) { var t = rnd(new Date(y0, 0, 1).getTime(), new Date(y1 + 1, 0, 1).getTime() - 1); return new Date(Math.floor(t / 60000) * 60000); };
+  for (var i = 0; i < 6; i++) out.push({ when: '過去', d: make(1950, y - 1) });
+  for (var j = 0; j < 4; j++) out.push({ when: '今年', d: make(y, y) });
+  for (var k = 0; k < (n || 20) - 10; k++) out.push({ when: '未来', d: make(y + 1, 2099) });
+  // 国立天文台の答えがある日（2026年の日出入の日）を4件。時刻はランダム
+  try {
+    var sr = KOYOMI_NAOJ_REF.sunrise.slice();
+    for (var q = 0; q < 4 && sr.length; q++) {
+      var pick = sr.splice(Math.floor(Math.random() * sr.length), 1)[0];
+      out.push({ when: '国立天文台', d: new Date(pick[0], pick[1] - 1, pick[2], Math.floor(Math.random() * 24), Math.floor(Math.random() * 60)) });
+    }
+  } catch (e) {}
+  return out;
+}
+// こよみるの計算（1つずつ失敗しても、ほかは続ける）
+function _koyomiCheckOwn(d) {
+  var r = {};
+  try { r.age = calcMoonAgeNAOJ(d); } catch (e) { r.age = null; }
+  try {
+    var ev = getMoonPhaseEvents(d.getFullYear()).concat(getMoonPhaseEvents(d.getFullYear() + 1));
+    var f = ev.filter(function(x) { return x.type === 2 && x.ms > d.getTime(); })[0];
+    r.full = f ? f.ms : null;
+  } catch (e) { r.full = null; }
+  try {
+    var jd = d.getTime() / 86400000 + 2440587.5, lon = _koyomiSunApparentLon(jd);
+    var target = (Math.floor(lon / 15) + 1) * 15 % 360;
+    // 節気の道具の「年」は数え方に癖があるので、前後の年の候補を全部出し、この先でいちばん近いものを選ぶ
+    var cands = [-1, 0, 1].map(function(dy) { return (calcNijushiSekkiJulianDate(d.getFullYear() + dy, target) - 2440587.5) * 86400000; })
+      .filter(function(x) { return isFinite(x) && x > d.getTime(); }).sort(function(a, b) { return a - b; });
+    r.sekkiLon = target; r.sekki = cands.length ? cands[0] : null;
+  } catch (e) { r.sekki = null; }
+  try {
+    var se = koyomiSunEvents(KOYOMI_NAOJ_TOKYO.lat, KOYOMI_NAOJ_TOKYO.lng, d);   // 国立天文台の「東京」でそろえる
+    r.rise = se && se.rise !== null ? se.rise : null;
+  } catch (e) { r.rise = null; }
+  return r;
+}
+// Astronomy Engine の答え（1つずつ失敗しても、ほかは続ける）
+function _koyomiCheckAe(A, d, sekkiLon) {
+  var r = {}, t = A.MakeTime(d);
+  try {
+    var nm = A.SearchMoonPhase(0, A.MakeTime(new Date(d.getTime() - 32 * 86400000)), 40), last = null;
+    while (nm && nm.date.getTime() <= d.getTime()) { last = nm; nm = A.SearchMoonPhase(0, A.MakeTime(new Date(nm.date.getTime() + 86400000)), 40); }
+    r.age = last ? (d.getTime() - last.date.getTime()) / 86400000 : null;
+  } catch (e) { r.age = null; }
+  try { var fm = A.SearchMoonPhase(180, t, 40); r.full = fm ? fm.date.getTime() : null; } catch (e) { r.full = null; }
+  try { var sl = A.SearchSunLongitude(sekkiLon, t, 40); r.sekki = sl ? sl.date.getTime() : null; } catch (e) { r.sekki = null; }   // 節気は15日ごと。探す幅を広げすぎると、1年先を拾う
+  try {
+    var obs = new A.Observer(KOYOMI_NAOJ_TOKYO.lat, KOYOMI_NAOJ_TOKYO.lng, 0);
+    var t0 = A.MakeTime(new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - 9 * 3600000));
+    var rs = A.SearchRiseSet(A.Body.Sun, obs, +1, t0, 1);
+    r.rise = rs ? (rs.date.getTime() - t0.date.getTime()) / 3600000 : null;
+  } catch (e) { r.rise = null; }
+  return r;
+}
+function _koyomiFmtJst(ms) {
+  if (ms === null || ms === undefined || !isFinite(ms)) return '—';
+  var j = new Date(ms + 9 * 3600000);
+  var p = function(n) { return String(n).padStart(2, '0'); };
+  return j.getUTCFullYear() + '/' + p(j.getUTCMonth() + 1) + '/' + p(j.getUTCDate()) + ' ' + p(j.getUTCHours()) + ':' + p(j.getUTCMinutes());
+}
+function _koyomiFmtHours(h) { if (h === null || h === undefined || !isFinite(h)) return '—'; var m = Math.round(h * 60); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); }
+// 1つの日時の4つの行を作る：{ when, date, item, own, ae, naoj, diff, ok }
+function _koyomiCheckRows(sample, own, ae, naoj) {
+  var rows = [], ds = _koyomiFmtJst(sample.d.getTime());
+  var row = function(item, o, a, nj, fmt, diffFn, tol, unit) {
+    var ref = (a !== null && a !== undefined) ? a : (nj !== null && nj !== undefined ? nj : null);
+    var diff = (o !== null && o !== undefined && ref !== null) ? diffFn(o, ref) : null;
+    var diffNj = (o !== null && o !== undefined && nj !== null && nj !== undefined) ? diffFn(o, nj) : null;
+    var worst = Math.max(diff === null ? 0 : Math.abs(diff), diffNj === null ? 0 : Math.abs(diffNj));
+    rows.push({ when: sample.when, date: ds, item: item, own: fmt(o), ae: a === undefined ? '読み込めず' : fmt(a), naoj: nj === undefined || nj === null ? '—' : fmt(nj),
+      diff: diff === null && diffNj === null ? '—' : (Math.round(worst * 100) / 100) + unit, ok: (o === null || o === undefined) ? false : (diff === null && diffNj === null ? null : worst <= tol) });
+  };
+  var minDiff = function(x, y) { return (x - y) / 60000; };
+  row('リアルタイム月齢', own.age, ae ? ae.age : undefined, naoj ? naoj.age : null, function(v) { return v === null || v === undefined ? '計算できず' : (Math.round(v * 10) / 10).toFixed(1); }, function(x, y) { return x - y; }, 0.1, '');
+  row('次の満月', own.full, ae ? ae.full : undefined, naoj ? naoj.full : null, function(v) { return v === null || v === undefined ? '計算できず' : _koyomiFmtJst(v); }, minDiff, 2, '分');
+  row('次の節気（黄経' + (own.sekkiLon != null ? own.sekkiLon : '?') + '度）', own.sekki, ae ? ae.sekki : undefined, naoj ? naoj.sekki : null, function(v) { return v === null || v === undefined ? '計算できず' : _koyomiFmtJst(v); }, minDiff, 2, '分');
+  row('東京の日の出', own.rise, ae ? ae.rise : undefined, naoj ? naoj.rise : null, function(v) { return v === null || v === undefined ? '計算できず' : _koyomiFmtHours(v); }, function(x, y) { return (x - y) * 60; }, 2, '分');
+  return rows;
+}
+function _koyomiCheckTableHtml(rows, note) {
+  var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var okN = rows.filter(function(r) { return r.ok === true; }).length, ngN = rows.filter(function(r) { return r.ok === false; }).length;
+  var th = 'style="text-align:left;padding:3px 6px;border-bottom:1px solid #444;color:#ffd700;white-space:nowrap;"';
+  var td = function(c) { return '<td style="padding:3px 6px;border-bottom:1px solid #2a2a3e;white-space:nowrap;' + (c || '') + '">'; };
+  return '<div style="margin-bottom:6px;">合格 <b style="color:#7fdc9f;">' + okN + '</b> ／ 外れ <b style="color:' + (ngN ? '#ff8a80' : '#7fdc9f') + ';">' + ngN + '</b> ／ ' + rows.length + '行（時刻は2分、月齢は0.1まで）' + (note ? '<br>' + e(note) : '') + '</div>' +
+    '<table style="border-collapse:collapse;font-size:0.95em;"><tr><th ' + th + '>区分</th><th ' + th + '>日時（日本時間）</th><th ' + th + '>項目</th><th ' + th + '>こよみる</th><th ' + th + '>Astronomy Engine</th><th ' + th + '>国立天文台</th><th ' + th + '>差</th><th ' + th + '>判定</th></tr>' +
+    rows.map(function(r) {
+      var bg = r.ok === false ? 'background:rgba(255,80,80,0.18);' : '';
+      return '<tr>' + td(bg) + e(r.when) + '</td>' + td(bg) + e(r.date) + '</td>' + td(bg) + e(r.item) + '</td>' + td(bg) + e(r.own) + '</td>' + td(bg) + e(r.ae) + '</td>' + td(bg) + e(r.naoj) + '</td>' + td(bg) + e(r.diff) + '</td>' + td(bg) + (r.ok === true ? '✓' : (r.ok === false ? '✗' : '—')) + '</td></tr>';
+    }).join('') + '</table>';
+}
+function runKoyomiCalendarCheck() {
+  var list = document.getElementById('adminKoyomiCheckList'), btn = document.getElementById('adminKoyomiCheckBtn');
+  if (!list) return Promise.resolve(null);
+  list.textContent = '検算しています…';
+  if (btn) btn.disabled = true;
+  var samples = _koyomiCheckSamples(20);
+  var owns = samples.map(function(sm) { try { return _koyomiCheckOwn(sm.d); } catch (e) { return {}; } });
+  var naojOf = function(sm) { try { return (typeof koyomiNaojRef === 'function') ? koyomiNaojRef(sm.d) : null; } catch (e) { return null; } };
+  var finish = function(A, note) {
+    var rows = [];
+    samples.forEach(function(sm, i) {
+      var ae = null;
+      if (A) { try { ae = _koyomiCheckAe(A, sm.d, owns[i].sekkiLon); } catch (e) { ae = {}; } }
+      try { rows = rows.concat(_koyomiCheckRows(sm, owns[i], ae, naojOf(sm))); } catch (e) {}
+    });
+    try { list.innerHTML = _koyomiCheckTableHtml(rows, note); } catch (e) { list.textContent = '表を作れませんでした：' + e.message; }
+    if (btn) btn.disabled = false;
+    return rows;
+  };
+  return _koyomiLoadAstronomyEngine(10000).then(function(A) { return finish(A, ''); }, function(err) {
+    return finish(null, 'Astronomy Engine を読み込めませんでした（' + err.message + '）。こよみるの暦には影響ありません。国立天文台の答えがある日だけ比べます。');
+  });
+}
+window.runKoyomiCalendarCheck = runKoyomiCalendarCheck;
+// ===== END v0.64.0 検算 =====
     function _getSunData(date, geo) {
       if (typeof date === "string") date = new Date(date.replace(/-/g, "/"));
       var mo = date.getMonth()+1, day = date.getDate();
       // geo省略時は_userGeoLocation、それもnullなら東京基準そのまま（既存挙動を完全維持）
       var useGeo = (geo !== undefined) ? geo : _userGeoLocation;
+      // v0.64.0: まず計算で出す（その場所・その年の本当の時刻）。4つとも出せたときだけ使い、出せなければ今までの表に戻る
+      try {
+        var g0 = (useGeo && typeof useGeo.lat === 'number' && typeof useGeo.lng === 'number') ? useGeo : _TOKYO_GEO;
+        var ev = koyomiSunEvents(g0.lat, g0.lng, date);
+        if (ev && ev.rise !== null && ev.set !== null && ev.dawn !== null && ev.dusk !== null)
+          return { rise: ev.rise, set: ev.set, dawn: ev.dawn, dusk: ev.dusk, source: 'calc', geo: !!useGeo };
+      } catch (eC) {}
       var off = useGeo ? _calcGeoOffsetHours(useGeo, date) : { rise: 0, set: 0, dawn: 0, dusk: 0 };
       try {
         if (typeof _SUN_TIMES_DAILY !== 'undefined' && _SUN_TIMES_DAILY[mo] && _SUN_TIMES_DAILY[mo][day-1]) {
@@ -22167,6 +22393,36 @@ function moonShapeInfo(age) {
 window.moonShapeInfo = moonShapeInfo;
 function moonShapeName(age) { return moonShapeInfo(age).name; }
 window.moonShapeName = moonShapeName;
+// ===== v0.63.9: 月の名前は旧暦の日で・満ち欠けは瞬間で・リアルタイム月齢 =====
+// 【権威】2026-10-28、「正確にやるとして、突っ込まれないようにするには？」「リアルタイム月齢と言おう。全部進めて」との指示。
+// ① 月の名前（十六夜・立待月など）は、昔からの呼び方どおり旧暦の日で決める（月齢で決めると、一日のうちで名前が変わってしまう）
+// ② 満月・新月・上弦・下弦は「瞬間」なので、名前の表には入れず、その瞬間を含む日にだけ時刻つきで言う
+// ③ 月齢は、今この瞬間の月齢なので「リアルタイム月齢」と言う
+var KOYOMI_MOON_DAY_NAMES = [null,
+  ['新月', 'しんげつ'], ['二日月', 'ふつかづき'], ['三日月', 'みかづき'], ['四日月', 'よっかづき'], ['五日月', 'いつかづき'],
+  ['六日月', 'むいかづき'], ['七日月', 'なのかづき'], ['八日月', 'ようかづき'], ['九日月', 'ここのかづき'], ['十日月', 'とおかづき'],
+  ['十一日月', 'じゅういちにちづき'], ['十二日月', 'じゅうににちづき'], ['十三夜月', 'じゅうさんやづき'], ['小望月', 'こもちづき'], ['十五夜', 'じゅうごや'],
+  ['十六夜', 'いざよい'], ['立待月', 'たちまちづき'], ['居待月', 'いまちづき'], ['寝待月', 'ねまちづき'], ['更待月', 'ふけまちづき'],
+  ['二十一日月', 'にじゅういちにちづき'], ['二十二日月', 'にじゅうににちづき'], ['二十三夜月', 'にじゅうさんやづき'], ['二十四日月', 'にじゅうよっかづき'], ['二十五日月', 'にじゅうごにちづき'],
+  ['二十六夜月', 'にじゅうろくやづき'], ['有明月', 'ありあけづき'], ['有明月', 'ありあけづき'], ['晦日月', 'みそかづき'], ['晦日月', 'みそかづき']];
+function koyomiMoonOfDay(date) {
+  var lu = (typeof koyomiLunarDate === 'function') ? koyomiLunarDate(date, 9) : null;
+  if (!lu || !KOYOMI_MOON_DAY_NAMES[lu.day]) return null;
+  var n = KOYOMI_MOON_DAY_NAMES[lu.day];
+  return { name: n[0], reading: n[1], lunarDay: lu.day };
+}
+window.koyomiMoonOfDay = koyomiMoonOfDay;
+// その日（日本時間）に、満月・新月・上弦・下弦の瞬間があれば返す：{ name, time: '13:12' }
+function koyomiMoonPhaseMoment(date) {
+  try {
+    var ds = getLocalDateStr(date), e = (typeof getMoonPhaseOnDate === 'function') ? getMoonPhaseOnDate(ds) : null;
+    return e ? { name: e.name === '上弦' || e.name === '下弦' ? e.name + 'の月' : e.name, time: e.time } : null;
+  } catch (er) { return null; }
+}
+window.koyomiMoonPhaseMoment = koyomiMoonPhaseMoment;
+function _koyomiTimeJa(t) { var p = String(t || '').split(':'); return p.length === 2 ? Number(p[0]) + '時' + Number(p[1]) + '分' : ''; }
+// ===== END v0.63.9 =====
+
 
 var KOYOMI_ORDER_DEFAULT = {
   sekkiStrength: 'basic',                       // 二十四節気（ラーメンなら味の濃さ）
@@ -22399,7 +22655,7 @@ function koyomiTodayData(dateObj) {
     sekkiStart: kou ? kou.sekkiStart : '', sekkiEnd: kou ? kou.sekkiEnd : '', kouStart: kou ? kou.kouStart : '', kouEnd: kou ? kou.kouEnd : '',
     nextKou: nextKou,
     moonAge: age,
-    moonName: moonShapeName(age),
+    moonName: (function() { var md = koyomiMoonOfDay(d); return md ? md.name : moonShapeName(age); })(),   // v0.63.9: 旧暦の日の呼び名
     moonEvents: _koyomiMoonEvents(d),
     dateText: d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + wd + '曜日',
     koki: (typeof _toKoki === 'function') ? _toKoki(d.getFullYear()) : '',
@@ -22925,8 +23181,9 @@ function koyomiQaAnswer(key, v, order, esc) {
   if (key === 'kou') return { main: esc(v.kou), sub: [v.kouReading ? esc(v.kouReading) : '', v.kouDesc ? esc(v.kouDesc) : ''].filter(Boolean).join('・'), barKou: true };
   if (key === 'kouDay') return { main: v.kouDay + '日目', sub: '七十二候「' + esc(v.kou) + '」', bar: koyomiProgressBar(v.kouDay, v.kouTotal, v.kouStart, v.kouEnd) };   // 全何日かは棒に任せる
   if (key === 'moon') {
-    var mi = moonShapeInfo(v.moonAge);
-    var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? '月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
+    var mi = moonShapeInfo(v.moonAge), mdq = koyomiMoonOfDay(v.date || new Date()), pmq = koyomiMoonPhaseMoment(v.date || new Date());   // v0.63.9
+    if (mdq) mi = { name: mdq.name, reading: mdq.reading, note: [order.kyureki !== 'none' ? '旧暦' + mdq.lunarDay + '日の月' : '', pmq ? '今日の' + _koyomiTimeJa(pmq.time) + 'が' + pmq.name : ''].filter(Boolean).join('・') };
+    var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? 'リアルタイム月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
     return { main: esc(mi.name || v.moonName), sub: ms, moon: true, view: koyomiMoonViewNote() };
   }
   if (key === 'year') {   // v0.60.2: ねぎに合わせた年の答え
@@ -22989,11 +23246,14 @@ function koyomiTodaySentence(v, order) {
   }
   // 月（v0.61.2：月の注文が 1/2 の人には月齢を入れない）
   var moon = null, moonSpeech = '';
-  if (order.moon !== 'none' && typeof moonShapeInfo === 'function' && v.moonAge != null) {
-    var mi = moonShapeInfo(v.moonAge);
-    if (mi && mi.name) {
-      moon = { name: mi.name, reading: mi.reading || '', age: order.moon === 'half' ? null : Math.round(v.moonAge * 10) / 10 };
-      moonSpeech = '今夜は、' + (moon.reading || moon.name) + '。' + (moon.age != null ? '月齢' + moon.age + '。' : '');
+  if (order.moon !== 'none' && v.moonAge != null) {
+    // v0.63.9: 名前は旧暦の日で、満ち欠けは瞬間で、月齢は「リアルタイム月齢」
+    var md = koyomiMoonOfDay(d), pm = koyomiMoonPhaseMoment(d);
+    if (md) {
+      moon = { name: md.name, reading: md.reading, lunarDay: md.lunarDay, age: order.moon === 'half' ? null : Math.round(v.moonAge * 10) / 10,
+               phase: pm ? '今日の' + _koyomiTimeJa(pm.time) + 'が、' + pm.name + 'です。' : '' };
+      moon.showLunar = order.kyureki !== 'none';   // 注文票の旧暦（たまご）が「なし」の人には、旧暦の日を言わない
+      moonSpeech = '今夜は、' + md.reading + (moon.showLunar ? '、旧暦' + md.lunarDay + '日の月。' : '。') + (moon.age != null ? 'リアルタイム月齢' + moon.age + '。' : '') + moon.phase;
     }
   }
   // 西暦でいうと（1つ目の文がもう西暦なら出さない）
@@ -23019,7 +23279,7 @@ function koyomiTodaySentence(v, order) {
   var lines = [];
   lines.push(wafuOn ? (year ? year + '、' : '') + (d.getMonth() + 1) + '月、' + yo(wm[0], wm[1]) + 'の' + d.getDate() + '日、' + wd + '。' : (year || '') + md + wd + '。');
   season.forEach(function(x) { lines.push(x.label + yo(x.name, x.reading) + (x.day ? 'の' + x.day + '日目' : '') + '。'); });
-  if (moon) lines.push('今夜は、' + yo(moon.name, moon.reading) + '。' + (moon.age != null ? '月齢' + moon.age + '。' : ''));
+  if (moon) lines.push('今夜は、' + yo(moon.name, moon.reading) + (moon.showLunar ? '、旧暦' + moon.lunarDay + '日の月。' : '。') + (moon.age != null ? 'リアルタイム月齢' + moon.age + '。' : '') + moon.phase);
   if (seirekiLine) lines.push(seirekiLine);
   // v0.63.5: 【権威】2026-10-27、「入れた場所が変。えとのやつ」との指摘。干支は昔の暦の言い直しなので、旧暦の文のすぐ後ろ（いちばん最後）
   if (kyureki) lines.push('旧暦でいうと、' + kyureki.era + '、' + yo(kyureki.eto, kyureki.etoReading) + 'の年の、' + (kyureki.leap ? yo('閏', 'うるう') : '') + kyureki.month + '月' + kyureki.day + '日。');
@@ -23065,7 +23325,8 @@ function koyomiTodaySentenceHtml(v, order, esc) {
         return nw(x.label) + nw(_koyomiReadInline(x.name, x.reading, esc)) + nw((x.day ? 'の' + x.day + '日目' : '') + '。');
       }).join(' ') + '</div>' : '') +
     // ③ 月
-    (t.moon ? '<div data-sentence-moon style="' + sub + '">' + nw('今夜は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '。') + (t.moon.age != null ? ' ' + nw('月齢' + t.moon.age + '。') : '') + '</div>' : '') +
+    (t.moon ? '<div data-sentence-moon style="' + sub + '">' + (t.moon.showLunar ? nw('今夜は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '、') + nw('旧暦' + t.moon.lunarDay + '日の月。') : nw('今夜は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '。')) +
+      (t.moon.age != null ? ' ' + nw('リアルタイム月齢' + t.moon.age + '。') : '') + (t.moon.phase ? ' ' + nw(esc(t.moon.phase)) : '') + '</div>' : '') +
     // ④ 西暦でいうと
     // 区切り（西暦でいうと、／2026年10月27日、／火曜日。）でだけ折り返す
     (t.seirekiLine ? '<div data-sentence-seireki style="' + sub + 'margin-top:4px;">' + esc(t.seirekiLine).replace(/^(西暦でいうと、)(.+?日、)(.+)$/, function(m, a, b, c) { return nw(a) + nw(b) + nw(c); }) + '</div>' : '') +
@@ -23082,6 +23343,7 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     '<div style="margin-top:8px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
       (canSpeak ? '<button type="button" data-kz="speak" data-speech="' + esc(t.speech) + '" style="padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🔊 読み上げる</button>' : '') +
       '<button type="button" data-kz="sentence-image" style="padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🖼 画像にして持ち帰る</button>' +
+      '<button type="button" data-kz="sentence-x" style="padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">𝕏 で投稿</button>' +
     '</div>' +
   '</div>';
 }
@@ -23241,7 +23503,9 @@ function renderKazeKoyomi(col, opts) {
   var _sp = topEl.querySelector('[data-kz="speak"]');
   if (_sp) _sp.onclick = function() { speakKoyomiText(_sp.getAttribute('data-speech')); };
   var _si = topEl.querySelector('[data-kz="sentence-image"]');   // v0.62.5
-  if (_si) _si.onclick = function() { shareKoyomiCanvas(drawKoyomiTodayCanvas(v, order), 'koyomiru-today.png', '今日を、声に出して ── こよみる'); };
+  if (_si) _si.onclick = function() { shareKoyomiCanvas(drawKoyomiTodayCanvas(v, order), 'koyomiru-today.png', koyomiXCaption(v, order)); };   // v0.63.7: 共有するときも、その日の文を添える
+  var _sx = topEl.querySelector('[data-kz="sentence-x"]');
+  if (_sx) _sx.onclick = function() { postKoyomiTodayToX(v, order); };
 
   // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
   // v0.62.3: 一文の下の1行に「もう一度、問いから」と「旧暦って？」を並べる（旧暦って？を押すと、その下に説明が開く）
@@ -23607,6 +23871,61 @@ function shareKoyomiCanvas(cv, fileName, text) {
   } catch (e) {}
 }
 window.shareKoyomiCanvas = shareKoyomiCanvas;
+// v0.63.7: 【権威】2026-10-27、「ハッシュタグが弱い。Xへの投稿の時、デフォルトで、この文をぶちこんどいて」との指示。
+// その日の言葉で毎日変わる投稿の文。ハッシュタグは、その日だけの言葉（節気・月・行事）と、よく見られている言葉を組み合わせる
+function koyomiXCaption(v, order) {
+  order = order || getKoyomiOrder();
+  var lines = ['今日を、声に出して読んでみてください。'], tags = [];
+  var today = [];
+  if (v.sekki) { today.push(v.sekki + (v.sekkiDay === 1 ? 'に入りました' : 'の' + v.sekkiDay + '日目')); tags.push(v.sekki); }
+  if (v.kou) today.push(v.kou + (v.kouTotal && v.kouDay === v.kouTotal ? 'の最後の日' : (v.kouDay === 1 ? 'のはじまりの日' : 'の' + v.kouDay + '日目')));
+  var mn = '';
+  if (order.moon !== 'none') { var mdx = koyomiMoonOfDay(v.date || new Date()); if (mdx) { mn = mdx.name; tags.push(mn); } }   // v0.63.9: 旧暦の日の呼び名
+  var pmx = (order.moon !== 'none') ? koyomiMoonPhaseMoment(v.date || new Date()) : null;
+  if (pmx) tags.push(pmx.name.replace(/の月$/, ''));
+  if (today.length || mn) lines.push(today.join('、') + (today.length ? '。' : '') + (mn ? '今夜は' + mn + '。' : '') + (pmx ? '今日の' + _koyomiTimeJa(pmx.time) + 'が、' + pmx.name + 'です。' : ''));
+  if (order.kyureki !== 'none' && typeof koyomiLunarDate === 'function') {
+    var lu = koyomiLunarDate(v.date || new Date(), 9);
+    if (lu) lines.push('今日は、旧暦' + (lu.leap ? '閏' : '') + lu.month + '月' + lu.day + '日。');
+  }
+  try {
+    (koyomiCalendarCards(v, order) || []).forEach(function(c) {
+      var name = String(c.title || '').split('・')[0];
+      if (name && lines.join('').indexOf(c.title) === -1) { lines.push('今日は、' + c.title + '。'); tags.push(name); }   // v0.63.9: 月の名前と行事の名前が同じ十五夜でも、行事の文は出す
+    });
+  } catch (e) {}
+  lines.push('天然こよみ専門店のこよみるで、毎日この1枚が作れます。');
+  lines.push('koyomiru.com');
+  ['二十四節気', '七十二候', '今日は何の日', 'こよみる'].forEach(function(x) { tags.push(x); });
+  var seen = {};
+  tags = tags.filter(function(x) { x = String(x).replace(/\s/g, ''); if (!x || seen[x]) return false; seen[x] = 1; return true; });
+  return lines.join('\n') + '\n' + tags.map(function(x) { return '#' + x.replace(/\s/g, ''); }).join(' ');
+}
+window.koyomiXCaption = koyomiXCaption;
+// Xで投稿：スマホは共有の画面（画像と文が一緒に）。PCは画像を保存し、文の入った X の投稿画面を開く。文はクリップボードにも写す
+function postKoyomiTodayToX(v, order) {
+  var caption = koyomiXCaption(v, order);
+  try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(caption).catch(function() {}); } catch (e) {}
+  var cv = drawKoyomiTodayCanvas(v, order);
+  try {
+    cv.toBlob(function(blob) {
+      if (!blob) return;
+      var file = null;
+      try { file = new File([blob], 'koyomiru-today.png', { type: 'image/png' }); } catch (e) {}
+      if (file && navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+        navigator.share({ files: [file], text: caption }).catch(function() {});
+        return;
+      }
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'koyomiru-today.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 4000);
+      try { window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(caption), '_blank', 'noopener'); } catch (e) {}
+      if (typeof showToast === 'function') showToast('🖼 画像を保存しました。Xの投稿画面に文を入れたので、保存した画像を添えて投稿してください', { type: 'ok' });
+    }, 'image/png');
+  } catch (e) {}
+}
+window.postKoyomiTodayToX = postKoyomiTodayToX;
 // v0.62.5: 【権威】2026-10-27、「全部やれ」（今日を、声に出しての一文を、画像にして持ち帰る）。注文票の画像と同じ仕組み
 function drawKoyomiTodayCanvas(v, order) {
   // v0.63.6: 【権威】2026-10-27、「声に出して、とあるが、逆に映えるかな？」との問いに、
@@ -46913,16 +47232,20 @@ var _craftMoonAge = null; // 月齢キャッシュ（起動時1回計算）
 // ===== 国立天文台 朔望表 新月時刻テーブル（JST）=====
 // 出典: 国立天文台暦計算室 暦要項 2024〜2027年
 // 毎年2月に翌年分が発表。2028年分は2027年2月に追加すること。
+// v0.63.8: 【権威】2026-10-28、「表でやってるなんて知らなかった。開発が止まっても、動くようにしよう」との指示。
+// この表は、もう月齢には使わない（2027年12月で切れるうえ、50件のうち12件の時刻が1〜9時間ずれていた）。
+// 月齢は _rkNewMoonJD（ミーウスの方法）で新月を計算して出す。2024〜2099年の新月940回を Astronomy Engine と突き合わせ、ずれは最大1.08分。
+// この表は、ずれていた12件を計算の時刻に直して、テストの答え合わせ用にだけ残す
 var _NAOJ_NEW_MOONS = [
-  '2024-01-11T12:57+09:00','2024-02-10T07:59+09:00','2024-03-10T18:00+09:00',
-  '2024-04-09T02:21+09:00','2024-05-08T12:22+09:00','2024-06-06T21:38+09:00',
-  '2024-07-06T06:57+09:00','2024-08-04T20:13+09:00','2024-09-03T10:56+09:00',
-  '2024-10-03T02:49+09:00','2024-11-01T21:47+09:00','2024-12-01T15:21+09:00',
+  '2024-01-11T20:58+09:00','2024-02-10T07:59+09:00','2024-03-10T18:00+09:00',
+  '2024-04-09T03:21+09:00','2024-05-08T12:22+09:00','2024-06-06T21:38+09:00',
+  '2024-07-06T07:58+09:00','2024-08-04T20:13+09:00','2024-09-03T10:56+09:00',
+  '2024-10-03T03:50+09:00','2024-11-01T21:47+09:00','2024-12-01T15:21+09:00',
   '2024-12-31T07:27+09:00',
-  '2025-01-29T21:36+09:00','2025-02-28T09:45+09:00','2025-03-29T18:58+09:00',
-  '2025-04-28T03:31+09:00','2025-05-27T12:02+09:00','2025-06-25T22:31+09:00',
-  '2025-07-25T11:11+09:00','2025-08-23T18:06+09:00','2025-09-22T01:54+09:00',
-  '2025-10-21T12:25+09:00','2025-11-20T14:47+09:00','2025-12-20T10:43+09:00',
+  '2025-01-29T21:36+09:00','2025-02-28T09:45+09:00','2025-03-29T19:59+09:00',
+  '2025-04-28T04:32+09:00','2025-05-27T12:02+09:00','2025-06-25T19:32+09:00',
+  '2025-07-25T04:11+09:00','2025-08-23T15:06+09:00','2025-09-22T04:54+09:00',
+  '2025-10-21T21:25+09:00','2025-11-20T15:47+09:00','2025-12-20T10:43+09:00',
   '2026-01-19T04:52+09:00','2026-02-17T21:01+09:00','2026-03-19T10:23+09:00',
   '2026-04-17T20:52+09:00','2026-05-17T05:01+09:00','2026-06-15T11:54+09:00',
   '2026-07-14T18:44+09:00','2026-08-13T02:37+09:00','2026-09-11T12:27+09:00',
@@ -46935,15 +47258,14 @@ var _NAOJ_NEW_MOONS = [
 ];
 // 直近の新月タイムスタンプを取得
 function _naojGetNearestNewMoon(ts) {
-  var best = null, bestDiff = Infinity;
-  for (var i = 0; i < _NAOJ_NEW_MOONS.length; i++) {
-    var nm = new Date(_NAOJ_NEW_MOONS[i]).getTime();
-    if (nm <= ts) {
-      var diff = ts - nm;
-      if (diff < bestDiff) { bestDiff = diff; best = nm; }
-    }
+  // v0.63.8: 表ではなく計算で、ts より前の、いちばん近い新月の時刻（ミリ秒）を返す。期限なし
+  var jd = ts / 86400000 + 2440587.5;
+  var k = Math.floor((jd - 2451550.09766) / 29.530588861) + 1;
+  for (var i = 0; i < 4; i++, k--) {
+    var ut = _rkNewMoonJD(k) - _koyomiDeltaTDays(2000 + k / 12.3685);
+    if (ut <= jd) return Math.round((ut - 2440587.5) * 86400000);
   }
-  return best;
+  return null;
 }
 // 月齢計算（国立天文台テーブルベース・JST正午）
 // ===== v0.45.1717: 六曜（大安・友引など） =====
@@ -47391,21 +47713,13 @@ function koyomiKyurekiShort(dateOrStr) {
 window.koyomiKyurekiShort = koyomiKyurekiShort;
 
 function calcMoonAgeNAOJ(date) {
+  // v0.63.8: 新月を計算で出して数える（前は表で、2027年12月で切れ、そのあとは平均の周期で数える予備の計算だった）。
+  // 今この瞬間の月齢（リアルタイム）。正午の月齢がほしい所は、呼ぶ側で正午の時刻を渡す
   if (!date) date = new Date();
-  // 現在時刻で計算（JST正午固定をやめる）
   var ts = date.getTime();
   var nm = _naojGetNearestNewMoon(ts);
-  // テーブル範囲外チェック：最近の新月から30日以上経過していたらフォールバック
-  var inRange = (nm !== null) && ((ts - nm) / 86400000 < 30.0);
-  if (!inRange) {
-    // テーブル範囲外：単純計算フォールバック
-    var KNOWN_NM = new Date('2000-01-06T18:14:00Z').getTime();
-    var SYNODIC = 29.530589;
-    var elapsed = (ts - KNOWN_NM) / 86400000;
-    return Math.round(((elapsed % SYNODIC) + SYNODIC) % SYNODIC * 10) / 10;
-  }
-  var age = (ts - nm) / 86400000;
-  return Math.round(age * 10) / 10;
+  if (nm === null) return null;
+  return Math.round((ts - nm) / 86400000 * 10) / 10;
 }
 // ===== 振り返り問いかけシステム =====
 var REFLECTION_QUESTIONS = [
@@ -55600,6 +55914,38 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.64.0', date: '2026-10-28',
+    items: [
+      { icon:'🌅', t:'日の出・日の入りを、毎回の計算で出すようにしました',
+        before:'日の出・日の入り・薄明は、2026年の東京の表を毎年使い回していて、年によって1〜2分ずれることがありました',
+        after:'その年・その場所の太陽の動きから、毎回計算します。これで、こよみるの暦はすべて計算で出しています' }
+    ]
+  },
+  {
+    ver: 'v0.63.9', date: '2026-10-28',
+    items: [
+      { icon:'🌕', t:'月の名前を、昔からの呼び方どおりにしました',
+        before:'十六夜・立待月などの名前を月齢で決めていて、同じ日のうちに名前が変わることがありました。満月なども、月齢で大まかに出していました',
+        after:'月の名前は旧暦の日で決めます（立待月は旧暦17日の月）。満月・新月・上弦・下弦は、その瞬間のある日にだけ「今日の13時12分が、満月です」と言います。月齢は「リアルタイム月齢」と書きます' }
+    ]
+  },
+  {
+    ver: 'v0.63.8', date: '2026-10-28',
+    items: [
+      { icon:'🌙', t:'月齢を、新月の計算から出すようにしました',
+        before:'月齢は、2027年までの新月の時刻の表から数えていて、表の一部の時刻もずれていました',
+        after:'新月の時刻を、天文の計算で毎回出すようにしました。何年先でも、分の単位で正確な月齢が出ます' }
+    ]
+  },
+  {
+    ver: 'v0.63.7', date: '2026-10-27',
+    items: [
+      { icon:'𝕏', t:'「今日を、声に出して」を、Xに投稿しやすくしました',
+        before:'画像は作れましたが、投稿の文は自分で考える必要がありました',
+        after:'「𝕏 で投稿」を押すと、その日の言葉（霜降の5日目・今夜は立待月・旧暦の日付など）とハッシュタグの入った文が、最初から入ります。スマホは共有の画面へ、PCは画像を保存して、文の入ったXの投稿画面を開きます' }
+    ]
+  },
   {
     ver: 'v0.63.6', date: '2026-10-27',
     items: [
@@ -82367,7 +82713,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(_v, _o({}), _e);
        var _visible = _h.replace(/<button[^>]*data-kz="speak"[\s\S]*?<\/button>/, '').replace(/<div data-kyureki-help[\s\S]*?<\/div>/, '');
        var _parts = koyomiKazeParts(_v, _o({}), _e);
-       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今夜は、じゅうさんやづき。月齢10.8。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。' &&   /* v0.62.3: 旧暦の年は元号 */
+       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今夜は、じゅういちにちづき、旧暦11日の月。リアルタイム月齢10.8。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。' &&   /* v0.62.3: 旧暦の年は元号 */
         _t2.speech.indexOf('西暦2026年10月21日、水曜日。') === 0 && _t2.speech.indexOf('西暦でいうと') === -1 &&
         _t3.speech.indexOf('令和8年、10月、かんなづきの21日、水曜日。') === 0 &&
         _t4.speech.indexOf('10月21日、水曜日。') === 0 && _t4.speech.indexOf('西暦でいうと、2026年10月21日、水曜日。') !== -1 &&
@@ -82723,6 +83069,86 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-495·①: 干支が違う', [_e(2026, 10, 27), _e(2026, 2, 3), _e(2026, 2, 4), _r.etoLine].join(' / '));
      } catch(e) {
        ng('ST-495: 例外', e.message);
+     }
+
+     // ===== ST-496: Xへの投稿の文（その日の言葉・強いハッシュタグ）（v0.63.7〜） =====
+     // 【権威】2026-10-27、「ハッシュタグが弱い。Xへの投稿の時、デフォルトで、この文をぶちこんどいて」との指示
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), {});
+       var _c = koyomiXCaption(koyomiTodayData(new Date(2026, 9, 27, 12)), _o);
+       var _c15 = koyomiXCaption(koyomiTodayData(new Date(2026, 8, 25, 21)), _o);
+       var _h = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 9, 27, 12)), _o, function(x) { return String(x); });
+       (_c.indexOf('今日を、声に出して読んでみてください。') === 0 && _c.indexOf('霜降の5日目、霜始降の最後の日。') !== -1 && _c.indexOf('今日は、旧暦9月17日。') !== -1 &&
+        _c.indexOf('koyomiru.com') !== -1 && /#霜降 /.test(_c) && /#今日は何の日/.test(_c) && /#こよみる$/.test(_c) &&
+        _c15.indexOf('今日は、十五夜・中秋節。') !== -1 && /#十五夜/.test(_c15) &&
+        /data-kz="sentence-x"/.test(_h) && /postKoyomiTodayToX\(v, order\)/.test(renderKazeKoyomi.toString()))
+         ? ok('ST-496·①: Xへの投稿の文は、その日の言葉（節気の何日目・候の最後の日・月・旧暦・行事）と、強いハッシュタグ（#霜降 #今日は何の日 など）。「𝕏 で投稿」で入る')
+         : ng('ST-496·①: 投稿の文が違う', _c.replace(/\n/g, ' / '));
+     } catch(e) {
+       ng('ST-496: 例外', e.message);
+     }
+
+     // ===== ST-497: 月齢は表ではなく計算（期限なし）（v0.63.8〜） =====
+     // 【権威】2026-10-28、「表でやってるなんて知らなかった。開発が止まっても、動くようにしよう」との指示
+     try {
+       var _mx = 0;
+       _NAOJ_NEW_MOONS.forEach(function(s) {
+         var t = new Date(s).getTime();
+         var nm = _naojGetNearestNewMoon(t + 600000);   // 新月の10分後から、いちばん近い新月を探す（表は分で丸めてある）
+         _mx = Math.max(_mx, Math.abs(nm - t) / 60000);
+       });
+       var _a2026 = calcMoonAgeNAOJ(new Date('2026-10-27T12:00:00+09:00'));
+       var _a2040 = calcMoonAgeNAOJ(new Date('2040-01-01T12:00:00+09:00'));
+       var _a2099 = calcMoonAgeNAOJ(new Date('2099-12-31T12:00:00+09:00'));
+       (_mx <= 3 && _a2026 === 16.5 && _a2040 >= 0 && _a2040 < 29.6 && _a2099 >= 0 && _a2099 < 29.6 &&
+        !/_NAOJ_NEW_MOONS/.test(_naojGetNearestNewMoon.toString()) && !/SYNODIC/.test(calcMoonAgeNAOJ.toString()))
+         ? ok('ST-497·①: 月齢は新月を計算して出す（表を使わない・期限なし）。答え合わせの表50件と3分以内。2026/10/27正午は16.5、2099年も出る')
+         : ng('ST-497·①: 月齢の出し方が違う', [_mx.toFixed(1), _a2026, _a2040, _a2099].join(' / '));
+     } catch(e) {
+       ng('ST-497: 例外', e.message);
+     }
+
+     // ===== ST-498: 月の名前は旧暦の日・満ち欠けは瞬間・リアルタイム月齢（v0.63.9〜） =====
+     // 【権威】2026-10-28、「突っ込まれないようにするには？」「リアルタイム月齢と言おう。全部進めて」との指示
+     try {
+       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), {});
+       var _nm = function(d, h) { return koyomiTodaySentence(koyomiTodayData(new Date(2026, 9, d, h)), _o).moon.name; };
+       var _ph = function(d) { var m = koyomiMoonPhaseMoment(new Date(2026, 9, d, 12)); return m ? m.name + m.time : ''; };
+       var _t26 = koyomiTodaySentence(koyomiTodayData(new Date(2026, 9, 26, 9)), _o);
+       var _tn = koyomiTodaySentence(koyomiTodayData(new Date(2026, 9, 27, 9)), Object.assign({}, _o, { kyureki: 'none' }));
+       (_nm(27, 6) === '立待月' && _nm(27, 23) === '立待月' && _nm(28, 12) === '居待月' && _nm(11, 12) === '新月' && _nm(25, 12) === '十五夜' &&
+        _ph(26) === '満月13:12' && _ph(19) === '上弦の月01:13' && _ph(27) === '' &&
+        _t26.speech.indexOf('今日の13時12分が、満月です。') !== -1 && /リアルタイム月齢\d/.test(_t26.speech) && _t26.speech.indexOf('旧暦16日の月') !== -1 &&
+        _tn.speech.indexOf('旧暦17日の月') === -1)
+         ? ok('ST-498·①: 月の名前は旧暦の日で決まり、一日中同じ（立待月は旧暦17日）。満月などは瞬間（13時12分）を含む日だけ。「リアルタイム月齢」。旧暦なしの人には旧暦の日を言わない')
+         : ng('ST-498·①: 月の言い方が違う', [_nm(27, 6), _nm(27, 23), _nm(28, 12), _ph(26), _ph(19)].join(' / '));
+     } catch(e) {
+       ng('ST-498: 例外', e.message);
+     }
+
+     // ===== ST-499: 日の出は計算・暦の検算（外が死んでも、こよみるは動く）（v0.64.0〜） =====
+     // 【権威】2026-10-28、「全部計算でやってるんでしょ？」「検算を管理者モードで」「外が死んでも、こよみるが動く担保が欲しい」との指示
+     try {
+       var _d = new Date(2026, 9, 28, 12, 0, 0);
+       var _se = koyomiSunEvents(KOYOMI_NAOJ_TOKYO.lat, KOYOMI_NAOJ_TOKYO.lng, _d);
+       var _riseOk = _se && Math.abs(_se.rise - (5 + 59 / 60)) * 60 <= 1 && Math.abs(_se.set - (16 + 51 / 60)) * 60 <= 1;   // 国立天文台：5時59分・16時51分
+       var _src1 = _getSunData(_d).source;
+       // 計算が失敗しても、今までの表に戻って動く
+       var _orig = window.koyomiSunEvents; window.koyomiSunEvents = function() { throw new Error('わざと'); };
+       var _src2 = '';
+       try { _src2 = _getSunData(_d).source; } finally { window.koyomiSunEvents = _orig; }
+       var _nj = koyomiNaojRef(_d);
+       var _fullOk = _nj.full === Date.UTC(2026, 10, 24, 23, 54) - 9 * 3600000;
+       // 外の部品が無くても、表は作れる（読み込めず と出す）
+       var _rows = _koyomiCheckRows({ when: '今年', d: _d }, _koyomiCheckOwn(_d), null, _nj);
+       var _html = _koyomiCheckTableHtml(_rows, 'テスト');
+       (_riseOk && _src1 === 'calc' && (_src2 === 'daily' || _src2 === 'monthly') && _fullOk && _nj.age > 17 && _nj.age < 18 &&
+        _rows.length === 4 && _rows.every(function(r) { return r.ae === '読み込めず'; }) && _rows[1].ok === true && /<table/.test(_html) &&
+        /setTimeout\(function\(\) \{ fail\('時間切れ'\); \}/.test(_koyomiLoadAstronomyEngine.toString()) && !!document.getElementById('adminKoyomiCheckBtn'))
+         ? ok('ST-499·①: 日の出は計算（国立天文台と1分以内）。計算が失敗しても表に戻る。検算は外の部品が無くても国立天文台の答えで比べ、読み込みは10秒であきらめる')
+         : ng('ST-499·①: 日の出か検算が違う', [_se && _se.rise, _src1, _src2, _fullOk, _nj.age, _rows.length].join(' / '));
+     } catch(e) {
+       ng('ST-499: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
