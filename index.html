@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.64.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.64.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.64.0';
+    const APP_VERSION = 'v0.64.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12161,7 +12161,7 @@ function _calcMoonTiltDeg(date, geo) {
 // 太陽の位置は旧暦と同じ見かけの位置の計算（ΔT・光行差・章動の補正つき）。日の出・日の入りは太陽の上の端が
 // 地平線に接する高さ（-0.833度）、薄明は太陽の中心が-6度（今までの表と同じ意味）。日本時間の時刻（時・小数）で返す。
 // 計算できない（白夜・極夜・何かの失敗）ときは null を返し、呼ぶ側が今までの表に戻る
-function koyomiSunEvents(lat, lng, date) {
+function koyomiSunEvents(lat, lng, date, extraH0) {
   try {
     var rad = Math.PI / 180;
     var jd0 = _rkToJD(date.getFullYear(), date.getMonth() + 1, date.getDate()) - 9 / 24;   // その日の日本時間0時（世界時のユリウス日）
@@ -12185,10 +12185,44 @@ function koyomiSunEvents(lat, lng, date) {
       var hrs = (t - jd0) * 24;
       return (isFinite(hrs) && hrs >= 0 && hrs < 24) ? hrs : null;
     };
-    return { rise: event(-0.833, true), set: event(-0.833, false), dawn: event(-6, true), dusk: event(-6, false) };
+    var res = { rise: event(-0.833, true), set: event(-0.833, false), dawn: event(-6, true), dusk: event(-6, false) };
+    if (typeof extraH0 === 'number') { res.extraRise = event(extraH0, true); res.extraSet = event(extraH0, false); }   // v0.64.2: 明け六つ・暮れ六つなど
+    return res;
   } catch (e) { return null; }
 }
 window.koyomiSunEvents = koyomiSunEvents;
+// ===== v0.64.2: 十二支の刻（不定時法） =====
+// 【権威】2026-10-28、「旧暦で、子の刻、寅の刻、丑の刻、そこまでやった方がいいんじゃないの」
+// 「江戸時代に本当に使われていたのが不定時法なら、それでいい」との指示。
+// 天保暦のやり方：明け六つ・暮れ六つは、太陽が地平線の下 7度21分40秒のとき。明け六つから暮れ六つ（昼）を6つに分けて卯・辰・巳・午・未・申、
+// 暮れ六つから次の明け六つ（夜）を6つに分けて酉・戌・亥・子・丑・寅。場所は設定の地域、無ければ東京。
+// 白夜などで計算できない・何かの失敗のときは、定時法（子の刻＝23〜1時、2時間ずつ）に戻る
+var KOYOMI_KOKU_NAMES = [['子', 'ね'], ['丑', 'うし'], ['寅', 'とら'], ['卯', 'う'], ['辰', 'たつ'], ['巳', 'み'], ['午', 'うま'], ['未', 'ひつじ'], ['申', 'さる'], ['酉', 'とり'], ['戌', 'いぬ'], ['亥', 'い']];
+var KOYOMI_MUTSU_H0 = -(7 + 21 / 60 + 40 / 3600);
+function koyomiKoku(date) {
+  var d = date || new Date(), idx = null, how = 'futeiji';
+  try {
+    var g = (typeof _userGeoLocation !== 'undefined' && _userGeoLocation && typeof _userGeoLocation.lat === 'number') ? _userGeoLocation : _TOKYO_GEO;
+    var day = function(off) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + off, 12); var e = koyomiSunEvents(g.lat, g.lng, x, KOYOMI_MUTSU_H0);
+      if (!e || e.extraRise === null || e.extraSet === null || e.extraRise === undefined) return null;
+      var base = new Date(d.getFullYear(), d.getMonth(), d.getDate() + off).getTime();
+      return { ake: base + e.extraRise * 3600000, kure: base + e.extraSet * 3600000 }; };
+    var t = d.getTime(), today = day(0);
+    if (!today) throw 0;
+    var from, to, start;
+    if (t >= today.ake && t < today.kure) { from = today.ake; to = today.kure; start = 3; }         // 昼：卯から
+    else if (t >= today.kure) { var tm = day(1); if (!tm) throw 0; from = today.kure; to = tm.ake; start = 9; }   // 夜：酉から
+    else { var ys = day(-1); if (!ys) throw 0; from = ys.kure; to = today.ake; start = 9; }
+    idx = (start + Math.min(5, Math.floor((t - from) / ((to - from) / 6)))) % 12;
+  } catch (e) {
+    how = 'teiji';
+    idx = Math.floor(((d.getHours() + d.getMinutes() / 60 + 1) % 24) / 2);   // 定時法：子の刻＝23〜1時
+  }
+  var n = KOYOMI_KOKU_NAMES[idx];
+  return { name: n[0], reading: n[1], how: how };
+}
+window.koyomiKoku = koyomiKoku;
+// ===== END v0.64.2 =====
 // ===== END v0.64.0 =====
 // ===== v0.64.0: 国立天文台の答え（検算用だけ） =====
 // 国立天文台 暦計算室「暦要項」から取り込んだ値（中央標準時・分まで）。2026・2027年の朔弦望、2024・2026年の二十四節気、
@@ -23253,7 +23287,8 @@ function koyomiTodaySentence(v, order) {
       moon = { name: md.name, reading: md.reading, lunarDay: md.lunarDay, age: order.moon === 'half' ? null : Math.round(v.moonAge * 10) / 10,
                phase: pm ? '今日の' + _koyomiTimeJa(pm.time) + 'が、' + pm.name + 'です。' : '' };
       moon.showLunar = order.kyureki !== 'none';   // 注文票の旧暦（たまご）が「なし」の人には、旧暦の日を言わない
-      moonSpeech = '今夜は、' + md.reading + (moon.showLunar ? '、旧暦' + md.lunarDay + '日の月。' : '。') + (moon.age != null ? 'リアルタイム月齢' + moon.age + '。' : '') + moon.phase;
+      // v0.64.1: 【権威】2026-10-28、「今日の月は、と言ってもらいたい。リアルタイム月齢は出さなくてもいい。やりすぎた」との指示。一文・画像からは月齢を外す
+      moonSpeech = '今日の月は、' + md.reading + (moon.showLunar ? '、旧暦' + md.lunarDay + '日の月。' : '。') + moon.phase;
     }
   }
   // 西暦でいうと（1つ目の文がもう西暦なら出さない）
@@ -23272,17 +23307,18 @@ function koyomiTodaySentence(v, order) {
     }
     var eraLabel = eraName ? eraName + (eraYear <= 1 ? '元' : eraYear) + '年' : lu.year + '年';
     kyureki = { year: lu.year, era: eraLabel, eto: _JIKKAN.charAt(ei % 10) + _JUNISHI.charAt(ei % 12), etoReading: _KOYOMI_JIKKAN_YOMI[ei % 10] + _KOYOMI_JUNISHI_YOMI[ei % 12], leap: lu.leap, month: lu.month, day: lu.day };
-    kyurekiSpeech = '旧暦でいうと、' + eraLabel + '、' + kyureki.etoReading + 'の年の、' + (lu.leap ? 'うるう' : '') + lu.month + '月' + lu.day + '日。';
+    kyureki.koku = koyomiKoku(d.getHours() || d.getMinutes() ? d : new Date());   // v0.64.2: 十二支の刻（不定時法）
+    kyurekiSpeech = '旧暦でいうと、' + eraLabel + '、' + kyureki.etoReading + 'の年の、' + (lu.leap ? 'うるう' : '') + lu.month + '月' + lu.day + '日、' + kyureki.koku.reading + 'のこく。';
   }
   // v0.62.5: 画面と同じ文を、読みつきの平らな文字で（画像に描くため）。読みは「名前（よみ）」の形
   var yo = function(b, r) { return b + (r ? '（' + r + '）' : ''); };
   var lines = [];
   lines.push(wafuOn ? (year ? year + '、' : '') + (d.getMonth() + 1) + '月、' + yo(wm[0], wm[1]) + 'の' + d.getDate() + '日、' + wd + '。' : (year || '') + md + wd + '。');
   season.forEach(function(x) { lines.push(x.label + yo(x.name, x.reading) + (x.day ? 'の' + x.day + '日目' : '') + '。'); });
-  if (moon) lines.push('今夜は、' + yo(moon.name, moon.reading) + (moon.showLunar ? '、旧暦' + moon.lunarDay + '日の月。' : '。') + (moon.age != null ? 'リアルタイム月齢' + moon.age + '。' : '') + moon.phase);
+  if (moon) lines.push('今日の月は、' + yo(moon.name, moon.reading) + (moon.showLunar ? '、旧暦' + moon.lunarDay + '日の月。' : '。') + moon.phase);
   if (seirekiLine) lines.push(seirekiLine);
   // v0.63.5: 【権威】2026-10-27、「入れた場所が変。えとのやつ」との指摘。干支は昔の暦の言い直しなので、旧暦の文のすぐ後ろ（いちばん最後）
-  if (kyureki) lines.push('旧暦でいうと、' + kyureki.era + '、' + yo(kyureki.eto, kyureki.etoReading) + 'の年の、' + (kyureki.leap ? yo('閏', 'うるう') : '') + kyureki.month + '月' + kyureki.day + '日。');
+  if (kyureki) lines.push('旧暦でいうと、' + kyureki.era + '、' + yo(kyureki.eto, kyureki.etoReading) + 'の年の、' + (kyureki.leap ? yo('閏', 'うるう') : '') + kyureki.month + '月' + kyureki.day + '日、' + yo(kyureki.koku.name, kyureki.koku.reading) + 'の刻。');
   if (etoDisp) lines.push(etoDisp);
   return {
     year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
@@ -23297,6 +23333,7 @@ function koyomiKyurekiHelpHtml(esc) {
     '・<b>旧暦</b>は、月の満ち欠けで日を数える暦です。新月の日が1日、満月はだいたい15日。こよみるの月の絵と、くらべてみてください。<br>' +
     '・明治5年、1872年の12月3日が、いきなり明治6年1月1日になり、今の暦、太陽の暦に切り替わりました。<br>' +
     '・旧暦の時代の日本は、西暦を使わず、年を元号と' + _koyomiReadInline('干支', 'えと', esc) + 'で数えました。元号の年も、旧暦の正月で変わりました。<br>' +
+    '・時刻は、夜明けの明け六つから日暮れの暮れ六つまでの昼と、夜を、それぞれ6つに分けて、子・丑・寅…の刻で数えました。季節で一刻の長さが変わる、不定時法です。<br>' +
     '・中国・台湾・韓国・ベトナムなどでは、旧正月の春節や中秋が、今も大事な祝日です。日本でも、十五夜のお月見は旧暦8月15日です。' +
   '</div>';
 }
@@ -23325,8 +23362,8 @@ function koyomiTodaySentenceHtml(v, order, esc) {
         return nw(x.label) + nw(_koyomiReadInline(x.name, x.reading, esc)) + nw((x.day ? 'の' + x.day + '日目' : '') + '。');
       }).join(' ') + '</div>' : '') +
     // ③ 月
-    (t.moon ? '<div data-sentence-moon style="' + sub + '">' + (t.moon.showLunar ? nw('今夜は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '、') + nw('旧暦' + t.moon.lunarDay + '日の月。') : nw('今夜は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '。')) +
-      (t.moon.age != null ? ' ' + nw('リアルタイム月齢' + t.moon.age + '。') : '') + (t.moon.phase ? ' ' + nw(esc(t.moon.phase)) : '') + '</div>' : '') +
+    (t.moon ? '<div data-sentence-moon style="' + sub + '">' + (t.moon.showLunar ? nw('今日の月は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '、') + nw('旧暦' + t.moon.lunarDay + '日の月。') : nw('今日の月は、' + _koyomiReadInline(t.moon.name, t.moon.reading, esc) + '。')) +
+      (t.moon.phase ? ' ' + nw(esc(t.moon.phase)) : '') + '</div>' : '') +
     // ④ 西暦でいうと
     // 区切り（西暦でいうと、／2026年10月27日、／火曜日。）でだけ折り返す
     (t.seirekiLine ? '<div data-sentence-seireki style="' + sub + 'margin-top:4px;">' + esc(t.seirekiLine).replace(/^(西暦でいうと、)(.+?日、)(.+)$/, function(m, a, b, c) { return nw(a) + nw(b) + nw(c); }) + '</div>' : '') +
@@ -23335,7 +23372,8 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     (t.kyureki ? '<div data-sentence-kyureki style="' + sub + '">' +
         nw('旧暦でいうと、' + esc(t.kyureki.era) + '、') +
         nw(_koyomiReadInline(t.kyureki.eto, t.kyureki.etoReading, esc) + 'の年の、') +
-        nw((t.kyureki.leap ? _koyomiReadInline('閏', 'うるう', esc) : '') + t.kyureki.month + '月' + t.kyureki.day + '日。') +
+        nw((t.kyureki.leap ? _koyomiReadInline('閏', 'うるう', esc) : '') + t.kyureki.month + '月' + t.kyureki.day + '日、') +
+        nw(_koyomiReadInline(t.kyureki.koku.name, t.kyureki.koku.reading, esc) + 'の刻。') +
       '</div>' : '') +
     // ⑥ 干支でいうと（こい味の人だけ。昔の暦の言い直しなので、旧暦のすぐ後ろ）
     (t.etoParts && t.etoParts.length ? '<div data-sentence-eto style="' + sub + '">' + nw('干支でいうと、') +
@@ -23883,7 +23921,7 @@ function koyomiXCaption(v, order) {
   if (order.moon !== 'none') { var mdx = koyomiMoonOfDay(v.date || new Date()); if (mdx) { mn = mdx.name; tags.push(mn); } }   // v0.63.9: 旧暦の日の呼び名
   var pmx = (order.moon !== 'none') ? koyomiMoonPhaseMoment(v.date || new Date()) : null;
   if (pmx) tags.push(pmx.name.replace(/の月$/, ''));
-  if (today.length || mn) lines.push(today.join('、') + (today.length ? '。' : '') + (mn ? '今夜は' + mn + '。' : '') + (pmx ? '今日の' + _koyomiTimeJa(pmx.time) + 'が、' + pmx.name + 'です。' : ''));
+  if (today.length || mn) lines.push(today.join('、') + (today.length ? '。' : '') + (mn ? '今日の月は' + mn + '。' : '') + (pmx ? '今日の' + _koyomiTimeJa(pmx.time) + 'が、' + pmx.name + 'です。' : ''));
   if (order.kyureki !== 'none' && typeof koyomiLunarDate === 'function') {
     var lu = koyomiLunarDate(v.date || new Date(), 9);
     if (lu) lines.push('今日は、旧暦' + (lu.leap ? '閏' : '') + lu.month + '月' + lu.day + '日。');
@@ -23894,7 +23932,8 @@ function koyomiXCaption(v, order) {
       if (name && lines.join('').indexOf(c.title) === -1) { lines.push('今日は、' + c.title + '。'); tags.push(name); }   // v0.63.9: 月の名前と行事の名前が同じ十五夜でも、行事の文は出す
     });
   } catch (e) {}
-  lines.push('天然こよみ専門店のこよみるで、毎日この1枚が作れます。');
+  // v0.64.1: 【権威】2026-10-28、「こよみるで1枚で作れます、は野暮。試しに作ってみてください、という感じ」との指示
+  lines.push('あなたの今日の1枚も、作ってみてください。');
   lines.push('koyomiru.com');
   ['二十四節気', '七十二候', '今日は何の日', 'こよみる'].forEach(function(x) { tags.push(x); });
   var seen = {};
@@ -55915,6 +55954,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.64.2', date: '2026-10-28',
+    items: [
+      { icon:'🕰', t:'旧暦の文に、十二支の刻を添えました',
+        before:'旧暦でいうと、の文は、年月日まででした',
+        after:'「旧暦でいうと、令和8年、丙午の年の、9月18日、未の刻。」と、江戸時代と同じ不定時法（明け六つ・暮れ六つで昼と夜を6つずつに分ける数え方）で、今の刻を添えます。季節と場所で一刻の長さが変わります' }
+    ]
+  },
+  {
+    ver: 'v0.64.1', date: '2026-10-28',
+    items: [
+      { icon:'🌙', t:'「今日を、声に出して」の月の文を、すっきりさせました',
+        before:'「今夜は、居待月、旧暦18日の月。リアルタイム月齢17.7。」と、少し長くなっていました',
+        after:'「今日の月は、居待月、旧暦18日の月。」にしました。Xに投稿する文の結びも「あなたの今日の1枚も、作ってみてください。」にしました' }
+    ]
+  },
+  {
     ver: 'v0.64.0', date: '2026-10-28',
     items: [
       { icon:'🌅', t:'日の出・日の入りを、毎回の計算で出すようにしました',
@@ -82713,7 +82768,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(_v, _o({}), _e);
        var _visible = _h.replace(/<button[^>]*data-kz="speak"[\s\S]*?<\/button>/, '').replace(/<div data-kyureki-help[\s\S]*?<\/div>/, '');
        var _parts = koyomiKazeParts(_v, _o({}), _e);
-       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今夜は、じゅういちにちづき、旧暦11日の月。リアルタイム月齢10.8。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。' &&   /* v0.62.3: 旧暦の年は元号 */
+       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今日の月は、じゅういちにちづき、旧暦11日の月。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日、たつのこく。' &&   /* v0.64.2: 十二支の刻 */   /* v0.62.3: 旧暦の年は元号 */
         _t2.speech.indexOf('西暦2026年10月21日、水曜日。') === 0 && _t2.speech.indexOf('西暦でいうと') === -1 &&
         _t3.speech.indexOf('令和8年、10月、かんなづきの21日、水曜日。') === 0 &&
         _t4.speech.indexOf('10月21日、水曜日。') === 0 && _t4.speech.indexOf('西暦でいうと、2026年10月21日、水曜日。') !== -1 &&
@@ -82981,8 +83036,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 9, 26, 9, 0, 0)), _o, function(x) { return String(x); });
        // v0.62.3: 旧暦の年は元号（旧暦の正月で変わる）。「旧暦って？」は一文の下の1行（もう一度、問いからの横）
        var _help = koyomiKyurekiHelpHtml(function(x) { return String(x); });
-       (_t.speech.indexOf('旧暦でいうと、令和8年、ひのえうまの年の、9月16日。') !== -1 && _t.kyureki.eto === '丙午' &&
-        _tl.speech.indexOf('旧暦でいうと、令和7年、きのとみの年の、うるう6月1日。') !== -1 &&
+       (_t.speech.indexOf('旧暦でいうと、令和8年、ひのえうまの年の、9月16日、') !== -1 && _t.kyureki.eto === '丙午' &&
+        _tl.speech.indexOf('旧暦でいうと、令和7年、きのとみの年の、うるう6月1日、') !== -1 &&
         _tj.speech.indexOf('旧暦でいうと、令和8年、ひのえうまの年の、12月') !== -1 &&
         !/data-kz="kyureki-help"/.test(_h) && /data-kyureki-help/.test(_help) && _help.indexOf('明治5年') !== -1 && _help.indexOf('元号') !== -1 &&
         /_linkBtn\('kyureki-help', '旧暦って？'\)/.test(renderKazeKoyomi.toString()))
@@ -83023,7 +83078,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(_v, _o, function(x) { return String(x); });
        (_cv && _cv.width === 1080 && _cv.height === 1350 && _t.lines.length === 6 &&
         _t.lines[0] === '皇紀2686年、10月、神無月（かんなづき）の27日、火曜日。' &&
-        _t.lines[5] === '旧暦でいうと、令和8年、丙午（ひのえうま）の年の、9月17日。' &&
+        _t.lines[5] === '旧暦でいうと、令和8年、丙午（ひのえうま）の年の、9月17日、辰（たつ）の刻。' &&
         /data-kz="sentence-image"/.test(_h) && /shareKoyomiCanvas\(drawKoyomiTodayCanvas\(v, order\)/.test(renderKazeKoyomi.toString()) &&
         // v0.63.6: 月の絵・今日の季節の色・文字の強弱・koyomiru.com
         /_drawMoonCanvas\('__koyomiImgMoon'/.test(drawKoyomiTodayCanvas.toString()) && /getShichijuniKouColor/.test(drawKoyomiTodayCanvas.toString()) &&
@@ -83078,8 +83133,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _c = koyomiXCaption(koyomiTodayData(new Date(2026, 9, 27, 12)), _o);
        var _c15 = koyomiXCaption(koyomiTodayData(new Date(2026, 8, 25, 21)), _o);
        var _h = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 9, 27, 12)), _o, function(x) { return String(x); });
-       (_c.indexOf('今日を、声に出して読んでみてください。') === 0 && _c.indexOf('霜降の5日目、霜始降の最後の日。') !== -1 && _c.indexOf('今日は、旧暦9月17日。') !== -1 &&
-        _c.indexOf('koyomiru.com') !== -1 && /#霜降 /.test(_c) && /#今日は何の日/.test(_c) && /#こよみる$/.test(_c) &&
+       (_c.indexOf('今日を、声に出して読んでみてください。') === 0 && _c.indexOf('霜降の5日目、霜始降の最後の日。今日の月は立待月。') !== -1 && _c.indexOf('今日は、旧暦9月17日。') !== -1 &&
+        _c.indexOf('あなたの今日の1枚も、作ってみてください。') !== -1 && _c.indexOf('毎日この1枚が作れます') === -1 && _c.indexOf('koyomiru.com') !== -1 && /#霜降 /.test(_c) && /#今日は何の日/.test(_c) && /#こよみる$/.test(_c) &&
         _c15.indexOf('今日は、十五夜・中秋節。') !== -1 && /#十五夜/.test(_c15) &&
         /data-kz="sentence-x"/.test(_h) && /postKoyomiTodayToX\(v, order\)/.test(renderKazeKoyomi.toString()))
          ? ok('ST-496·①: Xへの投稿の文は、その日の言葉（節気の何日目・候の最後の日・月・旧暦・行事）と、強いハッシュタグ（#霜降 #今日は何の日 など）。「𝕏 で投稿」で入る')
@@ -83118,7 +83173,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _tn = koyomiTodaySentence(koyomiTodayData(new Date(2026, 9, 27, 9)), Object.assign({}, _o, { kyureki: 'none' }));
        (_nm(27, 6) === '立待月' && _nm(27, 23) === '立待月' && _nm(28, 12) === '居待月' && _nm(11, 12) === '新月' && _nm(25, 12) === '十五夜' &&
         _ph(26) === '満月13:12' && _ph(19) === '上弦の月01:13' && _ph(27) === '' &&
-        _t26.speech.indexOf('今日の13時12分が、満月です。') !== -1 && /リアルタイム月齢\d/.test(_t26.speech) && _t26.speech.indexOf('旧暦16日の月') !== -1 &&
+        _t26.speech.indexOf('今日の13時12分が、満月です。') !== -1 && _t26.speech.indexOf('今日の月は、') !== -1 && _t26.speech.indexOf('月齢') === -1 && _t26.speech.indexOf('旧暦16日の月') !== -1 &&   /* v0.64.1: 一文から月齢を外した */
         _tn.speech.indexOf('旧暦17日の月') === -1)
          ? ok('ST-498·①: 月の名前は旧暦の日で決まり、一日中同じ（立待月は旧暦17日）。満月などは瞬間（13時12分）を含む日だけ。「リアルタイム月齢」。旧暦なしの人には旧暦の日を言わない')
          : ng('ST-498·①: 月の言い方が違う', [_nm(27, 6), _nm(27, 23), _nm(28, 12), _ph(26), _ph(19)].join(' / '));
@@ -83149,6 +83204,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-499·①: 日の出か検算が違う', [_se && _se.rise, _src1, _src2, _fullOk, _nj.age, _rows.length].join(' / '));
      } catch(e) {
        ng('ST-499: 例外', e.message);
+     }
+
+     // ===== ST-500: 十二支の刻（不定時法）（v0.64.2〜） =====
+     // 【権威】2026-10-28、「旧暦で、子の刻、寅の刻…そこまでやった方が」「江戸時代に本当に使われていた不定時法で」との指示
+     try {
+       var _k = function(y, m, d, h, mi) { return koyomiKoku(new Date(y, m - 1, d, h, mi || 0)); };
+       var _e = koyomiSunEvents(_TOKYO_GEO.lat, _TOKYO_GEO.lng, new Date(2026, 5, 21, 12), KOYOMI_MUTSU_H0);
+       var _akeMin = Math.round(_e.extraRise * 60);   // 夏至の明け六つ（分）
+       var _before = koyomiKoku(new Date(2026, 5, 21, 0, _akeMin - 2)).name, _after = koyomiKoku(new Date(2026, 5, 21, 0, _akeMin + 2)).name;
+       var _summer = _k(2026, 6, 21, 4).name, _winter = _k(2026, 12, 22, 6).name;   // 同じ朝でも、夏は卯、冬はまだ寅
+       var _orig = window.koyomiSunEvents; window.koyomiSunEvents = function() { return null; };
+       var _fb = ''; try { _fb = _k(2026, 10, 28, 14, 0); } finally { window.koyomiSunEvents = _orig; }
+       (_before === '寅' && _after === '卯' && _summer === '卯' && _winter === '寅' && _k(2026, 10, 28, 12).name === '午' && _k(2026, 10, 28, 2).name === '丑' &&
+        _fb && _fb.how === 'teiji' && _fb.name === '未' && /たつのこく/.test(koyomiTodaySentence(koyomiTodayData(new Date(2026, 9, 21, 9)), KOYOMI_ORDER_DEFAULT).speech))
+         ? ok('ST-500·①: 十二支の刻は不定時法（明け六つで寅から卯へ。夏の朝4時は卯、冬の朝6時はまだ寅）。計算できなければ定時法に戻る。旧暦の文に「辰（たつ）の刻」')
+         : ng('ST-500·①: 刻が違う', [_before, _after, _summer, _winter, _fb && _fb.name].join(' / '));
+     } catch(e) {
+       ng('ST-500: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
