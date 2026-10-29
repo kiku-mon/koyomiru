@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.66.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.66.9 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.66.8';
+    const APP_VERSION = 'v0.66.9';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12474,7 +12474,7 @@ function _koyomiSunMomentIn(lat, lng, startMs, endMs, h0, rising) {
 // era：こよみるの青ねぎで選べる暦（年を出す）／lunar：旧暦（その国の時差で計算する。中国は+8、ベトナムは+7）／
 // どちらも無いものは名前だけ（こよみるでは、まだ使えない）。西暦だけの国は出さない
 var KOYOMI_COUNTRY_CALENDARS = (function() {
-  var hijri = { era: 'hijri', note: 'イスラム教の行事' }, nong = { lunar: 8, name: '農暦', note: '春節・中秋など' };
+  var hijri = { era: 'hijri', note: 'イスラム教の行事・計算による目安' }, nong = { lunar: 8, name: '農暦', note: '春節・中秋など' };
   return {
     '日本': [{ era: 'wareki', name: '和暦' }],
     '台湾': [{ era: 'minkoku', name: '民国紀元', note: '公式' }, nong],
@@ -12482,7 +12482,7 @@ var KOYOMI_COUNTRY_CALENDARS = (function() {
     '中国': [nong], 'シンガポール': [nong, hijri], 'マレーシア': [hijri, nong],
     '韓国': [{ lunar: 9, name: '陰暦', note: 'ソルラル・チュソクなど' }],
     'ベトナム': [{ lunar: 7, name: '陰暦', note: 'テトなど' }],
-    'サウジアラビア': [{ era: 'hijri', note: '公式' }], 'アラブ首長国連邦': [hijri], 'カタール': [hijri], 'エジプト': [hijri], 'モロッコ': [hijri],
+    'サウジアラビア': [{ era: 'hijri', note: '公式・計算による目安' }], 'アラブ首長国連邦': [hijri], 'カタール': [hijri], 'エジプト': [hijri], 'モロッコ': [hijri],
     'パキスタン': [hijri], 'インドネシア': [hijri], 'トルコ': [hijri], 'アゼルバイジャン': [hijri], 'ウズベキスタン': [hijri], 'カザフスタン': [hijri],
     'バングラデシュ': [{ name: 'ベンガル暦', note: '公式' }, hijri],
     'イラン': [{ name: 'イラン暦（太陽ヒジュラ暦）', note: '公式' }, hijri],
@@ -12523,7 +12523,8 @@ function koyomiCitySeason(city, ms) {
   if (city.lat < 0) lon = (lon + 180) % 360;
   var x = (lon - 315 + 360) % 360;   // 立春からの角度
   var k = x < 90 ? 'spring' : (x < 180 ? 'summer' : (x < 270 ? 'autumn' : 'winter'));
-  return { key: k, label: { spring: '春', summer: '夏', autumn: '秋', winter: '冬' }[k], icon: { spring: '🌸', summer: '🌻', autumn: '🍁', winter: '❄️' }[k] };
+  // v0.66.9: 立春・立夏・立秋・立冬は日本の暦の数え方なので、「暦の上では秋」と言う（欧米の秋は秋分・9月から、と突っ込まれないように）
+  return { key: k, label: '暦の上では' + { spring: '春', summer: '夏', autumn: '秋', winter: '冬' }[k], icon: { spring: '🌸', summer: '🌻', autumn: '🍁', winter: '❄️' }[k] };
 }
 window.koyomiCitySeason = koyomiCitySeason;
 // その瞬間の、その場所の太陽の高さ（度）。白夜・極夜を見分けるのに使う
@@ -12671,6 +12672,9 @@ window.koyomiNaojRef = koyomiNaojRef;
 // 外の部品は押したときだけ読み込み、10秒で読み込めなければあきらめる。どの計算が失敗しても、その行だけ「計算できず」にして続ける。
 // こよみるの暦そのものは、外の部品にも国立天文台の答えにも頼らない（ここは点検だけ）
 var KOYOMI_AE_URL = 'https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js';
+// v0.66.9: 【権威】2026-10-29、レッド・ブルー演習。配信元で中身をすり替えられると、管理者の画面で動いてしまった。
+// 中身の指紋（SRI）を付け、指紋が合わないものはブラウザが動かさない（版を上げるときは、指紋も取り直す）
+var KOYOMI_AE_SRI = 'sha384-LTVHvxfbG3XHla4Lu0C0s9U18B2sBOuzJIeOoVHm2t05SOOORvMbBMEVjXrGau9g';
 var _koyomiAePromise = null;
 function _koyomiLoadAstronomyEngine(timeoutMs) {
   if (window.Astronomy && window.Astronomy.SearchMoonPhase) return Promise.resolve(window.Astronomy);
@@ -12679,7 +12683,7 @@ function _koyomiLoadAstronomyEngine(timeoutMs) {
     var done = false, sc = document.createElement('script');
     var fail = function(why) { if (done) return; done = true; _koyomiAePromise = null; try { sc.remove(); } catch (e) {} reject(new Error(why)); };
     var timer = setTimeout(function() { fail('時間切れ'); }, timeoutMs || 10000);
-    sc.src = KOYOMI_AE_URL; sc.async = true;
+    sc.src = KOYOMI_AE_URL; sc.async = true; sc.integrity = KOYOMI_AE_SRI; sc.crossOrigin = 'anonymous';   // 指紋が合わなければ動かさない
     sc.onload = function() { if (done) return; clearTimeout(timer); if (window.Astronomy && window.Astronomy.SearchMoonPhase) { done = true; resolve(window.Astronomy); } else fail('中身が違う'); };
     sc.onerror = function() { clearTimeout(timer); fail('読み込めない'); };
     document.head.appendChild(sc);
@@ -12964,7 +12968,7 @@ function openKoyomiWorldClock() {
     var _wide = window.innerWidth >= 900;   // v0.66.3: 広い画面は横に並べる
     // v0.66.4: 【権威】2026-10-29、「画面いっぱいでもいいよ。9分割にこだわらない」との指示。広い画面は画面いっぱいに、列の数は幅に合わせて自動
     ov.innerHTML = '<div style="width:100%;max-width:' + (_wide ? 'none' : '460px') + ';background:#0c0e24;border:1px solid rgba(232,201,106,0.35);border-radius:22px;padding:18px 14px 14px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">' +
-      '<div style="text-align:center;color:#e8c96a;font-weight:800;font-size:1.15em;letter-spacing:0.08em;">🌍 世界の都市の暦</div>' +
+      '<div style="text-align:center;color:#e8c96a;font-weight:800;font-size:1.15em;letter-spacing:0.08em;">🌍 世界の暦</div>' +
       '<div id="koyomiWorldHead" style="text-align:center;color:#9a97c8;font-size:0.75em;margin:6px 0 12px;line-height:1.6;"></div>' +
       '<div id="koyomiWorldList" style="' + (_wide ? 'display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));column-gap:12px;' : '') + '"></div>' +
       '<div id="koyomiWorldPicker" style="display:none;margin-top:6px;"></div>' +
@@ -12973,7 +12977,7 @@ function openKoyomiWorldClock() {
         '<button type="button" id="koyomiWorldPickBtn" style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(232,201,106,0.5);background:transparent;color:#e8c96a;font-size:0.85em;cursor:pointer;">＋ 都市をえらぶ</button>' +
         '<button type="button" id="koyomiWorldCloseBtn" style="flex:1;padding:10px;border-radius:12px;border:none;background:#2a2a4a;color:#e9e6ff;font-size:0.85em;cursor:pointer;">閉じる</button>' +
       '</div>' +
-      '<div style="text-align:center;color:#6f6c99;font-size:0.65em;margin-top:10px;line-height:1.6;">⠿ を掴むと、並べかえられます。日の出・日の入り・薄明は、その都市の太陽の計算です。十二支の刻は、その都市の明け六つ・暮れ六つで数えます。</div>' +
+      '<div style="text-align:center;color:#6f6c99;font-size:0.65em;margin-top:10px;line-height:1.6;">⠿ を掴むと、並べかえられます。日の出・日の入りは、海抜0mの地平線での時刻です（山に囲まれた所では、実際に見えるのは少し遅れます）。季節は、立春・立夏・立秋・立冬で区切る日本の暦の数え方です。日の出・日の入り・薄明は、その都市の太陽の計算です。十二支の刻は、その都市の明け六つ・暮れ六つで数えます。</div>' +
     '</div>';
     document.body.appendChild(ov);
     var close = function() { try { clearInterval(_koyomiWorldTimer); } catch (e) {} _koyomiWorldTimer = null; ov.remove(); };
@@ -33284,13 +33288,17 @@ function saveMsbEdit() {
         transition:opacity 0.3s; opacity:1; pointer-events:auto;
       `;
       let actionBtn = '';
+      // v0.66.9: 【権威】2026-10-29、レッド・ブルー演習。通知にカレンダー名・参加者名などをつなぐ所が28か所あり、
+      // 名前に仕掛けを入れると通知で動いた（ほかの人が付けた共有カレンダー名も入る）。わざと HTML を渡す通知は0件だったので、
+      // 通知の側で、いつも無害にしてから出す（第92条）
+      var _tEsc = function(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
       if (action) {
         actionBtn = `<button id="_toastActionBtn" style="
           background:rgba(255,255,255,0.2); border:none; color:#fff;
           padding:4px 10px; border-radius:6px; font-size:0.85em; cursor:pointer; white-space:nowrap;
-        ">${action.label}</button>`;
+        ">${_tEsc(action.label)}</button>`;
       }
-      el.innerHTML = `<span>${msg}</span>${actionBtn}`;
+      el.innerHTML = `<span>${_tEsc(msg)}</span>${actionBtn}`;
       if (action) {
         const btn = document.getElementById('_toastActionBtn');
         if (btn) btn.onclick = function() { action.fn(); el.style.opacity = '0'; };
@@ -56752,6 +56760,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.66.9', date: '2026-10-29',
+    items: [
+      { icon:'🛡', t:'守りを固めました（演習の結果）',
+        before:'カレンダーや参加者の名前に仕掛けの文字があると、通知が出たときに動くことがありました',
+        after:'通知は、いつも文字を無害にしてから出します。管理者の検算で使う外の部品も、中身の指紋が合うときだけ動かします' },
+      { icon:'🌍', t:'世界の暦の言い方を、正確にしました',
+        before:'季節が「秋」とだけ出ていて、欧米の数え方とずれることがありました',
+        after:'「暦の上では秋」と、日本の暦の数え方だと分かる言い方にしました。日の出・日の入りが海抜0mの地平線での時刻であることも、画面の下に書きました' }
+    ]
+  },
   {
     ver: 'v0.66.8', date: '2026-10-29',
     items: [
@@ -84304,7 +84323,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
         _st.name === '夏至' && _st.y === 2027 && _st.m === 6 && _st.d === 21 && /^日の出 4:\d\d$/.test(_st.evText) &&
         _ng.name === '冬至' && _ng.m === 12 && _ng.d === 21 && _gz.name === '春分' && _gz.y === 2027 && _gz.m === 3 && _mp.name === '冬至（南半球）' &&
         /data-monument/.test(_card) && _card.indexOf('ヒールストーン') !== -1 && KOYOMI_WORLD_REGIONS.some(function(r) { return r[0] === 'monuments'; }))
-         ? ok('ST-507·①: 季節は北半球が立春〜で区切り、南半球は逆、赤道に近い所は熱帯（季節の区切りが無い）。昼の長さ。太陽の遺跡は次のその日（ストーンヘンジは2027/6/21 日の出4時台）とあと何日')
+         ? ok('ST-507·①: 季節は「暦の上では秋」と言い、北半球が立春〜で区切り、南半球は逆、赤道に近い所は熱帯（季節の区切りが無い）。昼の長さ。太陽の遺跡は次のその日（ストーンヘンジは2027/6/21 日の出4時台）とあと何日')
          : ng('ST-507·①: 季節・昼の長さ・遺跡が違う', [_sTokyo, _sSyd, _sSg, _sTokyoJan, _dlTokyo.text, _st && (_st.y + '/' + _st.m + '/' + _st.d + ' ' + _st.evText), _ng && _ng.m + '/' + _ng.d, _gz && _gz.name].join(' / '));
      } catch(e) {
        ng('ST-507: 例外', e.message);
@@ -84323,6 +84342,26 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-508·①: その国の暦が違う', [_tp, _bk, _bj, _hn, _ry, _tlv, _th, _ny, _ng].join(' / '));
      } catch(e) {
        ng('ST-508: 例外', e.message);
+     }
+
+     // ===== ST-509: レッド・ブルー演習（通知を必ず無害に・外の部品は指紋つき）と、世界の暦の突っ込み対策（v0.66.9〜） =====
+     // 【権威】2026-10-29、「他に突っ込みどころは？レッド、ブルー演習しようよ」との指示
+     try {
+       window.__st509 = 0;
+       var _P = '<img src=x onerror="window.__st509++">';
+       showToast('「' + _P + '」を消しました', { type: 'info', action: { label: _P, fn: function() {} } });
+       var _t = document.getElementById('toast') || document.querySelector('[id*="toast" i]');
+       var _toastOk = [].slice.call(document.querySelectorAll('img')).every(function(im) { return im.getAttribute('src') !== 'x'; });
+       var _sriOk = /^sha384-[A-Za-z0-9+\/=]{64}$/.test(KOYOMI_AE_SRI) && /sc\.integrity = KOYOMI_AE_SRI; sc\.crossOrigin = 'anonymous'/.test(_koyomiLoadAstronomyEngine.toString());
+       var _tk = KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'tokyo'; })[0];
+       var _sea = koyomiCitySeason(_tk, Date.UTC(2026, 9, 29, 3)).label;
+       var _ws = allSettings.ui.worldCities; allSettings.ui.worldCities = [_P, {}, null, 'tokyo']; var _sel = _koyomiWorldSelected().map(function(c) { return c.id; }).join(','); allSettings.ui.worldCities = _ws;
+       var _src = openKoyomiWorldClock.toString();
+       (_toastOk && _sriOk && _sea === '暦の上では秋' && _sel === 'tokyo' && _src.indexOf('🌍 世界の暦</div>') !== -1 && _src.indexOf('海抜0m') !== -1)
+         ? ok('ST-509·①: 通知は名前に仕掛けがあっても無害に出す。Astronomy Engine は指紋（SRI）が合うときだけ動く。都市の設定に変な値があっても無視。季節は「暦の上では秋」、日の出は海抜0mの注つき')
+         : ng('ST-509·①: 演習の守りが違う', [_toastOk, _sriOk, _sea, _sel].join(' / '));
+     } catch(e) {
+       ng('ST-509: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
