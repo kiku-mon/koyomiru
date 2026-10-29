@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.65.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.66.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.65.2';
+    const APP_VERSION = 'v0.66.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9062,7 +9062,7 @@ function _showInviteWelcome() {
     <div id="dbSkyCard" class="yc-fade-in" style="display:none;margin-bottom:14px;background:linear-gradient(135deg,#0a0a1a,#1a1a2e);border:1px solid #333;border-radius:14px;padding:16px;color:#fff;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
         <div id="dbSkyLocLabel" style="font-size:0.72em;color:#a78bfa;font-weight:700;">🌙 天象 — 東京</div>
-        <button id="dbSkyGeoBtn" onclick="useCurrentLocationForSky()" style="font-size:0.66em;background:#2a2a4a;color:#a78bfa;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">📍 現在地で表示</button>
+        <button id="dbWorldBtn" onclick="openKoyomiWorldClock()" style="font-size:0.66em;background:#2a2a4a;color:#e8c96a;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;margin-right:6px;">🌍 世界</button><button id="dbSkyGeoBtn" onclick="useCurrentLocationForSky()" style="font-size:0.66em;background:#2a2a4a;color:#a78bfa;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">📍 現在地で表示</button>
       </div>
       <!-- 空の状態 -->
       <div id="dbSkyBox" style="height:64px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1em;font-weight:700;margin-bottom:12px;transition:background 1s;">--</div>
@@ -10124,6 +10124,7 @@ function _showInviteWelcome() {
 <div style="font-size:0.85em;color:#ffd700;font-weight:700;margin-bottom:6px;">🔭 暦の検算</div>
 <div style="font-size:0.75em;color:#aaa;line-height:1.6;margin-bottom:8px;">過去・今年・未来のランダムな日時で、こよみるの計算を Astronomy Engine と国立天文台にくらべます。外の部品が読み込めなくても、こよみるの暦には影響しません。</div>
 <button id="adminKoyomiCheckBtn" onclick="runKoyomiCalendarCheck()" style="width:100%;padding:9px;background:transparent;border:1px solid #c8a050;border-radius:8px;color:#ffd700;font-size:0.85em;cursor:pointer;">🔭 ランダムな24の日時で検算する</button>
+<button id="adminWorldCheckBtn" onclick="runKoyomiWorldCheck()" style="width:100%;padding:9px;margin-top:8px;background:transparent;border:1px solid #c8a050;border-radius:8px;color:#ffd700;font-size:0.85em;cursor:pointer;">🌐 世界の都市（60都市）で検算する</button>
 <div id="adminKoyomiCheckList" style="font-size:0.78em;color:#ccc;line-height:1.6;margin-top:8px;overflow-x:auto;"></div>
 </div>
 <div id="adminPurgeDupeArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
@@ -12229,6 +12230,115 @@ function koyomiSunEvents(lat, lng, date, extraH0) {
   } catch (e) { return null; }
 }
 window.koyomiSunEvents = koyomiSunEvents;
+// ===== v0.66.0: 世界の都市の暦（土台） =====
+// 【権威】2026-10-28、「世界の主要都市をリストアップしてからやろう」「台湾とかもあるの？アジア圏はたくさん。マレーシアとかね」
+// 「デザインも任せたから作ってみて。世界の都市の暦とかでもいいんじゃない」との指示。
+// 都市ごとに、その都市の時間帯（IANA の名前）・緯度・経度を持つ。時刻と日付は、端末の時計ではなく、その都市の時計で出す（Intl で求める）
+var KOYOMI_WORLD_CITIES = [
+  // [id, 都市, 国・地域, 地域の組, 時間帯, 緯度, 経度]
+  ['tokyo', '東京', '日本', 'asia', 'Asia/Tokyo', 35.6895, 139.6917], ['sapporo', '札幌', '日本', 'asia', 'Asia/Tokyo', 43.0618, 141.3545],
+  ['osaka', '大阪', '日本', 'asia', 'Asia/Tokyo', 34.6937, 135.5023], ['fukuoka', '福岡', '日本', 'asia', 'Asia/Tokyo', 33.5904, 130.4017],
+  ['naha', '那覇', '日本', 'asia', 'Asia/Tokyo', 26.2124, 127.6809],
+  ['seoul', 'ソウル', '韓国', 'asia', 'Asia/Seoul', 37.5665, 126.9780], ['busan', '釜山', '韓国', 'asia', 'Asia/Seoul', 35.1796, 129.0756],
+  ['beijing', '北京', '中国', 'asia', 'Asia/Shanghai', 39.9042, 116.4074], ['shanghai', '上海', '中国', 'asia', 'Asia/Shanghai', 31.2304, 121.4737],
+  ['hongkong', '香港', '中国', 'asia', 'Asia/Hong_Kong', 22.3193, 114.1694], ['macau', 'マカオ', '中国', 'asia', 'Asia/Macau', 22.1987, 113.5439],
+  ['taipei', '台北', '台湾', 'asia', 'Asia/Taipei', 25.0330, 121.5654], ['kaohsiung', '高雄', '台湾', 'asia', 'Asia/Taipei', 22.6273, 120.3014],
+  ['ulaanbaatar', 'ウランバートル', 'モンゴル', 'asia', 'Asia/Ulaanbaatar', 47.8864, 106.9057],
+  ['manila', 'マニラ', 'フィリピン', 'asia', 'Asia/Manila', 14.5995, 120.9842], ['hanoi', 'ハノイ', 'ベトナム', 'asia', 'Asia/Ho_Chi_Minh', 21.0278, 105.8342],
+  ['hochiminh', 'ホーチミン', 'ベトナム', 'asia', 'Asia/Ho_Chi_Minh', 10.8231, 106.6297], ['bangkok', 'バンコク', 'タイ', 'asia', 'Asia/Bangkok', 13.7563, 100.5018],
+  ['kualalumpur', 'クアラルンプール', 'マレーシア', 'asia', 'Asia/Kuala_Lumpur', 3.1390, 101.6869], ['singapore', 'シンガポール', 'シンガポール', 'asia', 'Asia/Singapore', 1.3521, 103.8198],
+  ['jakarta', 'ジャカルタ', 'インドネシア', 'asia', 'Asia/Jakarta', -6.2088, 106.8456], ['bali', 'バリ', 'インドネシア', 'asia', 'Asia/Makassar', -8.6705, 115.2126],
+  ['phnompenh', 'プノンペン', 'カンボジア', 'asia', 'Asia/Phnom_Penh', 11.5564, 104.9282], ['yangon', 'ヤンゴン', 'ミャンマー', 'asia', 'Asia/Yangon', 16.8409, 96.1735],
+  ['dhaka', 'ダッカ', 'バングラデシュ', 'asia', 'Asia/Dhaka', 23.8103, 90.4125], ['kathmandu', 'カトマンズ', 'ネパール', 'asia', 'Asia/Kathmandu', 27.7172, 85.3240],
+  ['newdelhi', 'ニューデリー', 'インド', 'asia', 'Asia/Kolkata', 28.6139, 77.2090], ['mumbai', 'ムンバイ', 'インド', 'asia', 'Asia/Kolkata', 19.0760, 72.8777],
+  ['colombo', 'コロンボ', 'スリランカ', 'asia', 'Asia/Colombo', 6.9271, 79.8612], ['karachi', 'カラチ', 'パキスタン', 'asia', 'Asia/Karachi', 24.8607, 67.0011],
+  ['dubai', 'ドバイ', 'アラブ首長国連邦', 'mideast', 'Asia/Dubai', 25.2048, 55.2708], ['tbilisi', 'トビリシ', 'ジョージア', 'mideast', 'Asia/Tbilisi', 41.7151, 44.8271],
+  ['riyadh', 'リヤド', 'サウジアラビア', 'mideast', 'Asia/Riyadh', 24.7136, 46.6753], ['istanbul', 'イスタンブール', 'トルコ', 'mideast', 'Europe/Istanbul', 41.0082, 28.9784],
+  ['moscow', 'モスクワ', 'ロシア', 'europe', 'Europe/Moscow', 55.7558, 37.6173], ['athens', 'アテネ', 'ギリシャ', 'europe', 'Europe/Athens', 37.9838, 23.7275],
+  ['berlin', 'ベルリン', 'ドイツ', 'europe', 'Europe/Berlin', 52.5200, 13.4050], ['paris', 'パリ', 'フランス', 'europe', 'Europe/Paris', 48.8566, 2.3522],
+  ['rome', 'ローマ', 'イタリア', 'europe', 'Europe/Rome', 41.9028, 12.4964], ['geneva', 'ジュネーブ', 'スイス', 'europe', 'Europe/Zurich', 46.2044, 6.1432],
+  ['london', 'ロンドン', 'イギリス', 'europe', 'Europe/London', 51.5074, -0.1278], ['lisbon', 'リスボン', 'ポルトガル', 'europe', 'Europe/Lisbon', 38.7223, -9.1393],
+  ['reykjavik', 'レイキャビク', 'アイスランド', 'europe', 'Atlantic/Reykjavik', 64.1466, -21.9426],
+  ['cairo', 'カイロ', 'エジプト', 'africa', 'Africa/Cairo', 30.0444, 31.2357], ['lagos', 'ラゴス', 'ナイジェリア', 'africa', 'Africa/Lagos', 6.5244, 3.3792],
+  ['johannesburg', 'ヨハネスブルグ', '南アフリカ', 'africa', 'Africa/Johannesburg', -26.2041, 28.0473],
+  ['newyork', 'ニューヨーク', 'アメリカ', 'americas', 'America/New_York', 40.7128, -74.0060], ['toronto', 'トロント', 'カナダ', 'americas', 'America/Toronto', 43.6532, -79.3832],
+  ['chicago', 'シカゴ', 'アメリカ', 'americas', 'America/Chicago', 41.8781, -87.6298], ['mexicocity', 'メキシコシティ', 'メキシコ', 'americas', 'America/Mexico_City', 19.4326, -99.1332],
+  ['denver', 'デンバー', 'アメリカ', 'americas', 'America/Denver', 39.7392, -104.9903], ['losangeles', 'ロサンゼルス', 'アメリカ', 'americas', 'America/Los_Angeles', 34.0522, -118.2437],
+  ['sanfrancisco', 'サンフランシスコ', 'アメリカ', 'americas', 'America/Los_Angeles', 37.7749, -122.4194], ['vancouver', 'バンクーバー', 'カナダ', 'americas', 'America/Vancouver', 49.2827, -123.1207],
+  ['anchorage', 'アンカレッジ', 'アメリカ', 'americas', 'America/Anchorage', 61.2181, -149.9003], ['honolulu', 'ホノルル', 'アメリカ', 'americas', 'Pacific/Honolulu', 21.3069, -157.8583],
+  ['saopaulo', 'サンパウロ', 'ブラジル', 'americas', 'America/Sao_Paulo', -23.5505, -46.6333], ['buenosaires', 'ブエノスアイレス', 'アルゼンチン', 'americas', 'America/Argentina/Buenos_Aires', -34.6037, -58.3816],
+  ['sydney', 'シドニー', 'オーストラリア', 'oceania', 'Australia/Sydney', -33.8688, 151.2093], ['auckland', 'オークランド', 'ニュージーランド', 'oceania', 'Pacific/Auckland', -36.8485, 174.7633]
+].map(function(c) { return { id: c[0], name: c[1], country: c[2], region: c[3], tz: c[4], lat: c[5], lng: c[6] }; });
+var KOYOMI_WORLD_REGIONS = [['asia', 'アジア'], ['mideast', '中東・中央アジア'], ['europe', 'ヨーロッパ'], ['africa', 'アフリカ'], ['americas', 'アメリカ大陸'], ['oceania', 'オセアニア']];
+window.KOYOMI_WORLD_CITIES = KOYOMI_WORLD_CITIES;
+// その時間帯の、その瞬間の壁の時計（年・月・日・時・分・曜日）と、UTC からのずれ（分）
+var _koyomiTzFmtCache = {};
+function koyomiTzParts(tz, ms) {
+  try {
+    var f = _koyomiTzFmtCache[tz] || (_koyomiTzFmtCache[tz] = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', weekday: 'short' }));
+    var o = {}; f.formatToParts(new Date(ms)).forEach(function(p) { o[p.type] = p.value; });
+    var y = +o.year, mo = +o.month, d = +o.day, h = +o.hour % 24, mi = +o.minute, se = +o.second;
+    var off = Math.round((Date.UTC(y, mo - 1, d, h, mi, se) - Math.floor(ms / 1000) * 1000) / 60000);
+    return { y: y, m: mo, d: d, h: h, mi: mi, wd: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(o.weekday), offMin: off };
+  } catch (e) { return null; }
+}
+window.koyomiTzParts = koyomiTzParts;
+// その時間帯の、その日（y/m/d）の0時の瞬間（ミリ秒）。夏時間の日も正しく
+function _koyomiTzMidnightMs(tz, y, m, d) {
+  var guess = Date.UTC(y, m - 1, d);
+  for (var i = 0; i < 3; i++) { var p = koyomiTzParts(tz, guess); if (!p) return null; guess = Date.UTC(y, m - 1, d) - p.offMin * 60000; }
+  return guess;
+}
+// 太陽がその高さを通る瞬間を、[startMs, endMs) の中から探す（4つの時刻から探して、その中にあるものを選ぶ）
+function _koyomiSunMomentIn(lat, lng, startMs, endMs, h0, rising) {
+  var rad = Math.PI / 180, jd0 = startMs / 86400000 + 2440587.5;
+  var raDec = function(jdUT) {
+    var lam = _koyomiSunApparentLon(jdUT) * rad, T = (jdUT - 2451545.0) / 36525;
+    var eps = (23.439291 - 0.0130042 * T + 0.00256 * Math.cos((125.04 - 1934.136 * T) * rad)) * rad;
+    return { ra: Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)) / rad, dec: Math.asin(Math.sin(eps) * Math.sin(lam)) };
+  };
+  var lst = function(jdUT) { return ((280.46061837 + 360.98564736629 * (jdUT - 2451545.0) + lng) % 360 + 360) % 360; };
+  var one = function(frac) {
+    var t = jd0 + frac;
+    for (var i = 0; i < 8; i++) {
+      var p = raDec(t);
+      var cosH = (Math.sin(h0 * rad) - Math.sin(lat * rad) * Math.sin(p.dec)) / (Math.cos(lat * rad) * Math.cos(p.dec));
+      if (!(cosH >= -1 && cosH <= 1)) return null;
+      var H = Math.acos(cosH) / rad, target = rising ? p.ra - H : p.ra + H;
+      var diff = ((target - lst(t)) % 360 + 540) % 360 - 180;
+      t += diff / 360.98564736629;
+      if (Math.abs(diff) < 1e-4) break;
+    }
+    var ms = (t - 2440587.5) * 86400000;
+    return isFinite(ms) ? ms : null;
+  };
+  var fr = [rising ? 0.25 : 0.75, 0, 0.25, 0.5, 0.75];
+  for (var k = 0; k < fr.length; k++) { var m = one(fr[k]); if (m !== null && m >= startMs && m < endMs) return m; }
+  return null;
+}
+// 都市の「今」：その都市の時計の時刻・日付・日本との日付の違い・4つの時刻（その都市の時計で）・昼か夜か・十二支の刻
+function koyomiCityNow(city, ms) {
+  var out = { city: city, ok: false };
+  try {
+    ms = (typeof ms === 'number') ? ms : Date.now();
+    var p = koyomiTzParts(city.tz, ms), jp = koyomiTzParts('Asia/Tokyo', ms);
+    if (!p) return out;
+    out.local = p; out.offMin = p.offMin;
+    out.dayDiff = Math.round((Date.UTC(p.y, p.m - 1, p.d) - Date.UTC(jp.y, jp.m - 1, jp.d)) / 86400000);   // 日本より何日前・後
+    var mid = _koyomiTzMidnightMs(city.tz, p.y, p.m, p.d), next = _koyomiTzMidnightMs(city.tz, p.y, p.m, p.d + 1);
+    out.dayStart = mid; out.dayEnd = next;
+    var ev = function(h0, rising) { try { return _koyomiSunMomentIn(city.lat, city.lng, mid, next, h0, rising); } catch (e) { return null; } };
+    out.dawn = ev(-6, true); out.rise = ev(-0.833, true); out.set = ev(-0.833, false); out.dusk = ev(-6, false);
+    var clock = function(m) { if (m === null) return null; var q = koyomiTzParts(city.tz, m); return q ? q.h + q.mi / 60 : null; };
+    out.dawnH = clock(out.dawn); out.riseH = clock(out.rise); out.setH = clock(out.set); out.duskH = clock(out.dusk);
+    out.phase = (out.rise !== null && out.set !== null) ? (ms >= out.rise && ms < out.set ? 'day' : ((out.dawn !== null && ms >= out.dawn && ms < out.rise) || (out.dusk !== null && ms >= out.set && ms < out.dusk) ? 'twilight' : 'night')) : null;
+    out.koku = koyomiKoku(new Date(ms), { lat: city.lat, lng: city.lng });
+    out.ok = true;
+  } catch (e) {}
+  return out;
+}
+window.koyomiCityNow = koyomiCityNow;
+// ===== END v0.66.0 土台 =====
 // ===== v0.64.2: 十二支の刻（不定時法） =====
 // 【権威】2026-10-28、「旧暦で、子の刻、寅の刻、丑の刻、そこまでやった方がいいんじゃないの」
 // 「江戸時代に本当に使われていたのが不定時法なら、それでいい」との指示。
@@ -12237,13 +12347,14 @@ window.koyomiSunEvents = koyomiSunEvents;
 // 白夜などで計算できない・何かの失敗のときは、定時法（子の刻＝23〜1時、2時間ずつ）に戻る
 var KOYOMI_KOKU_NAMES = [['子', 'ね'], ['丑', 'うし'], ['寅', 'とら'], ['卯', 'う'], ['辰', 'たつ'], ['巳', 'み'], ['午', 'うま'], ['未', 'ひつじ'], ['申', 'さる'], ['酉', 'とり'], ['戌', 'いぬ'], ['亥', 'い']];
 var KOYOMI_MUTSU_H0 = -(7 + 21 / 60 + 40 / 3600);
-function koyomiKoku(date) {
+function koyomiKoku(date, geoOverride) {
   // v0.64.3: 【権威】2026-10-28、「定時法に戻るのは、どんなとき？」との問いで確かめると、日本は1年0日だったが、
   // ロンドンで311日戻っていた（明け六つを日本の日付の中だけで探していたため）。前後の日の「六つ」を全部並べ、
   // 今の時刻の直前と直後の六つで、昼か夜かを決める。本当に定時法に戻るのは、白夜・極夜で六つが来ない所だけ
   var d = date || new Date(), idx = null, how = 'futeiji';
   try {
-    var g = (typeof _userGeoLocation !== 'undefined' && _userGeoLocation && typeof _userGeoLocation.lat === 'number') ? _userGeoLocation : _TOKYO_GEO;
+    var g = (geoOverride && typeof geoOverride.lat === 'number') ? geoOverride :   // v0.66.0: 都市を指定できる
+      ((typeof _userGeoLocation !== 'undefined' && _userGeoLocation && typeof _userGeoLocation.lat === 'number') ? _userGeoLocation : _TOKYO_GEO);
     var t = d.getTime(), marks = [];
     for (var off = -2; off <= 2; off++) {
       var x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + off, 12);
@@ -12448,6 +12559,164 @@ function runKoyomiCalendarCheck() {
 }
 window.runKoyomiCalendarCheck = runKoyomiCalendarCheck;
 // ===== END v0.64.0 検算 =====
+// ===== v0.66.0: 世界の都市の暦（画面・検算） =====
+var KOYOMI_WORLD_DEFAULT = ['tokyo', 'beijing', 'taipei', 'kualalumpur', 'newyork', 'london', 'paris'];
+function _koyomiWorldSelected() {
+  try {
+    var ids = allSettings && allSettings.ui && Array.isArray(allSettings.ui.worldCities) ? allSettings.ui.worldCities : KOYOMI_WORLD_DEFAULT;
+    var list = ids.map(function(id) { return KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === id; })[0]; }).filter(Boolean);
+    return list.length ? list : KOYOMI_WORLD_DEFAULT.map(function(id) { return KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === id; })[0]; });
+  } catch (e) { return []; }
+}
+function _koyomiHM(h) { if (h === null || h === undefined || !isFinite(h)) return '—'; var m = Math.round(h * 60) % 1440; return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); }
+// 24時間の帯：夜・薄明・昼の色分けと、今の位置（ワールドタイマーの昼夜の輪を、まっすぐ伸ばした形）
+function _koyomiDayBarHtml(n) {
+  var pct = function(h) { return Math.max(0, Math.min(100, h / 24 * 100)); };
+  var nowH = n.local.h + n.local.mi / 60;
+  var seg = '';
+  if (n.riseH !== null && n.setH !== null) {
+    var dw = n.dawnH !== null ? n.dawnH : n.riseH, dk = n.duskH !== null ? n.duskH : n.setH;
+    seg = '<div style="position:absolute;top:0;bottom:0;left:' + pct(dw) + '%;width:' + (pct(n.riseH) - pct(dw)) + '%;background:linear-gradient(90deg,#3b3466,#c98f5a);"></div>' +
+      '<div style="position:absolute;top:0;bottom:0;left:' + pct(n.riseH) + '%;width:' + (pct(n.setH) - pct(n.riseH)) + '%;background:linear-gradient(90deg,#f3d27a,#ffe9a8 50%,#f3d27a);"></div>' +
+      '<div style="position:absolute;top:0;bottom:0;left:' + pct(n.setH) + '%;width:' + (pct(dk) - pct(n.setH)) + '%;background:linear-gradient(90deg,#c98f5a,#3b3466);"></div>';
+  }
+  return '<div style="position:relative;height:10px;border-radius:5px;background:#141633;overflow:hidden;margin:10px 0 4px;">' + seg +
+    '<div style="position:absolute;top:-2px;bottom:-2px;left:calc(' + pct(nowH) + '% - 1px);width:2px;background:#fff;box-shadow:0 0 6px #fff;"></div></div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:0.62em;color:#8f8fb8;"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>';
+}
+function _koyomiWorldCardHtml(c, ms) {
+  var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var n = koyomiCityNow(c, ms);
+  if (!n.ok) return '<div style="padding:12px;border-radius:14px;background:#1b1d3a;color:#aaa;margin-bottom:10px;">' + e(c.name) + '：計算できませんでした</div>';
+  var wd = ['日', '月', '火', '水', '木', '金', '土'][n.local.wd];
+  var badge = n.dayDiff === 0 ? '日本と同じ日' : (n.dayDiff < 0 ? '日本より1日前' : '日本より1日後');
+  var icon = n.phase === 'day' ? '☀️' : (n.phase === 'twilight' ? '🌆' : (n.phase === 'night' ? '🌙' : '🌐'));
+  var offH = n.offMin / 60, offTxt = 'UTC' + (offH >= 0 ? '+' : '−') + Math.floor(Math.abs(offH)) + (Math.abs(n.offMin) % 60 ? ':' + String(Math.abs(n.offMin) % 60).padStart(2, '0') : '');
+  return '<div data-world-city="' + e(c.id) + '" style="padding:14px 16px;border-radius:16px;background:linear-gradient(160deg,#1d2045,#12142e);border:1px solid rgba(232,201,106,0.25);margin-bottom:10px;color:#e9e6ff;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+      '<div style="min-width:0;"><div style="font-weight:800;font-size:' + (c.name.length >= 7 ? '0.92em' : '1.05em') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + icon + ' ' + e(c.name) + '</div><div style="font-size:0.7em;color:#9a97c8;">' + e(c.country) + '・' + offTxt + '</div></div>' +
+      '<div style="text-align:right;flex-shrink:0;"><div style="font-size:1.7em;font-weight:800;color:#e8c96a;font-variant-numeric:tabular-nums;line-height:1;">' + n.local.h + ':' + String(n.local.mi).padStart(2, '0') + '</div>' +
+      '<div style="font-size:0.72em;color:#c9c6ee;margin-top:3px;">' + n.local.m + '/' + n.local.d + '（' + wd + '）<span style="margin-left:6px;padding:1px 6px;border-radius:999px;background:' + (n.dayDiff === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(232,201,106,0.18)') + ';color:' + (n.dayDiff === 0 ? '#9a97c8' : '#e8c96a') + ';">' + badge + '</span></div></div>' +
+    '</div>' + _koyomiDayBarHtml(n) +
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px;text-align:center;font-size:0.72em;">' +
+      [['薄明始め', n.dawnH], ['日の出', n.riseH], ['日の入り', n.setH], ['薄明終わり', n.duskH]].map(function(x) { return '<div><div style="color:#8f8fb8;">' + x[0] + '</div><div style="font-weight:700;color:#fff;font-variant-numeric:tabular-nums;">' + _koyomiHM(x[1]) + '</div></div>'; }).join('') +
+    '</div>' +
+    '<div style="margin-top:8px;font-size:0.8em;color:#e8c96a;text-align:right;">今は、' + e(n.koku.name) + '（' + e(n.koku.reading) + '）の刻' + (n.koku.how === 'teiji' ? '<span style="color:#8f8fb8;font-size:0.85em;">・白夜のため定時法</span>' : '') + '</div>' +
+  '</div>';
+}
+var _koyomiWorldTimer = null;
+function renderKoyomiWorldClock() {
+  var box = document.getElementById('koyomiWorldList'); if (!box) return;
+  var ms = Date.now();
+  try {
+    box.innerHTML = _koyomiWorldSelected().map(function(c) { return _koyomiWorldCardHtml(c, ms); }).join('');
+    var hd = document.getElementById('koyomiWorldHead');
+    if (hd) {
+      var v = koyomiTodayData(new Date()), jp = koyomiTzParts('Asia/Tokyo', ms);
+      hd.textContent = '日本の暦では、今日は' + (v.sekki ? v.sekki + 'の' + v.sekkiDay + '日目' : '') + (v.kou ? '・' + v.kou : '') + '。日本は今 ' + jp.h + ':' + String(jp.mi).padStart(2, '0');
+    }
+  } catch (e) { box.textContent = '世界の都市の暦を出せませんでした（' + e.message + '）'; }
+}
+function openKoyomiWorldClock() {
+  try {
+    if (typeof Intl === 'undefined' || !Intl.DateTimeFormat) { if (typeof showToast === 'function') showToast('この端末では、世界の時刻を出せません', { type: 'warn' }); return; }
+    var old = document.getElementById('koyomiWorldOverlay'); if (old) old.remove();
+    var ov = document.createElement('div');
+    ov.id = 'koyomiWorldOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(5,6,20,0.72);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px 10px;';
+    ov.innerHTML = '<div style="width:100%;max-width:460px;background:#0c0e24;border:1px solid rgba(232,201,106,0.35);border-radius:22px;padding:18px 14px 14px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">' +
+      '<div style="text-align:center;color:#e8c96a;font-weight:800;font-size:1.15em;letter-spacing:0.08em;">🌍 世界の都市の暦</div>' +
+      '<div id="koyomiWorldHead" style="text-align:center;color:#9a97c8;font-size:0.75em;margin:6px 0 12px;line-height:1.6;"></div>' +
+      '<div id="koyomiWorldList"></div>' +
+      '<div id="koyomiWorldPicker" style="display:none;margin-top:6px;"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:8px;">' +
+        '<button type="button" id="koyomiWorldPickBtn" style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(232,201,106,0.5);background:transparent;color:#e8c96a;font-size:0.85em;cursor:pointer;">＋ 都市をえらぶ</button>' +
+        '<button type="button" id="koyomiWorldCloseBtn" style="flex:1;padding:10px;border-radius:12px;border:none;background:#2a2a4a;color:#e9e6ff;font-size:0.85em;cursor:pointer;">閉じる</button>' +
+      '</div>' +
+      '<div style="text-align:center;color:#6f6c99;font-size:0.65em;margin-top:10px;line-height:1.6;">日の出・日の入り・薄明は、その都市の太陽の計算です。十二支の刻は、その都市の明け六つ・暮れ六つで数えます。</div>' +
+    '</div>';
+    document.body.appendChild(ov);
+    var close = function() { try { clearInterval(_koyomiWorldTimer); } catch (e) {} _koyomiWorldTimer = null; ov.remove(); };
+    document.getElementById('koyomiWorldCloseBtn').onclick = close;
+    ov.addEventListener('click', function(ev) { if (ev.target === ov) close(); });
+    document.getElementById('koyomiWorldPickBtn').onclick = function() { _koyomiWorldTogglePicker(); };
+    renderKoyomiWorldClock();
+    _koyomiWorldTimer = setInterval(function() { if (!document.getElementById('koyomiWorldOverlay')) { clearInterval(_koyomiWorldTimer); return; } renderKoyomiWorldClock(); }, 30000);
+  } catch (e) { if (typeof showToast === 'function') showToast('世界の都市の暦を開けませんでした', { type: 'warn' }); }
+}
+window.openKoyomiWorldClock = openKoyomiWorldClock;
+function _koyomiWorldTogglePicker() {
+  var pk = document.getElementById('koyomiWorldPicker'); if (!pk) return;
+  if (pk.style.display !== 'none') { pk.style.display = 'none'; return; }
+  var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var sel = _koyomiWorldSelected().map(function(c) { return c.id; });
+  pk.innerHTML = '<div style="padding:12px;border-radius:14px;background:#15173a;border:1px solid rgba(255,255,255,0.08);">' +
+    KOYOMI_WORLD_REGIONS.map(function(r) {
+      return '<div style="color:#9a97c8;font-size:0.72em;margin:6px 0 4px;">' + r[1] + '</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+        KOYOMI_WORLD_CITIES.filter(function(c) { return c.region === r[0]; }).map(function(c) {
+          var on = sel.indexOf(c.id) !== -1;
+          return '<button type="button" data-world-pick="' + e(c.id) + '" style="padding:5px 10px;border-radius:999px;font-size:0.78em;cursor:pointer;border:1px solid ' + (on ? '#e8c96a' : 'rgba(255,255,255,0.15)') + ';background:' + (on ? 'rgba(232,201,106,0.18)' : 'transparent') + ';color:' + (on ? '#e8c96a' : '#c9c6ee') + ';">' + e(c.name) + '</button>';
+        }).join('') + '</div>';
+    }).join('') + '</div>';
+  pk.style.display = 'block';
+  pk.querySelectorAll('[data-world-pick]').forEach(function(b) {
+    b.onclick = function() {
+      var id = b.getAttribute('data-world-pick'), cur = _koyomiWorldSelected().map(function(c) { return c.id; });
+      var at = cur.indexOf(id);
+      if (at === -1) cur.push(id); else if (cur.length > 1) cur.splice(at, 1);
+      try { if (!allSettings.ui) allSettings.ui = {}; allSettings.ui.worldCities = cur; saveAllSettings(); } catch (er) {}
+      renderKoyomiWorldClock(); pk.style.display = 'none'; _koyomiWorldTogglePicker();
+    };
+  });
+}
+// 管理画面：世界の都市の検算（Astronomy Engine が読めなくても、こよみるの値は並べる）
+function runKoyomiWorldCheck() {
+  var list = document.getElementById('adminKoyomiCheckList'), btn = document.getElementById('adminWorldCheckBtn');
+  if (!list) return Promise.resolve(null);
+  list.textContent = '世界の都市で検算しています…';
+  if (btn) btn.disabled = true;
+  var ms = Date.now(), e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var finish = function(A, note) {
+    var rows = [], okN = 0, ngN = 0;
+    KOYOMI_WORLD_CITIES.forEach(function(c) {
+      var n = koyomiCityNow(c, ms), diff = null, ok = null;
+      if (A && n.ok) {
+        try {
+          var obs = new A.Observer(c.lat, c.lng, 0), t0 = A.MakeTime(new Date(n.dayStart)), mx = 0, cmp = 0;
+          [['rise', A.SearchRiseSet(A.Body.Sun, obs, +1, t0, 1)], ['set', A.SearchRiseSet(A.Body.Sun, obs, -1, t0, 1)], ['dawn', A.SearchAltitude(A.Body.Sun, obs, +1, t0, 1, -6)], ['dusk', A.SearchAltitude(A.Body.Sun, obs, -1, t0, 1, -6)]].forEach(function(x) {
+            var a = x[1] ? x[1].date.getTime() : null; if (a !== null && a >= n.dayEnd) a = null;
+            var o = n[x[0]];
+            if (a === null && o === null) return;
+            if (a === null || o === null) { mx = 9999; return; }
+            mx = Math.max(mx, Math.abs(o - a) / 60000); cmp++;
+          });
+          diff = mx; ok = mx <= 2;
+        } catch (er) { ok = null; }
+      }
+      if (ok === true) okN++; if (ok === false) ngN++;
+      rows.push({ c: c, n: n, diff: diff, ok: ok });
+    });
+    var th = 'style="text-align:left;padding:3px 6px;border-bottom:1px solid #444;color:#ffd700;white-space:nowrap;"';
+    var td = function(bg) { return '<td style="padding:3px 6px;border-bottom:1px solid #2a2a3e;white-space:nowrap;' + bg + '">'; };
+    list.innerHTML = '<div style="margin-bottom:6px;">世界の都市：合格 <b style="color:#7fdc9f;">' + okN + '</b> ／ 外れ <b style="color:' + (ngN ? '#ff8a80' : '#7fdc9f') + ';">' + ngN + '</b> ／ ' + rows.length + '都市（時刻は2分まで）' + (note ? '<br>' + e(note) : '') + '</div>' +
+      '<table style="border-collapse:collapse;font-size:0.95em;"><tr><th ' + th + '>都市</th><th ' + th + '>現地</th><th ' + th + '>日本と</th><th ' + th + '>薄明始め</th><th ' + th + '>日の出</th><th ' + th + '>日の入り</th><th ' + th + '>薄明終わり</th><th ' + th + '>刻</th><th ' + th + '>差（分）</th><th ' + th + '>判定</th></tr>' +
+      rows.map(function(r) {
+        var n = r.n, bg = r.ok === false ? 'background:rgba(255,80,80,0.18);' : '';
+        if (!n.ok) return '<tr>' + td(bg) + e(r.c.name) + '</td>' + td(bg) + '計算できず</td><td colspan="8"></td></tr>';
+        return '<tr>' + td(bg) + e(r.c.name) + '</td>' + td(bg) + n.local.m + '/' + n.local.d + ' ' + n.local.h + ':' + String(n.local.mi).padStart(2, '0') + '</td>' + td(bg) + (n.dayDiff === 0 ? '同じ日' : (n.dayDiff < 0 ? '1日前' : '1日後')) + '</td>' +
+          td(bg) + _koyomiHM(n.dawnH) + '</td>' + td(bg) + _koyomiHM(n.riseH) + '</td>' + td(bg) + _koyomiHM(n.setH) + '</td>' + td(bg) + _koyomiHM(n.duskH) + '</td>' +
+          td(bg) + e(n.koku.name) + (n.koku.how === 'teiji' ? '（定時法）' : '') + '</td>' + td(bg) + (r.diff === null ? '—' : (r.diff === 9999 ? '片方なし' : r.diff.toFixed(2))) + '</td>' + td(bg) + (r.ok === true ? '✓' : (r.ok === false ? '✗' : '—')) + '</td></tr>';
+      }).join('') + '</table>';
+    if (btn) btn.disabled = false;
+    return rows;
+  };
+  return _koyomiLoadAstronomyEngine(10000).then(function(A) { return finish(A, ''); }, function(err) {
+    return finish(null, 'Astronomy Engine を読み込めませんでした（' + err.message + '）。こよみるの値だけを並べます。こよみるの暦には影響ありません。');
+  });
+}
+window.runKoyomiWorldCheck = runKoyomiWorldCheck;
+// ===== END v0.66.0 画面・検算 =====
+
     function _getSunData(date, geo) {
       if (typeof date === "string") date = new Date(date.replace(/-/g, "/"));
       var mo = date.getMonth()+1, day = date.getDate();
@@ -56009,6 +56278,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.66.0', date: '2026-10-28',
+    items: [
+      { icon:'🌍', t:'「世界の都市の暦」を作りました',
+        before:'ほかの国の時刻や日の出は、見られませんでした',
+        after:'ダッシュボードの天象のカードの「🌍 世界」から開けます。台北・北京・クアラルンプール・ニューヨーク・ロンドン・パリなど60都市から選んで、現地の時刻と日付、日の出・日の入り・薄明の始めと終わり、昼と夜の帯、その都市の明け六つ・暮れ六つで数えた十二支の刻を並べます' }
+    ]
+  },
+  {
     ver: 'v0.65.2', date: '2026-10-28',
     items: [
       { icon:'🌍', t:'海外で開いたときの、いちばん上の暦の日付を直しました',
@@ -83340,6 +83617,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-501·①: 現地の時刻の出し方が違う', [_ok1, _ok2, _ok3, _e && _jst(_e.riseMs), _pm && _pm.jstTime].join(' / '));
      } catch(e) {
        ng('ST-501: 例外', e.message);
+     }
+
+     // ===== ST-502: 世界の都市の暦（v0.66.0〜） =====
+     // 【権威】2026-10-28、「世界の主要都市をリストアップ。アジア圏はたくさん。台湾・マレーシアも。デザインも任せた。世界の都市の暦」との指示
+     try {
+       var _ms = Date.UTC(2026, 9, 28, 3, 0);   // 日本時間 10月28日 12:00
+       var _by = function(id) { return KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === id; })[0]; };
+       var _ny = koyomiCityNow(_by('newyork'), _ms), _ka = koyomiCityNow(_by('kathmandu'), _ms), _tp = koyomiCityNow(_by('taipei'), _ms), _rk = koyomiCityNow(_by('reykjavik'), Date.UTC(2026, 5, 21, 0, 0));
+       var _sy = koyomiCityNow(_by('sydney'), _ms);
+       var _ok = KOYOMI_WORLD_CITIES.length >= 55 && ['taipei', 'kaohsiung', 'kualalumpur', 'beijing', 'hongkong', 'singapore', 'tbilisi', 'sanfrancisco'].every(function(id) { return !!_by(id); }) &&
+         _ny.local.d === 27 && _ny.local.h === 23 && _ny.dayDiff === -1 && _ka.local.h === 8 && _ka.local.mi === 45 && _tp.local.h === 11 && _tp.dayDiff === 0 &&
+         Math.abs(_tp.riseH - (5 + 58 / 60)) * 60 <= 2 && _rk.koku.how === 'teiji' && _sy.riseH < 6.2 && _sy.setH > 19;
+       var _html = _koyomiWorldCardHtml(_by('taipei'), _ms);
+       (_ok && /data-world-city="taipei"/.test(_html) && _html.indexOf('薄明始め') !== -1 && _html.indexOf('の刻') !== -1 && !!document.getElementById('dbWorldBtn') && !!document.getElementById('adminWorldCheckBtn'))
+         ? ok('ST-502·①: 60都市（台北・高雄・クアラルンプールなどアジアを厚く）。現地の時刻・日付（ニューヨークは日本より1日前）・45分ずれ（カトマンズ）・日の出・薄明・刻。白夜のレイキャビクは定時法')
+         : ng('ST-502·①: 世界の都市の暦が違う', [_ok, _ny.local.d, _ny.local.h, _ka.local.mi, _tp.riseH, _rk.koku.how].join(' / '));
+     } catch(e) {
+       ng('ST-502: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
