@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.66.9 ★ -->
+<!-- ★ CURRENT VERSION: v0.67.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.66.9';
+    const APP_VERSION = 'v0.67.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12476,7 +12476,8 @@ function _koyomiSunMomentIn(lat, lng, startMs, endMs, h0, rising) {
 var KOYOMI_COUNTRY_CALENDARS = (function() {
   var hijri = { era: 'hijri', note: 'イスラム教の行事・計算による目安' }, nong = { lunar: 8, name: '農暦', note: '春節・中秋など' };
   return {
-    '日本': [{ era: 'wareki', name: '和暦' }],
+    // v0.67.0: 【権威】2026-10-29、「シドニーや西欧は西暦でしょ。西暦もちゃんと入れないと。和暦だけで西暦がないのは変。皇紀も入れてないでしょ」との指摘
+    '日本': [{ era: 'wareki', name: '和暦' }, { era: 'koki', name: '皇紀' }],
     '台湾': [{ era: 'minkoku', name: '民国紀元', note: '公式' }, nong],
     'タイ': [{ era: 'butsureki', name: '仏暦', note: '公式' }],
     '中国': [nong], 'シンガポール': [nong, hijri], 'マレーシア': [hijri, nong],
@@ -12495,14 +12496,17 @@ var KOYOMI_COUNTRY_CALENDARS = (function() {
 })();
 // その都市（その国）の暦を、その都市の今日の日付で
 function koyomiCityCalendars(city, ms) {
-  var key = String(city.country || '').split('・')[0], list = KOYOMI_COUNTRY_CALENDARS[key];
-  if (!list || !list.length) return [];
+  var key = String(city.country || '').split('・')[0], list = KOYOMI_COUNTRY_CALENDARS[key] || [];
   var p = koyomiTzParts(city.tz, ms); if (!p) return [];
   var day = new Date(p.y, p.m - 1, p.d, 12);
+  // v0.67.0: どの国にも、まず西暦（グレゴリオ暦）。西暦が主の国では「公式」、ほかの暦が公式の国では「併用」
+  var mainOther = list.some(function(c) { return /公式/.test(c.note || '') && !(c.era === 'minkoku' || c.era === 'butsureki'); });
+  list = [{ seireki: true, note: mainOther ? '国際的に併用' : '' }].concat(list);
   return list.map(function(c) {
     var text = '', usable = false;
     try {
-      if (c.era) { var lb = koyomiBlueEraLabel(c.era, day); text = (c.name && lb.indexOf(c.name.slice(0, 2)) !== 0) ? c.name + ' ' + lb : lb; usable = !!lb; }   // 「仏暦2569年」のように名前が入っていれば、名前を重ねない
+      if (c.seireki) { text = '西暦' + p.y + '年'; usable = true; }
+      else if (c.era) { var lb = koyomiBlueEraLabel(c.era, day); text = (c.name && lb.indexOf(c.name.slice(0, 2)) !== 0) ? c.name + ' ' + lb : lb; usable = !!lb; }   // 「仏暦2569年」のように名前が入っていれば、名前を重ねない
       else if (typeof c.lunar === 'number') { var lu = koyomiLunarDate(day, c.lunar); text = c.name + ' ' + (lu ? (lu.leap ? '閏' : '') + lu.month + '月' + lu.day + '日' : ''); usable = !!lu; }
       else text = c.name;
     } catch (e) { text = c.name || ''; }
@@ -56761,6 +56765,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.67.0', date: '2026-10-29',
+    items: [
+      { icon:'📅', t:'世界の暦のどの都市にも、西暦を出しました。日本には皇紀も',
+        before:'西暦だけの国には暦の行が無く、日本は和暦だけでした',
+        after:'どの都市にも、まず「西暦2026年」を出します。日本は西暦・和暦・皇紀の3つ、ほかの暦が公式の国（イランなど）は「西暦（国際的に併用）」です' }
+    ]
+  },
+  {
     ver: 'v0.66.9', date: '2026-10-29',
     items: [
       { icon:'🛡', t:'守りを固めました（演習の結果）',
@@ -84336,9 +84348,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _ms = Date.UTC(2026, 9, 29, 3);
        var _t = function(id) { return koyomiCityCalendars(_by(id), _ms).map(function(x) { return x.text + (x.usable ? '◎' : '△'); }).join('|'); };
        var _tp = _t('taipei'), _bk = _t('bangkok'), _bj = _t('beijing'), _hn = _t('hanoi'), _ry = _t('riyadh'), _tlv = _t('telaviv'), _th = _t('tehran'), _ny = _t('newyork'), _ng = _t('nagoya');
-       (_tp === '民国115年◎|農暦 9月20日◎' && _bk === '仏暦2569年◎' && _bj === '農暦 9月20日◎' && _hn === '陰暦 9月20日◎' &&
-        /^ヒジュラ暦1448年◎$/.test(_ry) && /^ユダヤ暦5787年◎$/.test(_tlv) && /^イラン暦（太陽ヒジュラ暦）△\|ヒジュラ暦1448年◎$/.test(_th) && _ny === '' && _ng === '和暦 令和8年◎')
-         ? ok('ST-508·①: その国の暦（台湾は民国紀元と農暦、タイは仏暦、中国は中国時間の農暦、ベトナムはベトナム時間の陰暦、イスラム教の国はヒジュラ暦）。こよみるで使えるものは「こよみるでも使えます」。西暦だけの国は出さない')
+       // v0.67.0: どの都市にも、まず西暦。日本は西暦・和暦・皇紀
+       (_tp === '西暦2026年◎|民国115年◎|農暦 9月20日◎' && _bk === '西暦2026年◎|仏暦2569年◎' && _bj === '西暦2026年◎|農暦 9月20日◎' && _hn === '西暦2026年◎|陰暦 9月20日◎' &&
+        /^西暦2026年◎\|ヒジュラ暦1448年◎$/.test(_ry) && /^西暦2026年◎\|ユダヤ暦5787年◎$/.test(_tlv) && /^西暦2026年◎\|イラン暦（太陽ヒジュラ暦）△\|ヒジュラ暦1448年◎$/.test(_th) &&
+        _ny === '西暦2026年◎' && _ng === '西暦2026年◎|和暦 令和8年◎|皇紀2686年◎')
+         ? ok('ST-508·①: どの都市にもまず西暦。日本は西暦・和暦・皇紀。その国の暦（台湾は民国紀元と農暦、タイは仏暦、中国は中国時間の農暦、ベトナムはベトナム時間の陰暦、イスラム教の国はヒジュラ暦）。こよみるで使えるものは「こよみるでも使えます」')
          : ng('ST-508·①: その国の暦が違う', [_tp, _bk, _bj, _hn, _ry, _tlv, _th, _ny, _ng].join(' / '));
      } catch(e) {
        ng('ST-508: 例外', e.message);
