@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.68.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.68.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.68.3';
+    const APP_VERSION = 'v0.68.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12629,10 +12629,48 @@ function koyomiKichiShown(date) {
   return lv === 'few' ? list.filter(function(k) { return k === 'tensha' || k === 'ichiryu'; }) : list;
 }
 window.koyomiKichiShown = koyomiKichiShown;
-// --- 潮回り（旧暦の日で決める、もっとも使われている数え方）
-var KOYOMI_TIDE_BY_LUNAR_DAY = [null, '大潮', '大潮', '大潮', '中潮', '中潮', '中潮', '小潮', '小潮', '小潮', '長潮', '若潮', '中潮', '中潮', '大潮', '大潮', '大潮', '大潮', '中潮', '中潮', '中潮', '小潮', '小潮', '小潮', '長潮', '若潮', '中潮', '中潮', '中潮', '中潮', '大潮'];
-function koyomiTideName(lunarDay) { return KOYOMI_TIDE_BY_LUNAR_DAY[lunarDay] || ''; }
-window.koyomiTideName = koyomiTideName;
+// --- 潮回り（v0.68.4 で作り直し）
+// 【権威】2026-10-30、「月齢は全世界共通で本当？潮も本当？検算しようよ。嘘くさい」との指摘。
+// 前の「旧暦の日で決める表」は、海上保安庁の潮汐表（関門港 2025年8月）と31日中6日ずれていた。
+// 公式の潮名は、月と太陽の黄経の差で決まる。日本水路協会（MIRC）の決め方（沿岸の遅れ7度）で、日本時間の正午の黄経差を使うと、
+// 海上保安庁の潮汐表 43日分（2025年8月・2023年3月・2021年5月）と、すべて一致した。
+// 月の黄経は、ミーウスの方法（天体位置表 第47章）の主な項。Astronomy Engine と2000回くらべて差は最大0.0035度
+
+var _KOYOMI_MOON_L_TERMS=[[0,0,1,0,6288774],[2,0,-1,0,1274027],[2,0,0,0,658314],[0,0,2,0,213618],[0,1,0,0,-185116],[0,0,0,2,-114332],[2,0,-2,0,58793],[2,-1,-1,0,57066],[2,0,1,0,53322],[2,-1,0,0,45758],[0,1,-1,0,-40923],[1,0,0,0,-34720],[0,1,1,0,-30383],[2,0,0,-2,15327],[0,0,1,2,-12528],[0,0,1,-2,10980],[4,0,-1,0,10675],[0,0,3,0,10034],[4,0,-2,0,8548],[2,1,-1,0,-7888],[2,1,0,0,-6766],[1,0,-1,0,-5163],[1,1,0,0,4987],[2,-1,1,0,4036],[2,0,2,0,3994],[4,0,0,0,3861],[2,0,-3,0,3665],[0,1,-2,0,-2689],[2,0,-1,2,-2602],[2,-1,-2,0,2390],[1,0,1,0,-2348],[2,-2,0,0,2236],[0,1,2,0,-2120],[0,2,0,0,-2069],[2,-2,-1,0,2048],[2,0,1,-2,-1773],[2,0,0,2,-1595],[4,-1,-1,0,1215],[0,0,2,2,-1110],[3,0,-1,0,-892],[2,1,1,0,-810],[4,-1,-2,0,759],[0,2,-1,0,-713],[2,2,-1,0,-700],[2,1,-2,0,691],[2,-1,0,-2,596],[4,0,1,0,549],[0,0,4,0,537],[4,-1,0,0,520],[1,0,-2,0,-487],[2,1,0,-2,-399],[0,0,2,-2,-381],[1,1,1,0,351],[3,0,-2,0,-340],[4,0,-3,0,330],[2,-1,2,0,327],[0,2,1,0,-323],[1,1,-1,0,299],[2,0,3,0,294]];
+function _koyomiMoonLonTT(jde){
+  var r=Math.PI/180, T=(jde-2451545)/36525;
+  var Lp=218.3164477+481267.88123421*T-0.0015786*T*T+T*T*T/538841-T*T*T*T/65194000;
+  var D=297.8501921+445267.1114034*T-0.0018819*T*T+T*T*T/545868-T*T*T*T/113065000;
+  var M=357.5291092+35999.0502909*T-0.0001536*T*T+T*T*T/24490000;
+  var Mp=134.9633964+477198.8675055*T+0.0087414*T*T+T*T*T/69699-T*T*T*T/14712000;
+  var F=93.2720950+483202.0175233*T-0.0036539*T*T-T*T*T/3526000+T*T*T*T/863310000;
+  var A1=119.75+131.849*T, A2=53.09+479264.290*T, E=1-0.002516*T-0.0000074*T*T;
+  var s=0; _KOYOMI_MOON_L_TERMS.forEach(function(t){ var arg=(t[0]*D+t[1]*M+t[2]*Mp+t[3]*F)*r; var c=t[4]; if(Math.abs(t[1])===1)c*=E; else if(Math.abs(t[1])===2)c*=E*E; s+=c*Math.sin(arg); });
+  s+=3958*Math.sin(A1*r)+1962*Math.sin((Lp-F)*r)+318*Math.sin(A2*r);
+  // 章動（黄経）
+  var om=(125.04452-1934.136261*T)*r, Ls=(280.4665+36000.7698*T)*r, Lm=(218.3165+481267.8813*T)*r;
+  var dpsi=(-17.20*Math.sin(om)-1.32*Math.sin(2*Ls)-0.23*Math.sin(2*Lm)+0.21*Math.sin(2*om))/3600;
+  return (((Lp+s/1e6+dpsi)%360)+360)%360;
+}
+
+
+var _KOYOMI_TIDE_MIRC = [[343, 31, '大潮'], [31, 67, '中潮'], [67, 103, '小潮'], [103, 115, '長潮'], [115, 127, '若潮'], [127, 163, '中潮'], [163, 211, '大潮'], [211, 247, '中潮'], [247, 283, '小潮'], [283, 295, '長潮'], [295, 307, '若潮'], [307, 343, '中潮']];
+// 月と太陽の黄経の差（度・0〜360）
+function koyomiMoonSunElongation(ms) {
+  var jd = ms / 86400000 + 2440587.5, jde = jd + _koyomiDeltaTDays(2000 + (jd - 2451545) / 365.25);
+  return ((_koyomiMoonLonTT(jde) - _koyomiSunApparentLon(jd)) % 360 + 360) % 360;
+}
+window.koyomiMoonSunElongation = koyomiMoonSunElongation;
+// その日（日本の暦の日付）の潮名。日本時間の正午の黄経差で決める
+function koyomiTideOf(date) {
+  try {
+    var ms = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 3, 0);   // その日の日本時間12時
+    var x = koyomiMoonSunElongation(ms);
+    for (var i = 0; i < _KOYOMI_TIDE_MIRC.length; i++) { var r = _KOYOMI_TIDE_MIRC[i]; if (r[0] < r[1] ? (x >= r[0] && x < r[1]) : (x >= r[0] || x < r[1])) return r[2]; }
+  } catch (e) {}
+  return '';
+}
+window.koyomiTideOf = koyomiTideOf;
 // --- 月の満ち欠けの絵（南半球では、欠け方の見え方が左右逆になる）
 function koyomiMoonEmoji(age, southern) {
   var i = Math.round(((age % 29.530588) / 29.530588) * 8) % 8;
@@ -12676,7 +12714,9 @@ function koyomiCityMoon(city, n) {
     var ph = '';
     var ev = getMoonPhaseEvents(p.y).concat(getMoonPhaseEvents(p.y + 1)).filter(function(e) { return typeof e.ms === 'number' && e.ms >= n.dayStart && e.ms < n.dayEnd; })[0];
     if (ev) { var q = koyomiTzParts(city.tz, ev.ms + 30000); ph = '今日の' + q.h + ':' + String(q.mi).padStart(2, '0') + 'が' + (ev.name === '上弦' || ev.name === '下弦' ? ev.name + 'の月' : ev.name); }
-    return { age: Math.round(age * 10) / 10, emoji: koyomiMoonEmoji(age, city.lat < 0), tide: lu ? koyomiTideName(lu.day) : '', phase: ph };
+    // 潮名は日本の沿岸のための決め方（沿岸の遅れ7度）なので、日本の都市だけに出す（地中海のように潮の小さい海などもあるため）
+    var isJp = String(city.country || '').indexOf('日本') === 0;
+    return { age: Math.round(age * 10) / 10, emoji: koyomiMoonEmoji(age, city.lat < 0), tide: isJp ? koyomiTideOf(new Date(p.y, p.m - 1, p.d, 12)) : '', phase: ph };
   } catch (e) { return null; }
 }
 window.koyomiCityMoon = koyomiCityMoon;
@@ -45285,7 +45325,7 @@ function renderDashboardView() {
     var _phaseNames = ['🌑新月（しんげつ）','🌒繊月（せんげつ）','🌒繊月（せんげつ）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌒三日月（みかづき）','🌓弓張月（ゆみはりづき）※上弦','🌓弓張月（ゆみはりづき）※上弦','🌔十日月（とおかつき）','🌔十日月（とおかつき）','🌔十三夜月（じゅうさんやづき）','🌔十三夜月（じゅうさんやづき）','🌔小望月（こもちづき）','🌕満月（まんげつ）・望月（もちづき）','🌕満月（まんげつ）・望月（もちづき）','🌖十六夜（いざよい）','🌖立待月（たちまちづき）','🌖居待月（いまちづき）','🌖寝待月（ねまちづき）','🌗更待月（ふけまちづき）','🌗更待月（ふけまちづき）','🌗弓張月（ゆみはりづき）※下弦','🌘弓張月（ゆみはりづき）※下弦','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘有明月（ありあけのつき）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌘晦日月（みそかづき）・残月（ざんげつ）','🌑晦日月（みそかづき）'];
     _set2('dbMoonAge',   '月齢 ' + _age.toFixed(1));
     _set2('dbMoonPhase', _phaseNames[Math.min(29,Math.max(0,Math.round(_age)))]);
-    try { var _luT = koyomiLunarDate(_now, 9), _tdEl = document.getElementById('dbMoonPhase'); if (_luT && _tdEl) { _tdEl.textContent += '・' + koyomiWithYomi(koyomiTideName(_luT.day)); _tdEl.title = '潮回り：月の満ち欠けで決まる、潮の満ち引きの大きさ（大潮がいちばん大きい）'; } } catch (eTd) {}   // v0.67.5: 潮回り
+    try { var _tdName = koyomiTideOf(_now), _tdEl = document.getElementById('dbMoonPhase'); if (_tdName && _tdEl) { _tdEl.textContent += '・' + koyomiWithYomi(_tdName); _tdEl.title = '潮回り：月の満ち欠けで決まる、潮の満ち引きの大きさ（大潮がいちばん大きい）'; } } catch (eTd) {}   // v0.67.5: 潮回り
     // 直近新月
     if (typeof _naojGetNearestNewMoon === 'function') {
       var _nm = _naojGetNearestNewMoon(_now.getTime());
@@ -57132,6 +57172,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.68.4', date: '2026-10-30',
+    items: [
+      { icon:'🌊', t:'潮回りを、公式と同じ決め方に作り直しました',
+        before:'潮回りは旧暦の日で決めていて、海上保安庁の潮汐表と、ひと月に数日ずれることがありました',
+        after:'月と太陽の位置の差で決める、日本水路協会と同じ決め方にしました。海上保安庁の潮汐表とくらべて、43日すべて一致しています。潮回りは日本の沿岸のための数え方なので、世界の暦では日本の都市だけに出します' }
+    ]
+  },
   {
     ver: 'v0.68.3', date: '2026-10-30',
     items: [
@@ -84881,7 +84929,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _ich8 = []; for (var _d8 = 1; _d8 <= 31; _d8++) if (_k(2026, 8, _d8).indexOf('ichiryu') !== -1) _ich8.push(_d8);
        var _kichiOk = _tensha.join(',') === '3/5,5/4,5/20,7/19,10/1,12/16' && _ich8.join(',') === '3,13,18,25,30' &&
          _k(2026, 8, 8).indexOf('tora') !== -1 && _k(2026, 8, 23).indexOf('tsuchinotomi') !== -1 && _k(2026, 8, 11).indexOf('mi') !== -1;
-       var _tideOk = koyomiTideName(1) === '大潮' && koyomiTideName(15) === '大潮' && koyomiTideName(8) === '小潮' && koyomiTideName(10) === '長潮' && koyomiTideName(11) === '若潮' && koyomiTideName(5) === '中潮';
+       // v0.68.4: 潮名は公式の決め方（海上保安庁の潮汐表 関門港 2025年8月の31日分と一致）
+       var _off = '小小長若中中中大大大大中中中小小小若中中中大大大大中中中中小小', _tideMiss = 0;
+       for (var _ti = 0; _ti < 31; _ti++) if (koyomiTideOf(new Date(2025, 7, _ti + 1, 12)).charAt(0) !== _off.charAt(_ti)) _tideMiss++;
+       var _tideOk = _tideMiss === 0;
        var _emojiOk = koyomiMoonEmoji(3.7, false) === '🌒' && koyomiMoonEmoji(3.7, true) === '🌘' && koyomiMoonEmoji(14.8, true) === '🌕';
        var _tk = KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'tokyo'; })[0];
        var _nS = koyomiCityNow(_tk, Date.UTC(2026, 5, 21, 3)), _nW = koyomiCityNow(_tk, Date.UTC(2026, 11, 22, 3));
@@ -84940,6 +84991,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-515·①: ×か説明が違う', '');
      } catch(e) {
        ng('ST-515: 例外', e.message);
+     }
+
+     // ===== ST-516: 潮名は公式の決め方・月齢は世界共通（v0.68.4〜） =====
+     // 【権威】2026-10-30、「全世界共通で月齢19.6なの？本当？潮も本当？検算しようよ。嘘くさい」との指摘
+     try {
+       // 海上保安庁の潮汐表（2023年3月1〜6日・2021年5月1〜6日）
+       var _a = [[2023, 3, '長若中中中大'], [2021, 5, '中小小小長若']], _miss = 0;
+       _a.forEach(function(x) { for (var i = 0; i < 6; i++) if (koyomiTideOf(new Date(x[0], x[1] - 1, i + 1, 12)).charAt(0) !== x[2].charAt(i)) _miss++; });
+       var _ms = Date.UTC(2026, 9, 30, 3), _ages = {};
+       KOYOMI_WORLD_CITIES.forEach(function(c) { var m = koyomiCityMoon(c, koyomiCityNow(c, _ms)); _ages[m.age] = 1; });
+       var _syd = koyomiCityMoon(KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'sydney'; })[0], koyomiCityNow(KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'sydney'; })[0], _ms));
+       var _tky = koyomiCityMoon(KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'tokyo'; })[0], koyomiCityNow(KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'tokyo'; })[0], _ms));
+       (_miss === 0 && Object.keys(_ages).length === 1 && _syd.tide === '' && /潮$/.test(_tky.tide) && typeof koyomiTideName === 'undefined')
+         ? ok('ST-516·①: 潮名は日本水路協会の決め方（黄経差・遅れ7度・日本時間の正午）で、海上保安庁の潮汐表と一致。世界の暦では日本の都市だけ。同じ瞬間の月齢は、どの都市も同じ')
+         : ng('ST-516·①: 潮名か月齢が違う', [_miss, Object.keys(_ages).join(','), _syd.tide, _tky.tide].join(' / '));
+     } catch(e) {
+       ng('ST-516: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
