@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.69.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.69.4 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.69.2';
+    const APP_VERSION = 'v0.69.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12649,7 +12649,9 @@ function koyomiRenderTip(host, esc) {
     if (!host) return;
     var tip = koyomiTipOfDay(new Date(), _koyomiTipOffset);
     var old = host.querySelector('[data-tip]'); if (old) old.remove();
-    host.insertAdjacentHTML('beforeend', koyomiTipHtml(tip, esc));
+    // v0.69.3: 【権威】2026-10-30、「今日もおつかれさまは儀式みたいなものだから、一番最後にしてもらいたかった」との指示。紹介は締めの一言の手前に入れる
+    var closing = host.querySelector('[data-kaze-closing]');
+    if (closing) closing.insertAdjacentHTML('beforebegin', koyomiTipHtml(tip, esc)); else host.insertAdjacentHTML('beforeend', koyomiTipHtml(tip, esc));
     var box = host.querySelector('[data-tip]');
     box.querySelector('[data-tip-next]').onclick = function() { _koyomiTipOffset++; koyomiRenderTip(host, esc); };
     var o = box.querySelector('[data-tip-open]'); if (o) o.onclick = function() { try { tip.open(); } catch (e) {} };
@@ -12745,8 +12747,10 @@ function openKoyomiBirthday() {
       '<div style="font-weight:800;font-size:1.1em;color:#7a3b1e;margin-bottom:10px;">🎂 生まれた日の暦</div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;"><input type="date" data-bd="date" min="1900-01-01" max="' + maxD + '" value="' + e(saved) + '" style="flex:1;min-width:160px;padding:9px 10px;border-radius:10px;border:1px solid #d9c9a6;font-size:1em;">' +
       '<button type="button" data-bd="go" style="padding:9px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;font-weight:700;cursor:pointer;">見る</button></div>' +
+      // v0.69.4: 覚えるのは、選んだ人だけ（初めは覚えない）。外せば、すぐ消す
+      '<label style="display:flex;align-items:center;gap:8px;font-size:0.8em;color:#5a4630;margin:-4px 0 12px;cursor:pointer;"><input type="checkbox" data-bd="remember"' + (saved ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#7a3b1e;">この端末に覚えておく（次からすぐ見られます）</label>' +
       '<div data-bd="out" style="font-size:0.95em;"></div>' +
-      '<div style="font-size:0.72em;color:#8a7f6a;margin-top:12px;line-height:1.6;">誕生日は、この端末の中だけに覚えます（ほかの人には見えません）。1900年1月1日から今日まで。</div></div>';
+      '<div style="font-size:0.72em;color:#8a7f6a;margin-top:12px;line-height:1.6;">生年月日はサーバーには送りません。「覚えておく」を選んだときだけ、この端末の中に残します（外すと消えます）。1900年1月1日から今日まで。</div></div>';
     document.body.appendChild(ov);
     var close = function() { ov.remove(); };
     ov.addEventListener('click', function(ev) { if (ev.target === ov) close(); });
@@ -12756,11 +12760,17 @@ function openKoyomiBirthday() {
       var p = String(val || '').split('-').map(Number);
       var r = p.length === 3 ? koyomiBirthReport(p[0], p[1], p[2]) : null;
       if (!r) { out.innerHTML = '<div style="color:#c0392b;">1900年1月1日から今日までの日付を選んでください。</div>'; return; }
-      try { localStorage.setItem('koyomiBirthday', val); } catch (eL) {}
+      try { if (ov.querySelector('[data-bd="remember"]').checked) localStorage.setItem('koyomiBirthday', val); else localStorage.removeItem('koyomiBirthday'); } catch (eL) {}
       out.innerHTML = _koyomiBirthHtml(r, e) + '<div style="text-align:center;margin-top:12px;"><button type="button" data-bd="img" style="padding:7px 14px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">🖼 画像にして持ち帰る</button></div>';
       out.querySelector('[data-bd="img"]').onclick = function() { shareKoyomiCanvas(drawKoyomiBirthCanvas(r), 'koyomiru-birthday.png', r.lead + '\\n#こよみる #生まれた日の暦'); };
     };
     ov.querySelector('[data-bd="go"]').onclick = show;
+    ov.querySelector('[data-bd="remember"]').onchange = function() {
+      try {
+        if (!this.checked) { localStorage.removeItem('koyomiBirthday'); if (typeof showToast === 'function') showToast('生年月日を、この端末から消しました', { type: 'info' }); }
+        else { var v0 = ov.querySelector('[data-bd="date"]').value; if (v0) localStorage.setItem('koyomiBirthday', v0); }
+      } catch (eR) {}
+    };
     if (saved) show();
   } catch (e) { if (typeof showToast === 'function') showToast('生まれた日の暦を開けませんでした', { type: 'warn' }); }
 }
@@ -24538,7 +24548,7 @@ function koyomiKazeParts(v, order, esc) {
       '<button type="button" data-kz="word" style="padding:7px 10px;border:1px solid currentColor;border-radius:10px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.8em;cursor:pointer;white-space:nowrap;">書きとめる</button></div>';   // v0.60.6: 「残す」は重い
   }
   // v0.60.6: 締めの一言まで、一続きの儀式として畳まずに
-  bottom += '<div style="text-align:center;margin:22px 0 4px;font-size:1.1em;font-weight:800;">今日もおつかれさま！</div>';
+  bottom += '<div data-kaze-closing style="text-align:center;margin:22px 0 4px;font-size:1.1em;font-weight:800;">今日もおつかれさま！</div>';
   return { top: top, bottom: bottom, sentence: koyomiTodaySentenceHtml(v, order, esc) };
 }
 window.koyomiKazeParts = koyomiKazeParts;
@@ -57456,6 +57466,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.69.4', date: '2026-10-30',
+    items: [
+      { icon:'🔒', t:'生まれた日の暦で、生年月日をもっと大事に扱うようにしました',
+        before:'見た生年月日は、いつもこの端末に覚えていました。不具合を調べるデバッグログにも、そのまま出ていました',
+        after:'「この端末に覚えておく」を選んだときだけ覚えます（初めは覚えません。外すとすぐ消えます）。生年月日はサーバーには送らず、デバッグログでも伏せます' }
+    ]
+  },
+  {
+    ver: 'v0.69.3', date: '2026-10-30',
+    items: [
+      { icon:'🍵', t:'「今日もおつかれさま！」を、いちばん最後に戻しました',
+        before:'日替わりの紹介が、締めの「今日もおつかれさま！」の下に出ていました',
+        after:'紹介は締めの一言の手前に出し、「今日もおつかれさま！」で終わるようにしました' }
+    ]
+  },
+  {
     ver: 'v0.69.2', date: '2026-10-30',
     items: [
       { icon:'💡', t:'季節の風だよりで、毎日1つ「こんなこともできます」を紹介します',
@@ -66512,6 +66538,8 @@ function showDebugLog(_initOnly) {
       var v = localStorage.getItem(k)||'';
       // allTasks/allSettings/tokuLogは長すぎるので件数のみ
       if (k === 'allTasks' || k === 'allSettings' || k === 'tokuLog') return; // 上で処理済み
+      // v0.69.4: 【権威】2026-10-30、「生年月日は大事な情報だから、預かるのは遠慮していた」との指摘。ログを人に送っても漏れないよう伏せる
+      if (k === 'koyomiBirthday') { lsInfo.push(k + ': （伏せています）'); return; }
       lsInfo.push(k + ': ' + (v.length > 120 ? v.slice(0,120)+'…' : v));
     });
   } catch(e) { lsInfo.push('LS取得エラー: ' + e.message); }
@@ -85383,12 +85411,30 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _stamp = KOYOMI_TIPS.filter(function(t) { return t.title === 'スタンプモード'; })[0];
        var _h = koyomiTipHtml(_stamp, function(x) { return String(x); });
        var _all = {}; for (var _i = 0; _i < KOYOMI_TIPS.length; _i++) _all[koyomiTipOfDay(new Date(2026, 9, 30 + _i)).title] = 1;
-       (KOYOMI_TIPS.length >= 12 && _t0.title !== _t1.title && Object.keys(_all).length === KOYOMI_TIPS.length && /バイト/.test(_stamp.who) && _stamp.guide === 'スタンプの使い方' &&
+       // v0.69.3: 締めの「今日もおつかれさま！」は、いちばん最後（紹介はその手前）
+       var _host = document.createElement('div'); _host.innerHTML = '<p>本文</p><div data-kaze-closing>今日もおつかれさま！</div>';
+       koyomiRenderTip(_host, function(x) { return String(x); });
+       var _lastOk = _host.lastElementChild && _host.lastElementChild.hasAttribute('data-kaze-closing') && !!_host.querySelector('[data-tip]');
+       (_lastOk && KOYOMI_TIPS.length >= 12 && _t0.title !== _t1.title && Object.keys(_all).length === KOYOMI_TIPS.length && /バイト/.test(_stamp.who) && _stamp.guide === 'スタンプの使い方' &&
         /data-tip-guide/.test(_h) && /くわしい使い方（自由帳）/.test(_h) && /koyomiRenderTip\(botEl/.test(renderKazeKoyomi.toString()))
          ? ok('ST-520·①: 季節の風だよりに、日替わりで1つずつ使い方を紹介（' + KOYOMI_TIPS.length + '種を順に一巡）。こんな人に・開いてみる・自由帳のくわしい使い方へ')
          : ng('ST-520·①: 日替わりの紹介が違う', [KOYOMI_TIPS.length, _t0.title, _t1.title, Object.keys(_all).length].join(' / '));
      } catch(e) {
        ng('ST-520: 例外', e.message);
+     }
+
+     // ===== ST-521: 生年月日は、選んだときだけ端末に覚え、ログでは伏せる（v0.69.4〜） =====
+     // 【権威】2026-10-30、「生年月日は結構大事な情報だから、データベースに預かるのは遠慮していた。でも暦は知りたい」との指摘
+     try {
+       var _src = openKoyomiBirthday.toString(), _dbg = showDebugLog.toString();
+       var _snap = localStorage.getItem('koyomiBirthday');
+       var _inSettings = JSON.stringify(allSettings || {}).indexOf('koyomiBirthday') === -1;
+       (/data-bd="remember"/.test(_src) && /checked\) localStorage\.setItem\('koyomiBirthday'[\s\S]*else localStorage\.removeItem\('koyomiBirthday'\)/.test(_src) &&
+        /koyomiBirthday'\) \{ lsInfo\.push\(k \+ ': （伏せています）'\)/.test(_dbg) && _inSettings && /サーバーには送りません/.test(_src))
+         ? ok('ST-521·①: 生年月日はサーバーに送らず、「この端末に覚えておく」を選んだときだけ端末に残す（外すと消える）。設定（同期される）には入れない。デバッグログでは伏せる')
+         : ng('ST-521·①: 生年月日の扱いが違う', '');
+     } catch(e) {
+       ng('ST-521: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
