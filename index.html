@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.69.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.69.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.69.0';
+    const APP_VERSION = 'v0.69.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12753,7 +12753,10 @@ window.koyomiAntipodeCity = koyomiAntipodeCity;
 function koyomiWorldLegendHtml() {
   var rows = [['📷 マジックアワー', '光がやわらかく、写真がきれいに撮れる時間（太陽の高さ+6°〜−4°）'], ['🌊 潮回り', '月の満ち欠けで決まる、潮の満ち引きの大きさ。大潮がいちばん大きい（日本の沿岸の数え方なので、日本の都市だけ）'],
     ['🧭 日の出の方角', '真東からのずれ。夏は北寄り、冬は南寄りから昇る'], ['南中', '太陽がいちばん高くなる時刻と、そのときの高さ'], ['薄明', '日の出前・日の入り後の、空が明るい時間（太陽が地平線の下6°まで）'],
-    ['🌌 星空の時間', '太陽が地平線の下18°より深い、本当に暗い時間（天文薄明の外）'], ['暦の上では', '立春・立夏・立秋・立冬で区切る、日本の暦の数え方の季節（南半球は逆）'], ['☀️ 夏時間中', 'その都市が、時計を1時間進めている時期']];
+    ['🌌 星空の時間', '太陽が地平線の下18°より深い、本当に暗い時間（天文薄明の外）'], ['暦の上では', '立春・立夏・立秋・立冬で区切る、日本の暦の数え方の季節（南半球は逆）'], ['⏰ 時計を1時間進め中（夏時間）', '夏のあいだ、時計を1時間進めておく制度です。英語ではデイライト・セービング・タイム（日の光を節約する時間）。' +
+      '<br><b>なぜあるのか</b>：夏は日の出が早く、朝早くから明るいのに、多くの人はまだ寝ています。時計を1時間進めると、起きている夕方に明るい時間が1時間増え、照明の燃料や電気を節約でき、仕事のあとの時間も明るく使えます。' +
+      '<br><b>始まり</b>：1916年、第一次世界大戦中のドイツが燃料を節約するために始め、欧米に広まりました。今も世界の70ほどの国と地域で行われています。日本でも戦後の1948〜1951年に行いましたが、評判が悪く4年でやめました。' +
+      '<br><b>いつからいつまで</b>：国によって違います。アメリカは3月の第2日曜日〜11月の第1日曜日、ヨーロッパは3月の最終日曜日〜10月の最終日曜日、南半球のシドニーなどは季節が逆なので10月〜4月。切り替えの日は、1日が23時間（進める日）か25時間（戻す日）になります。']];
   return '<details data-world-legend style="margin:0 0 12px;color:#c9c6ee;font-size:0.76em;"><summary style="cursor:pointer;text-align:center;color:#9a97c8;">📘 言葉の説明</summary>' +
     '<div style="margin-top:8px;padding:10px 12px;border-radius:12px;background:#15173a;line-height:1.7;">' + rows.map(function(r) { return '<div><b style="color:#e8c96a;">' + r[0] + '</b>：' + r[1] + '</div>'; }).join('') + '</div></details>';
 }
@@ -12938,6 +12941,25 @@ function koyomiCityIsDst(city, ms) {
   } catch (e) { return false; }
 }
 window.koyomiCityIsDst = koyomiCityIsDst;
+// v0.69.1: 【権威】2026-10-30、「そんな制度があること自体、初耳。説明してあげて、分かりやすい表記にも直そう。なぜその制度があるのか、何のためにあるのか、意図も」との指示。
+// 夏時間の次の切り替え（30日以内）：何月何日に、時計を進める／戻すか、そのあとの日本との時差
+function koyomiCityNextDstChange(city, ms, withinDays) {
+  try {
+    var cur = koyomiTzParts(city.tz, ms).offMin, lim = withinDays || 30;
+    for (var i = 1; i <= lim; i++) {
+      var t = ms + i * 86400000, q = koyomiTzParts(city.tz, t);
+      if (q.offMin !== cur) {
+        // 切り替わった日（現地の日付）を、1時間ごとにさかのぼって見つける
+        var lo = t - 86400000, hi = t;
+        while (hi - lo > 3600000) { var mid = (lo + hi) / 2; if (koyomiTzParts(city.tz, mid).offMin === cur) lo = mid; else hi = mid; }
+        var at = koyomiTzParts(city.tz, hi);
+        return { m: at.m, d: at.d, forward: q.offMin > cur, newDiff: koyomiJapanDiffText(q.offMin - 540), days: i };
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+window.koyomiCityNextDstChange = koyomiCityNextDstChange;
 // 日の出・日の入りまで、あと何時間何分（今が昼なら日の入りまで、夜なら次の日の出まで）
 function koyomiCityNextSunText(n) {
   try {
@@ -13404,6 +13426,7 @@ function _koyomiWorldCardHtml(c, ms, level) {
   try { if (showSun) { sea = koyomiCitySeason(c, ms); dl = koyomiCityDayLength(n); } } catch (e1) {}
   try { if (c.monument) mon = koyomiMonumentNext(c, ms); } catch (e2) {}
   var cals = []; try { if (showSun && !c.monument) cals = koyomiCityCalendars(c, ms); } catch (e3) {}
+  var dstNext = koyomiCityNextDstChange(c, ms, 30);
   var dst = koyomiCityIsDst(c, ms), nextSun = showSun ? koyomiCityNextSunText(n) : '', transit = showMore ? koyomiCityTransit(n) : null, todayEv = showSun ? koyomiCityTodayEvent(c, ms) : null;
   var moonC = showSun ? koyomiCityMoon(c, n) : null, magic = showMore ? koyomiMagicHours(c, n) : null, dirTx = showMore ? koyomiSunriseDirText(c.lat, c.lng, n.rise) : '';
   var starT = showKoku ? koyomiCityStarTime(c, n) : null;   // v0.69.0: 星空の時間は特盛だけ
@@ -13421,7 +13444,7 @@ function _koyomiWorldCardHtml(c, ms, level) {
       '<div data-world-name style="flex:1;min-width:0;font-weight:800;font-size:1.05em;line-height:1.3;word-break:break-word;overflow-wrap:anywhere;">' + icon + ' ' + e(c.name) + '</div>' +
     '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin-top:2px;padding-left:20px;">' +
-      '<div style="min-width:0;"><div style="font-size:0.7em;color:#9a97c8;">' + e(c.country) + '</div><div style="font-size:0.7em;color:#c9b77a;">' + offTxt + (dst ? ' <span data-dst style="display:inline-block;padding:0 5px;border-radius:999px;background:rgba(255,200,80,0.18);color:#ffd27a;white-space:nowrap;">☀️ 夏時間中</span>' : '') + '</div></div>' +
+      '<div style="min-width:0;"><div style="font-size:0.7em;color:#9a97c8;">' + e(c.country) + '</div><div style="font-size:0.7em;color:#c9b77a;">' + offTxt + (dst ? '<br><span data-dst title="夏時間（デイライト・セービング・タイム）" style="display:inline-block;margin-top:2px;padding:0 5px;border-radius:999px;background:rgba(255,200,80,0.18);color:#ffd27a;white-space:nowrap;">⏰ 時計を1時間進め中</span>' : '') + '</div></div>' +
       '<div style="text-align:right;flex-shrink:0;"><div style="font-size:1.7em;font-weight:800;color:#e8c96a;font-variant-numeric:tabular-nums;line-height:1;">' + n.local.h + ':' + String(n.local.mi).padStart(2, '0') + '</div>' +
       '<div style="font-size:0.72em;color:#c9c6ee;margin-top:3px;white-space:nowrap;">' + n.local.m + '/' + n.local.d + '（' + wd + '）<span style="margin-left:6px;padding:1px 6px;border-radius:999px;background:' + (n.dayDiff === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(232,201,106,0.18)') + ';color:' + (n.dayDiff === 0 ? '#9a97c8' : '#e8c96a') + ';">' + badge + '</span></div></div>' +
     '</div>' + (showSun ? _koyomiDayBarHtml(n) + (nextSun ? '<div data-next-sun style="font-size:0.72em;color:#e8c96a;text-align:right;margin-top:2px;">' + e(nextSun) + '</div>' : '') +
@@ -13450,6 +13473,7 @@ function _koyomiWorldCardHtml(c, ms, level) {
       }).join('<br>') + '</div>' : '') +
     (showKoku ? '<div style="margin-top:6px;font-size:0.8em;color:#e8c96a;text-align:right;">今は、' + e(n.koku.name) + '（' + e(n.koku.reading) + '）の刻' + (n.koku.how === 'teiji' ? '<span style="color:#8f8fb8;font-size:0.85em;">・白夜のため定時法</span>' : '') + '</div>' : '') +
     (c.near ? '<div style="margin-top:6px;font-size:0.74em;color:#9a97c8;">🌏 ' + e(c.near) + '</div>' : '') +
+    (dstNext ? '<div data-dst-next style="margin-top:6px;font-size:0.74em;color:#ffd27a;">⏰ ' + dstNext.m + '月' + dstNext.d + '日に、時計を1時間' + (dstNext.forward ? '進めます' : '戻します') + '（' + e(dstNext.newDiff) + 'に）</div>' : '') +
     (mon ? '<div data-monument style="margin-top:10px;padding:8px 10px;border-radius:10px;background:rgba(232,201,106,0.1);border:1px solid rgba(232,201,106,0.25);font-size:0.76em;line-height:1.6;color:#f3e3b0;">' +
       '☀️ ' + e(c.monument.text) + '<br><b>次の' + e(mon.name) + '：' + mon.y + '年' + mon.m + '月' + mon.d + '日 ' + e(mon.evText) + '</b>' + (mon.days > 0 ? '（あと' + mon.days + '日）' : '（今日）') + '</div>' : '') +
   '</div>';
@@ -57360,6 +57384,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.69.1', date: '2026-10-30',
+    items: [
+      { icon:'⏰', t:'夏時間を、分かりやすい言い方にして、説明を足しました',
+        before:'「☀️ 夏時間中」と出ていて、秋なのに夏？と紛らわしいものでした',
+        after:'「⏰ 時計を1時間進め中」と出し、切り替えが30日以内の都市には「11月1日に、時計を1時間戻します（日本より−14時間に）」と知らせます。「📘 言葉の説明」に、夏時間とは何か、なぜあるのか、始まり（1916年のドイツ）、日本でも行っていたこと、国ごとの期間を書きました' }
+    ]
+  },
+  {
     ver: 'v0.69.0', date: '2026-10-30',
     items: [
       { icon:'🎂', t:'「生まれた日の暦」を作りました',
@@ -85106,7 +85138,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_cr.length >= 70 && ['civitavecchia', 'cozumel', 'juneau', 'jeju', 'keelung', 'hakodate', 'ushuaia', 'dubrovnik', 'kochi_in'].every(function(id) { return !!_by(id); }) && _by('kochi').country === '日本・高知県' &&
         _dstNY && !_dstLD && !_dstTK && _dstSY && /^日の入りまで あと[45]時間\d+分$/.test(_next) && /^日の出まで あと\d+時間\d+分$/.test(_nextNy) &&
         _tr && _tr.h === 11 && _tr.alt >= 38 && _tr.alt <= 42 && _trSg && _trSg.alt >= 87 &&
-        _ev && _ev.title === '十五夜・中秋節' && _evNo === null && /data-dst/.test(_html) && /data-next-sun/.test(_html) && /data-sun-row[\s\S]*南中[\s\S]*高さ\d+°/.test(_html) && !/data-transit/.test(_html) && /data-world-name/.test(_html))
+        _ev && _ev.title === '十五夜・中秋節' && _evNo === null && /data-dst/.test(_html) && /⏰ 時計を1時間進め中/.test(_html) && /data-next-sun/.test(_html) && /data-sun-row[\s\S]*南中[\s\S]*高さ\d+°/.test(_html) && !/data-transit/.test(_html) && /data-world-name/.test(_html))
          ? ok('ST-511·①: クルーズの港74（チビタベッキア・コスメル・ジュノー・済州島・函館など）。夏時間中の札（ニューヨーク・シドニー）、日の入り・日の出まであと何時間、南中（東京11時台・約40度、春分のシンガポールはほぼ真上）、その国の今日の行事（北京の中秋節）')
          : ng('ST-511·①: 港かカードの4つが違う', [_cr.length, _dstNY, _dstLD, _dstSY, _next, _nextNy, _tr && (_tr.h + ':' + _tr.alt), _trSg && _trSg.alt, _ev && _ev.title].join(' / '));
      } catch(e) {
@@ -85246,6 +85278,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-518·①: どこかが違う', [_relay, _anOk, _star, _b && _b.lead, _bFuture, _bBad].join(' / '));
      } catch(e) {
        ng('ST-518: 例外', e.message);
+     }
+
+     // ===== ST-519: 夏時間の分かりやすい表記・切り替えの知らせ・説明（v0.69.1〜） =====
+     // 【権威】2026-10-30、「そんな制度があること自体、初耳。説明して、分かりやすい表記にも。なぜその制度があるのか、意図も」との指示
+     try {
+       var _by = function(id) { return KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === id; })[0]; };
+       var _ms = Date.UTC(2026, 9, 29, 3);
+       var _ny = koyomiCityNextDstChange(_by('newyork'), _ms, 30), _sy = koyomiCityNextDstChange(_by('sydney'), _ms, 30), _tk = koyomiCityNextDstChange(_by('tokyo'), _ms, 30);
+       var _syA = koyomiCityNextDstChange(_by('sydney'), Date.UTC(2026, 2, 20, 3), 30);   // シドニーは4月5日に戻す
+       var _lg = koyomiWorldLegendHtml();
+       (_ny && _ny.m === 11 && _ny.d === 1 && !_ny.forward && _ny.newDiff === '日本より−14時間' && _sy === null && _tk === null && _syA && _syA.m === 4 && _syA.d === 5 && !_syA.forward &&
+        /1916年/.test(_lg) && /1948〜1951年/.test(_lg) && /デイライト・セービング・タイム/.test(_lg) && /なぜあるのか/.test(_lg))
+         ? ok('ST-519·①: 夏時間は「⏰ 時計を1時間進め中」。切り替えが30日以内なら知らせる（ニューヨークは11月1日に戻して日本より−14時間に、シドニーは4月5日）。言葉の説明に、なぜあるのか・始まり・いつからいつまで')
+         : ng('ST-519·①: 夏時間の知らせが違う', [JSON.stringify(_ny), JSON.stringify(_sy), JSON.stringify(_syA)].join(' / '));
+     } catch(e) {
+       ng('ST-519: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
