@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.68.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.69.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.68.5';
+    const APP_VERSION = 'v0.69.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -9066,7 +9066,7 @@ function _showInviteWelcome() {
     <div id="dbSkyCard" class="yc-fade-in" style="display:none;margin-bottom:14px;background:linear-gradient(135deg,#0a0a1a,#1a1a2e);border:1px solid #333;border-radius:14px;padding:16px;color:#fff;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
         <div id="dbSkyLocLabel" style="font-size:0.72em;color:#a78bfa;font-weight:700;">🌙 天象 — 東京</div>
-        <button id="dbWorldBtn" onclick="openKoyomiWorldClock()" style="font-size:0.66em;background:#2a2a4a;color:#e8c96a;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;margin-right:6px;">🌍 世界の暦</button><button id="dbSkyGeoBtn" onclick="useCurrentLocationForSky()" style="font-size:0.66em;background:#2a2a4a;color:#a78bfa;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">📍 現在地で表示</button>
+        <button id="dbBirthBtn" onclick="openKoyomiBirthday()" style="font-size:0.66em;background:#2a2a4a;color:#ffb3c7;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;margin-right:6px;">🎂 生まれた日</button><button id="dbWorldBtn" onclick="openKoyomiWorldClock()" style="font-size:0.66em;background:#2a2a4a;color:#e8c96a;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;margin-right:6px;">🌍 世界の暦</button><button id="dbSkyGeoBtn" onclick="useCurrentLocationForSky()" style="font-size:0.66em;background:#2a2a4a;color:#a78bfa;border:1px solid #4a4a6a;border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap;">📍 現在地で表示</button>
       </div>
       <!-- 空の状態 -->
       <div id="dbSkyBox" style="height:64px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1em;font-weight:700;margin-bottom:12px;transition:background 1s;">--</div>
@@ -12588,6 +12588,176 @@ var KOYOMI_WORD_YOMI = {
 function koyomiWithYomi(word) { var y = KOYOMI_WORD_YOMI[word]; return y ? word + '（' + y + '）' : word; }
 window.koyomiWithYomi = koyomiWithYomi;
 // ===== END v0.68.2 =====
+// ===== v0.69.0: 世界の暦を画像に・生まれた日の暦 =====
+// 世界の暦の1枚（選んだ都市、最大8つ）
+function drawKoyomiWorldCanvas(ms) {
+  ms = (typeof ms === 'number') ? ms : Date.now();
+  var cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350;
+  var g = cv.getContext('2d'), W = 1080, H = 1350;
+  var bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#12142e'); bg.addColorStop(1, '#0a0b1e'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  g.textAlign = 'center'; g.fillStyle = '#e8c96a'; g.font = 'bold 56px sans-serif'; g.fillText('🌍 世界の暦', W / 2, 110);
+  var jp = koyomiTzParts('Asia/Tokyo', ms);
+  g.fillStyle = '#9a97c8'; g.font = '30px sans-serif'; g.fillText('日本は今 ' + jp.m + '月' + jp.d + '日 ' + jp.h + ':' + String(jp.mi).padStart(2, '0'), W / 2, 160);
+  var list = _koyomiWorldSelected().slice(0, 8), rowH = Math.min(140, Math.floor((H - 200 - 130) / Math.max(1, list.length)));
+  var top = 200 + Math.max(0, Math.floor(((H - 200 - 130) - rowH * list.length) / 2));   // 都市が少ないときは、まん中に寄せる
+  list.forEach(function(c, i) {
+    var n = koyomiCityNow(c, ms); if (!n.ok) return;
+    var y = top + i * rowH;
+    g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(60, y, W - 120, rowH - 14);
+    var icon = n.phase === 'day' ? '☀️' : (n.phase === 'twilight' ? '🌆' : '🌙');
+    g.textAlign = 'left'; g.fillStyle = '#fff'; g.font = 'bold 40px sans-serif'; g.fillText(icon + ' ' + c.name, 90, y + 52);
+    var sea = koyomiCitySeason(c, ms), diff = koyomiJapanDiffText(n.offMin - 540);
+    var info = diff + '・' + sea.label + '・日の出 ' + _koyomiHM(n.riseH) + '・日の入り ' + _koyomiHM(n.setH);
+    g.fillStyle = '#c9b77a'; var fs = 24; g.font = fs + 'px sans-serif';
+    while (g.measureText(info).width > W - 90 - 260 && fs > 16) { fs -= 1; g.font = fs + 'px sans-serif'; }   // 右の時刻と重ならないよう、長ければ小さく
+    g.fillText(info, 90, y + 94);
+    g.textAlign = 'right'; g.fillStyle = '#e8c96a'; g.font = 'bold 64px sans-serif'; g.fillText(n.local.h + ':' + String(n.local.mi).padStart(2, '0'), W - 90, y + 64);
+    g.fillStyle = '#c9c6ee'; g.font = '24px sans-serif'; g.fillText(n.local.m + '/' + n.local.d + (n.dayDiff ? (n.dayDiff < 0 ? ' 前日' : ' 翌日') : ''), W - 90, y + 98);
+  });
+  g.textAlign = 'center'; g.fillStyle = 'rgba(232,201,106,0.75)'; g.font = 'bold 30px sans-serif'; g.fillText('天然こよみ専門店　こよみる', W / 2, H - 92);
+  g.font = 'bold 34px sans-serif'; g.fillText('koyomiru.com', W / 2, H - 48);
+  return cv;
+}
+window.drawKoyomiWorldCanvas = drawKoyomiWorldCanvas;
+// 生まれた日の暦：その日の暦をまとめる（1900年1月1日〜今日）
+function koyomiBirthReport(y, m, d) {
+  var dt = new Date(y, m - 1, d, 12, 0, 0);
+  if (isNaN(dt.getTime()) || dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  if (dt < new Date(1900, 0, 1) || dt > new Date()) return null;
+  var v = koyomiTodayData(dt), wd = ['日', '月', '火', '水', '木', '金', '土'][dt.getDay()];
+  var ord = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { kyureki: 'basic' });
+  var t = koyomiTodaySentence(v, ord), md = koyomiMoonOfDay(dt), kichi = koyomiKichiOf(dt);
+  var r = {
+    seireki: '西暦' + y + '年' + m + '月' + d + '日（' + wd + '）', wareki: koyomiBlueEraLabel('wareki', dt) || '', koki: koyomiBlueEraLabel('koki', dt) || '',
+    kyureki: t.kyureki ? t.kyureki.era + '、' + t.kyureki.eto + '（' + t.kyureki.etoReading + '）の年の、' + (t.kyureki.leap ? '閏' : '') + t.kyureki.month + '月' + t.kyureki.day + '日' : '',
+    eto: v.eto ? koyomiEtoText(v.eto) : '', sekki: v.sekki ? v.sekki + '（' + (v.sekkiReading || '') + '）の' + v.sekkiDay + '日目' : '',
+    kou: v.kou ? v.kou + '（' + (v.kouReading || '') + '）' + (v.kouDesc ? '…' + v.kouDesc : '') : '',
+    moon: md ? md.name + '（' + md.reading + '）・月齢' + (Math.round(v.moonAge * 10) / 10) : '', rokuyo: v.rokuyo ? koyomiWithYomi(v.rokuyo) : '',
+    kichi: kichi.map(function(k) { return koyomiWithYomi(KOYOMI_KICHI_INFO[k].label); }).join('・')
+  };
+  r.lead = t.kyureki && md ? 'あなたが生まれた日は、旧暦' + (t.kyureki.leap ? '閏' : '') + t.kyureki.month + '月' + t.kyureki.day + '日。' + md.name + '（' + md.reading + '）の日でした。' : '';
+  return r;
+}
+window.koyomiBirthReport = koyomiBirthReport;
+function _koyomiBirthHtml(r, e) {
+  var rows = [['西暦', r.seireki], ['和暦', r.wareki], ['皇紀', r.koki], ['旧暦', r.kyureki], ['干支', r.eto], ['二十四節気', r.sekki], ['七十二候', r.kou], ['月', r.moon], ['六曜', r.rokuyo], ['暦注', r.kichi]].filter(function(x) { return x[1]; });
+  return '<div style="font-weight:800;font-size:1.02em;line-height:1.7;margin:4px 0 12px;color:#7a3b1e;">' + e(r.lead) + '</div>' +
+    '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:0.86em;line-height:1.6;">' + rows.map(function(x) { return '<div style="color:#8a7f6a;white-space:nowrap;">' + x[0] + '</div><div>' + e(x[1]) + '</div>'; }).join('') + '</div>';
+}
+function drawKoyomiBirthCanvas(r) {
+  var cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350;
+  var g = cv.getContext('2d'), W = 1080, H = 1350;
+  var bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#fff6ea'); bg.addColorStop(1, '#f3dcc0'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  g.textAlign = 'center'; g.fillStyle = '#7a3b1e'; g.font = 'bold 52px sans-serif'; g.fillText('🎂 生まれた日の暦', W / 2, 120);
+  var wrapC = function(text, y, font, color, maxW) {
+    g.font = font; g.fillStyle = color; var line = '', lines = [];
+    for (var i = 0; i < text.length; i++) { var t2 = line + text.charAt(i); if (g.measureText(t2).width > maxW && line) { lines.push(line); line = text.charAt(i); } else line = t2; }
+    if (line) lines.push(line); lines.forEach(function(l, k) { g.fillText(l, W / 2, y + k * 60); }); return y + lines.length * 60;
+  };
+  var y = wrapC(r.lead, 220, 'bold 42px sans-serif', '#7a3b1e', 900) + 30;
+  [['西暦', r.seireki], ['和暦', r.wareki], ['皇紀', r.koki], ['旧暦', r.kyureki], ['干支', r.eto], ['二十四節気', r.sekki], ['七十二候', r.kou], ['月', r.moon], ['六曜', r.rokuyo], ['暦注', r.kichi]].forEach(function(x) {
+    if (!x[1]) return; y = wrapC(x[0] + '　' + x[1], y, '30px sans-serif', '#5a4630', 920) + 6;
+  });
+  g.fillStyle = 'rgba(122,59,30,0.75)'; g.font = 'bold 30px sans-serif'; g.fillText('天然こよみ専門店　こよみる', W / 2, H - 92);
+  g.font = 'bold 34px sans-serif'; g.fillText('koyomiru.com', W / 2, H - 48);
+  return cv;
+}
+function openKoyomiBirthday() {
+  try {
+    var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+    var saved = ''; try { saved = localStorage.getItem('koyomiBirthday') || ''; } catch (eS) {}
+    var old = document.getElementById('koyomiBirthOverlay'); if (old) old.remove();
+    var ov = document.createElement('div'); ov.id = 'koyomiBirthOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,0.45);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px;';
+    var today = new Date(), maxD = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    ov.innerHTML = '<div role="dialog" aria-modal="true" style="position:relative;width:100%;max-width:440px;background:#fffaf2;border-radius:20px;padding:20px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);color:#3a2a1a;">' +
+      '<button type="button" data-bd="close" aria-label="閉じる" style="position:absolute;top:10px;right:12px;width:36px;height:36px;border-radius:50%;border:1px solid #d9c9a6;background:#fff;color:#7a3b1e;font-size:1.2em;cursor:pointer;">×</button>' +
+      '<div style="font-weight:800;font-size:1.1em;color:#7a3b1e;margin-bottom:10px;">🎂 生まれた日の暦</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;"><input type="date" data-bd="date" min="1900-01-01" max="' + maxD + '" value="' + e(saved) + '" style="flex:1;min-width:160px;padding:9px 10px;border-radius:10px;border:1px solid #d9c9a6;font-size:1em;">' +
+      '<button type="button" data-bd="go" style="padding:9px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;font-weight:700;cursor:pointer;">見る</button></div>' +
+      '<div data-bd="out" style="font-size:0.95em;"></div>' +
+      '<div style="font-size:0.72em;color:#8a7f6a;margin-top:12px;line-height:1.6;">誕生日は、この端末の中だけに覚えます（ほかの人には見えません）。1900年1月1日から今日まで。</div></div>';
+    document.body.appendChild(ov);
+    var close = function() { ov.remove(); };
+    ov.addEventListener('click', function(ev) { if (ev.target === ov) close(); });
+    ov.querySelector('[data-bd="close"]').onclick = close;
+    var show = function() {
+      var val = ov.querySelector('[data-bd="date"]').value, out = ov.querySelector('[data-bd="out"]');
+      var p = String(val || '').split('-').map(Number);
+      var r = p.length === 3 ? koyomiBirthReport(p[0], p[1], p[2]) : null;
+      if (!r) { out.innerHTML = '<div style="color:#c0392b;">1900年1月1日から今日までの日付を選んでください。</div>'; return; }
+      try { localStorage.setItem('koyomiBirthday', val); } catch (eL) {}
+      out.innerHTML = _koyomiBirthHtml(r, e) + '<div style="text-align:center;margin-top:12px;"><button type="button" data-bd="img" style="padding:7px 14px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">🖼 画像にして持ち帰る</button></div>';
+      out.querySelector('[data-bd="img"]').onclick = function() { shareKoyomiCanvas(drawKoyomiBirthCanvas(r), 'koyomiru-birthday.png', r.lead + '\\n#こよみる #生まれた日の暦'); };
+    };
+    ov.querySelector('[data-bd="go"]').onclick = show;
+    if (saved) show();
+  } catch (e) { if (typeof showToast === 'function') showToast('生まれた日の暦を開けませんでした', { type: 'warn' }); }
+}
+window.openKoyomiBirthday = openKoyomiBirthday;
+// ===== END v0.69.0 画像・生まれた日 =====
+// ===== v0.69.0: 世界の暦の手直し（言葉の説明を1か所に・日の出リレー・星空の時間・地球の裏側） =====
+// 【権威】2026-10-30、「足したり、ひいたり、いじったり、遊んだりする余地ある？」への案に「全部やれ」との指示
+// 星空の時間（天文薄明の外）：夕方、太陽が地平線の下18度より深くなってから、翌朝その深さに戻るまで
+function koyomiCityStarTime(city, n) {
+  try {
+    var dusk18 = _koyomiSunMomentIn(city.lat, city.lng, n.dayStart, n.dayEnd, -18, false);
+    var p = koyomiTzParts(city.tz, n.dayEnd + 3600000), mid2 = _koyomiTzMidnightMs(city.tz, p.y, p.m, p.d), end2 = _koyomiTzMidnightMs(city.tz, p.y, p.m, p.d + 1);
+    var dawn18 = _koyomiSunMomentIn(city.lat, city.lng, mid2, end2, -18, true);
+    var hm = function(ms) { var q = koyomiTzParts(city.tz, ms); return q.h + ':' + String(q.mi).padStart(2, '0'); };
+    if (dusk18 === null || dawn18 === null) return { text: '一晩じゅう薄明るい（星空になりきらない）' };
+    return { text: '夕 ' + hm(dusk18) + '〜翌朝 ' + hm(dawn18) };
+  } catch (e) { return null; }
+}
+window.koyomiCityStarTime = koyomiCityStarTime;
+// 日の出リレー：今まさに朝を迎えている都市（日の出の前後20分）。いなければ、次に朝を迎える都市
+var _koyomiRelayCache = { at: 0, html: '' };
+function koyomiSunriseRelayHtml(ms) {
+  try {
+    if (Date.now() - _koyomiRelayCache.at < 300000 && _koyomiRelayCache.html) return _koyomiRelayCache.html;   // 5分は使い回す（計算が重いため）
+    var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+    var now = [], next = null;
+    KOYOMI_WORLD_CITIES.forEach(function(c) {
+      if (c.region === 'monuments' || c.region === 'cruise') return;
+      var n = koyomiCityNow(c, ms); if (!n.ok || n.rise === null) return;
+      var d = (ms - n.rise) / 60000;
+      if (Math.abs(d) <= 20) now.push({ c: c, d: d });
+      else if (d < 0 && (!next || -d < next.m)) next = { c: c, m: Math.round(-d) };
+    });
+    now.sort(function(a, b) { return Math.abs(a.d) - Math.abs(b.d); });
+    var html = '<div data-relay style="text-align:center;font-size:0.78em;color:#ffd27a;margin:-4px 0 10px;">🌅 ' +
+      (now.length ? '今まさに朝を迎えている：' + now.slice(0, 4).map(function(x) { return e(x.c.name); }).join('・') : (next ? '次に朝を迎えるのは、' + e(next.c.name) + '（あと' + next.m + '分）' : '')) + '</div>';
+    _koyomiRelayCache = { at: Date.now(), html: html };
+    return html;
+  } catch (er) { return ''; }
+}
+window.koyomiSunriseRelayHtml = koyomiSunriseRelayHtml;
+// 地球の裏側：今いる場所（無ければ東京）のちょうど裏側。時刻は経度から決まる標準の時差（Etc/GMT）で
+function _koyomiDistKm(a, b) {
+  var r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+function koyomiAntipodeCity() {
+  var g = (typeof _userGeoLocation !== 'undefined' && _userGeoLocation && typeof _userGeoLocation.lat === 'number') ? _userGeoLocation : _TOKYO_GEO;
+  var lat = -g.lat, lng = g.lng > 0 ? g.lng - 180 : g.lng + 180, h = Math.round(lng / 15);
+  var tz = h === 0 ? 'Etc/GMT' : ('Etc/GMT' + (h > 0 ? '-' : '+') + Math.abs(h));   // Etc/GMT は符号が逆
+  var near = null;
+  KOYOMI_WORLD_CITIES.forEach(function(c) { if (c.region === 'monuments') return; var dk = _koyomiDistKm({ lat: lat, lng: lng }, c); if (!near || dk < near.km) near = { c: c, km: dk }; });
+  var fmt = function(v, pos, neg) { return (v >= 0 ? pos : neg) + Math.abs(v).toFixed(1) + '°'; };
+  return { id: 'antipode', name: '地球の裏側', country: (g === _TOKYO_GEO ? '東京' : 'あなたの場所') + 'の裏（' + fmt(lat, '北緯', '南緯') + '・' + fmt(lng, '東経', '西経') + '）', region: 'antipode', tz: tz, lat: lat, lng: lng, alias: '',
+    near: near ? 'いちばん近い都市：' + near.c.name + '（約' + Math.round(near.km / 100) * 100 + 'km）' : '' };
+}
+window.koyomiAntipodeCity = koyomiAntipodeCity;
+// 言葉の説明（カードごとに書かず、ここに1回だけ）
+function koyomiWorldLegendHtml() {
+  var rows = [['📷 マジックアワー', '光がやわらかく、写真がきれいに撮れる時間（太陽の高さ+6°〜−4°）'], ['🌊 潮回り', '月の満ち欠けで決まる、潮の満ち引きの大きさ。大潮がいちばん大きい（日本の沿岸の数え方なので、日本の都市だけ）'],
+    ['🧭 日の出の方角', '真東からのずれ。夏は北寄り、冬は南寄りから昇る'], ['南中', '太陽がいちばん高くなる時刻と、そのときの高さ'], ['薄明', '日の出前・日の入り後の、空が明るい時間（太陽が地平線の下6°まで）'],
+    ['🌌 星空の時間', '太陽が地平線の下18°より深い、本当に暗い時間（天文薄明の外）'], ['暦の上では', '立春・立夏・立秋・立冬で区切る、日本の暦の数え方の季節（南半球は逆）'], ['☀️ 夏時間中', 'その都市が、時計を1時間進めている時期']];
+  return '<details data-world-legend style="margin:0 0 12px;color:#c9c6ee;font-size:0.76em;"><summary style="cursor:pointer;text-align:center;color:#9a97c8;">📘 言葉の説明</summary>' +
+    '<div style="margin-top:8px;padding:10px 12px;border-radius:12px;background:#15173a;line-height:1.7;">' + rows.map(function(r) { return '<div><b style="color:#e8c96a;">' + r[0] + '</b>：' + r[1] + '</div>'; }).join('') + '</div></details>';
+}
+// ===== END v0.69.0 =====
 // ===== v0.67.5: 暦注・潮回り・世界の暦の月・マジックアワーと方角・週1回の自動検算 =====
 // 【権威】2026-10-30、「他にもそういう概念ってあるの？ブラッシュアップ案は？」の問いに出した案（暦注・潮回り・マジックアワー・自動検算）と、
 // 「月齢を世界の暦に出せないの？あなたの案を採用します」との指示
@@ -13236,6 +13406,7 @@ function _koyomiWorldCardHtml(c, ms, level) {
   var cals = []; try { if (showSun && !c.monument) cals = koyomiCityCalendars(c, ms); } catch (e3) {}
   var dst = koyomiCityIsDst(c, ms), nextSun = showSun ? koyomiCityNextSunText(n) : '', transit = showMore ? koyomiCityTransit(n) : null, todayEv = showSun ? koyomiCityTodayEvent(c, ms) : null;
   var moonC = showSun ? koyomiCityMoon(c, n) : null, magic = showMore ? koyomiMagicHours(c, n) : null, dirTx = showMore ? koyomiSunriseDirText(c.lat, c.lng, n.rise) : '';
+  var starT = showKoku ? koyomiCityStarTime(c, n) : null;   // v0.69.0: 星空の時間は特盛だけ
   var wd = ['日', '月', '火', '水', '木', '金', '土'][n.local.wd];
   var badge = n.dayDiff === 0 ? '日本と同じ日' : (n.dayDiff < 0 ? '日本より1日前' : '日本より1日後');
   var icon = n.phase === 'day' ? '☀️' : (n.phase === 'twilight' ? '🌆' : (n.phase === 'night' ? '🌙' : '🌐'));
@@ -13266,17 +13437,19 @@ function _koyomiWorldCardHtml(c, ms, level) {
     })() : '') +
     (showSun && (sea || dl) ? '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:0.76em;color:#c9c6ee;">' +
       '<span>' + (sea ? sea.icon + ' ' + e(sea.label) : '') + '</span><span style="font-variant-numeric:tabular-nums;">' + (dl ? e(dl.text) : '') + '</span></div>' : '') +
-    (moonC ? '<div data-city-moon style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:0.76em;color:#c9c6ee;"><span>' + moonC.emoji + ' 月齢 ' + moonC.age + (moonC.tide ? '・' + e(koyomiWithYomi(moonC.tide)) + '<span style="opacity:0.7;font-size:0.9em;">（潮の満ち引きの大きさ）</span>' : '') + '</span><span style="color:#ffd27a;">' + e(moonC.phase) + '</span></div>' : '') +
-    ((magic && (magic.morning || magic.evening)) || dirTx ? '<div data-magic style="margin-top:4px;font-size:0.7em;color:#9a97c8;line-height:1.6;">' +
+    (moonC ? '<div data-city-moon style="display:flex;justify-content:space-between;gap:8px;margin-top:4px;font-size:0.76em;color:#c9c6ee;"><span>' + moonC.emoji + ' 月齢 ' + moonC.age + (moonC.tide ? '・' + e(koyomiWithYomi(moonC.tide)) : '') + '</span><span style="color:#ffd27a;">' + e(moonC.phase) + '</span></div>' : '') +
+    ((magic && (magic.morning || magic.evening)) || dirTx || starT ? '<div data-magic style="margin-top:4px;font-size:0.7em;color:#9a97c8;line-height:1.6;">' +
       // v0.68.3: 【権威】2026-10-30、「マジックアワーは、説明がないと分からない」との指摘。短い説明を添える
-      (magic && (magic.morning || magic.evening) ? '📷 マジックアワー<span style="opacity:0.8;">（光がやわらかく、写真がきれいに撮れる時間）</span><br>　' + [magic.morning ? '朝 ' + magic.morning : '', magic.evening ? '夕 ' + magic.evening : ''].filter(Boolean).join('・') : '') +
-      (dirTx ? '<br>🧭 日の出の方角 ' + e(dirTx) + '<span style="opacity:0.8;">（夏は北寄り、冬は南寄りから昇る）</span>' : '') + '</div>' : '') +
+      // v0.69.0: 説明は画面の上の「📘 言葉の説明」に1回だけ。カードは言葉だけ
+      (magic && (magic.morning || magic.evening) ? '📷 マジックアワー ' + [magic.morning ? '朝 ' + magic.morning : '', magic.evening ? '夕 ' + magic.evening : ''].filter(Boolean).join('・') : '') +
+      (dirTx ? '<br>🧭 日の出の方角 ' + e(dirTx) : '') + (starT ? '<br>🌌 星空の時間 ' + e(starT.text) : '') + '</div>' : '') +
     (todayEv ? '<div data-today-event style="margin-top:6px;font-size:0.78em;color:#ffd27a;">' + todayEv.icon + ' 今日は、この国の' + e(todayEv.title) + '</div>' : '') +
     (cals.length ? '<div data-country-cal style="margin-top:6px;font-size:0.74em;line-height:1.6;color:#c9c6ee;">' + cals.map(function(x) {
         return '📅 ' + e(x.text) + (x.note ? '<span style="color:#8f8fb8;">（' + e(x.note) + '）</span>' : '') +
           (x.usable ? ' <span style="color:#7fdc9f;font-size:0.92em;">こよみるでも使えます</span>' : ' <span style="color:#6f6c99;font-size:0.92em;">こよみるは未対応</span>');
       }).join('<br>') + '</div>' : '') +
     (showKoku ? '<div style="margin-top:6px;font-size:0.8em;color:#e8c96a;text-align:right;">今は、' + e(n.koku.name) + '（' + e(n.koku.reading) + '）の刻' + (n.koku.how === 'teiji' ? '<span style="color:#8f8fb8;font-size:0.85em;">・白夜のため定時法</span>' : '') + '</div>' : '') +
+    (c.near ? '<div style="margin-top:6px;font-size:0.74em;color:#9a97c8;">🌏 ' + e(c.near) + '</div>' : '') +
     (mon ? '<div data-monument style="margin-top:10px;padding:8px 10px;border-radius:10px;background:rgba(232,201,106,0.1);border:1px solid rgba(232,201,106,0.25);font-size:0.76em;line-height:1.6;color:#f3e3b0;">' +
       '☀️ ' + e(c.monument.text) + '<br><b>次の' + e(mon.name) + '：' + mon.y + '年' + mon.m + '月' + mon.d + '日 ' + e(mon.evText) + '</b>' + (mon.days > 0 ? '（あと' + mon.days + '日）' : '（今日）') + '</div>' : '') +
   '</div>';
@@ -13335,8 +13508,10 @@ function renderKoyomiWorldClock() {
     if (lv === 'none') lv = 'many';   // 入口は隠しているが、開かれたときは全部出す
     // v0.66.5: 並びは、手で並べた順（worldCities の順）。時差の順は、1回きりの並べかえボタンで
     var list = _koyomiWorldSelected().slice();
-    box.innerHTML = list.map(function(c) { return _koyomiWorldCardHtml(c, ms, lv); }).join('');
+    box.innerHTML = (window._koyomiShowAntipode ? _koyomiWorldCardHtml(koyomiAntipodeCity(), ms, lv).replace('data-world-city="antipode"', 'data-world-antipode="1"') : '') +
+      list.map(function(c) { return _koyomiWorldCardHtml(c, ms, lv); }).join('');
     _koyomiWorldBindDrag(box);
+    var rl = document.getElementById('koyomiWorldRelay'); if (rl) rl.innerHTML = koyomiSunriseRelayHtml(ms);
     var hd = document.getElementById('koyomiWorldHead');
     if (hd) {
       var v = koyomiTodayData(new Date()), jp = koyomiTzParts('Asia/Tokyo', ms);
@@ -13362,10 +13537,13 @@ function openKoyomiWorldClock() {
       '<div style="width:100%;max-width:' + (_wide ? 'none' : '460px') + ';background:#0c0e24;border:1px solid rgba(232,201,106,0.35);border-radius:22px;padding:18px 14px 14px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">' +
       '<div style="text-align:center;color:#e8c96a;font-weight:800;font-size:1.15em;letter-spacing:0.08em;">🌍 世界の暦</div>' +
       '<div id="koyomiWorldHead" style="text-align:center;color:#9a97c8;font-size:0.75em;margin:6px 0 12px;line-height:1.6;"></div>' +
+      '<div id="koyomiWorldRelay"></div>' + koyomiWorldLegendHtml() +
       '<div id="koyomiWorldList" style="' + (_wide ? 'display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));column-gap:12px;' : '') + '"></div>' +
       '<div id="koyomiWorldPicker" style="display:none;margin-top:6px;"></div>' +
-      '<div style="display:flex;gap:8px;margin-top:8px;">' +
+      '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' +
         '<button type="button" id="koyomiWorldSortBtn" style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(232,201,106,0.3);background:transparent;color:#c9c6ee;font-size:0.85em;cursor:pointer;white-space:nowrap;" title="時差の順（東から西へ）に並べかえる">🕐 時差の順</button>' +
+ '<button type="button" id="koyomiWorldImgBtn" style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(232,201,106,0.3);background:transparent;color:#c9c6ee;font-size:0.85em;cursor:pointer;white-space:nowrap;" title="画像にして持ち帰る">🖼 画像</button>' +
+       '<button type="button" id="koyomiWorldAntiBtn" style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(232,201,106,0.3);background:transparent;color:#c9c6ee;font-size:0.85em;cursor:pointer;white-space:nowrap;" title="今いる場所の、地球の裏側">🌏 裏側</button>' +
         '<button type="button" id="koyomiWorldPickBtn" style="flex:1;padding:10px;border-radius:12px;border:1px solid rgba(232,201,106,0.5);background:transparent;color:#e8c96a;font-size:0.85em;cursor:pointer;white-space:nowrap;" title="都市をえらぶ">＋ 都市</button>' +
         '<button type="button" id="koyomiWorldCloseBtn" style="flex:1;padding:10px;border-radius:12px;border:none;background:#2a2a4a;color:#e9e6ff;font-size:0.85em;cursor:pointer;">閉じる</button>' +
       '</div>' +
@@ -13378,6 +13556,8 @@ function openKoyomiWorldClock() {
     ov.addEventListener('click', function(ev) { if (ev.target === ov) close(); });
     document.getElementById('koyomiWorldPickBtn').onclick = function() { _koyomiWorldTogglePicker(); };
     document.getElementById('koyomiWorldSortBtn').onclick = function() { koyomiWorldSortByOffset(); };
+    document.getElementById('koyomiWorldImgBtn').onclick = function() { shareKoyomiCanvas(drawKoyomiWorldCanvas(Date.now()), 'koyomiru-world.png', '世界の暦 ── こよみる\nkoyomiru.com #こよみる #世界の暦'); };
+    document.getElementById('koyomiWorldAntiBtn').onclick = function() { window._koyomiShowAntipode = !window._koyomiShowAntipode; renderKoyomiWorldClock(); };
     renderKoyomiWorldClock();
     _koyomiWorldTimer = setInterval(function() { if (!document.getElementById('koyomiWorldOverlay')) { clearInterval(_koyomiWorldTimer); return; } if (_koyomiWorldDragging) return; renderKoyomiWorldClock(); }, 30000);   // 動かしている間は描き直さない
   } catch (e) { if (typeof showToast === 'function') showToast('世界の都市の暦を開けませんでした', { type: 'warn' }); }
@@ -24654,7 +24834,8 @@ function renderKazeKoyomi(col, opts) {
   // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
   // v0.62.3: 一文の下の1行に「もう一度、問いから」と「旧暦って？」を並べる（旧暦って？を押すと、その下に説明が開く）
   var _linkBtn = function(kz, label) { return '<button type="button" data-kz="' + kz + '" style="border:none;background:none;color:inherit;opacity:0.65;font-size:0.8em;text-decoration:underline;cursor:pointer;margin:0 8px;">' + label + '</button>'; };
-  topEl.insertAdjacentHTML('beforeend', '<div data-sentence-links style="text-align:center;margin:-6px 0 8px;">' + (_qaOn ? _linkBtn('again', 'もう一度、問いから') : '') + (order.kyureki !== 'none' ? _linkBtn('kyureki-help', '旧暦って？') : '') + '</div>' + (order.kyureki !== 'none' ? koyomiKyurekiHelpHtml(esc) : ''));
+  topEl.insertAdjacentHTML('beforeend', '<div data-sentence-links style="text-align:center;margin:-6px 0 8px;">' + (_qaOn ? _linkBtn('again', 'もう一度、問いから') : '') + (order.kyureki !== 'none' ? _linkBtn('kyureki-help', '旧暦って？') : '') + _linkBtn('birthday', '生まれた日の暦') + '</div>' + (order.kyureki !== 'none' ? koyomiKyurekiHelpHtml(esc) : ''));
+  var _bdL = topEl.querySelector('[data-kz="birthday"]'); if (_bdL) _bdL.onclick = function() { openKoyomiBirthday(); };   // v0.69.0
   var _kh = topEl.querySelector('[data-kz="kyureki-help"]'), _khBox = topEl.querySelector('[data-kyureki-help]');
   if (_kh && _khBox) _kh.onclick = function() { _khBox.style.display = _khBox.style.display === 'none' ? 'block' : 'none'; };
   if (_qaOn) {
@@ -57179,6 +57360,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.69.0', date: '2026-10-30',
+    items: [
+      { icon:'🎂', t:'「生まれた日の暦」を作りました',
+        before:'自分の生まれた日の暦を見る方法はありませんでした',
+        after:'ダッシュボードの天象のカードの「🎂 生まれた日」か、季節の風だよりの「生まれた日の暦」から開けます。生まれた日の旧暦・干支・二十四節気・七十二候・月の名前と月齢・六曜・暦注が出て、画像にして持ち帰ることもできます。誕生日は、この端末の中だけに覚えます' },
+      { icon:'🌍', t:'世界の暦をすっきりさせ、遊びを足しました',
+        before:'マジックアワーなどの説明が、カードごとに毎回出ていました',
+        after:'言葉の説明は画面の上の「📘 言葉の説明」に1回だけにしました。「🌅 今まさに朝を迎えている都市」、特盛の「🌌 星空の時間」、「🌏 裏側」（今いる場所の地球の裏側といちばん近い都市）、「🖼 画像」（世界の暦を1枚の画像に）を足しました' }
+    ]
+  },
+  {
     ver: 'v0.68.5', date: '2026-10-30',
     items: [
       { icon:'🌍', t:'世界の暦を、ほかの画面と同じ出方にしました',
@@ -84999,7 +85191,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _tk = KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'tokyo'; })[0];
        var _h = _koyomiWorldCardHtml(_tk, Date.UTC(2026, 9, 30, 3), 'many');
        var _src = openKoyomiWorldClock.toString();
-       (_h.indexOf('写真がきれいに撮れる時間') !== -1 && _h.indexOf('潮の満ち引きの大きさ') !== -1 && _h.indexOf('夏は北寄り') !== -1 &&
+       // v0.69.0: 説明はカードごとに書かず、画面の上の「📘 言葉の説明」に1回だけ
+       var _lg = koyomiWorldLegendHtml();
+       (_lg.indexOf('写真がきれいに撮れる時間') !== -1 && _lg.indexOf('潮の満ち引きの大きさ') !== -1 && _lg.indexOf('夏は北寄り') !== -1 && _h.indexOf('写真がきれいに撮れる時間') === -1 && /koyomiWorldLegendHtml\(\)/.test(_src) &&
         /id="koyomiWorldCloseX"[^>]*position:fixed/.test(_src) && /koyomiWorldCloseX'\)\.onclick = close/.test(_src))
          ? ok('ST-515·①: 世界の暦の右上に×（スクロールしても見える）。マジックアワー・潮回り・日の出の方角に短い説明')
          : ng('ST-515·①: ×か説明が違う', '');
@@ -85033,6 +85227,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-517·①: 世界の暦の出し方が違う', '');
      } catch(e) {
        ng('ST-517: 例外', e.message);
+     }
+
+     // ===== ST-518: 言葉の説明は1か所・日の出リレー・星空の時間・地球の裏側・世界の暦の画像・生まれた日の暦（v0.69.0〜） =====
+     // 【権威】2026-10-30、「足したり、ひいたり、いじったり、遊んだりする余地ある？」への案に「全部やれ」との指示
+     try {
+       var _ms = Date.UTC(2026, 9, 30, 3);
+       var _relay = koyomiSunriseRelayHtml(_ms).replace(/<[^>]+>/g, '');
+       var _an = koyomiAntipodeCity(), _anOk = Math.abs(_an.lat + _TOKYO_GEO.lat) < 0.01 && Math.abs(Math.abs(_an.lng - _TOKYO_GEO.lng) - 180) < 0.01 && /いちばん近い都市/.test(_an.near);
+       var _rk = KOYOMI_WORLD_CITIES.filter(function(c) { return c.id === 'reykjavik'; })[0];
+       var _star = koyomiCityStarTime(_rk, koyomiCityNow(_rk, Date.UTC(2026, 5, 21, 12))).text;
+       var _cv = drawKoyomiWorldCanvas(_ms);
+       var _b = koyomiBirthReport(2000, 1, 1), _bFuture = koyomiBirthReport(2099, 1, 1), _bBad = koyomiBirthReport(2026, 2, 30);
+       (/朝を迎え/.test(_relay) && _anOk && /一晩じゅう薄明るい/.test(_star) && _cv.width === 1080 &&
+        _b && _b.lead === 'あなたが生まれた日は、旧暦11月25日。二十五日月（にじゅうごにちづき）の日でした。' && /日 戊午/.test(_b.eto) && _b.wareki === '平成12年' && _bFuture === null && _bBad === null &&
+        !!document.getElementById('dbBirthBtn') && /koyomiWorldLegendHtml\(\)/.test(openKoyomiWorldClock.toString()))
+         ? ok('ST-518·①: 言葉の説明は上に1回。日の出リレー。星空の時間（夏至のレイキャビクは一晩じゅう薄明るい）。地球の裏側といちばん近い都市。世界の暦の画像。生まれた日の暦（2000/1/1は旧暦11月25日・戊午の日）')
+         : ng('ST-518·①: どこかが違う', [_relay, _anOk, _star, _b && _b.lead, _bFuture, _bBad].join(' / '));
+     } catch(e) {
+       ng('ST-518: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
