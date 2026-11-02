@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.70.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.70.1 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.70.0';
+    const APP_VERSION = 'v0.70.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12595,8 +12595,18 @@ var KOYOMI_RITUALS = [
   { key: 'thanks', label: '夜のありがとう一行', level: 1 },
   { key: 'harae', label: '夏越の祓・年越の祓', level: 1 },
   { key: 'touji', label: '冬至', level: 1 },
-  { key: 'lunarBirthday', label: '旧暦の誕生日', level: 1 }
+  { key: 'lunarBirthday', label: '旧暦の誕生日', level: 1 },
+  // v0.70.1: ふつう（月と季節の節目）
+  { key: 'tsuitachi', label: '朔日参り（旧暦の毎月1日）', level: 2 },
+  { key: 'tsukimi', label: '十五夜と十三夜', level: 2 },
+  { key: 'kan', label: '寒の入りと寒の明け', level: 2 },
+  { key: 'hachijuhachiya', label: '八十八夜', level: 2 }
 ];
+// その年の立春の日（2月1日〜10日から探す）
+function _koyomiRisshunDay(year) {
+  for (var d = 1; d <= 10; d++) { var v = koyomiTodayData(new Date(year, 1, d, 12)); if (v && v.sekki === '立春' && v.sekkiDay === 1) return new Date(year, 1, d, 12); }
+  return null;
+}
 window.KOYOMI_RITUALS = KOYOMI_RITUALS;
 function koyomiRitualOn(key) {
   try {
@@ -12618,18 +12628,46 @@ function koyomiRitualsOf(date) {
       if (bd) {
         var p = bd.split('-').map(Number), bl = koyomiLunarDate(new Date(p[0], p[1] - 1, p[2], 12)), tl = koyomiLunarDate(date);
         if (bl && tl && !tl.leap && bl.month === tl.month && bl.day === tl.day && !(p[1] === m && p[2] === d && p[0] === date.getFullYear()))
-          out.push({ key: 'lunarBirthday', icon: '🎂', title: 'もうひとつの誕生日', text: '今日は、旧暦でのあなたの誕生日です。生まれた日は旧暦' + bl.month + '月' + bl.day + '日。旧暦の誕生日は、毎年、西暦の日付が変わります。' });
+          out.push({ key: 'lunarBirthday', icon: '🎂', title: 'もうひとつの誕生日', text: '今日は、旧暦でのあなたの誕生日。生まれた日は旧暦' + bl.month + '月' + bl.day + '日。旧暦の誕生日は、毎年、西暦の日付が変わる。' });
       }
     }
     if (koyomiRitualOn('touji')) {
       var v = koyomiTodayData(new Date(date.getFullYear(), m - 1, d, 12));
       if (v && v.sekki === '冬至' && v.sekkiDay === 1)
-        out.push({ key: 'touji', icon: '🕯', title: '冬至（一陽来復）', text: '一年でいちばん長い夜。ここから日が少しずつ長くなります。この一年のありがとうを、1つ残しましょう。', input: 'touji-' + date.getFullYear(), placeholder: 'この一年のありがとう' });
+        out.push({ key: 'touji', icon: '🕯', title: '冬至（一陽来復）', text: '一年でいちばん長い夜。ここから日が少しずつ長くなる。この一年のありがとうを、1つ。', input: 'touji-' + date.getFullYear(), placeholder: 'この一年のありがとう' });
     }
     if (koyomiRitualOn('harae') && ((m === 6 && d === 30) || (m === 12 && d === 31))) {
       var nagoshi = m === 6;
       out.push({ key: 'harae', icon: nagoshi ? '🌾' : '🎍', title: nagoshi ? '夏越の祓（なごしのはらえ）' : '年越の祓（としこしのはらえ）',
-        text: '半年のけがれを払う日です。手放したいことを1つ書いて、流しましょう。書いたことは、どこにも残りません。', flow: 'harae-' + ymd, placeholder: '手放したいこと' });
+        text: '半年のけがれを払う日。手放したいことを1つ書いて、流す。書いたことは、どこにも残らない。', flow: 'harae-' + ymd, placeholder: '手放したいこと' });
+    }
+    // v0.70.1: ふつう（月と季節の節目）
+    var lu = koyomiLunarDate(date), log0 = _koyomiRitualLog();
+    if (koyomiRitualOn('tsuitachi') && lu && lu.day === 1) {
+      var tKey = 'tsuitachi-' + lu.year + '-' + (lu.leap ? 'L' : '') + lu.month, prev = null;
+      Object.keys(log0).filter(function(k) { return k.indexOf('tsuitachi-') === 0 && k !== tKey; }).sort(function(a, b) { return String(log0[a + ':at'] || '').localeCompare(String(log0[b + ':at'] || '')); }).forEach(function(k) { if (k.slice(-3) !== ':at') prev = log0[k]; });
+      out.push({ key: 'tsuitachi', icon: '🌑', title: '朔日参り（ついたちまいり）', text: '旧暦の' + (lu.leap ? '閏' : '') + lu.month + '月の始まり（新月）。昔は月の初めに、無事を感謝して、新しい月の願いをかけた。この月にしたいことを1つ。',
+        note: prev ? '前の月にしたかったこと：「' + prev + '」' : '', input: tKey, placeholder: 'この月にしたいこと' });
+    }
+    if (koyomiRitualOn('tsukimi') && lu && !lu.leap && ((lu.month === 8 && lu.day === 15) || (lu.month === 9 && lu.day === 13))) {
+      var y0 = date.getFullYear(), j15 = log0['jugoya-' + y0], j13 = log0['jusanya-' + y0];
+      if (lu.month === 8) out.push({ key: 'tsukimi', icon: '🌕', title: '十五夜（中秋の名月）', text: '月を見たら、ひとこと。ひと月後の十三夜にも、知らせる。', input: 'jugoya-' + y0, placeholder: '今夜の月を見て' });
+      else out.push({ key: 'tsukimi', icon: '🌔', title: '十三夜（後の月）', text: '十五夜と対になる月。片方だけ見るのは「片見月（かたみづき）」といって、縁起が悪いとされた。',
+        note: j15 ? '十五夜のひとこと：「' + j15 + '」' + (j13 ? '　🌕🌔 今年の月見がそろった（両見月）' : '') : '', input: 'jusanya-' + y0, placeholder: '今夜の月を見て' });
+    }
+    if (koyomiRitualOn('kan')) {
+      var vk = koyomiTodayData(new Date(date.getFullYear(), m - 1, d, 12));
+      if (vk && vk.sekkiDay === 1 && vk.sekki === '小寒')
+        out.push({ key: 'kan', icon: '❄️', title: '寒の入り', text: '今日から立春の前日までの、およそ30日が「寒」。一年でいちばん寒いこの時期に、昔は寒稽古をした。この寒のあいだ続けたいことを1つ。', input: 'kan-' + date.getFullYear(), placeholder: '寒のあいだ続けたいこと' });
+      if (vk && vk.sekkiDay === 1 && vk.sekki === '立春') {
+        var kn = log0['kan-' + date.getFullYear()];   // 寒の入り（1月）と寒の明け（2月）は同じ年
+        out.push({ key: 'kan', icon: '🌱', title: '寒の明け', text: '寒の30日が終わり、今日から暦の上では春。', note: kn ? '寒の入りに決めたこと：「' + kn + '」' : '' });
+      }
+    }
+    if (koyomiRitualOn('hachijuhachiya')) {
+      var rs = _koyomiRisshunDay(date.getFullYear());
+      if (rs && Math.round((new Date(date.getFullYear(), m - 1, d, 12) - rs) / 86400000) === 87)
+        out.push({ key: 'hachijuhachiya', icon: '🍵', title: '八十八夜', text: '立春から数えて88日目。茶摘みの頃で、この日の新茶を飲むと一年元気に過ごせるといわれる。「八十八夜の別れ霜」、遅い霜もこのあたりまで。', mark: 'hachijuhachiya-' + date.getFullYear(), markLabel: '新茶を一杯いただいた' });
     }
     if (koyomiRitualOn('thanks'))
       out.push({ key: 'thanks', icon: '🙏', title: '今日のありがとうを一行', text: '', input: 'thanks-' + ymd, placeholder: '今日のありがとう' });
@@ -12648,17 +12686,21 @@ function koyomiRenderRituals(host, esc, date) {
       var body = '';
       if (r.input) body = saved ? '<div data-rt-saved style="margin-top:6px;font-size:0.9em;">「' + esc(saved) + '」 <button type="button" data-rt-edit style="border:none;background:none;color:inherit;opacity:0.7;font-size:0.85em;text-decoration:underline;cursor:pointer;">書き直す</button></div>'
         : '<div style="display:flex;gap:6px;margin-top:6px;"><input data-rt-in maxlength="60" placeholder="' + esc(r.placeholder) + '" style="flex:1;min-width:0;padding:7px 10px;border-radius:10px;border:1px solid rgba(122,59,30,0.3);font-size:0.9em;background:rgba(255,255,255,0.8);"><button type="button" data-rt-save style="padding:6px 12px;border-radius:10px;border:1px solid currentColor;background:rgba(255,255,255,0.7);color:inherit;cursor:pointer;white-space:nowrap;">残す</button></div>';
-      if (r.flow) body = flowed ? '<div style="margin-top:6px;font-size:0.9em;opacity:0.8;">🌊 流しました。</div>'
+      if (r.mark) body = log[r.mark] ? '<div style="margin-top:6px;font-size:0.9em;">✓ ' + esc(r.markLabel) + '</div>'
+        : '<div style="margin-top:6px;"><button type="button" data-rt-mark style="padding:6px 12px;border-radius:10px;border:1px solid currentColor;background:rgba(255,255,255,0.7);color:inherit;cursor:pointer;">' + esc(r.markLabel) + '</button></div>';
+      if (r.flow) body = flowed ? '<div style="margin-top:6px;font-size:0.9em;opacity:0.8;">🌊 流した。</div>'
         : '<div style="display:flex;gap:6px;margin-top:6px;"><input data-rt-in maxlength="60" placeholder="' + esc(r.placeholder) + '" style="flex:1;min-width:0;padding:7px 10px;border-radius:10px;border:1px solid rgba(122,59,30,0.3);font-size:0.9em;background:rgba(255,255,255,0.8);"><button type="button" data-rt-flow style="padding:6px 12px;border-radius:10px;border:1px solid currentColor;background:rgba(255,255,255,0.7);color:inherit;cursor:pointer;white-space:nowrap;">流す</button></div>';
       return '<div data-ritual="' + r.key + '" style="margin:12px 0 0;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.45);border:1px solid rgba(122,59,30,0.2);text-align:left;">' +
-        '<div style="font-weight:800;">' + r.icon + ' ' + esc(r.title) + '</div>' + (r.text ? '<div style="font-size:0.84em;line-height:1.7;margin-top:4px;">' + esc(r.text) + '</div>' : '') + body + '</div>';
+        '<div style="font-weight:800;">' + r.icon + ' ' + esc(r.title) + '</div>' + (r.text ? '<div style="font-size:0.84em;line-height:1.7;margin-top:4px;">' + esc(r.text) + '</div>' : '') +
+        (r.note ? '<div style="font-size:0.82em;margin-top:6px;opacity:0.85;">' + esc(r.note) + '</div>' : '') + body + '</div>';
     }).join('');
     var anchor = host.querySelector('[data-tip]') || host.querySelector('[data-kaze-closing]');
     if (anchor) anchor.insertAdjacentHTML('beforebegin', html); else host.insertAdjacentHTML('beforeend', html);
     list.forEach(function(r) {
       var box = host.querySelector('[data-ritual="' + r.key + '"]'); if (!box) return;
-      var inp = box.querySelector('[data-rt-in]'), sv = box.querySelector('[data-rt-save]'), fl = box.querySelector('[data-rt-flow]'), ed = box.querySelector('[data-rt-edit]');
-      if (sv) sv.onclick = function() { var t = String(inp.value || '').trim(); if (!t) return; _koyomiRitualSave(r.input, t.slice(0, 60)); koyomiRenderRituals(host, esc, date); };
+      var inp = box.querySelector('[data-rt-in]'), sv = box.querySelector('[data-rt-save]'), fl = box.querySelector('[data-rt-flow]'), ed = box.querySelector('[data-rt-edit]'), mk = box.querySelector('[data-rt-mark]');
+      if (sv) sv.onclick = function() { var t = String(inp.value || '').trim(); if (!t) return; _koyomiRitualSave(r.input, t.slice(0, 60)); _koyomiRitualSave(r.input + ':at', new Date().toISOString()); koyomiRenderRituals(host, esc, date); };
+      if (mk) mk.onclick = function() { _koyomiRitualSave(r.mark, 1); koyomiRenderRituals(host, esc, date); };
       if (ed) ed.onclick = function() { _koyomiRitualSave(r.input, null); koyomiRenderRituals(host, esc, date); };
       if (fl) fl.onclick = function() {
         if (!String(inp.value || '').trim()) return;
@@ -57587,6 +57629,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.70.1', date: '2026-11-02',
+    items: [
+      { icon:'🌕', t:'儀式（きくらげ）の「ふつう」を作りました',
+        before:'儀式は「少なめ」の4つだけでした',
+        after:'きくらげを「ふつう」にすると、朔日参り（旧暦の毎月1日に、この月にしたいことを1つ）、十五夜と十三夜（月を見てひとこと。両方見れば両見月）、寒の入りと寒の明け（寒のあいだ続けたいことを1つ）、八十八夜（新茶を一杯）が加わります' }
+    ]
+  },
+  {
     ver: 'v0.70.0', date: '2026-11-02',
     items: [
       { icon:'🍄', t:'こよみの注文票に「儀式（きくらげ）」を足しました',
@@ -85632,6 +85682,35 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-522·①: 儀式が違う', [_plain, _nagoshi, _toshi, _touji, _lb, _off, _none, _kids].join(' / '));
      } catch(e) {
        ng('ST-522: 例外', e.message);
+     }
+
+     // ===== ST-523: 儀式（ふつう）：朔日参り・十五夜と十三夜・寒の入りと寒の明け・八十八夜（v0.70.1〜） =====
+     // 【権威】2026-11-02、儀式を「全部足したい」との指示の、ふつうの4つ
+     try {
+       var _ordS = allSettings.ui.koyomiOrder ? JSON.parse(JSON.stringify(allSettings.ui.koyomiOrder)) : null, _offS = allSettings.ui.ritualOff, _lsSnap = {};
+       for (var _li = 0; _li < localStorage.length; _li++) { var _lk = localStorage.key(_li); _lsSnap[_lk] = localStorage.getItem(_lk); }
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'normal' }); allSettings.ui.ritualOff = [];
+       localStorage.removeItem('koyomiRitualLog');
+       var _k = function(y, m, d) { return koyomiRitualsOf(new Date(y, m - 1, d, 12)).map(function(r) { return r.key + (r.title === '寒の明け' ? '明け' : ''); }).filter(function(k) { return k !== 'thanks'; }).join(','); };
+       // 2026年11月の旧暦1日（新月の日）を探す
+       var _t1 = null; for (var _dd = 1; _dd <= 30 && !_t1; _dd++) { var _lx = koyomiLunarDate(new Date(2026, 10, _dd, 12)); if (_lx && _lx.day === 1) _t1 = _dd; }
+       var _r = { tsuitachi: _t1 ? _k(2026, 11, _t1) : '', jugoya: _k(2026, 9, 25), jusanya: _k(2026, 10, 23), kanIri: _k(2027, 1, 5), kanAke: _k(2027, 2, 4), hachi: _k(2026, 5, 2), plain: _k(2026, 11, 3) };
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'few' });
+       var _few = _k(2026, 9, 25);
+       // 両見月：十五夜に書いたら、十三夜にそれを見せる
+       localStorage.setItem('koyomiRitualLog', JSON.stringify({ 'jugoya-2026': 'きれいな月', 'jusanya-2026': '冷たい月' }));
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'normal' });
+       var _js = koyomiRitualsOf(new Date(2026, 9, 23, 12)).filter(function(r) { return r.key === 'tsukimi'; })[0];
+       if (_ordS === null) delete allSettings.ui.koyomiOrder; else allSettings.ui.koyomiOrder = _ordS;
+       if (_offS === undefined) delete allSettings.ui.ritualOff; else allSettings.ui.ritualOff = _offS;
+       Object.keys(localStorage).forEach(function(k) { if (!Object.prototype.hasOwnProperty.call(_lsSnap, k)) localStorage.removeItem(k); });
+       Object.keys(_lsSnap).forEach(function(k) { if (localStorage.getItem(k) !== _lsSnap[k]) localStorage.setItem(k, _lsSnap[k]); });
+       (_t1 && _r.tsuitachi === 'tsuitachi' && _r.jugoya === 'tsukimi' && _r.jusanya === 'tsukimi' && _r.kanIri === 'kan' && _r.kanAke === 'kan明け' && _r.hachi === 'hachijuhachiya' && _r.plain === '' && _few === '' &&
+        _js && /十五夜のひとこと：「きれいな月」/.test(_js.note) && /両見月/.test(_js.note) && /log0\['kan-' \+ date\.getFullYear\(\)\];/.test(koyomiRitualsOf.toString()))
+         ? ok('ST-523·①: 儀式（ふつう）：朔日参り（2026/11/' + _t1 + '＝旧暦1日）・十五夜（9/25）・十三夜（10/23、両見月）・寒の入り（2027/1/5）・寒の明け（2/4）・八十八夜（2026/5/2）。少なめでは出ない')
+         : ng('ST-523·①: 儀式（ふつう）が違う', JSON.stringify(_r) + ' / ' + _few + ' / ' + (_js && _js.note));
+     } catch(e) {
+       ng('ST-523: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
