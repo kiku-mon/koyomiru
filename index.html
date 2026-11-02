@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.69.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.69.8 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.69.4';
+    const APP_VERSION = 'v0.69.8';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12740,9 +12740,10 @@ function openKoyomiBirthday() {
     var saved = ''; try { saved = localStorage.getItem('koyomiBirthday') || ''; } catch (eS) {}
     var old = document.getElementById('koyomiBirthOverlay'); if (old) old.remove();
     var ov = document.createElement('div'); ov.id = 'koyomiBirthOverlay';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,0.45);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px;';
+    // v0.69.5: 【権威】2026-10-31、「生まれた日のモーダルは上すぎた。デザインし直し」との指示。画面のまん中に出す（長いときは、まん中から始めてスクロール）
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,0.45);display:flex;justify-content:center;overflow-y:auto;padding:calc(env(safe-area-inset-top, 0px) + 16px) 12px calc(env(safe-area-inset-bottom, 0px) + 16px);';
     var today = new Date(), maxD = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-    ov.innerHTML = '<div role="dialog" aria-modal="true" style="position:relative;width:100%;max-width:440px;background:#fffaf2;border-radius:20px;padding:20px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);color:#3a2a1a;">' +
+    ov.innerHTML = '<div role="dialog" aria-modal="true" style="position:relative;width:100%;max-width:440px;margin:auto 0;background:#fffaf2;border-radius:20px;padding:20px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);color:#3a2a1a;">' +
       '<button type="button" data-bd="close" aria-label="閉じる" style="position:absolute;top:10px;right:12px;width:36px;height:36px;border-radius:50%;border:1px solid #d9c9a6;background:#fff;color:#7a3b1e;font-size:1.2em;cursor:pointer;">×</button>' +
       '<div style="font-weight:800;font-size:1.1em;color:#7a3b1e;margin-bottom:10px;">🎂 生まれた日の暦</div>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;"><input type="date" data-bd="date" min="1900-01-01" max="' + maxD + '" value="' + e(saved) + '" style="flex:1;min-width:160px;padding:9px 10px;border-radius:10px;border:1px solid #d9c9a6;font-size:1em;">' +
@@ -23814,12 +23815,14 @@ function koyomiMoonPhaseMoment(date) {
   try {
     var ds = getLocalDateStr(date), e = (typeof getMoonPhaseOnDate === 'function') ? getMoonPhaseOnDate(ds) : null;
     // 端末の時計が日本時間でないときは、日本時間も添える（暦が日本時間であることが分かるように）
-    var jst = (e && new Date().getTimezoneOffset() !== -540 && e.jstTime) ? (e.jstDate !== e.date ? Number(e.jstDate.slice(8, 10)) + '日の' : '') + _koyomiTimeJa(e.jstTime) : '';
+    var jst = (e && new Date().getTimezoneOffset() !== -540 && e.jstTime) ? (e.jstDate !== e.date ? Number(e.jstDate.slice(8, 10)) + '日の' : '') + _koyomiTimeJaAP(e.jstTime) : '';
     return e ? { name: e.name === '上弦' || e.name === '下弦' ? e.name + 'の月' : e.name, time: e.time, jst: jst } : null;
   } catch (er) { return null; }
 }
 window.koyomiMoonPhaseMoment = koyomiMoonPhaseMoment;
 function _koyomiTimeJa(t) { var p = String(t || '').split(':'); return p.length === 2 ? Number(p[0]) + '時' + Number(p[1]) + '分' : ''; }
+// v0.69.6: 【権威】2026-11-02、「今日の5時28分が、下弦の月です。これ午前？午後？」との指摘。午前・午後をつける（正午すぎは「午後0時」）
+function _koyomiTimeJaAP(t) { var p = String(t || '').split(':'); if (p.length !== 2) return ''; var h = Number(p[0]), m = Number(p[1]); return (h < 12 ? '午前' + h : '午後' + (h - 12)) + '時' + m + '分'; }
 // ===== END v0.63.9 =====
 
 
@@ -24599,7 +24602,7 @@ function koyomiQaAnswer(key, v, order, esc) {
   if (key === 'kouDay') return { main: v.kouDay + '日目', sub: '七十二候「' + esc(v.kou) + '」', bar: koyomiProgressBar(v.kouDay, v.kouTotal, v.kouStart, v.kouEnd) };   // 全何日かは棒に任せる
   if (key === 'moon') {
     var mi = moonShapeInfo(v.moonAge), mdq = koyomiMoonOfDay(v.date || new Date()), pmq = koyomiMoonPhaseMoment(v.date || new Date());   // v0.63.9
-    if (mdq) mi = { name: mdq.name, reading: mdq.reading, note: [order.kyureki !== 'none' ? '旧暦' + mdq.lunarDay + '日の月' : '', pmq ? '今日の' + _koyomiTimeJa(pmq.time) + 'が' + pmq.name : ''].filter(Boolean).join('・') };
+    if (mdq) mi = { name: mdq.name, reading: mdq.reading, note: [order.kyureki !== 'none' ? '旧暦' + mdq.lunarDay + '日の月' : '', pmq ? '今日の' + _koyomiTimeJaAP(pmq.time) + 'が' + pmq.name : ''].filter(Boolean).join('・') };
     var ms = [mi.reading ? esc(mi.reading) : '', mi.note ? esc(mi.note) : '', order.moon !== 'half' ? 'リアルタイム月齢 ' + (Math.round(v.moonAge * 10) / 10) : ''].filter(Boolean).join('・');
     return { main: esc(mi.name || v.moonName), sub: ms, moon: true, view: koyomiMoonViewNote() };
   }
@@ -24669,7 +24672,8 @@ function koyomiTodaySentence(v, order) {
     var mday = koyomiMoonOfDay(d), pm = koyomiMoonPhaseMoment(d);
     if (mday) {
       moon = { name: mday.name, reading: mday.reading, lunarDay: mday.lunarDay, age: order.moon === 'half' ? null : Math.round(v.moonAge * 10) / 10,
-               phase: pm ? '今日の' + _koyomiTimeJa(pm.time) + 'が、' + pm.name + 'です。' + (pm.jst ? '日本時間では、' + pm.jst + '。' : '') : '' };
+               // v0.69.6: 「ですます調にいきなり変わるな」との指摘。ほかの文と同じく言い切りに
+               phase: pm ? '今日の' + _koyomiTimeJaAP(pm.time) + 'が、' + pm.name + '。' + (pm.jst ? '日本時間では、' + pm.jst + '。' : '') : '' };
       moon.showLunar = order.kyureki !== 'none';   // 注文票の旧暦（たまご）が「なし」の人には、旧暦の日を言わない
       // v0.64.1: 【権威】2026-10-28、「今日の月は、と言ってもらいたい。リアルタイム月齢は出さなくてもいい。やりすぎた」との指示。一文・画像からは月齢を外す
       moonSpeech = '今日の月は、' + mday.reading + (moon.showLunar ? '、旧暦' + mday.lunarDay + '日の月。' : '。') + moon.phase;
@@ -25315,7 +25319,7 @@ function koyomiXCaption(v, order) {
   if (order.moon !== 'none') { var mdx = koyomiMoonOfDay(v.date || new Date()); if (mdx) { mn = mdx.name; tags.push(mn); } }   // v0.63.9: 旧暦の日の呼び名
   var pmx = (order.moon !== 'none') ? koyomiMoonPhaseMoment(v.date || new Date()) : null;
   if (pmx) tags.push(pmx.name.replace(/の月$/, ''));
-  if (today.length || mn) lines.push(today.join('、') + (today.length ? '。' : '') + (mn ? '今日の月は' + mn + '。' : '') + (pmx ? '今日の' + _koyomiTimeJa(pmx.time) + 'が、' + pmx.name + 'です。' : ''));
+  if (today.length || mn) lines.push(today.join('、') + (today.length ? '。' : '') + (mn ? '今日の月は' + mn + '。' : '') + (pmx ? '今日の' + _koyomiTimeJaAP(pmx.time) + 'が、' + pmx.name + '。' : ''));
   if (order.kyureki !== 'none' && typeof koyomiLunarDate === 'function') {
     var lu = koyomiLunarDate(v.date || new Date(), 9);
     if (lu) lines.push('今日は、旧暦' + (lu.leap ? '閏' : '') + lu.month + '月' + lu.day + '日。');
@@ -43279,14 +43283,17 @@ function renderMonthlyMoneyLine() {
         var _moneyOpen = false;
         try { _moneyOpen = localStorage.getItem('moneyLineOpen') === '1'; } catch (eLs) {}
         var _curDiff = _sum.cur['in'] - _sum.cur.out;
+        // v0.69.6: 【権威】2026-11-02、「スマホで、お金の欄をもう少しだけ小さくできない？カレンダーを圧迫して小さくなる」との指示。スマホは字を小さくし、1行に収める
+        var _mNarrow = window.innerWidth < 600, _mNum = _mNarrow ? '1em' : '1.1em';
         var _short =
-          '<div onclick="toggleMoneyLineOpen()" style="cursor:pointer;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
-            (_pt.count > 0 ? '<span><span style="color:' + GRAY + ';">💰 手持ち</span> <span style="color:' + GREEN + ';font-weight:800;font-size:1.1em;">' + y(_pt.total) + '</span></span>' : '') +
+          '<div onclick="toggleMoneyLineOpen()" style="cursor:pointer;display:flex;align-items:baseline;gap:' + (_mNarrow ? '8px' : '10px') + ';flex-wrap:' + (_mNarrow ? 'nowrap' : 'wrap') + ';' + (_mNarrow ? 'font-size:0.8em;white-space:nowrap;overflow:hidden;' : '') + '">' +
+            // v0.69.8: 【権威】2026-11-02、「手持ちは残してほしかった。よく使うから」との指示。言葉は残し、字を小さくして1行に
+            (_pt.count > 0 ? '<span><span style="color:' + GRAY + ';">💰 手持ち</span> <span style="color:' + GREEN + ';font-weight:800;font-size:' + _mNum + ';">' + y(_pt.total) + '</span></span>' : '') +
             (_fore !== null
-              ? '<span><span style="color:' + GRAY + ';">→ ' + _m + '月末</span> <span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;font-size:1.1em;">' + y(_fore) + '</span></span>'
+              ? '<span><span style="color:' + GRAY + ';">→ ' + _m + '月末</span> <span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;font-size:' + _mNum + ';">' + y(_fore) + '</span></span>'
               : ((_sum.cur.out > 0 || _sum.cur['in'] > 0) ? '<span><span style="color:' + GRAY + ';">' + _m + '月の差</span> <span style="color:' + (_curDiff < 0 ? RED : GREEN) + ';font-weight:800;">' + sg(_curDiff) + '</span></span>' : '')) +
             (bad > 0 ? '<span style="color:#c07a2a;">⚠️' + bad + '</span>' : '') +
-            '<span style="color:#2f6fed;margin-left:auto;">' + (_moneyOpen ? '▾ 畳む' : '▸ くわしく') + '</span>' +
+            '<span style="color:#2f6fed;margin-left:auto;">' + (_moneyOpen ? (_mNarrow ? '▾' : '▾ 畳む') : (_mNarrow ? '▸' : '▸ くわしく')) + '</span>' +
           '</div>';
         el.innerHTML = _short + (_moneyOpen ? '<div style="margin-top:4px;">' + html + '</div>' : '');
         el.style.display = '';
@@ -57465,6 +57472,33 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.69.8', date: '2026-11-02',
+    items: [
+      { icon:'💰', t:'スマホのお金の欄に「手持ち」の言葉を戻しました',
+        before:'小さくするために、「💰 手持ち」を「💰」だけにしていました',
+        after:'「💰 手持ち」の言葉は残し、字を小さくして1行に収めます。「今日を、声に出して」は、言い切りの形のままです' }
+    ]
+  },
+  {
+    ver: 'v0.69.6', date: '2026-11-02',
+    items: [
+      { icon:'🌗', t:'満月・下弦などの時刻に、午前・午後をつけました',
+        before:'「今日の5時28分が、下弦の月です。」と、午前か午後か分かりにくく、ここだけ「です」になっていました',
+        after:'「今日の午前5時28分が、下弦の月。」と、ほかの文と同じ言い切りにそろえました' },
+      { icon:'💰', t:'スマホの月間で、お金の欄を小さくしました',
+        before:'お金の欄が2行に折れて、カレンダーを押し下げていました',
+        after:'スマホでは字を小さくして、1行に収めました' }
+    ]
+  },
+  {
+    ver: 'v0.69.5', date: '2026-10-31',
+    items: [
+      { icon:'🎂', t:'生まれた日の暦を、画面のまん中に出すようにしました',
+        before:'生まれた日の暦が、画面の上に寄って出ていました',
+        after:'画面のまん中に出します。暦が長いときは、まん中から始まって下へスクロールできます' }
+    ]
+  },
   {
     ver: 'v0.69.4', date: '2026-10-30',
     items: [
@@ -84954,7 +84988,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _tn = koyomiTodaySentence(koyomiTodayData(new Date(Date.UTC(2026, 9, 27, 0))), Object.assign({}, _o, { kyureki: 'none' }));
        (_nm(27, 10) === '立待月' && _nm(27, 23) === '立待月'   /* 日本時間の10時と23時（どの時計でも同じ日になる時刻） */ && _nm(28, 12) === '居待月' && _nm(11, 12) === '新月' && _nm(25, 12) === '十五夜' &&
         _ph(26) === '満月13:12' && _ph(19) === '上弦の月01:13' && _ph(27) === '' &&
-        /今日の\d+時\d+分が、満月です。/.test(_t26.speech) && _t26.speech.indexOf('今日の月は、') !== -1 && _t26.speech.indexOf('月齢') === -1 && _t26.speech.indexOf('旧暦16日の月') !== -1 &&   /* v0.64.1: 一文から月齢を外した */
+        /今日の午[前後]\d+時\d+分が、満月。/.test(_t26.speech) && _koyomiTimeJaAP('05:28') === '午前5時28分' && _koyomiTimeJaAP('13:12') === '午後1時12分' && _koyomiTimeJaAP('12:05') === '午後0時5分' &&   /* v0.69.6 */ _t26.speech.indexOf('今日の月は、') !== -1 && _t26.speech.indexOf('月齢') === -1 && _t26.speech.indexOf('旧暦16日の月') !== -1 &&   /* v0.64.1: 一文から月齢を外した */
         _tn.speech.indexOf('旧暦17日の月') === -1)
          ? ok('ST-498·①: 月の名前は旧暦の日で決まり、一日中同じ（立待月は旧暦17日）。満月などは瞬間（13時12分）を含む日だけ。「リアルタイム月齢」。旧暦なしの人には旧暦の日を言わない')
          : ng('ST-498·①: 月の言い方が違う', [_nm(27, 6), _nm(27, 23), _nm(28, 12), _ph(26), _ph(19)].join(' / '));
