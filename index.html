@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.71.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.71.5 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.71.4';
+    const APP_VERSION = 'v0.71.5';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -25368,6 +25368,35 @@ window.maybeShowKoyomiToday = maybeShowKoyomiToday;
 // ---- こよみの注文票（紙） ----
 // ラーメン店の注文票のように、各項目に〇を付ける。どの項目にも「基本」があり、何も変えずに決めてもよい。
 // いつでも書き直せる（札の長押し・カードの「📜 注文票」・設定の「画面の見え方」の日次ビュー）
+// v0.71.5: 【権威】2026-11-03、「ゴードンがメニューを絞って評判が上がった。定番のボタンを作って、何パターンか選べるように」
+// 「はじめての一杯は、あっさりじゃなくていい」「暦通と全部のせの違いが分かりづらい」との指示。定番は、量ではなく使い方（目的）で分ける。
+// 押すと一気に〇が付き、そこから好きに直せる。「出てくる時」は暮らしで違うので、定番では変えない
+var KOYOMI_ORDER_PRESETS = [
+  { key: 'osusume', icon: '🍜', name: '店のおすすめ', sub: 'はじめての一杯・迷ったらこれ',
+    v: { sekkiStrength: 'basic', richness: 'basic', questionCount: 'basic', yearNegi: { white: true, blue: true }, kou72: true, moon: 'basic', schedule: 'basic', kyureki: 'basic', world: 'many', kichi: 'all', ritual: 'few' } },
+  { key: 'kisetsu', icon: '🍂', name: '季節を味わう', sub: '暦と季節に浸りたい日',
+    v: { sekkiStrength: 'rich', richness: 'rich', questionCount: 'three', yearNegi: { white: true, blue: true }, kou72: true, moon: 'double', schedule: 'timed', kyureki: 'rich', world: 'normal', kichi: 'few', ritual: 'normal' } },
+  { key: 'yotei', icon: '📋', name: '予定を先に', sub: '忙しい日・仕事の日',
+    v: { sekkiStrength: 'light', richness: 'none', questionCount: 'none', yearNegi: { white: true, blue: false }, kou72: false, moon: 'half', schedule: 'all', kyureki: 'none', world: 'none', kichi: 'none', ritual: 'none' } },
+  { key: 'zenbu', icon: '🔥', name: '全部のせ', sub: 'いちばん右を全部',
+    v: { sekkiStrength: 'rich', richness: 'extraRich', questionCount: 'all', yearNegi: { white: true, blue: true }, kou72: true, moon: 'times', moonTimes: 10, schedule: 'all', kyureki: 'rich', world: 'extra', kichi: 'all', ritual: 'many' } }
+];
+window.KOYOMI_ORDER_PRESETS = KOYOMI_ORDER_PRESETS;
+// 今の注文が、どの定番と同じか（同じでなければ null）
+function koyomiOrderPresetOf(o) {
+  var same = function(a, b) { return JSON.stringify(a) === JSON.stringify(b); };
+  for (var i = 0; i < KOYOMI_ORDER_PRESETS.length; i++) {
+    var p = KOYOMI_ORDER_PRESETS[i], ok = true;
+    Object.keys(p.v).forEach(function(k) {
+      if (k === 'moonTimes') { if (p.v.moon === 'times' && Number(o.moonTimes) !== p.v.moonTimes) ok = false; return; }
+      if (k === 'yearNegi') { var y = o.yearNegi || {}; if (!!y.white !== p.v.yearNegi.white || !!y.blue !== p.v.yearNegi.blue) ok = false; return; }
+      if (!same(o[k], p.v[k])) ok = false;
+    });
+    if (ok) return p.key;
+  }
+  return null;
+}
+window.koyomiOrderPresetOf = koyomiOrderPresetOf;
 function openKoyomiOrderSheet(opts) {
   opts = opts || {};
   // v0.58.2: 1項目を1行にして、〇を横に並べる（ラーメン店の注文票の形）。v0.58.3: 広い画面では大きく広げる。
@@ -25440,6 +25469,18 @@ function openKoyomiOrderSheet(opts) {
         '<div style="font-size:' + Z.head + ';font-weight:700;letter-spacing:.3em;">こよみの注文票</div>' +
         (opts.ask && (opts.askTitle || opts.kouName) ? '<div style="font-size:' + Z.headSub + ';font-weight:700;margin-top:2px;">' + esc(opts.askTitle || ('今日から「' + opts.kouName + '」。ご注文は？')) + '</div>' : '') +
         '<div style="font-size:' + Z.headSub + ';opacity:.9;">天然こよみ専門店　こよみる ── こだわりたい、一回きりの今日がある。</div></div>' +
+      // v0.71.5: 定番の札（いちばん上）。今の〇の並びと同じ定番には印
+      (function() {
+        var cur0 = koyomiOrderPresetOf(draft);
+        return '<div data-ko-presets style="margin:0 8px;padding:8px 6px 10px;border:2px solid #b0443a;border-top:none;border-bottom:none;background:#fff8ec;">' +
+          '<div style="font-size:0.78em;color:#6b4f2a;font-weight:700;margin:0 2px 6px;">定番から選ぶ<span style="font-weight:400;color:#a08d66;">（押してから、好きに直せます）</span></div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;">' +
+          KOYOMI_ORDER_PRESETS.map(function(p) {
+            var on = cur0 === p.key;
+            return '<button type="button" data-ko-act="preset" data-ko-preset="' + p.key + '" style="text-align:left;padding:7px 9px;border-radius:10px;cursor:pointer;border:' + (on ? '2px solid #b0443a' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdecea' : '#fff') + ';color:#6b4f2a;">' +
+              '<div style="font-weight:800;font-size:0.9em;">' + p.icon + ' ' + p.name + (on ? ' ✓' : '') + '</div><div style="font-size:0.72em;color:#a08d66;margin-top:1px;">' + p.sub + '</div></button>';
+          }).join('') + '</div></div>';
+      })() +
       '<div style="border:2px solid #b0443a;border-top:none;margin:0 8px;">' + rows + '</div>' +
       '<div style="margin:8px 8px 0;display:grid;grid-template-columns:' + Z.name + 'px 1fr;align-items:center;border:1px solid #e3d6b8;">' +
         '<div style="padding:6px 8px;background:#f6ecd7;color:#6b4f2a;font-weight:700;font-size:' + Z.nameFs + ';">出てくる時</div>' +
@@ -25486,6 +25527,11 @@ function openKoyomiOrderSheet(opts) {
       render(); return;
     }
     var act = b.getAttribute('data-ko-act');
+    if (act === 'preset') {   // v0.71.5: 定番を押したら、その組み合わせに一気に〇
+      var pp = KOYOMI_ORDER_PRESETS.filter(function(x) { return x.key === b.getAttribute('data-ko-preset'); })[0];
+      if (pp) { var pv = JSON.parse(JSON.stringify(pp.v)); Object.keys(pv).forEach(function(k) { draft[k] = pv[k]; }); }
+      render(); return;
+    }
     if (act === 'basic') {
       var dft = JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT));
       ['sekkiStrength', 'richness', 'questionCount', 'kou72', 'moon', 'schedule'].forEach(function(k) { draft[k] = dft[k]; });
@@ -57792,6 +57838,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.71.5', date: '2026-11-03',
+    items: [
+      { icon:'🍜', t:'こよみの注文票に「定番」を置きました',
+        before:'注文票は11行あって、どれを選べばいいか迷うことがありました',
+        after:'いちばん上に「店のおすすめ（はじめての一杯）」「季節を味わう」「予定を先に」「全部のせ（いちばん右を全部）」の4つの定番を置きました。押すと一気に〇が付き、そこから好きに直せます' }
+    ]
+  },
+  {
     ver: 'v0.71.4', date: '2026-11-03',
     items: [
       { icon:'🪦', t:'消したカレンダーの印を、端末をまたいでも確実に届くようにしました',
@@ -86157,6 +86211,30 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-531·①: 墓石の突き合わせが違う', [_mig, _res, _newer].join(' / '));
      } catch(e) {
        ng('ST-531: 例外', e.message);
+     }
+
+     // ===== ST-532: 注文票の定番（店のおすすめ・季節を味わう・予定を先に・全部のせ）（v0.71.5〜） =====
+     // 【権威】2026-11-03、「定番のボタンを作って、何パターンか選べるように」「暦通と全部のせの違いが分かりづらい」との指示
+     try {
+       var _keys = KOYOMI_ORDER_PRESETS.map(function(p) { return p.key; }).join(',');
+       var _valid = KOYOMI_ORDER_PRESETS.every(function(p) {
+         return Object.keys(p.v).every(function(k) {
+           if (k === 'yearNegi' || k === 'kou72' || k === 'moonTimes') return true;
+           var it = KOYOMI_ORDER_ITEMS.filter(function(x) { return x.key === k; })[0];
+           return it && it.options.some(function(o) { return o[0] === p.v[k]; });
+         }) && !('timing' in p.v);
+       });
+       var _base = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)));
+       var _isOsusume = koyomiOrderPresetOf(_base) === 'osusume';
+       var _z = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), JSON.parse(JSON.stringify(KOYOMI_ORDER_PRESETS[3].v)));
+       var _isZenbu = koyomiOrderPresetOf(_z) === 'zenbu';
+       var _mixed = Object.assign(JSON.parse(JSON.stringify(_z)), { world: 'few' });
+       (_keys === 'osusume,kisetsu,yotei,zenbu' && _valid && _isOsusume && _isZenbu && koyomiOrderPresetOf(_mixed) === null &&
+        /data-ko-act="preset"/.test(openKoyomiOrderSheet.toString()))
+         ? ok('ST-532·①: 注文票の定番は使い方で4つ（店のおすすめ＝基本と同じ・季節を味わう・予定を先に・全部のせ）。値はどれも注文票にある選び方。出てくる時は変えない。今の注文と同じ定番に印')
+         : ng('ST-532·①: 定番が違う', [_keys, _valid, _isOsusume, _isZenbu].join(' / '));
+     } catch(e) {
+       ng('ST-532: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
