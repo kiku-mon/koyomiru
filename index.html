@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.70.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.71.4 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.70.8';
+    const APP_VERSION = 'v0.71.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -1031,7 +1031,7 @@ async function _acceptInvite(code) {
       // 名前はカードを組み立てたときに控えてある。ここで覗き見をやり直さない。
       // やり直すと、回数制限の枠を一つ余計に使う（枠は全員で分け合っている）。
       var _cname = (window._koyomiruInviteName && window._koyomiruInviteName[code]) || '共有カレンダー';
-      window.linkSharedCalendarToLocal(_cid, _cname, null);
+      window.linkSharedCalendarToLocal(_cid, _cname, null, undefined, true);   // v0.71.0: 招待から参加し直す＝はっきりした操作
     }
   } catch (eL) { console.warn('[招待] 手元への取り込みに失敗:', eL && eL.message); }
   // v0.45.2080: 【権威】2026-09-06、参加した相手の予定が届かない件を追う中で見つけた。
@@ -19233,7 +19233,7 @@ function renderTodoList() {
       if (!c) return;
       var go = function() {
         if (typeof deleteTaskById === 'function') deleteTaskById(c.id);
-        else { allTasks = allTasks.filter(function(t) { return t.id !== c.id; }); saveAllTasks(); }
+        else { allTasks = allTasks.filter(function(t) { return t.id !== c.id; }); if (typeof _propagateDeletion === 'function') _propagateDeletion(c.id); saveAllTasks(); }   // v0.71.2: 総点検
         if (typeof after === 'function') after();
         _tokiRefreshAll();
         if (typeof showToast === 'function') showToast('🗑 ' + (c.box || '') + ' を削除しました');
@@ -19381,6 +19381,38 @@ function renderTodoList() {
       } catch (e) {}
       return map;
     }
+    // v0.71.3: 【権威】2026-11-03、総点検の2つ目「書き換えたときは、必ず書き換えた時刻を付ける」。
+    // 送る列に積むかどうかは時刻（updatedAt）で決まるので、中身を変えて時刻を付け忘れると、ほかの端末に届かない。
+    // 安全網：中身の指紋（updatedAt を除いた中身から作る番号）を覚えておき、指紋が変わったのに時刻が前のままのものだけに、今の時刻を付ける。
+    //   ・クラウドから受け取って変わったもの … 時刻もクラウドの新しいものに変わっているので、付けない（受け取ったものを送り返す「こだま」を防ぐ）
+    //   ・自分の処理で時刻を付けたもの … 付けない（二重に付けない）
+    //   ・初めて見る（新しく足した）もの … 時刻が無ければ付ける
+    //   ・起動して最初の保存 … 見くらべる元は、この端末に保存してある内容から作る（起動後の書き換えも拾う）
+    function _koyomiContentSig(t) {
+      var str;
+      try { str = JSON.stringify(t, function(k, v) { return k === 'updatedAt' ? undefined : v; }); } catch (e) { return ''; }
+      var h = 2166136261;
+      for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return (h >>> 0).toString(36) + ':' + str.length;
+    }
+    function koyomiStampChangedTasks(prevMap, tasks, nowIso) {
+      var next = {}, stamped = [];
+      (tasks || []).forEach(function(t) {
+        if (!t || !t.id) return;
+        var sig = _koyomiContentSig(t), prev = prevMap ? prevMap[t.id] : null;
+        if (prev) {
+          if (prev.s !== sig && (t.updatedAt || '') === (prev.u || '')) { t.updatedAt = nowIso; stamped.push(t.id); }
+        } else if (prevMap && !t.updatedAt) { t.updatedAt = nowIso; stamped.push(t.id); }
+        next[t.id] = { s: sig, u: t.updatedAt || '' };
+      });
+      return { next: next, stamped: stamped };
+    }
+    window.koyomiStampChangedTasks = koyomiStampChangedTasks;
+    function _koyomiContentBaselineFromDisk() {
+      var map = {};
+      try { var arr = JSON.parse(localStorage.getItem('allTasks') || '[]'); if (Array.isArray(arr)) arr.forEach(function(t) { if (t && t.id) map[t.id] = { s: _koyomiContentSig(t), u: t.updatedAt || '' }; }); } catch (e) {}
+      return map;
+    }
     function saveAllTasks(skipCloudSync) {
   // v0.45.2054: 【権威】2026-09-04、見るだけリンクで1つのカレンダーを開いたのに、
   // 画面を移ったら自分の別のカレンダーまで見えた、との報告。
@@ -19404,6 +19436,15 @@ function renderTodoList() {
   // v0.47.23: 積む判定を「前回この端末に保存した内容」との比較に変えた（_pushQueueDiff）。
   // 列の関数がまだ読まれていない起動直後は、積まずに基準も進めない。
   // 次の保存で、同じ変更がもう一度「変わった」と判定され、そのとき積まれる。
+  // v0.71.3: 書き換えたのに時刻を付け忘れたものに、時刻を付ける（すぐ下の「送る列に積む」が、時刻で判断するため）
+  try {
+    if (!window._isTesting && !window._smokeTestRunning) {
+      if (!window._lastContentSigById) window._lastContentSigById = _koyomiContentBaselineFromDisk();
+      var _st = koyomiStampChangedTasks(window._lastContentSigById, allTasks, new Date().toISOString());
+      window._lastContentSigById = _st.next;
+      if (_st.stamped.length && typeof window._dbgLog === 'function') window._dbgLog('[時刻の安全網] 時刻を付け忘れていた ' + _st.stamped.length + '件に、時刻を付けました');
+    }
+  } catch (eSt) { console.warn('[時刻の安全網] 失敗:', eSt && eSt.message); }
   try {
     if (!window._isTesting && !window._smokeTestRunning) {
       if (!window._lastLocalSaveSigById) window._lastLocalSaveSigById = _taskSigBaselineFromDisk();
@@ -19999,6 +20040,7 @@ function getMyDecks() {
           { label: '削除', style: 'danger', onClick: function() {
             var i = allTasks.findIndex(function(t){ return t.id === d.id; });
             if (i >= 0) allTasks.splice(i, 1);
+            if (i >= 0) { if (typeof _propagateDeletion === 'function') _propagateDeletion(d.id); }   // v0.71.2: 総点検（デッキ）
             saveAllTasks();
             renderMyDecks();
           }},
@@ -24925,7 +24967,8 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     // v0.70.8: 【権威】2026-11-03、「店名とコンセプトを一番上にして、その後に、一度きりの今日を声に出して、みたいな感じで」との指示
       '<div data-koe-brand style="font-size:0.68em;opacity:0.75;letter-spacing:0.05em;">天然こよみ専門店　こよみる</div>' +
       '<div style="font-size:0.68em;opacity:0.75;margin-bottom:6px;">こだわりたい、一回きりの今日がある。</div>' +
-      '<div style="font-size:0.8em;font-weight:700;opacity:0.85;margin-bottom:4px;">一度きりの今日を、声に出して</div>' +
+      // v0.70.9: 【権威】2026-11-03、「一回きりの今日があると言っているのに、一度きりの今日を声に出して、では言い直している」との指摘
+      '<div style="font-size:0.78em;font-weight:700;opacity:0.85;margin-bottom:4px;">～声に出して読み上げてみるところから始めよう～</div>' +
     // ① 今日
     '<div style="font-size:1.25em;font-weight:800;line-height:1.6;">' +
       (t.wafuOn
@@ -25635,7 +25678,7 @@ function drawKoyomiTodayCanvas(v, order) {
   g.globalAlpha = 0.8; g.font = 'bold 26px sans-serif'; g.fillText('天然こよみ専門店　こよみる', W / 2, y + 26);
   g.font = '22px sans-serif'; g.fillText('こだわりたい、一回きりの今日がある。', W / 2, y + 60); g.globalAlpha = 1;
   y += 80;
-  g.font = 'bold 44px sans-serif'; g.fillText('一度きりの今日を、声に出して', W / 2, y + 44);
+  g.font = 'bold 36px sans-serif'; g.fillText('～声に出して読み上げてみるところから始めよう～', W / 2, y + 42);
   y += 60 + 20;
   // 月の絵（季節の風だよりと同じ描き方を、丸く切り抜いて）
   try {
@@ -32492,6 +32535,7 @@ function saveMsbEdit() {
                 }
               });
               allTasks.splice(idx, 1);
+              if (typeof _propagateDeletion === 'function') _propagateDeletion(taskId);   // v0.71.2: 総点検（雑記帳に戻す）
               saveAllTasks();
             }
             closeTaskEditModal();
@@ -32700,6 +32744,7 @@ function saveMsbEdit() {
       const index = allTasks.findIndex(t => t.id === taskId);
       if (index !== -1) {
         allTasks.splice(index, 1);
+        if (typeof _propagateDeletion === 'function') _propagateDeletion(taskId);   // v0.71.2: 総点検（逃げる）
         saveAllTasks();
       }
       renderTasks(section);
@@ -33380,7 +33425,8 @@ function saveMsbEdit() {
       const _km = (typeof KINGDOM_MODES !== 'undefined' && allSettings.ui.kingdomMode)
         ? KINGDOM_MODES[allSettings.ui.kingdomMode] : null;
       const _showJournal = !_km || _km.showJournalBtn !== false;
-      const _showGant    = !_km || _km.showGantBtn !== false;
+      // v0.70.9: 【権威】2026-11-03、「造営に送るは自分が管理者だから見えているの？一般の人は造営と言われてもピンとこない」との指摘。造営は管理者だけ
+      const _showGant    = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) && (!_km || _km.showGantBtn !== false);
       actions.innerHTML =
         '<button class="btn-promote">タスクに</button>' +
         (_showJournal ? '<button class="btn-journal">日誌に</button>' : '') +
@@ -37740,6 +37786,7 @@ window._repairCloudCalendarIds();
         if (_orphans.length > 0) {
           var _orphanIds = new Set(_orphans.map(function(t){ return t.id; }));
           allTasks = allTasks.filter(function(t){ return !_orphanIds.has(t.id); });
+          _orphanIds.forEach(function(id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(id); });   // v0.71.2: 総点検。親の日誌が無い一言
           saveAllTasks();
           window._dbgLog && window._dbgLog('orphan thoughts cleaned: ' + _orphans.length + '件');
         }
@@ -39195,6 +39242,7 @@ window._repairCloudCalendarIds();
       });
       var movedIds = new Set(oldS.map(function(s){ return s.id; }));
       allTasks = allTasks.filter(function(t){ return !movedIds.has(t.id); });
+      movedIds.forEach(function(id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(id); });   // v0.71.2: 総点検。日誌の一言に移した雑記帳
       saveAllTasks();
       localStorage.setItem('_lastScratchMoveDate', today);
       if (typeof renderScratchView === 'function') renderScratchView();
@@ -40226,6 +40274,7 @@ window._repairCloudCalendarIds();
     }
     function nbPagesSet(pages) {
       // allTasksからnoteを全削除して差し替え
+      try { var _keepNb = {}; (pages || []).forEach(function(p) { if (p && p.id) _keepNb[p.id] = 1; }); allTasks.forEach(function(t) { if (t && t.kind === 'note' && t.id && !_keepNb[t.id]) { if (typeof _propagateDeletion === 'function') _propagateDeletion(t.id); } }); } catch (eNb) {}   // v0.71.2: 総点検。消えたページはクラウドにも伝える
       allTasks = allTasks.filter(function(t){ return t.kind !== 'note'; });
       pages.forEach(function(p, i){ p.order = i; p.updatedAt = new Date().toISOString(); }); // v0.45.1374: 同期漏れ修正
       allTasks = allTasks.concat(pages);
@@ -42198,6 +42247,12 @@ window.unshareCalendar = unshareCalendar;
       saveCalendars();
       loadCalendarSettingsUI();
     }    function removeCalendar(calId) {
+  // v0.71.0: 消すカレンダーがクラウドの器に載っていれば、墓石を立てる（取り込みで復活しないように）。個人用の器は除く
+  try {
+    var _rcCal = (calendars || []).filter(function(c) { return c && c.id === calId; })[0];
+    if (_rcCal && _rcCal.cloudCalendarId && !_rcCal.isPersonal && koyomiCalTombAdd(_rcCal.cloudCalendarId)) saveAllSettings();
+  } catch (eRc) {}
+
       if (calendars.length <= 1) { showToast('最後のカレンダーは削除できません', {type:'warn'}); return; }
       const idx = calendars.findIndex(c => c.id === calId);
       if (idx < 0) return;
@@ -44475,6 +44530,7 @@ function renderMonthlyMoneyLine() {
       report.push('④ displayScope heaven→both: ' + _h + ' 件');
       // ⑤ autoFilled:true かつ text空文字の journal を削除
       var _bj = allTasks.length;
+      allTasks.forEach(function(r) { if (r && r.kind === 'journal' && r.autoFilled === true && (!r.text || r.text === '') && r.id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(r.id); } });   // v0.71.2: 総点検
       allTasks = allTasks.filter(function(r) {
         return !(r.kind === 'journal' && r.autoFilled === true && (!r.text || r.text === ''));
       });
@@ -46738,6 +46794,7 @@ function renderDashboardView() {
           window.allTasks.filter(t => t.kind==='blueprint' && t.grandvisionId===id).forEach(function(bp){ bp.grandvisionId = null; });
           const idx = window.allTasks.findIndex(t => t.id === id);
           if (idx !== -1) window.allTasks.splice(idx, 1);
+          if (typeof _propagateDeletion === 'function') _propagateDeletion(id);   // v0.71.2: 総点検
           if (_selectedGrandVisionId === id) _selectedGrandVisionId = null;
           saveAllTasks();
           document.querySelectorAll('div[style*=fixed]').forEach(function(el){ if(el.querySelector('#gvTitleInput')) el.remove(); });
@@ -47038,7 +47095,9 @@ function renderDashboardView() {
     function removeDayInfo(date) {
       const idx = allTasks.findIndex(t => t.kind === 'dailyStatus' && t.date === date);
       if (idx !== -1) {
+        var _dsId = allTasks[idx].id;   // v0.71.2: 総点検
         allTasks.splice(idx, 1);
+        if (typeof _propagateDeletion === 'function') _propagateDeletion(_dsId);
         saveAllTasks();
         return true;
       }
@@ -54479,6 +54538,54 @@ async function deleteSharedCalendar(calendarId) {
 //   ・ローカル削除    … 共有していないカレンダー。自分の他端末にも伝播する（第62条）。
 //
 // propagate=false のときはクラウドへ墓石を立てない。これが退出の肝。
+// ===== v0.71.0: カレンダーの墓石 =====
+// 【権威】2026-11-03、「きくまおカレンダーやサメ丸カレンダーを昔消したのに、復活した。墓石（トゥームストーン）どうなってんの？」との報告。
+// 原因：ログインしている人のカレンダーは、すべてクラウドの器（共有カレンダーの形）に載っている。✕で消しても手元から外すだけで、
+// クラウドの器と「持ち主」の記録は残る。共有カレンダーの一覧を読み込むとき「手元に無いものは取り込む」処理が、消したものを取り込み漏れと見なして戻していた。
+// 直し方：消したクラウドの器の番号を、墓石として設定に残す（設定は端末をまたいで同期される）。取り込み・予定の読み込みは墓石を飛ばす。
+// 招待から参加し直す・作り直すなど、はっきりした操作のときだけ墓石を外す。個人用の器（メインの土台）には、絶対に墓石を立てない
+// v0.71.4: 【権威】2026-11-03、「品質が高まる方でやろう」との指示。墓石の名簿を、1行ずつ「立てた・外した時刻」を持つ形に変える。
+// 端末どうしで設定が届いたときは、行ごとに新しい方を残す（どの順番で届いても、最後の操作が勝つ）。
+// 形：allSettings.calendar.tombs = { クラウドの器の番号: { dead: true（墓石あり）/ false（外した）, at: 時刻 } }
+function _koyomiCalTombMap() {
+  try {
+    if (!allSettings.calendar) allSettings.calendar = {};
+    var c = allSettings.calendar;
+    if (!c.tombs || typeof c.tombs !== 'object' || Array.isArray(c.tombs)) c.tombs = {};
+    // 前の形（番号の並び）からの引き継ぎ
+    if (Array.isArray(c.detachedCloudIds) && c.detachedCloudIds.length) {
+      var now0 = new Date().toISOString();
+      c.detachedCloudIds.forEach(function(id) { if (id && !c.tombs[id]) c.tombs[id] = { dead: true, at: now0 }; });
+      c.detachedCloudIds = [];
+    }
+    return c.tombs;
+  } catch (e) { return {}; }
+}
+function koyomiIsCalTombed(cloudId) { try { var m = _koyomiCalTombMap(); return !!cloudId && !!m[cloudId] && m[cloudId].dead === true; } catch (e) { return false; } }
+function koyomiCalTombAdd(cloudId) {
+  try {
+    if (!cloudId) return false;
+    if (window._personalCalendarId && cloudId === window._personalCalendarId) return false;   // 個人用の器には立てない
+    _koyomiCalTombMap()[cloudId] = { dead: true, at: new Date().toISOString() };
+    return true;
+  } catch (e) { return false; }
+}
+function koyomiCalTombRemove(cloudId) { try { if (cloudId && _koyomiCalTombMap()[cloudId]) _koyomiCalTombMap()[cloudId] = { dead: false, at: new Date().toISOString() }; } catch (e) {} }
+// 2つの名簿を突き合わせて、行ごとに新しい方を残す。手元の方が新しかった行の数を返す（クラウドへ送り返すため）
+function koyomiMergeCalTombs(target, localMap) {
+  var newer = 0;
+  try {
+    Object.keys(localMap || {}).forEach(function(id) {
+      var L = localMap[id], C = target[id];
+      if (!L) return;
+      if (!C || String(L.at || '') > String(C.at || '')) { target[id] = { dead: !!L.dead, at: L.at }; newer++; }
+    });
+  } catch (e) {}
+  return newer;
+}
+window.koyomiMergeCalTombs = koyomiMergeCalTombs;
+window.koyomiIsCalTombed = koyomiIsCalTombed; window.koyomiCalTombAdd = koyomiCalTombAdd; window.koyomiCalTombRemove = koyomiCalTombRemove;
+// ===== END v0.71.0 =====
 // ===== v0.66.3: カレンダーを消す・外す・抜ける前の確認 =====
 // 【権威】2026-10-28、「バツ1回で消えた。ここは絶対直して」「ついているタスクはメインに振り分けますか」との指示。
 // mode：delete＝自分だけのカレンダー（予定はメインに移すか、一緒に消すかを選ぶ）／detach＝自分が作った共有カレンダー（手元から外すだけ）／leave＝参加中（抜ける）
@@ -57684,6 +57791,60 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.71.4', date: '2026-11-03',
+    items: [
+      { icon:'🪦', t:'消したカレンダーの印を、端末をまたいでも確実に届くようにしました',
+        before:'2台の端末でほぼ同時に操作すると、まれに「消した」「戻した」が、もう片方の古い内容で打ち消されることがありました',
+        after:'カレンダーごとに「いつ消したか・いつ戻したか」を持たせ、端末どうしでは新しい方を残すようにしました。どの順番で届いても、最後の操作が必ず勝ちます' }
+    ]
+  },
+  {
+    ver: 'v0.71.3', date: '2026-11-03',
+    items: [
+      { icon:'🕰', t:'書き換えたものが、ほかの端末に届かないことがある穴を塞ぎました',
+        before:'一部の操作で書き換えた内容が、ほかの端末に届かないことがありました',
+        after:'保存するときに、書き換えたのに時刻が付いていないものを見つけて、自動で時刻を付けるようにしました。書き換えは、ほかの端末にも届きます' }
+    ]
+  },
+  {
+    ver: 'v0.71.2', date: '2026-11-03',
+    items: [
+      { icon:'🔍', t:'消したものが復活しないよう、総点検をしました',
+        before:'いくつかの操作で、消したものが、ほかの端末やしばらくあとに戻ってくることがありました',
+        after:'消す操作をすべて点検し、10か所の漏れを直しました（雑記帳を日誌に移す、自由帳のページを消す、予定を雑記帳に戻す、日の情報を消す など）。これからも漏れが入らないよう、点検の仕組みを入れました' }
+    ]
+  },
+  {
+    ver: 'v0.71.1', date: '2026-11-03',
+    items: [
+      { icon:'📖', t:'日誌と雑記帳を行き来したものが、復活してしまう不具合を直しました',
+        before:'日誌の一言を雑記帳に戻したり消したりしても、しばらくすると日誌に戻ってくることがありました',
+        after:'消した・戻した一言は、ほかの端末も含めて、戻ってこないようにしました。書き直した一言も、ほかの端末に届くようにしました' }
+    ]
+  },
+  {
+    ver: 'v0.71.0', date: '2026-11-03',
+    items: [
+      { icon:'🪦', t:'消したカレンダーが、あとで復活してしまう不具合を直しました',
+        before:'設定で消したカレンダーが、しばらくすると予定ごと戻ってくることがありました',
+        after:'消したカレンダーには「消した」という印を残し、ほかの端末も含めて、戻ってこないようにしました。もう一度使いたいときは、招待から参加し直すか、作り直してください。すでに戻ってきてしまったカレンダーは、お手数ですが、もう一度消してください' }
+    ]
+  },
+  {
+    ver: 'v0.70.9', date: '2026-11-03',
+    items: [
+      { icon:'✏️', t:'雑記帳から日誌に送ったものが、雑記帳に戻ってくる不具合を直しました',
+        before:'「日誌に」を押したあと、しばらくすると雑記帳に同じものが戻ってくることがありました',
+        after:'日誌に送ったものは、雑記帳から消えたままになります' },
+      { icon:'📒', t:'大福帳には、手元にあるカレンダーだけを出すようにしました',
+        before:'消したカレンダーが、大福帳に残って見えることがありました',
+        after:'今の手元にあるカレンダーだけを出します' },
+      { icon:'🔊', t:'「今日を、声に出して」の見出しを変えました',
+        before:'看板のすぐ下で「一度きりの今日を、声に出して」と言い直していました',
+        after:'「～声に出して読み上げてみるところから始めよう～」にしました' }
+    ]
+  },
   {
     ver: 'v0.70.8', date: '2026-11-03',
     items: [
@@ -61546,6 +61707,7 @@ async function unifiedPullTasks() {
       return;
     }
     if (deletedIds.has(row.id)) return;
+    if (koyomiIsCalTombed(row.calendar_id)) return;   // v0.71.0: 消したカレンダー（墓石）の予定は読み込まない
     var incoming = row.data;
     incoming.cloudCalendarId = row.calendar_id;
     // v0.45.1551: 【権威】2026-08-06、診断でタスクの参照切れが51件見つかった。
@@ -61807,6 +61969,7 @@ async function unifiedPullSettings() {
   try {
     // v0.60.18: クラウドで上書きする前に、手元のカレンダーを控えておく（カレンダーごとに新しい方を残すため）
     var _localCalsById = {};
+    var _localTombs = null; try { _localTombs = JSON.parse(JSON.stringify(_koyomiCalTombMap())); } catch (eLt) {}   // v0.71.4
     try {
       ((allSettings.calendar && allSettings.calendar.list) || []).forEach(function(c) { if (c && c.id) _localCalsById[c.id] = JSON.parse(JSON.stringify(c)); });
     } catch (eLc) {}
@@ -61851,7 +62014,9 @@ async function unifiedPullSettings() {
     }
     window._settingsLastPushedStr = cloudStr;
     // v0.60.18: 手元の方が新しいカレンダーがあったら、すぐクラウドへ上げ直す（クラウドを正しい状態に戻す）
-    if (_localNewerCals > 0) { try { setTimeout(function() { unifiedPushSettings(); }, 300); } catch (ePs) {} }
+    // v0.71.4: 墓石の名簿は、行ごとに新しい方を残す。手元の方が新しい行があれば、クラウドへ送り返す
+    var _tombNewer = 0; try { _tombNewer = koyomiMergeCalTombs(_koyomiCalTombMap(), _localTombs || {}); } catch (eTm) {}
+    if (_localNewerCals > 0 || _tombNewer > 0) { try { if (_tombNewer > 0) saveAllSettings(true); setTimeout(function() { unifiedPushSettings(); }, 300); } catch (ePs) {} }
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プル反映完了');
     if (typeof applyMobileNavPosition === 'function' && allSettings.ui && allSettings.ui.mobileNavPosition) {
       applyMobileNavPosition(allSettings.ui.mobileNavPosition);
@@ -63204,7 +63369,8 @@ async function renderLedgerDashboardCard() {
   try {
     // v0.50.2: 【権威】2026-10-04、15個のカレンダーがずらっと「今日0人」だとしんどい、との声。
     // お得意さまのいない（自分だけの）カレンダーは出さない。この14日に記録が無いものは「始まったばかり」と出す。
-    var data = (await _fetchOwnerLedger(14) || []).filter(function(x) { return x.memberCount > 0; });
+    // v0.70.9: 【権威】2026-11-03、「カレンダーごと消したのに、大福帳に残っている」との報告。手元にあるカレンダーだけを出す
+    var data = (await _fetchOwnerLedger(14) || []).filter(function(x) { return x.memberCount > 0 && (calendars || []).some(function(c) { return c && c.cloudCalendarId === (x.cal && x.cal.id); }); });
     if (!data.length) { el.style.display = 'none'; return; }
     var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
     var today = getLocalDateStr(new Date()), yd = new Date(); yd.setDate(yd.getDate() - 1); var yest = getLocalDateStr(yd);
@@ -63983,9 +64149,11 @@ function offerAdoptOrphanTasks(cloudCalendarId, calName) {
 }
 window.offerAdoptOrphanTasks = offerAdoptOrphanTasks;
 
-function linkSharedCalendarToLocal(cloudCalendarId, name, color, ownerId) {
+function linkSharedCalendarToLocal(cloudCalendarId, name, color, ownerId, force) {
   try {
     if (!cloudCalendarId) return false;
+    // v0.71.0: 墓石のあるカレンダーは、取り込まない。招待から参加し直す・作り直すなど、はっきりした操作（force）のときだけ墓石を外す
+    if (koyomiIsCalTombed(cloudCalendarId)) { if (!force) return false; koyomiCalTombRemove(cloudCalendarId); }
     if (!allSettings.calendar) allSettings.calendar = {};
     if (!allSettings.calendar.list) allSettings.calendar.list = [];
     var _already = allSettings.calendar.list.find(function(c) {
@@ -64067,7 +64235,7 @@ async function createSharedCalendarFromModal() {
   //
   // 作った人のIDを渡す。渡せば、持ち主として記録される。
   var _linked = linkSharedCalendarToLocal(
-    r.data.id, r.data.name || name, null, window._cloudUserId || null);
+    r.data.id, r.data.name || name, null, window._cloudUserId || null, true);   // v0.71.0: 作った＝はっきりした操作
   _sharedCalSetStatus(
     '✅ 「' + name + '」を作成しました。' +
     (_linked ? 'カレンダー一覧に追加したので、すぐ予定を入れられます。' : '') +
@@ -64141,7 +64309,7 @@ async function joinSharedCalendarFromModal() {
     } catch(eJn) {}
     // v0.45.1534: 統合処理は linkSharedCalendarToLocal に一本化した（第4条）。
     // 作成時と参加時で同じ道を通るので、片方だけ直して片方が漏れることがなくなる。
-    if (_sharedCloudId) linkSharedCalendarToLocal(_sharedCloudId, lookup.data[0].calendar_name);
+    if (_sharedCloudId) linkSharedCalendarToLocal(_sharedCloudId, lookup.data[0].calendar_name, null, undefined, true);   // v0.71.0
     // v0.45.1823: 参加した直後に、行き先のない予定の引き取りを提案する。
     // 参加した「いま」が、移し先がはっきりしている唯一の瞬間である。
     // 予定の取り込みが落ち着いてから出す。
@@ -85870,6 +86038,127 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-525: 例外', e.message);
      }
 
+     // ===== ST-526: 雑記帳の日誌に送るはクラウドにも伝える・造営は管理者だけ・大福帳は手元のカレンダーだけ・見出し（v0.70.9〜） =====
+     // 【権威】2026-11-03、「日誌に送るを押したのに雑記帳で復活」「造営に送るは一般の人にはピンとこない」「消したカレンダーが大福帳に残る」「言い直している」との指摘
+     try {
+       var _sj = saveScratchItemAsJournal.toString(), _led = renderLedgerDashboardCard.toString(), _src = startInlineEdit.toString();
+       var _kz = koyomiTodaySentenceHtml(koyomiTodayData(new Date()), getKoyomiOrder(), function(x) { return String(x); });
+       (/allTasks\.splice\(delIdx, 1\)[\s\S]{0,400}_propagateDeletion\(item\.id\)/.test(_sj) && /isKoyomiruAdminMode\(\)\) && \(!_km/.test(_src) &&
+        /c\.cloudCalendarId === \(x\.cal && x\.cal\.id\)/.test(_led) && _kz.indexOf('～声に出して読み上げてみるところから始めよう～') !== -1 && _kz.indexOf('一度きりの今日') === -1)
+         ? ok('ST-526·①: 雑記帳の「日誌に」はクラウドにも消したことを伝える（復活しない）。「造営に」は管理者だけ。大福帳は手元にあるカレンダーだけ。見出しは「～声に出して読み上げてみるところから始めよう～」')
+         : ng('ST-526·①: どこかが違う', '');
+     } catch(e) {
+       ng('ST-526: 例外', e.message);
+     }
+
+     // ===== ST-527: カレンダーの墓石（消したカレンダーが、取り込みや予定の読み込みで復活しない）（v0.71.0〜） =====
+     // 【権威】2026-11-03、「昔消したカレンダーが復活した。墓石どうなってんの？」との報告
+     try {
+       var _calSnap = JSON.parse(JSON.stringify(allSettings.calendar || {})), _calsRef = calendars, _saveS = saveAllSettings, _saveT = saveAllTasks, _pid = window._personalCalendarId;
+       window.saveAllSettings = function() {}; saveAllSettings = window.saveAllSettings; window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       window._personalCalendarId = 'st527-personal';
+       allSettings.calendar.list = (allSettings.calendar.list || []).concat([{ id: 'st527-a', name: 'ST527', color: '#888', cloudCalendarId: 'st527-cloud' }, { id: 'st527-b', name: 'メイン土台', color: '#888', cloudCalendarId: 'st527-personal' }]);
+       calendars = allSettings.calendar.list;
+       removeCalendar('st527-a');
+       var _tombed = koyomiIsCalTombed('st527-cloud');
+       var _relinked = linkSharedCalendarToLocal('st527-cloud', 'ST527', null, null);                 // 取り込み → 墓石なので戻らない
+       var _stillGone = !(allSettings.calendar.list || []).some(function(c) { return c.cloudCalendarId === 'st527-cloud'; });
+       var _forced = linkSharedCalendarToLocal('st527-cloud', 'ST527', null, null, true);              // 招待から参加し直す → 戻り、墓石が外れる
+       var _back = (allSettings.calendar.list || []).some(function(c) { return c.cloudCalendarId === 'st527-cloud'; }) && !koyomiIsCalTombed('st527-cloud');
+       var _personalSafe = koyomiCalTombAdd('st527-personal') === false && !koyomiIsCalTombed('st527-personal');
+       var _pullSkip = /if \(koyomiIsCalTombed\(row\.calendar_id\)\) return;/.test(unifiedPullTasks.toString());
+       // 戻す
+       allSettings.calendar = _calSnap; calendars = allSettings.calendar.list || _calsRef; window._personalCalendarId = _pid;
+       window.saveAllSettings = _saveS; saveAllSettings = _saveS; window.saveAllTasks = _saveT; saveAllTasks = _saveT;
+       (_tombed && _relinked === false && _stillGone && _forced === true && _back && _personalSafe && _pullSkip)
+         ? ok('ST-527·①: 消したカレンダーに墓石。クラウドからの取り込みでも、予定の読み込みでも復活しない。招待から参加し直す・作り直すときだけ墓石を外す。個人用の器には墓石を立てない')
+         : ng('ST-527·①: 墓石が違う', [_tombed, _relinked, _stillGone, _forced, _back, _personalSafe, _pullSkip].join(' / '));
+     } catch(e) {
+       ng('ST-527: 例外', e.message);
+     }
+
+     // ===== ST-528: 日誌の一言を消す・雑記帳に戻すときも、クラウドに消したことを伝える（v0.71.1〜） =====
+     // 【権威】2026-11-03、「日誌から雑記帳に戻して、また日誌に送ると、雑記帳で復活する」との報告
+     try {
+       var _calls = [], _orig = window._propagateDeletion, _saveT = saveAllTasks, _len = allTasks.length;
+       window._propagateDeletion = function(id) { _calls.push(id); }; _propagateDeletion = window._propagateDeletion;
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       allTasks.push({ id: 'st528-j', kind: 'journal', date: '2026-11-03', text: '' }, { id: 'st528-t1', kind: 'thought', parentId: 'st528-j', text: 'ひとこと1' }, { id: 'st528-t2', kind: 'thought', parentId: 'st528-j', text: 'ひとこと2' });
+       deleteThought('st528-t1');
+       updateThoughtText('st528-t2', '書き直し'); var _up = !!(allTasks.filter(function(t) { return t.id === 'st528-t2'; })[0] || {}).updatedAt;
+       deleteThoughtsByJournal('st528-j');
+       allTasks.splice(_len);
+       window._propagateDeletion = _orig; _propagateDeletion = _orig; window.saveAllTasks = _saveT; saveAllTasks = _saveT;
+       (_calls.join(',') === 'st528-t1,st528-t2' && _up && /_propagateDeletion\(item\.id\)/.test(saveScratchItemAsJournal.toString()))
+         ? ok('ST-528·①: 日誌の一言を消す・雑記帳に戻す・日誌をまるごと消すときも、クラウドに消したことを伝える（雑記帳に送るときも）。書き直した一言には時刻を付ける')
+         : ng('ST-528·①: 一言の消し方が違う', [_calls.join(','), _up].join(' / '));
+     } catch(e) {
+       ng('ST-528: 例外', e.message);
+     }
+
+     // ===== ST-529: 総点検：同期されるものを消すときは、クラウドに消したと伝える（v0.71.2〜） =====
+     // 【権威】2026-11-03、「クラウドに伝えていませんでした、が多すぎる。本来あるべき姿を定義して、今を点検して、理想に向かって直そう」との指示。
+     // あるべき姿：同期されるもの（allTasks）を手元から消す関数は、_propagateDeletion を通す。例外は、並べ替え・初期化・一度きりの修復・取り込みの重複整理・全消去・同期の受け取り側だけ
+     try {
+       var _src = _stAllSrc().split('function _stFnSrc(')[0];
+       var _fns = _src.split(/\n(?=\s*(?:async\s+)?function\s+\w+\s*\()/);
+       var _allow = /^(?:async\s+)?function\s+(loadAllTasks|executeDataReset|_doImport|_buildQuadSlot|_gantRowReorder|_isDegradedUUID|unifiedPullTasks|applyColors|getHoliday|removeTasksOfCalendar|forceDeleteSharedCalendar|_r152isDegraded|_testLevel)\b/;
+       var _holes = [];
+       _fns.forEach(function(f) {
+         var head = f.trim().split('\n')[0];
+         if (_allow.test(head.trim())) return;
+         if (/(allTasks\.splice\(\s*\w+\s*,\s*1\s*\)(?!\[0\])|allTasks\s*=\s*allTasks\.filter\()/.test(f) && !/(_propagateDeletion|deletedTaskIds|moved\s*=|addMigration)/.test(f)) _holes.push(head.trim().slice(0, 60));
+       });
+       (_holes.length === 0)
+         ? ok('ST-529·①: 総点検：同期されるものを消す関数は、すべてクラウドに消したと伝えている（例外は並べ替え・初期化・一度きりの修復など、理由のある所だけ）')
+         : ng('ST-529·①: クラウドに伝えずに消している関数がある', _holes.join(' / '));
+     } catch(e) {
+       ng('ST-529: 例外', e.message);
+     }
+
+     // ===== ST-530: 時刻の安全網（書き換えたのに時刻を付け忘れたものに、保存の口で時刻を付ける）（v0.71.3〜） =====
+     // 【権威】2026-11-03、総点検の2つ目「書き換えたときは、必ず書き換えた時刻を付ける」
+     try {
+       var _T0 = '2026-11-01T00:00:00.000Z', _T1 = '2026-11-02T00:00:00.000Z', _NOW = '2026-11-03T00:00:00.000Z';
+       var _tasks = [ { id: 'a', text: '同じ', updatedAt: _T0 }, { id: 'b', text: '前', updatedAt: _T0 }, { id: 'c', text: '前', updatedAt: _T0 }, { id: 'd', text: '前', updatedAt: _T0 } ];
+       var _base = koyomiStampChangedTasks({}, _tasks, _NOW).next;   // 元を作る（初めて見るもの：時刻があれば付けない）
+       var _baseStamped = koyomiStampChangedTasks({}, [{ id: 'z', text: '時刻なし' }], _NOW).stamped.length;
+       _tasks[1].text = '書き換えたのに時刻を付け忘れた';                       // b：付け忘れ → 付ける
+       _tasks[2].text = '書き換えて時刻も付けた'; _tasks[2].updatedAt = _T1;    // c：自分で付けた → 付けない
+       _tasks[3].text = 'クラウドから受け取った'; _tasks[3].updatedAt = _T1;    // d：受け取った（時刻も新しい）→ 付けない
+       _tasks.push({ id: 'e', text: '新しく足した' });                           // e：初めて見る・時刻なし → 付ける
+       var _r = koyomiStampChangedTasks(_base, _tasks, _NOW);
+       var _byId = {}; _tasks.forEach(function(t) { _byId[t.id] = t.updatedAt; });
+       var _again = koyomiStampChangedTasks(_r.next, _tasks, '2026-11-04T00:00:00.000Z').stamped.length;   // もう一度保存しても、何も付けない
+       (_r.stamped.sort().join(',') === 'b,e' && _byId.a === _T0 && _byId.b === _NOW && _byId.c === _T1 && _byId.d === _T1 && _byId.e === _NOW && _again === 0 && _baseStamped === 1 &&
+        /koyomiStampChangedTasks\(window\._lastContentSigById, allTasks/.test(saveAllTasks.toString()))
+         ? ok('ST-530·①: 時刻の安全網：書き換えたのに時刻を付け忘れたもの・時刻の無い新しいものだけに時刻を付ける。自分で付けたもの・クラウドから受け取ったもの・変わっていないものには付けない。続けて保存しても二重に付けない')
+         : ng('ST-530·①: 時刻の安全網が違う', [_r.stamped.join(','), JSON.stringify(_byId), _again, _baseStamped].join(' / '));
+     } catch(e) {
+       ng('ST-530: 例外', e.message);
+     }
+
+     // ===== ST-531: 墓石の名簿は、行ごとに「立てた・外した時刻」を持ち、端末どうしでは新しい方を残す（v0.71.4〜） =====
+     // 【権威】2026-11-03、「品質が高まる方でやろう」との指示
+     try {
+       var _calSnap = JSON.parse(JSON.stringify(allSettings.calendar || {}));
+       // 前の形（番号の並び）からの引き継ぎ
+       allSettings.calendar.tombs = undefined; allSettings.calendar.detachedCloudIds = ['old-1'];
+       var _mig = koyomiIsCalTombed('old-1') && (allSettings.calendar.detachedCloudIds || []).length === 0;
+       // 端末A（手元）と、届いた端末Bの名簿
+       var _A = { x: { dead: true, at: '2026-11-03T10:00:00Z' }, y: { dead: false, at: '2026-11-03T12:00:00Z' }, z: { dead: true, at: '2026-11-03T08:00:00Z' } };
+       var _B = { x: { dead: false, at: '2026-11-03T09:00:00Z' }, y: { dead: true, at: '2026-11-03T11:00:00Z' }, z: { dead: false, at: '2026-11-03T09:30:00Z' }, w: { dead: true, at: '2026-11-03T07:00:00Z' } };
+       var _target = JSON.parse(JSON.stringify(_B));               // 受け取った（Bの名簿で置き換わった）
+       var _newer = koyomiMergeCalTombs(_target, _A);               // 手元（A）を突き合わせる
+       var _res = ['x', 'y', 'z', 'w'].map(function(k) { return k + ':' + (_target[k].dead ? '墓' : '外'); }).join(',');
+       allSettings.calendar = _calSnap; calendars = allSettings.calendar.list || calendars;
+       (_mig && _res === 'x:墓,y:外,z:外,w:墓' && _newer === 2 && /koyomiMergeCalTombs\(_koyomiCalTombMap\(\), _localTombs/.test(unifiedPullSettings.toString()))
+         ? ok('ST-531·①: 墓石は行ごとに時刻を持ち、端末どうしでは行ごとに新しい方を残す（後から消した・後から戻した、がどの順番で届いても勝つ）。前の形からも引き継ぐ。手元が新しければクラウドへ送り返す')
+         : ng('ST-531·①: 墓石の突き合わせが違う', [_mig, _res, _newer].join(' / '));
+     } catch(e) {
+       ng('ST-531: 例外', e.message);
+     }
+
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
      // 後から結果が返るテストはキューに並んでいるので、1本ずつ順番に走らせ、
@@ -92208,18 +92497,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function addThought(journalId, text) {
       allTasks.push({ id: generateTaskId(), kind: 'thought', parentId: journalId, text: text, createdAt: new Date().toISOString() });
     }
+    // v0.71.1: 【権威】2026-11-03、「日誌から雑記帳に戻して、また日誌に送ると、雑記帳で復活する」との報告。
+    // 日誌の一言を消すとき、手元から消すだけでクラウドに伝えていなかったため、次の同期で戻ってきていた。ふつうの削除と同じく伝える
     function deleteThought(thoughtId) {
       var idx = allTasks.findIndex(function(t){ return t.id === thoughtId && t.kind === 'thought'; });
-      if (idx !== -1) allTasks.splice(idx, 1);
+      if (idx !== -1) { allTasks.splice(idx, 1); if (typeof _propagateDeletion === 'function') _propagateDeletion(thoughtId); }
     }
     function updateThoughtText(thoughtId, newText) {
       var th = allTasks.find(function(t){ return t.id === thoughtId && t.kind === 'thought'; });
-      if (th) th.text = newText;
+      if (th) { th.text = newText; th.updatedAt = new Date().toISOString(); }   // v0.71.1: 書き直した時刻を付けて、同期で届くように
     }
     function deleteThoughtsByJournal(journalId) {
       for (var i = allTasks.length - 1; i >= 0; i--) {
         if (allTasks[i].kind === 'thought' && allTasks[i].parentId === journalId) {
+          var _tid = allTasks[i].id;
           allTasks.splice(i, 1);
+          if (typeof _propagateDeletion === 'function') _propagateDeletion(_tid);   // v0.71.1
         }
       }
     }
@@ -92387,6 +92680,9 @@ document.addEventListener('DOMContentLoaded', function() {
       var delIdx = allTasks.findIndex(function(t){ return t.id === item.id; });
       if (delIdx !== -1) allTasks.splice(delIdx, 1);
       saveAllTasks();
+      // v0.70.9: 【権威】2026-11-03、「雑記帳で日誌に送るを押したのに、雑記帳で復活しちゃう」との報告。
+      // 手元から消すだけでクラウドに伝えていなかったため、次の同期で戻ってきていた。ふつうの削除と同じく伝える
+      if (typeof _propagateDeletion === 'function') _propagateDeletion(item.id);
       renderScratchView();
       _showJournalToast(toastMsg);
     }
