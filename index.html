@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.69.9 ★ -->
+<!-- ★ CURRENT VERSION: v0.70.0 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.69.9';
+    const APP_VERSION = 'v0.70.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12588,6 +12588,89 @@ var KOYOMI_WORD_YOMI = {
 function koyomiWithYomi(word) { var y = KOYOMI_WORD_YOMI[word]; return y ? word + '（' + y + '）' : word; }
 window.koyomiWithYomi = koyomiWithYomi;
 // ===== END v0.68.2 =====
+// ===== v0.70.0: 儀式（きくらげ） =====
+// 【権威】2026-11-02、「儀式化の案を研ぎ澄まそう。儀式を増やそう。意味ある儀式を」「全部足したい。稲荷は嫌い」との指示。
+// 意味ある儀式の条件：本当の暦の節目に乗る・短い・自分の暮らしにつながる・跡が残る。書いた言葉は、この端末の中だけに残す（サーバーには送らない）
+var KOYOMI_RITUALS = [
+  { key: 'thanks', label: '夜のありがとう一行', level: 1 },
+  { key: 'harae', label: '夏越の祓・年越の祓', level: 1 },
+  { key: 'touji', label: '冬至', level: 1 },
+  { key: 'lunarBirthday', label: '旧暦の誕生日', level: 1 }
+];
+window.KOYOMI_RITUALS = KOYOMI_RITUALS;
+function koyomiRitualOn(key) {
+  try {
+    var lv = { none: 0, few: 1, normal: 2, many: 3 }[getKoyomiOrder().ritual || 'few'] || 0;
+    var r = KOYOMI_RITUALS.filter(function(x) { return x.key === key; })[0]; if (!r || r.level > lv) return false;
+    var offs = (allSettings && allSettings.ui && Array.isArray(allSettings.ui.ritualOff)) ? allSettings.ui.ritualOff : [];
+    return offs.indexOf(key) === -1;
+  } catch (e) { return false; }
+}
+window.koyomiRitualOn = koyomiRitualOn;
+function _koyomiRitualLog() { try { return JSON.parse(localStorage.getItem('koyomiRitualLog') || '{}') || {}; } catch (e) { return {}; } }
+function _koyomiRitualSave(k, v) { try { var L = _koyomiRitualLog(); if (v === null) delete L[k]; else L[k] = v; localStorage.setItem('koyomiRitualLog', JSON.stringify(L)); } catch (e) {} }
+// 今日の儀式（出すものだけ）。date はその日（端末の日付）
+function koyomiRitualsOf(date) {
+  var out = [], ymd = getLocalDateStr(date), m = date.getMonth() + 1, d = date.getDate();
+  try {
+    if (koyomiRitualOn('lunarBirthday')) {
+      var bd = ''; try { bd = localStorage.getItem('koyomiBirthday') || ''; } catch (e) {}
+      if (bd) {
+        var p = bd.split('-').map(Number), bl = koyomiLunarDate(new Date(p[0], p[1] - 1, p[2], 12)), tl = koyomiLunarDate(date);
+        if (bl && tl && !tl.leap && bl.month === tl.month && bl.day === tl.day && !(p[1] === m && p[2] === d && p[0] === date.getFullYear()))
+          out.push({ key: 'lunarBirthday', icon: '🎂', title: 'もうひとつの誕生日', text: '今日は、旧暦でのあなたの誕生日です。生まれた日は旧暦' + bl.month + '月' + bl.day + '日。旧暦の誕生日は、毎年、西暦の日付が変わります。' });
+      }
+    }
+    if (koyomiRitualOn('touji')) {
+      var v = koyomiTodayData(new Date(date.getFullYear(), m - 1, d, 12));
+      if (v && v.sekki === '冬至' && v.sekkiDay === 1)
+        out.push({ key: 'touji', icon: '🕯', title: '冬至（一陽来復）', text: '一年でいちばん長い夜。ここから日が少しずつ長くなります。この一年のありがとうを、1つ残しましょう。', input: 'touji-' + date.getFullYear(), placeholder: 'この一年のありがとう' });
+    }
+    if (koyomiRitualOn('harae') && ((m === 6 && d === 30) || (m === 12 && d === 31))) {
+      var nagoshi = m === 6;
+      out.push({ key: 'harae', icon: nagoshi ? '🌾' : '🎍', title: nagoshi ? '夏越の祓（なごしのはらえ）' : '年越の祓（としこしのはらえ）',
+        text: '半年のけがれを払う日です。手放したいことを1つ書いて、流しましょう。書いたことは、どこにも残りません。', flow: 'harae-' + ymd, placeholder: '手放したいこと' });
+    }
+    if (koyomiRitualOn('thanks'))
+      out.push({ key: 'thanks', icon: '🙏', title: '今日のありがとうを一行', text: '', input: 'thanks-' + ymd, placeholder: '今日のありがとう' });
+  } catch (e) {}
+  return out;
+}
+window.koyomiRitualsOf = koyomiRitualsOf;
+function koyomiRenderRituals(host, esc, date) {
+  try {
+    if (!host) return;
+    host.querySelectorAll('[data-ritual]').forEach(function(x) { x.remove(); });
+    var list = koyomiRitualsOf(date || new Date()); if (!list.length) return;
+    var log = _koyomiRitualLog();
+    var html = list.map(function(r) {
+      var saved = r.input ? log[r.input] : null, flowed = r.flow ? log[r.flow] : null;
+      var body = '';
+      if (r.input) body = saved ? '<div data-rt-saved style="margin-top:6px;font-size:0.9em;">「' + esc(saved) + '」 <button type="button" data-rt-edit style="border:none;background:none;color:inherit;opacity:0.7;font-size:0.85em;text-decoration:underline;cursor:pointer;">書き直す</button></div>'
+        : '<div style="display:flex;gap:6px;margin-top:6px;"><input data-rt-in maxlength="60" placeholder="' + esc(r.placeholder) + '" style="flex:1;min-width:0;padding:7px 10px;border-radius:10px;border:1px solid rgba(122,59,30,0.3);font-size:0.9em;background:rgba(255,255,255,0.8);"><button type="button" data-rt-save style="padding:6px 12px;border-radius:10px;border:1px solid currentColor;background:rgba(255,255,255,0.7);color:inherit;cursor:pointer;white-space:nowrap;">残す</button></div>';
+      if (r.flow) body = flowed ? '<div style="margin-top:6px;font-size:0.9em;opacity:0.8;">🌊 流しました。</div>'
+        : '<div style="display:flex;gap:6px;margin-top:6px;"><input data-rt-in maxlength="60" placeholder="' + esc(r.placeholder) + '" style="flex:1;min-width:0;padding:7px 10px;border-radius:10px;border:1px solid rgba(122,59,30,0.3);font-size:0.9em;background:rgba(255,255,255,0.8);"><button type="button" data-rt-flow style="padding:6px 12px;border-radius:10px;border:1px solid currentColor;background:rgba(255,255,255,0.7);color:inherit;cursor:pointer;white-space:nowrap;">流す</button></div>';
+      return '<div data-ritual="' + r.key + '" style="margin:12px 0 0;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.45);border:1px solid rgba(122,59,30,0.2);text-align:left;">' +
+        '<div style="font-weight:800;">' + r.icon + ' ' + esc(r.title) + '</div>' + (r.text ? '<div style="font-size:0.84em;line-height:1.7;margin-top:4px;">' + esc(r.text) + '</div>' : '') + body + '</div>';
+    }).join('');
+    var anchor = host.querySelector('[data-tip]') || host.querySelector('[data-kaze-closing]');
+    if (anchor) anchor.insertAdjacentHTML('beforebegin', html); else host.insertAdjacentHTML('beforeend', html);
+    list.forEach(function(r) {
+      var box = host.querySelector('[data-ritual="' + r.key + '"]'); if (!box) return;
+      var inp = box.querySelector('[data-rt-in]'), sv = box.querySelector('[data-rt-save]'), fl = box.querySelector('[data-rt-flow]'), ed = box.querySelector('[data-rt-edit]');
+      if (sv) sv.onclick = function() { var t = String(inp.value || '').trim(); if (!t) return; _koyomiRitualSave(r.input, t.slice(0, 60)); koyomiRenderRituals(host, esc, date); };
+      if (ed) ed.onclick = function() { _koyomiRitualSave(r.input, null); koyomiRenderRituals(host, esc, date); };
+      if (fl) fl.onclick = function() {
+        if (!String(inp.value || '').trim()) return;
+        // 手放すことは残さない：文字を流して消し、流した印だけ残す
+        inp.style.transition = 'transform 1.4s ease-in, opacity 1.4s ease-in'; inp.style.transform = 'translateX(120%) rotate(6deg)'; inp.style.opacity = '0';
+        setTimeout(function() { inp.value = ''; _koyomiRitualSave(r.flow, 1); koyomiRenderRituals(host, esc, date); }, 1400);
+      };
+    });
+  } catch (e) {}
+}
+window.koyomiRenderRituals = koyomiRenderRituals;
+// ===== END v0.70.0 =====
 // ===== v0.69.2: 季節の風だよりの「今日はこんなこともできます」（日替わりの使い方の紹介） =====
 // 【権威】2026-10-30、「季節の風だよりを玄関に、日替わりで機能を紹介。こんな人にはこんな使い方、バイトにはスタンプモードとか。
 // 自分では説明しきれない。自由帳にはチュートリアルがあるから、行きたい人は自由帳に行ける導線も」との指示
@@ -23839,6 +23922,7 @@ var KOYOMI_ORDER_DEFAULT = {
   kyureki: 'basic',                             // 旧暦（たまご）。v0.63.1
   world: 'many',                                // 世界の暦（メンマ）。v0.66.4。初めは今の出方と同じ「多め」
   kichi: 'all',                                 // 暦注（海苔）。v0.68.1。初めは今の出方と同じ「3枚」
+  ritual: 'few',                                // 儀式（きくらげ）。v0.70.0。初めは「少なめ」
   schedule: 'basic',                            // 今日の予定（タスク）（麺のかたさ）
   timing: 'everyOpen'                           // 出てくる時（季節の風だよりが起動のときに出るか。v0.59.0: 今までどおり毎回出す）
 };
@@ -23888,7 +23972,11 @@ var KOYOMI_ORDER_ITEMS = [
   // v0.68.1: 【権威】2026-10-30、「設定で出せるのではなく、メンマみたいに、海苔とか、トッピングで。暦の注文票で制御しないと」との指示。
   // 暦注（天赦日・一粒万倍日・寅の日・巳の日・己巳の日）を、海苔の枚数で選ぶ。トッピングなので一番下
   { key: 'kichi', name: '暦注', ramen: '海苔', options: [
-    ['none', 'なし', '出さない'], ['few', '1枚', '天赦日・一粒万倍日'], ['all', '3枚', '＋寅の日・巳の日・己巳の日'] ] }
+    ['none', 'なし', '出さない'], ['few', '1枚', '天赦日・一粒万倍日'], ['all', '3枚', '＋寅の日・巳の日・己巳の日'] ] },
+  // v0.70.0: 【権威】2026-11-02、「儀式化の案を研ぎ澄まそう。意味ある儀式を」「ラーメンのトッピングで。きくらげにしよう」「全部足したい。稲荷は嫌い」との指示。
+  // 儀式は、日・月・節・年の巡りに乗って繰り返すもの。量を上げるほど、巡りの短い（手間の多い）ものが足される
+  { key: 'ritual', name: '儀式', ramen: 'きくらげ', options: [
+    ['none', 'なし', '出さない'], ['few', '少なめ', '夜のありがとう・夏越と年越の祓・冬至・旧暦の誕生日'], ['normal', 'ふつう', '＋朔日参り・十五夜と十三夜・寒の入りと寒の明け・八十八夜'], ['many', '多め', '＋節を迎える・節気の手紙'] ] }
 ];
 window.KOYOMI_ORDER_ITEMS = KOYOMI_ORDER_ITEMS;
 // 出てくる時（丼の中身ではなく、いつ店に入るか。注文票の下の別の1行）
@@ -23903,7 +23991,7 @@ function _koyomiOrderValid(key, val) {
   var it = KOYOMI_ORDER_ITEMS.filter(function(x) { return x.key === key; })[0];
   return !!it && it.options.some(function(o) { return o[0] === val; });
 }
-var _KOYOMI_ORDER_ENUM_KEYS = ['sekkiStrength', 'richness', 'questionCount', 'moon', 'schedule', 'timing', 'blueEra', 'kyureki', 'world', 'kichi'];
+var _KOYOMI_ORDER_ENUM_KEYS = ['sekkiStrength', 'richness', 'questionCount', 'moon', 'schedule', 'timing', 'blueEra', 'kyureki', 'world', 'kichi', 'ritual'];
 // 今の注文（保存が無ければ基本）。
 // 第48条：前の版（v0.56）で「今日の暦の問いかけ」を外していた人は、深さ「なし」から。
 // v0.58.0 で保存した注文（暦の濃さ・ねぎ＝和/空・今日の予定・店主の一言）は、新しい対応に読み替える
@@ -23972,7 +24060,7 @@ function koyomiOrderSummary(o) {
   var negi = (o.yearNegi.white && o.yearNegi.blue) ? '白ねぎ・青ねぎ' : o.yearNegi.white ? '白ねぎ' : o.yearNegi.blue ? '青ねぎ' : 'ねぎなし';
   var moon = o.moon === 'times' ? o.moonTimes + '倍' : _koyomiOptLabel('moon', o.moon);
   return '節気 ' + _koyomiOptLabel('sekkiStrength', o.sekkiStrength) + '・深さ ' + _koyomiOptLabel('richness', o.richness) + '・問い ' + _koyomiOptLabel('questionCount', o.questionCount) +
-    '・' + negi + '・七十二候 ' + (o.kou72 ? 'あり' : 'なし') + '・月 ' + moon + '・旧暦 ' + _koyomiOptLabel('kyureki', o.kyureki || 'basic') + '・予定 ' + _koyomiOptLabel('schedule', o.schedule) + '・世界の暦 ' + _koyomiOptLabel('world', o.world || 'many') + '・暦注 ' + _koyomiOptLabel('kichi', o.kichi || 'all');
+    '・' + negi + '・七十二候 ' + (o.kou72 ? 'あり' : 'なし') + '・月 ' + moon + '・旧暦 ' + _koyomiOptLabel('kyureki', o.kyureki || 'basic') + '・予定 ' + _koyomiOptLabel('schedule', o.schedule) + '・世界の暦 ' + _koyomiOptLabel('world', o.world || 'many') + '・暦注 ' + _koyomiOptLabel('kichi', o.kichi || 'all') + '・儀式 ' + _koyomiOptLabel('ritual', o.ritual || 'few');
 }
 window.koyomiOrderSummary = koyomiOrderSummary;
 
@@ -24959,6 +25047,8 @@ function renderKazeKoyomi(col, opts) {
   botEl.innerHTML = parts.bottom;
   // v0.69.2: 「今日は、こんなこともできます」（日替わりの使い方の紹介）
   try { koyomiRenderTip(botEl, (typeof esc === 'function') ? esc : function(x) { return String(x); }); } catch (eTip) {}
+  // v0.70.0: 儀式（きくらげ）。紹介より上・締めの一言より上
+  try { koyomiRenderRituals(botEl, (typeof esc === 'function') ? esc : function(x) { return String(x); }, new Date()); } catch (eRt) {}
   var _moonAsked = _qaOn && questions.indexOf(KOYOMI_Q.moon) !== -1;
   if (_moonAsked) {
     // 月の形を問うたときは、月の絵を答えの箱の中に入れ、大きな月の絵は出さない（二重にしない）
@@ -25168,7 +25258,9 @@ function openKoyomiOrderSheet(opts) {
     return draft[it.key] !== null && draft[it.key] === val;
   };
   var render = function() {
-    var rows = KOYOMI_ORDER_ITEMS.map(function(it) {
+    var rows = KOYOMI_ORDER_ITEMS.map(function(it, idx) {
+      // v0.70.0: 行が増えても迷わないよう、「暦の味」と「トッピング」の見出しで2つに分ける
+      var head = (idx === 0 || it.key === 'kyureki') ? '<div data-ko-head style="padding:4px 10px;background:#efe2c4;color:#6b4f2a;font-size:' + Z.subFs + ';font-weight:700;letter-spacing:0.1em;">' + (idx === 0 ? '暦の味' : 'トッピング') + '</div>' : '';
       var cells = it.options.map(function(op) {
         var val = op[0], on = isOn(it, val);
         var label = (it.key === 'moon' && val === 'times') ? (on ? draft.moonTimes : '（ ）') + '倍' : op[1];
@@ -25193,12 +25285,19 @@ function openKoyomiOrderSheet(opts) {
         timesRow = '<div style="display:grid;grid-template-columns:' + Z.name + 'px repeat(' + it.options.length + ', 1fr);">' +
           '<div></div>'.repeat(it.options.length) +
           '<div style="text-align:center;padding:2px 0 4px;font-size:' + Z.noteFs + ';"><select data-ko-times style="font-size:13px;padding:0 2px;">' + [3,4,5,6,7,8,9,10].map(function(n) { return '<option value="' + n + '"' + (draft.moonTimes === n ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select> 倍</div></div>';
-      return '<div style="border-bottom:1px solid #e3d6b8;">' +
+      // v0.70.0: 儀式は「くわしく選ぶ」で、1つずつ外せる（ふだんは閉じておく）
+      var ritualMore = '';
+      if (it.key === 'ritual') {
+        var offs = (allSettings && allSettings.ui && Array.isArray(allSettings.ui.ritualOff)) ? allSettings.ui.ritualOff : [];
+        ritualMore = '<details style="padding:0 10px 6px;font-size:' + Z.noteFs + ';color:#6b4f2a;"><summary style="cursor:pointer;color:#8a7f6a;">くわしく選ぶ</summary>' +
+          KOYOMI_RITUALS.map(function(r) { return '<label style="display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;"><input type="checkbox" data-ko-ritual="' + r.key + '"' + (offs.indexOf(r.key) === -1 ? ' checked' : '') + '>' + esc(r.label) + '<span style="color:#a08d66;">（' + ['', '少なめ', 'ふつう', '多め'][r.level] + 'から）</span></label>'; }).join('') + '</details>';
+      }
+      return head + '<div style="border-bottom:1px solid #e3d6b8;">' +
         '<div style="display:grid;grid-template-columns:' + Z.name + 'px repeat(' + it.options.length + ', 1fr);align-items:stretch;">' +
           '<div style="padding:6px 8px;background:#f6ecd7;color:#6b4f2a;font-weight:700;font-size:' + Z.nameFs + ';line-height:1.25;display:flex;flex-direction:column;justify-content:center;">' + esc(it.name) +
             '<span style="font-size:' + Z.subFs + ';font-weight:400;color:#a08d66;">' + esc(it.ramen) + '</span></div>' + cells +
         '</div>' + timesRow +
-        '<div style="padding:' + Z.notePad + ';font-size:' + Z.noteFs + ';color:#8a7f6a;line-height:1.4;min-height:1.2em;">' + note + '</div>' +
+        '<div style="padding:' + Z.notePad + ';font-size:' + Z.noteFs + ';color:#8a7f6a;line-height:1.4;min-height:1.2em;">' + note + '</div>' + ritualMore +
       '</div>';
     }).join('');
     ov.innerHTML = '<div style="background:#fffdf5;border-radius:12px;max-width:' + Z.w + 'px;width:100%;max-height:94vh;overflow:auto;box-shadow:0 12px 36px rgba(0,0,0,0.3);font-family:inherit;">' +
@@ -25221,6 +25320,17 @@ function openKoyomiOrderSheet(opts) {
       '</div></div>';
     var sel = ov.querySelector('[data-ko-times]');
     if (sel) { sel.addEventListener('click', function(e) { e.stopPropagation(); }); sel.addEventListener('change', function() { draft.moonTimes = parseInt(sel.value, 10) || 3; draft.moon = 'times'; render(); }); }
+    // v0.70.0: 儀式の「くわしく選ぶ」：外したものは allSettings.ui.ritualOff に（すぐ反映）
+    ov.querySelectorAll('[data-ko-ritual]').forEach(function(cb) {
+      cb.onchange = function() {
+        try {
+          if (!allSettings.ui) allSettings.ui = {};
+          var offs = Array.isArray(allSettings.ui.ritualOff) ? allSettings.ui.ritualOff.slice() : [], k = cb.getAttribute('data-ko-ritual'), at = offs.indexOf(k);
+          if (cb.checked && at !== -1) offs.splice(at, 1); else if (!cb.checked && at === -1) offs.push(k);
+          allSettings.ui.ritualOff = offs; saveAllSettings();
+        } catch (e) {}
+      };
+    });
     var blue = ov.querySelector('[data-ko-blue]');
     if (blue) { blue.addEventListener('click', function(e) { e.stopPropagation(); }); blue.addEventListener('change', function() { draft.blueEra = blue.value; render(); }); }
     var tim = ov.querySelector('[data-ko-timing]');
@@ -57477,6 +57587,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.70.0', date: '2026-11-02',
+    items: [
+      { icon:'🍄', t:'こよみの注文票に「儀式（きくらげ）」を足しました',
+        before:'暦の節目に、自分で何かをする仕掛けはありませんでした',
+        after:'きくらげの「なし・少なめ・ふつう・多め」で、暦の節目の儀式を選べます。少なめは、毎晩の「今日のありがとうを一行」、夏越の祓（6月30日）と年越の祓（12月31日）に手放したいことを書いて流す儀式、冬至に一年のありがとうを残す儀式、旧暦での誕生日のお知らせ。「くわしく選ぶ」で1つずつ外せます。書いた言葉は、この端末の中だけに残ります。注文票は「暦の味」と「トッピング」に分けて見やすくしました' }
+    ]
+  },
+  {
     ver: 'v0.69.9', date: '2026-11-02',
     items: [
       { icon:'🕰', t:'刻を、どの数え方で言っているか、はっきりさせました',
@@ -66585,7 +66703,7 @@ function showDebugLog(_initOnly) {
       // allTasks/allSettings/tokuLogは長すぎるので件数のみ
       if (k === 'allTasks' || k === 'allSettings' || k === 'tokuLog') return; // 上で処理済み
       // v0.69.4: 【権威】2026-10-30、「生年月日は大事な情報だから、預かるのは遠慮していた」との指摘。ログを人に送っても漏れないよう伏せる
-      if (k === 'koyomiBirthday') { lsInfo.push(k + ': （伏せています）'); return; }
+      if (k === 'koyomiBirthday' || k === 'koyomiRitualLog') { lsInfo.push(k + ': （伏せています）'); return; }
       lsInfo.push(k + ': ' + (v.length > 120 ? v.slice(0,120)+'…' : v));
     });
   } catch(e) { lsInfo.push('LS取得エラー: ' + e.message); }
@@ -84201,11 +84319,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        delete allSettings.ui.koyomiOrder; delete allSettings.ui.koyomiToday;
        var _d = getKoyomiOrder();
        // v0.63.1: 【権威】2026-10-27、注文票に「旧暦（たまご）」を足して8項目
-       (KOYOMI_ORDER_ITEMS.length === 10 && _n === '3,5,5,3,2,5,5,3,5,3' && _d.kichi === 'all'   /* v0.68.1: 暦注（海苔） */   /* v0.66.7: メンマは5段 */ && _d.world === 'many'   /* v0.66.4: 世界の暦（メンマ）を足して9項目 */ &&   /* v0.63.3: たまごはトッピングなので一番下 */   /* v0.58.5: ねぎに「なし」 */ _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定（タスク）・旧暦・世界の暦・暦注' &&   /* v0.60.7・v0.63.1 */
+       (KOYOMI_ORDER_ITEMS.length === 11 && _n === '3,5,5,3,2,5,5,3,5,3,4' && _d.kichi === 'all' && _d.ritual === 'few'   /* v0.70.0: 儀式（きくらげ） */   /* v0.68.1: 暦注（海苔） */   /* v0.66.7: メンマは5段 */ && _d.world === 'many'   /* v0.66.4: 世界の暦（メンマ）を足して9項目 */ &&   /* v0.63.3: たまごはトッピングなので一番下 */   /* v0.58.5: ねぎに「なし」 */ _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定（タスク）・旧暦・世界の暦・暦注・儀式' &&   /* v0.60.7・v0.63.1 */
         _d.kyureki === 'basic' &&
         _d.richness === 'basic' && _d.moon === 'basic' && _d.kou72 === true && _d.yearNegi.white && _d.yearNegi.blue && _d.blueEra === 'koki' &&   /* v0.60.2: 青ねぎの皇紀 */ _d.timing === 'everyOpen' &&   /* v0.59.0: 今までどおり毎回出す */
         KOYOMI_TIMING_OPTIONS.length === 5 && typeof koyomiOwnerWords === 'undefined')
-         ? ok('ST-466·①: 注文票は10項目（3・5・5・ねぎ（なし・白・青）・あり/なし・5・5・旧暦3・世界の暦5・暦注3）で、全部が暦。店主の一言は無い。出てくる時は別の1行（5つ）')
+         ? ok('ST-466·①: 注文票は11項目（3・5・5・ねぎ（なし・白・青）・あり/なし・5・5・旧暦3・世界の暦5・暦注3・儀式4）で、全部が暦。店主の一言は無い。出てくる時は別の1行（5つ）')
          : ng('ST-466·①: 注文票の項目か初期値が違う', _n + ' / ' + _names);
        // ② 前の版の引き継ぎ：問いかけを外していた人は「なし」から。v0.58.0 の注文（店主の一言など）は新しい対応に読み替える。変な値ははじく
        allSettings.ui.koyomiToday = false;
@@ -84273,7 +84391,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        if (_sh) { _q('[data-ko-key="moon"][data-ko-val="double"]').click(); _q('[data-ko-key="kou72"][data-ko-val="false"]').click(); _q('[data-ko-act="save"]').click(); }
        var _after = getKoyomiOrder();
        var _img = drawKoyomiOrderCanvas(_after).toDataURL('image/png');   // v0.58.6: 画像は注文票だけ
-       (_rows === 39 && _filled0 === 11 && _stillOpen   /* v0.63.1: たまごの3段と〇。v0.66.4: メンマの4段と〇 */ && _hasTiming && _txt.indexOf('こよみの注文票') !== -1 && _txt.indexOf('秘伝のたれ') !== -1 && _txt.indexOf('店主') === -1 &&
+       (_rows === 43 && _filled0 === 12 && _stillOpen   /* v0.63.1: たまごの3段と〇。v0.66.4: メンマの4段と〇 */ && _hasTiming && _txt.indexOf('こよみの注文票') !== -1 && _txt.indexOf('秘伝のたれ') !== -1 && _txt.indexOf('店主') === -1 &&
         _after.moon === 'double' && _after.kou72 === false && /^data:image\/png/.test(_img) && !document.getElementById('koyomiOrderOverlay'))
          ? ok('ST-466·⑥: 注文票は前の注文（無ければ基本）に〇が付いて出る。付け直して決めると保存され、画像にできる')
          : ng('ST-466·⑥: 注文票の紙のつながりが違う', [_rows, _filled0, _stillOpen, _hasTiming, _after.moon, _after.kou72].join(','));
@@ -85476,11 +85594,44 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _snap = localStorage.getItem('koyomiBirthday');
        var _inSettings = JSON.stringify(allSettings || {}).indexOf('koyomiBirthday') === -1;
        (/data-bd="remember"/.test(_src) && /checked\) localStorage\.setItem\('koyomiBirthday'[\s\S]*else localStorage\.removeItem\('koyomiBirthday'\)/.test(_src) &&
-        /koyomiBirthday'\) \{ lsInfo\.push\(k \+ ': （伏せています）'\)/.test(_dbg) && _inSettings && /サーバーには送りません/.test(_src))
+        /koyomiBirthday' \|\| k === 'koyomiRitualLog'\) \{ lsInfo\.push\(k \+ ': （伏せています）'\)/.test(_dbg) && _inSettings && /サーバーには送りません/.test(_src))
          ? ok('ST-521·①: 生年月日はサーバーに送らず、「この端末に覚えておく」を選んだときだけ端末に残す（外すと消える）。設定（同期される）には入れない。デバッグログでは伏せる')
          : ng('ST-521·①: 生年月日の扱いが違う', '');
      } catch(e) {
        ng('ST-521: 例外', e.message);
+     }
+
+     // ===== ST-522: 儀式（きくらげ）少なめ：夜のありがとう・夏越と年越の祓・冬至・旧暦の誕生日（v0.70.0〜） =====
+     // 【権威】2026-11-02、「儀式化の案を研ぎ澄まそう。意味ある儀式を」「きくらげにしよう」「全部足したい。稲荷は嫌い」との指示
+     try {
+       var _ordS = allSettings.ui.koyomiOrder ? JSON.parse(JSON.stringify(allSettings.ui.koyomiOrder)) : null, _offS = allSettings.ui.ritualOff, _lsSnap = {};
+       for (var _li = 0; _li < localStorage.length; _li++) { var _lk = localStorage.key(_li); _lsSnap[_lk] = localStorage.getItem(_lk); }
+       var _keys = function(y, m, d) { return koyomiRitualsOf(new Date(y, m - 1, d, 12)).map(function(r) { return r.key; }).join(','); };
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'few' }); allSettings.ui.ritualOff = [];
+       localStorage.removeItem('koyomiBirthday');
+       var _plain = _keys(2026, 11, 2), _nagoshi = _keys(2026, 6, 30), _toshi = _keys(2026, 12, 31), _touji = _keys(2026, 12, 22);
+       localStorage.setItem('koyomiBirthday', '1990-05-15');   // 旧暦4月21日生まれ
+       var _lbDay = null; for (var _dd = 0; _dd < 365 && !_lbDay; _dd++) { var _dx = new Date(2026, 0, 1 + _dd, 12), _lx = koyomiLunarDate(_dx); if (_lx && !_lx.leap && _lx.month === 4 && _lx.day === 21) _lbDay = _dx; }
+       var _lb = koyomiRitualsOf(_lbDay).filter(function(r) { return r.key === 'lunarBirthday'; }).length + (koyomiRitualsOf(new Date(_lbDay.getTime() - 86400000)).filter(function(r) { return r.key === 'lunarBirthday'; }).length ? 10 : 0);
+       var _lbStr = (_lbDay.getMonth() + 1) + '/' + _lbDay.getDate();
+       allSettings.ui.ritualOff = ['thanks']; var _off = _keys(2026, 11, 2);
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'none' }); allSettings.ui.ritualOff = []; var _none = _keys(2026, 6, 30);
+       // 締めの一言は、いつもいちばん最後
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'few' });
+       var _host = document.createElement('div'); _host.innerHTML = '<p>本文</p><div data-kaze-closing>今日もおつかれさま！</div>';
+       koyomiRenderTip(_host, function(x) { return String(x); }); koyomiRenderRituals(_host, function(x) { return String(x); }, new Date(2026, 5, 30, 12));
+       var _kids = [].slice.call(_host.children).map(function(e) { return e.hasAttribute('data-ritual') ? 'R' : (e.hasAttribute('data-tip') ? 'T' : (e.hasAttribute('data-kaze-closing') ? 'C' : 'P')); }).join('');
+       // 戻す
+       if (_ordS === null) delete allSettings.ui.koyomiOrder; else allSettings.ui.koyomiOrder = _ordS;
+       if (_offS === undefined) delete allSettings.ui.ritualOff; else allSettings.ui.ritualOff = _offS;
+       Object.keys(localStorage).forEach(function(k) { if (!Object.prototype.hasOwnProperty.call(_lsSnap, k)) localStorage.removeItem(k); });
+       Object.keys(_lsSnap).forEach(function(k) { if (localStorage.getItem(k) !== _lsSnap[k]) localStorage.setItem(k, _lsSnap[k]); });
+       (_plain === 'thanks' && _nagoshi === 'harae,thanks' && _toshi === 'harae,thanks' && _touji === 'touji,thanks' && _lb === 1 && _off === '' && _none === '' && _kids === 'PRRTC' &&
+        /koyomiRitualLog'\) \{ lsInfo\.push/.test(showDebugLog.toString()) && JSON.stringify(allSettings).indexOf('koyomiRitualLog') === -1)
+         ? ok('ST-522·①: 儀式（少なめ）：夜のありがとうは毎日、夏越の祓（6/30）と年越の祓（12/31）、冬至（2026/12/22）、旧暦の誕生日（1990/5/15生まれ＝旧暦4月21日→2026年は' + _lbStr + '）。くわしく選ぶで外せる。なしで出ない。締めの一言はいちばん最後。書いた言葉は端末だけ・ログで伏せる')
+         : ng('ST-522·①: 儀式が違う', [_plain, _nagoshi, _toshi, _touji, _lb, _off, _none, _kids].join(' / '));
+     } catch(e) {
+       ng('ST-522: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
