@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.70.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.70.2 ★ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +255,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.70.1';
+    const APP_VERSION = 'v0.70.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12600,7 +12600,10 @@ var KOYOMI_RITUALS = [
   { key: 'tsuitachi', label: '朔日参り（旧暦の毎月1日）', level: 2 },
   { key: 'tsukimi', label: '十五夜と十三夜', level: 2 },
   { key: 'kan', label: '寒の入りと寒の明け', level: 2 },
-  { key: 'hachijuhachiya', label: '八十八夜', level: 2 }
+  { key: 'hachijuhachiya', label: '八十八夜', level: 2 },
+  // v0.70.2: 多め（節）。二十四節気が切り替わる節入りの日（約15日ごと）
+  { key: 'sekki', label: '節を迎える（節入りの日）', level: 3 },
+  { key: 'letter', label: '節気の手紙（1年後の同じ節気に届く）', level: 3 }
 ];
 // その年の立春の日（2月1日〜10日から探す）
 function _koyomiRisshunDay(year) {
@@ -12669,6 +12672,25 @@ function koyomiRitualsOf(date) {
       if (rs && Math.round((new Date(date.getFullYear(), m - 1, d, 12) - rs) / 86400000) === 87)
         out.push({ key: 'hachijuhachiya', icon: '🍵', title: '八十八夜', text: '立春から数えて88日目。茶摘みの頃で、この日の新茶を飲むと一年元気に過ごせるといわれる。「八十八夜の別れ霜」、遅い霜もこのあたりまで。', mark: 'hachijuhachiya-' + date.getFullYear(), markLabel: '新茶を一杯いただいた' });
     }
+    // v0.70.2: 多め（節）。節入りの日（その節気の1日目）だけ
+    if (koyomiRitualOn('sekki') || koyomiRitualOn('letter')) {
+      var vs = koyomiTodayData(new Date(date.getFullYear(), m - 1, d, 12));
+      if (vs && vs.sekki && vs.sekkiDay === 1) {
+        var yS = date.getFullYear(), sName = vs.sekki, sYomi = vs.sekkiReading || '';
+        if (koyomiRitualOn('sekki')) {
+          var pd = new Date(date.getFullYear(), m - 1, d - 10, 12), pv = koyomiTodayData(pd), pKey = pv ? 'sekki-' + pd.getFullYear() + '-' + pv.sekki : '';
+          var pGoal = pKey ? log0[pKey] : null;
+          out.push({ key: 'sekki', icon: '🎐', title: '節を迎える（' + sName + '）', text: '今日から' + sName + (sYomi ? '（' + sYomi + '）' : '') + '。次の節まで、およそ15日。この15日でしたいことを1つ。',
+            note: pGoal ? '前の節（' + pv.sekki + '）にしたかったこと：「' + pGoal + '」' + (log0[pKey + ':done'] ? '　✓ できた' : '') : '',
+            input: 'sekki-' + yS + '-' + sName, placeholder: 'この15日でしたいこと', prevDone: (pGoal && !log0[pKey + ':done']) ? pKey + ':done' : '' });
+        }
+        if (koyomiRitualOn('letter')) {
+          var got = log0['letter-' + (yS - 1) + '-' + sName];
+          out.push({ key: 'letter', icon: '✉️', title: '節気の手紙', text: '1年後の今日（' + sName + 'の日）の自分へ、ひとこと。来年の' + sName + 'に届く。',
+            note: got ? '📬 1年前の' + sName + 'の自分から：「' + got + '」' : '', input: 'letter-' + yS + '-' + sName, placeholder: '1年後の自分へ' });
+        }
+      }
+    }
     if (koyomiRitualOn('thanks'))
       out.push({ key: 'thanks', icon: '🙏', title: '今日のありがとうを一行', text: '', input: 'thanks-' + ymd, placeholder: '今日のありがとう' });
   } catch (e) {}
@@ -12692,7 +12714,7 @@ function koyomiRenderRituals(host, esc, date) {
         : '<div style="display:flex;gap:6px;margin-top:6px;"><input data-rt-in maxlength="60" placeholder="' + esc(r.placeholder) + '" style="flex:1;min-width:0;padding:7px 10px;border-radius:10px;border:1px solid rgba(122,59,30,0.3);font-size:0.9em;background:rgba(255,255,255,0.8);"><button type="button" data-rt-flow style="padding:6px 12px;border-radius:10px;border:1px solid currentColor;background:rgba(255,255,255,0.7);color:inherit;cursor:pointer;white-space:nowrap;">流す</button></div>';
       return '<div data-ritual="' + r.key + '" style="margin:12px 0 0;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,0.45);border:1px solid rgba(122,59,30,0.2);text-align:left;">' +
         '<div style="font-weight:800;">' + r.icon + ' ' + esc(r.title) + '</div>' + (r.text ? '<div style="font-size:0.84em;line-height:1.7;margin-top:4px;">' + esc(r.text) + '</div>' : '') +
-        (r.note ? '<div style="font-size:0.82em;margin-top:6px;opacity:0.85;">' + esc(r.note) + '</div>' : '') + body + '</div>';
+        (r.note ? '<div style="font-size:0.82em;margin-top:6px;opacity:0.85;">' + esc(r.note) + (r.prevDone ? ' <button type="button" data-rt-done style="border:1px solid currentColor;background:rgba(255,255,255,0.7);color:inherit;border-radius:999px;padding:1px 8px;font-size:0.95em;cursor:pointer;">✓ できた</button>' : '') + '</div>' : '') + body + '</div>';
     }).join('');
     var anchor = host.querySelector('[data-tip]') || host.querySelector('[data-kaze-closing]');
     if (anchor) anchor.insertAdjacentHTML('beforebegin', html); else host.insertAdjacentHTML('beforeend', html);
@@ -12701,6 +12723,7 @@ function koyomiRenderRituals(host, esc, date) {
       var inp = box.querySelector('[data-rt-in]'), sv = box.querySelector('[data-rt-save]'), fl = box.querySelector('[data-rt-flow]'), ed = box.querySelector('[data-rt-edit]'), mk = box.querySelector('[data-rt-mark]');
       if (sv) sv.onclick = function() { var t = String(inp.value || '').trim(); if (!t) return; _koyomiRitualSave(r.input, t.slice(0, 60)); _koyomiRitualSave(r.input + ':at', new Date().toISOString()); koyomiRenderRituals(host, esc, date); };
       if (mk) mk.onclick = function() { _koyomiRitualSave(r.mark, 1); koyomiRenderRituals(host, esc, date); };
+      var dn = box.querySelector('[data-rt-done]'); if (dn) dn.onclick = function() { _koyomiRitualSave(r.prevDone, 1); koyomiRenderRituals(host, esc, date); };
       if (ed) ed.onclick = function() { _koyomiRitualSave(r.input, null); koyomiRenderRituals(host, esc, date); };
       if (fl) fl.onclick = function() {
         if (!String(inp.value || '').trim()) return;
@@ -57629,6 +57652,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.70.2', date: '2026-11-02',
+    items: [
+      { icon:'🎐', t:'儀式（きくらげ）の「多め」を作りました',
+        before:'儀式は「少なめ」と「ふつう」まででした',
+        after:'きくらげを「多め」にすると、二十四節気が切り替わる節入りの日（約15日ごと）に、「節を迎える」（この15日でしたいことを1つ。前の節に書いたことに「できた」の印）と、「節気の手紙」（1年後の同じ節気の日の自分へ。1年前に書いた手紙が届く）が加わります' }
+    ]
+  },
+  {
     ver: 'v0.70.1', date: '2026-11-02',
     items: [
       { icon:'🌕', t:'儀式（きくらげ）の「ふつう」を作りました',
@@ -85711,6 +85742,30 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-523·①: 儀式（ふつう）が違う', JSON.stringify(_r) + ' / ' + _few + ' / ' + (_js && _js.note));
      } catch(e) {
        ng('ST-523: 例外', e.message);
+     }
+
+     // ===== ST-524: 儀式（多め）：節を迎える・節気の手紙（v0.70.2〜） =====
+     // 【権威】2026-11-02、儀式を「全部足したい」との指示の、多めの2つ
+     try {
+       var _ordS = allSettings.ui.koyomiOrder ? JSON.parse(JSON.stringify(allSettings.ui.koyomiOrder)) : null, _offS = allSettings.ui.ritualOff, _lsSnap = {};
+       for (var _li = 0; _li < localStorage.length; _li++) { var _lk = localStorage.key(_li); _lsSnap[_lk] = localStorage.getItem(_lk); }
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'many' }); allSettings.ui.ritualOff = [];
+       localStorage.setItem('koyomiRitualLog', JSON.stringify({ 'sekki-2026-霜降': '毎朝ストレッチ', 'letter-2025-立冬': '一年後も、こよみるを続けていますか' }));
+       var _rs = koyomiRitualsOf(new Date(2026, 10, 7, 12));   // 2026年の立冬
+       var _sk = _rs.filter(function(r) { return r.key === 'sekki'; })[0], _lt = _rs.filter(function(r) { return r.key === 'letter'; })[0];
+       var _plain = koyomiRitualsOf(new Date(2026, 10, 8, 12)).filter(function(r) { return r.key === 'sekki' || r.key === 'letter'; }).length;
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'normal' });
+       var _norm = koyomiRitualsOf(new Date(2026, 10, 7, 12)).filter(function(r) { return r.key === 'sekki' || r.key === 'letter'; }).length;
+       if (_ordS === null) delete allSettings.ui.koyomiOrder; else allSettings.ui.koyomiOrder = _ordS;
+       if (_offS === undefined) delete allSettings.ui.ritualOff; else allSettings.ui.ritualOff = _offS;
+       Object.keys(localStorage).forEach(function(k) { if (!Object.prototype.hasOwnProperty.call(_lsSnap, k)) localStorage.removeItem(k); });
+       Object.keys(_lsSnap).forEach(function(k) { if (localStorage.getItem(k) !== _lsSnap[k]) localStorage.setItem(k, _lsSnap[k]); });
+       (_sk && /節を迎える（立冬）/.test(_sk.title) && /前の節（霜降）にしたかったこと：「毎朝ストレッチ」/.test(_sk.note) && _sk.prevDone === 'sekki-2026-霜降:done' && _sk.input === 'sekki-2026-立冬' &&
+        _lt && /1年前の立冬の自分から：「一年後も、こよみるを続けていますか」/.test(_lt.note) && _lt.input === 'letter-2026-立冬' && _plain === 0 && _norm === 0)
+         ? ok('ST-524·①: 儀式（多め）：節入りの日（2026/11/7 立冬）に「節を迎える」（前の節の霜降に書いたことと、できたの印）と「節気の手紙」（2025年の立冬に書いた手紙が届く）。節入りでない日・ふつう以下では出ない')
+         : ng('ST-524·①: 儀式（多め）が違う', [_sk && _sk.title, _sk && _sk.note, _lt && _lt.note, _plain, _norm].join(' / '));
+     } catch(e) {
+       ng('ST-524: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
