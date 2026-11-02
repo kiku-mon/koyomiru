@@ -1,5 +1,11 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.70.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.70.4 ★ -->
+<!-- ════════════════════════════════════════════════════════════
+     開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
+     こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
+     暦は、自分で考えるための区切り。占いよりも、自分の考え方が第一。
+     （四柱推命・九星・十二直・二十八宿はやらない。何かを足すか迷ったら、この2行で決める）
+     ════════════════════════════════════════════════════════════ -->
 
 <html lang="ja">
 <head>
@@ -255,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.70.2';
+    const APP_VERSION = 'v0.70.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12637,7 +12643,7 @@ function koyomiRitualsOf(date) {
     if (koyomiRitualOn('touji')) {
       var v = koyomiTodayData(new Date(date.getFullYear(), m - 1, d, 12));
       if (v && v.sekki === '冬至' && v.sekkiDay === 1)
-        out.push({ key: 'touji', icon: '🕯', title: '冬至（一陽来復）', text: '一年でいちばん長い夜。ここから日が少しずつ長くなる。この一年のありがとうを、1つ。', input: 'touji-' + date.getFullYear(), placeholder: 'この一年のありがとう' });
+        out.push({ key: 'touji', icon: '🕯', title: '冬至（一陽来復）', text: '一年でいちばん長い夜。ここから日が少しずつ長くなる。この一年のありがとうを、1つ。', input: 'touji-' + date.getFullYear(), placeholder: 'この一年のありがとう（日誌にも残る）', journal: '冬至、この一年のありがとう：' });
     }
     if (koyomiRitualOn('harae') && ((m === 6 && d === 30) || (m === 12 && d === 31))) {
       var nagoshi = m === 6;
@@ -12692,7 +12698,7 @@ function koyomiRitualsOf(date) {
       }
     }
     if (koyomiRitualOn('thanks'))
-      out.push({ key: 'thanks', icon: '🙏', title: '今日のありがとうを一行', text: '', input: 'thanks-' + ymd, placeholder: '今日のありがとう' });
+      out.push({ key: 'thanks', icon: '🙏', title: '今日のありがとうを一行', text: '', input: 'thanks-' + ymd, placeholder: '今日のありがとう（日誌にも残る）', journal: '今日のありがとう：' });
   } catch (e) {}
   return out;
 }
@@ -12721,7 +12727,19 @@ function koyomiRenderRituals(host, esc, date) {
     list.forEach(function(r) {
       var box = host.querySelector('[data-ritual="' + r.key + '"]'); if (!box) return;
       var inp = box.querySelector('[data-rt-in]'), sv = box.querySelector('[data-rt-save]'), fl = box.querySelector('[data-rt-flow]'), ed = box.querySelector('[data-rt-edit]'), mk = box.querySelector('[data-rt-mark]');
-      if (sv) sv.onclick = function() { var t = String(inp.value || '').trim(); if (!t) return; _koyomiRitualSave(r.input, t.slice(0, 60)); _koyomiRitualSave(r.input + ':at', new Date().toISOString()); koyomiRenderRituals(host, esc, date); };
+      if (sv) sv.onclick = function() {
+        var t = String(inp.value || '').trim(); if (!t) return;
+        _koyomiRitualSave(r.input, t.slice(0, 60)); _koyomiRitualSave(r.input + ':at', new Date().toISOString());
+        // v0.70.4: 【権威】2026-11-03、「今日のありがとうは日誌に残らないの？」との指摘。ありがとう（と冬至）は、その日の日誌にも残す。書き直したときは同じ一言を書き換える
+        if (r.journal) {
+          try {
+            var jid = _koyomiRitualLog()[r.input + ':jid'], th = jid ? allTasks.filter(function(x) { return x && x.id === jid && x.kind === 'thought'; })[0] : null;
+            if (th) { th.text = (r.journal + t).slice(0, 500); th.updatedAt = new Date().toISOString(); saveAllTasks(); }
+            else { var nid = saveKoyomiTodayWord(r.journal + t); if (nid) _koyomiRitualSave(r.input + ':jid', nid); }
+          } catch (eJ) {}
+        }
+        koyomiRenderRituals(host, esc, date);
+      };
       if (mk) mk.onclick = function() { _koyomiRitualSave(r.mark, 1); koyomiRenderRituals(host, esc, date); };
       var dn = box.querySelector('[data-rt-done]'); if (dn) dn.onclick = function() { _koyomiRitualSave(r.prevDone, 1); koyomiRenderRituals(host, esc, date); };
       if (ed) ed.onclick = function() { _koyomiRitualSave(r.input, null); koyomiRenderRituals(host, esc, date); };
@@ -24699,9 +24717,10 @@ function koyomiKazeParts(v, order, esc) {
     bottom += line('今日という一回を、どう生きる？', 'text-align:center;margin-top:20px;font-size:1.08em;font-weight:800;');
   if (order.richness === 'extraRich') {
     // 【権威】2026-10-16、「これだけじゃわからない」との指摘で数字にした（地球の公転は秒速約30km、太陽系は銀河の中を秒速約220km）
-    bottom += line('地球は今日一日で、太陽のまわりを約257万km進みます。太陽も、銀河の中を約1900万km進んでいます。<br>今日あなたがいるこの場所に、地球が戻ってくることは、二度とありません。', 'text-align:center;margin-top:8px;font-size:0.8em;line-height:1.7;opacity:0.8;');
-    bottom += '<div style="margin:10px 0 4px;display:flex;gap:6px;align-items:flex-end;"><textarea id="koyomiTodayWord" rows="2" placeholder="今日の一言（日誌に残ります）" style="flex:1;box-sizing:border-box;padding:8px;border:1px solid rgba(0,0,0,0.18);border-radius:10px;font-size:16px;font-family:inherit;background:rgba(255,255,255,0.75);"></textarea>' +
-      '<button type="button" data-kz="word" style="padding:7px 10px;border:1px solid currentColor;border-radius:10px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.8em;cursor:pointer;white-space:nowrap;">書きとめる</button></div>';   // v0.60.6: 「残す」は重い
+    bottom += line('地球は今日一日で、太陽のまわりを約257万km進む。太陽も、銀河の中を約1900万km進んでいる。<br>今日あなたがいるこの場所に、地球が戻ってくることは、二度とない。', 'text-align:center;margin-top:8px;font-size:0.8em;line-height:1.7;opacity:0.8;');
+    // v0.70.4: 【権威】2026-11-03、「書きとめるボタンの横並びはわざと？」との指摘。入力欄を横いっぱいにして、ボタンは下の右に
+    bottom += '<div style="margin:10px 0 4px;display:flex;flex-direction:column;gap:6px;"><textarea id="koyomiTodayWord" rows="2" placeholder="今日の一言（日誌に残る）" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid rgba(0,0,0,0.18);border-radius:10px;font-size:16px;font-family:inherit;background:rgba(255,255,255,0.75);"></textarea>' +
+      '<button type="button" data-kz="word" style="align-self:flex-end;padding:7px 14px;border:1px solid currentColor;border-radius:10px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.8em;cursor:pointer;white-space:nowrap;">書きとめる</button></div>';   // v0.60.6: 「残す」は重い
   }
   // v0.60.6: 締めの一言まで、一続きの儀式として畳まずに
   bottom += '<div data-kaze-closing style="text-align:center;margin:22px 0 4px;font-size:1.1em;font-weight:800;">今日もおつかれさま！</div>';
@@ -24715,9 +24734,10 @@ function saveKoyomiTodayWord(text) {
   var today = getLocalDateStr(new Date()), now = new Date().toISOString();
   var j = allTasks.filter(function(t) { return t && t.kind === 'journal' && t.date === today; })[0];
   if (!j) { j = { id: generateTaskId(), kind: 'journal', date: today, text: '', thoughts: [], mood: 0, condition: 0, weather: '', savedAt: now, createdAt: now, updatedAt: now }; allTasks.push(j); }
-  allTasks.push({ id: generateTaskId(), kind: 'thought', parentId: j.id, text: text.slice(0, 500), createdAt: now, updatedAt: now });
+  var tid = generateTaskId();
+  allTasks.push({ id: tid, kind: 'thought', parentId: j.id, text: text.slice(0, 500), createdAt: now, updatedAt: now });
   saveAllTasks();
-  return true;
+  return tid;   // v0.70.4: 書き直しのとき同じ一言を書き換えられるよう、id を返す（真偽で使う呼び手はそのまま動く）
 }
 window.saveKoyomiTodayWord = saveKoyomiTodayWord;
 // ---- 問いと答えを、同じ箱で（v0.59.9） ----
@@ -57652,6 +57672,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.70.4', date: '2026-11-03',
+    items: [
+      { icon:'🙏', t:'「今日のありがとう」を、日誌にも残すようにしました',
+        before:'今日のありがとうは、日誌には残っていませんでした。今日の一言の「書きとめる」が、入力欄の横に窮屈に並んでいました',
+        after:'今日のありがとう（と冬至の一年のありがとう）は、その日の日誌にも残ります。書き直したときは、日誌の同じ一言を書き換えます。今日の一言は、入力欄を横いっぱいにして、「書きとめる」を下の右に置きました' }
+    ]
+  },
+  {
     ver: 'v0.70.2', date: '2026-11-02',
     items: [
       { icon:'🎐', t:'儀式（きくらげ）の「多め」を作りました',
@@ -84429,7 +84457,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (_qs === '0,1,2,3,6' && _qNoKou === '今日の二十四節気は？|今年は、皇紀何年？|今日は、何月何日、何曜日？' &&   /* v0.60.2: 青ねぎ（皇紀）だけでも年を問う */   /* v0.60.0: 全部は6問 */
         _light.indexOf('寒露') !== -1 && _light.indexOf('かんろ') === -1 && _light.indexOf('菊花開') === -1 && _light.indexOf('皇紀') === -1 && _light.indexOf('まっさら') === -1 &&
         _rich.indexOf('かんろ') !== -1 && _rich.indexOf('菊花開') !== -1 && _rich.indexOf('西暦でいうと、2026年') !== -1 && _rich.indexOf('丙午の年') !== -1 &&   /* v0.62.2: 西暦は「西暦でいうと」の文で */ 
-        _rich.indexOf('満月まで') !== -1 && _rich.indexOf('今日という一回を、どう生きる？') !== -1 && _rich.indexOf('二度とありません') !== -1 && _rich.indexOf('店主') === -1)
+        _rich.indexOf('満月まで') !== -1 && _rich.indexOf('今日という一回を、どう生きる？') !== -1 && _rich.indexOf('二度とない') !== -1 && _rich.indexOf('店主') === -1)
          ? ok('ST-466·③: 問いの数（注文に無い暦は問わない）・二十四節気・七十二候・月（秘伝のたれ）・年の数え方（皇紀と年の干支など）・深さで中身が変わる。店主の一言は無い')
          : ng('ST-466·③: 注文と中身のつながりが違う', _qs + ' / ' + _qNoKou);
        // ④ 今日の予定（タスク）（麺のかたさ）
@@ -85766,6 +85794,35 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-524·①: 儀式（多め）が違う', [_sk && _sk.title, _sk && _sk.note, _lt && _lt.note, _plain, _norm].join(' / '));
      } catch(e) {
        ng('ST-524: 例外', e.message);
+     }
+
+     // ===== ST-525: 今日のありがとうは日誌にも残る（書き直しは同じ一言を書き換える）・今日の一言の見た目（v0.70.4〜） =====
+     // 【権威】2026-11-03、「書きとめるボタンの横並びはわざと？」「今日のありがとうは日誌に残らないの？」との指摘
+     try {
+       var _ordS = allSettings.ui.koyomiOrder ? JSON.parse(JSON.stringify(allSettings.ui.koyomiOrder)) : null, _lsSnap = {}, _tasksLen = allTasks.length, _saveAT = saveAllTasks;
+       for (var _li = 0; _li < localStorage.length; _li++) { var _lk = localStorage.key(_li); _lsSnap[_lk] = localStorage.getItem(_lk); }
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       allSettings.ui.koyomiOrder = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { ritual: 'few' }); localStorage.removeItem('koyomiRitualLog');
+       var _host = document.createElement('div'); _host.innerHTML = '<div data-kaze-closing>締め</div>'; document.body.appendChild(_host);
+       var _d = new Date(); koyomiRenderRituals(_host, function(x) { return String(x); }, _d);
+       var _box = _host.querySelector('[data-ritual="thanks"]');
+       _box.querySelector('[data-rt-in]').value = 'あざます'; _box.querySelector('[data-rt-save]').click();
+       var _th = allTasks.filter(function(t) { return t && t.kind === 'thought' && t.text === '今日のありがとう：あざます'; });
+       _host.querySelector('[data-ritual="thanks"] [data-rt-edit]').click();
+       _host.querySelector('[data-ritual="thanks"] [data-rt-in]').value = 'ありがとう'; _host.querySelector('[data-ritual="thanks"] [data-rt-save]').click();
+       var _th2 = allTasks.filter(function(t) { return t && t.kind === 'thought' && /^今日のありがとう：/.test(t.text) && t.createdAt >= new Date(Date.now() - 60000).toISOString(); });
+       _host.remove();
+       // 戻す
+       allTasks.splice(_tasksLen); window.saveAllTasks = _saveAT; saveAllTasks = _saveAT;
+       if (_ordS === null) delete allSettings.ui.koyomiOrder; else allSettings.ui.koyomiOrder = _ordS;
+       Object.keys(localStorage).forEach(function(k) { if (!Object.prototype.hasOwnProperty.call(_lsSnap, k)) localStorage.removeItem(k); });
+       Object.keys(_lsSnap).forEach(function(k) { if (localStorage.getItem(k) !== _lsSnap[k]) localStorage.setItem(k, _lsSnap[k]); });
+       var _kz = koyomiKazeParts(koyomiTodayData(new Date()), Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'extraRich' }), function(x) { return String(x); }).bottom;
+       (_th.length === 1 && _th2.length === 1 && _th2[0].text === '今日のありがとう：ありがとう' && /flex-direction:column[^>]*><textarea id="koyomiTodayWord"/.test(_kz) && /align-self:flex-end[^>]*>書きとめる/.test(_kz))
+         ? ok('ST-525·①: 今日のありがとうは日誌にも残る（書き直しは同じ一言を書き換え、重ならない）。今日の一言は入力欄を横いっぱいに、書きとめるは下の右')
+         : ng('ST-525·①: ありがとうの日誌か見た目が違う', [_th.length, _th2.length, _th2[0] && _th2[0].text].join(' / '));
+     } catch(e) {
+       ng('ST-525: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
