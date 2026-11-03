@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.71.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.72.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.71.5';
+    const APP_VERSION = 'v0.72.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7291,6 +7291,8 @@ function _showInviteWelcome() {
          大手が真似できないのは「作っている人の顔が見えること」であり、そこを強みにする。
          ナビに独立して置く。埋もれても構わない。いつも同じ場所にあることが安心につながる。 -->
     <button class="nav-tab" id="navPodcast" onclick="switchView('podcast')" title="開発者の声"><span class="nav-tab-icon">📻</span><span class="nav-tab-label">開発者の声</span></button>
+    <!-- v0.72.0: 【権威】2026-11-03、「タイムカプセル委員会をナビタブで、しっかりした機能として独立させる」との指示 -->
+    <button class="nav-tab" id="navCapsule" onclick="switchView('capsule')" title="タイムカプセル委員会"><span class="nav-tab-icon">📮</span><span class="nav-tab-label">カプセル</span></button>
     <div id="navFocusBadge" style="display:none;align-items:center;position:sticky;right:0;background:#fff;padding:0 6px 0 4px;flex-shrink:0;z-index:1;">
       <span id="navFocusText" style="font-size:0.68em;color:#f59e0b;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.01em;cursor:default;" title=""></span>
     </div>
@@ -9970,6 +9972,7 @@ function _showInviteWelcome() {
 <!-- v0.45.1828: 開発者の声（Podcast）。RSSを読んで並べるだけで、音声は持たない。
      RSSは配信サービスが自動で作る1枚のテキストで、どこからでも同じ形で読める。
      配信先を変えてもURLを差し替えるだけで済む。 -->
+<div id="capsuleView" style="display:none;background:#fbf7ef;position:relative;z-index:1;padding:0 0 90px;min-height:70vh;"></div>
 <div id="podcastView" style="display:none;background:#fdfcfa;position:relative;z-index:1;padding:0 0 90px;">
   <div style="padding:22px 18px 14px;border-bottom:1px solid #eee;">
     <div style="font-size:1.5em;font-weight:800;color:#1a1a1a;letter-spacing:0.02em;">開発者の声</div>
@@ -12778,6 +12781,7 @@ window.koyomiOpenGuide = koyomiOpenGuide;
 function _koyomiCloseKaze() { var ov = document.getElementById('kazedayoriModal'); if (ov) ov.style.display = 'none'; }
 var KOYOMI_TIPS = [
   { icon: '🎂', title: '生まれた日の暦', who: '自分や家族の誕生日の暦を見てみたい人に', text: '生まれた日の旧暦・干支・二十四節気・月の名前・六曜が出ます。画像にして、贈ることもできます。', open: function() { openKoyomiBirthday(); } },
+  { icon: '📅', title: 'その日の暦', who: '映画や本の時代、歴史の日が気になる人に', text: '名前と日付を入れれば、どの日でも、その日の旧暦・節気・月・六曜が出る。1873年から2100年まで。画像にもできる。', open: function() { _koyomiCloseKaze(); openKoyomiDayLookup({ name: '東京タワー完成', date: '1958-12-23' }); } },
   { icon: '🌍', title: '世界の暦', who: '海外に家族や友達がいる人、旅の前に', text: '世界の都市の今の時刻・日の出・日の入り・季節・その国の暦が、一目で分かります。月間の「🌍 世界の暦」からも開けます。', open: function() { _koyomiCloseKaze(); openKoyomiWorldClock(); } },
   { icon: '🌏', title: '地球の裏側', who: 'ちょっと遊んでみたい人に', text: '今いる場所のちょうど裏側は、どこで、今何時で、どんな季節でしょう。世界の暦の「🌏 裏側」で見られます。', open: function() { _koyomiCloseKaze(); window._koyomiShowAntipode = true; openKoyomiWorldClock(); } },
   { icon: '🍜', title: 'こよみの注文票', who: '季節の風だよりを、好みの量にしたい人に', text: 'ラーメンの注文のように、二十四節気の濃さ・月・旧暦（たまご）・世界の暦（メンマ）・暦注（海苔）などを選べます。', open: function() { _koyomiCloseKaze(); openKoyomiOrderSheet(); } },
@@ -12861,22 +12865,25 @@ function drawKoyomiWorldCanvas(ms) {
 }
 window.drawKoyomiWorldCanvas = drawKoyomiWorldCanvas;
 // 生まれた日の暦：その日の暦をまとめる（1900年1月1日〜今日）
-function koyomiBirthReport(y, m, d) {
+function koyomiBirthReport(y, m, d, anyDay) {
   var dt = new Date(y, m - 1, d, 12, 0, 0);
   if (isNaN(dt.getTime()) || dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
-  if (dt < new Date(1900, 0, 1) || dt > new Date()) return null;
+  // v0.71.7: その日の暦（anyDay）は、今の暦に切り替わった1873年（明治6年）から2100年まで。生まれた日は1900年から今日まで
+  if (anyDay) { if (dt < new Date(1873, 0, 1) || dt > new Date(2100, 11, 31, 23)) return null; }
+  else if (dt < new Date(1900, 0, 1) || dt > new Date()) return null;
   var v = koyomiTodayData(dt), wd = ['日', '月', '火', '水', '木', '金', '土'][dt.getDay()];
-  var ord = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { kyureki: 'basic' });
+  var ord = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { kyureki: 'basic', richness: 'extraRich' });   // v0.71.6: 生まれた日の暦は、いつも旧暦まで（深さが基本でも消えないように）
   var t = koyomiTodaySentence(v, ord), md = koyomiMoonOfDay(dt), kichi = koyomiKichiOf(dt);
   var r = {
-    seireki: '西暦' + y + '年' + m + '月' + d + '日（' + wd + '）', wareki: koyomiBlueEraLabel('wareki', dt) || '', koki: koyomiBlueEraLabel('koki', dt) || '',
+    seireki: y + '年' + m + '月' + d + '日（' + wd + '）', wareki: koyomiBlueEraLabel('wareki', dt) || '', koki: String(koyomiBlueEraLabel('koki', dt) || '').replace(/^皇紀/, ''),   // v0.71.7: 見出しと言葉が重ならないように
     kyureki: t.kyureki ? t.kyureki.era + '、' + t.kyureki.eto + '（' + t.kyureki.etoReading + '）の年の、' + (t.kyureki.leap ? '閏' : '') + t.kyureki.month + '月' + t.kyureki.day + '日' : '',
     eto: v.eto ? koyomiEtoText(v.eto) : '', sekki: v.sekki ? v.sekki + '（' + (v.sekkiReading || '') + '）の' + v.sekkiDay + '日目' : '',
     kou: v.kou ? v.kou + '（' + (v.kouReading || '') + '）' + (v.kouDesc ? '…' + v.kouDesc : '') : '',
     moon: md ? md.name + '（' + md.reading + '）・月齢' + (Math.round(v.moonAge * 10) / 10) : '', rokuyo: v.rokuyo ? koyomiWithYomi(v.rokuyo) : '',
     kichi: kichi.map(function(k) { return koyomiWithYomi(KOYOMI_KICHI_INFO[k].label); }).join('・')
   };
-  r.lead = t.kyureki && md ? 'あなたが生まれた日は、旧暦' + (t.kyureki.leap ? '閏' : '') + t.kyureki.month + '月' + t.kyureki.day + '日。' + md.name + '（' + md.reading + '）の日でした。' : '';
+  r.lead = t.kyureki && md ? 'あなたが生まれた日は、旧暦' + (t.kyureki.leap ? '閏' : '') + t.kyureki.month + '月' + t.kyureki.day + '日、' + md.name + '（' + md.reading + '）の日。' : '';   // v0.71.7: 言い切りに
+  r.lunarShort = t.kyureki && md ? '旧暦' + (t.kyureki.leap ? '閏' : '') + t.kyureki.month + '月' + t.kyureki.day + '日、' + md.name + '（' + md.reading + '）の日' : '';
   return r;
 }
 window.koyomiBirthReport = koyomiBirthReport;
@@ -12889,7 +12896,7 @@ function drawKoyomiBirthCanvas(r) {
   var cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350;
   var g = cv.getContext('2d'), W = 1080, H = 1350;
   var bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#fff6ea'); bg.addColorStop(1, '#f3dcc0'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  g.textAlign = 'center'; g.fillStyle = '#7a3b1e'; g.font = 'bold 52px sans-serif'; g.fillText('🎂 生まれた日の暦', W / 2, 120);
+  g.textAlign = 'center'; g.fillStyle = '#7a3b1e'; g.font = 'bold 52px sans-serif'; g.fillText(r.title ? '📅 ' + r.title : '🎂 生まれた日の暦', W / 2, 120);
   var wrapC = function(text, y, font, color, maxW) {
     g.font = font; g.fillStyle = color; var line = '', lines = [];
     for (var i = 0; i < text.length; i++) { var t2 = line + text.charAt(i); if (g.measureText(t2).width > maxW && line) { lines.push(line); line = text.charAt(i); } else line = t2; }
@@ -12921,6 +12928,7 @@ function openKoyomiBirthday() {
       // v0.69.4: 覚えるのは、選んだ人だけ（初めは覚えない）。外せば、すぐ消す
       '<label style="display:flex;align-items:center;gap:8px;font-size:0.8em;color:#5a4630;margin:-4px 0 12px;cursor:pointer;"><input type="checkbox" data-bd="remember"' + (saved ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#7a3b1e;">この端末に覚えておく（次からすぐ見られます）</label>' +
       '<div data-bd="out" style="font-size:0.95em;"></div>' +
+      '<div style="text-align:right;margin-top:10px;"><button type="button" data-bd="other" style="border:none;background:none;color:#7a3b1e;text-decoration:underline;font-size:0.82em;cursor:pointer;">📅 ほかの日の暦も調べる</button></div>' +
       '<div style="font-size:0.72em;color:#8a7f6a;margin-top:12px;line-height:1.6;">生年月日はサーバーには送りません。「覚えておく」を選んだときだけ、この端末の中に残します（外すと消えます）。1900年1月1日から今日まで。</div></div>';
     document.body.appendChild(ov);
     var close = function() { ov.remove(); };
@@ -12936,6 +12944,7 @@ function openKoyomiBirthday() {
       out.querySelector('[data-bd="img"]').onclick = function() { shareKoyomiCanvas(drawKoyomiBirthCanvas(r), 'koyomiru-birthday.png', r.lead + '\\n#こよみる #生まれた日の暦'); };
     };
     ov.querySelector('[data-bd="go"]').onclick = show;
+    ov.querySelector('[data-bd="other"]').onclick = function() { close(); openKoyomiDayLookup(); };   // v0.71.7
     ov.querySelector('[data-bd="remember"]').onchange = function() {
       try {
         if (!this.checked) { localStorage.removeItem('koyomiBirthday'); if (typeof showToast === 'function') showToast('生年月日を、この端末から消しました', { type: 'info' }); }
@@ -12946,6 +12955,223 @@ function openKoyomiBirthday() {
   } catch (e) { if (typeof showToast === 'function') showToast('生まれた日の暦を開けませんでした', { type: 'warn' }); }
 }
 window.openKoyomiBirthday = openKoyomiBirthday;
+// ===== v0.72.0: タイムカプセル委員会 =====
+// 【権威】2026-11-03、「タイムカプセル作ろう」「誰に送れるかを厳密に設計してから」「タイムカプセル委員会をナビタブで独立させる。委員はこよみるONEの人、無料は3通」
+// 「神殿やメールのアイコンは変。便箋と鉛筆、和紙の手紙」との指示。
+// 設計：宛先は自分か、同じ共有カレンダーにいる人だけ。封をしたら送った本人も読めない・直せない（取り消しだけできる）。受け取る人には開く日まで何も見せない。
+// 開く日は今より後〜30年後。表はサーバーが直接の読み書きを拒み、決まった窓口（関数）からだけ触る。開く日より前の中身は、どんな方法でも返さない
+var _capsuleTab = 'write';
+var KOYOMI_CAPSULE_ERRORS = {
+  not_logged_in: 'ログインが必要。', bad_body: '手紙が空か、長すぎる（2000字まで）。', bad_open_at: '開く日は、明日から30年後までの日にしてほしい。',
+  bad_recipient: '宛先を選んでほしい。', not_same_calendar: 'この人には送れない（同じ共有カレンダーにいる人だけ）。',
+  refused: 'この人は、人からのタイムカプセルを受け取らない設定にしている。', quota: '封をしておける手紙は3通まで。届いたら、また書ける（委員は無制限）。'
+};
+function _capsuleErr(err) {
+  var m = String((err && (err.message || err.details)) || err || '');
+  for (var k in KOYOMI_CAPSULE_ERRORS) if (m.indexOf(k) !== -1) return KOYOMI_CAPSULE_ERRORS[k];
+  return '送れなかった。少し時間をおいて、もう一度。';
+}
+function _capsuleRpc(name, args) {
+  if (!window.supabaseClient || !window._cloudIsLoggedIn) return Promise.reject(new Error('not_logged_in'));
+  return window.supabaseClient.rpc(name, args || {}).then(function(r) { if (r.error) throw r.error; return r.data; });
+}
+// 封をした日の暦（届いたときに「この日は、こんな空だった」と一緒に届く）
+function koyomiCapsuleSealedKoyomi(d) {
+  try {
+    var v = koyomiTodayData(d), md = koyomiMoonOfDay(d), lu = koyomiLunarDate(d);
+    return { date: getLocalDateStr(d), sekki: v.sekki || '', sekkiDay: v.sekkiDay || 0, kou: v.kou || '', moon: md ? md.name : '', lunar: lu ? (lu.leap ? '閏' : '') + lu.month + '月' + lu.day + '日' : '' };
+  } catch (e) { return { date: getLocalDateStr(d) }; }
+}
+window.koyomiCapsuleSealedKoyomi = koyomiCapsuleSealedKoyomi;
+function koyomiCapsuleKoyomiText(k) {
+  if (!k) return '';
+  var p = String(k.date || '').split('-').map(Number), parts = [];
+  if (p.length === 3) parts.push(p[0] + '年' + p[1] + '月' + p[2] + '日');
+  if (k.sekki) parts.push(k.sekki + (k.sekkiDay ? 'の' + k.sekkiDay + '日目' : ''));
+  if (k.moon) parts.push(k.moon);
+  if (k.lunar) parts.push('旧暦' + k.lunar);
+  return parts.join('・');
+}
+window.koyomiCapsuleKoyomiText = koyomiCapsuleKoyomiText;
+// 第55条：確かめは、ブラウザの確認の小窓を使わず、2回押す方式で（1回目で文言が変わり、4秒で元に戻る）
+function _capsuleTwoClick(btn, askLabel, fn) {
+  if (btn.getAttribute('data-armed') === '1') { btn.removeAttribute('data-armed'); clearTimeout(btn._capT); fn(); return; }
+  var orig = btn.innerHTML; btn.setAttribute('data-armed', '1'); btn.innerHTML = askLabel; btn.style.outline = '2px solid #c0392b';
+  btn._capT = setTimeout(function() { btn.removeAttribute('data-armed'); btn.innerHTML = orig; btn.style.outline = ''; }, 4000);
+}
+function _capsuleDays(iso) { var t = new Date(iso).getTime(), n = Date.now(); return Math.max(0, Math.ceil((t - n) / 86400000)); }
+function _capsuleYmd(iso) { var d = new Date(iso); return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日'; }
+function renderCapsuleView() {
+  var host = document.getElementById('capsuleView'); if (!host) return;
+  var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var head = '<div style="max-width:640px;margin:0 auto;padding:18px 16px 0;">' +
+    '<div style="font-size:1.25em;font-weight:800;color:#7a3b1e;">📮 タイムカプセル委員会</div>' +
+    '<div style="font-size:0.82em;color:#8a7f6a;margin-top:4px;line-height:1.6;">未来の日付を決めて、手紙を封じる。その日まで、中は誰にも読めない。</div>';
+  if (!window._cloudIsLoggedIn || !window.supabaseClient) {
+    host.innerHTML = head + '<div style="margin-top:16px;padding:16px;border-radius:14px;background:#fff;border:1px solid #e6d8bd;line-height:1.7;color:#5a4630;">' +
+      'タイムカプセルは、何年も先まで手紙を預かる。端末を替えても届くように、<b>ログインが必要</b>。' +
+      '<div style="margin-top:12px;"><button type="button" onclick="openCloudLoginModal()" style="padding:9px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;font-weight:700;cursor:pointer;">ログインする</button></div></div></div>';
+    return;
+  }
+  var tabs = [['write', '📝 書く'], ['sealed', '🔏 封をしている'], ['received', '📜 届いた'], ['about', '🏫 委員会について']];
+  host.innerHTML = head + '<div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;">' + tabs.map(function(t) {
+      var on = _capsuleTab === t[0];
+      return '<button type="button" data-cap-tab="' + t[0] + '" style="padding:7px 12px;border-radius:999px;cursor:pointer;font-size:0.88em;border:' + (on ? '2px solid #7a3b1e' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdf0e3' : '#fff') + ';color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + t[1] + '</button>';
+    }).join('') + '</div><div data-cap-body style="padding-bottom:20px;"></div></div>';
+  host.querySelectorAll('[data-cap-tab]').forEach(function(b) { b.onclick = function() { _capsuleTab = b.getAttribute('data-cap-tab'); renderCapsuleView(); }; });
+  var st = host.querySelector('[data-cap-status]'), body = host.querySelector('[data-cap-body]');
+  _capsuleRpc('koyomiru_capsule_status').then(function(rows) {
+    var r = (rows && rows[0]) || {};
+    window._capsuleStatus = r;
+    st.innerHTML = r.is_committee ? '🏫 あなたは<b>委員</b>。封をしておける手紙に上限はない。' : '封をしている手紙：<b>' + (r.sealed_count || 0) + '</b> ／ ' + (r.quota || 3) + '通（届いたら、また書ける）';
+  }).catch(function() { st.textContent = ''; });
+  body.innerHTML = '<div style="color:#8a7f6a;font-size:0.9em;">読み込んでいる…</div>';
+  if (_capsuleTab === 'write') _capsuleRenderWrite(body, e);
+  else if (_capsuleTab === 'sealed') _capsuleRenderSealed(body, e);
+  else if (_capsuleTab === 'received') _capsuleRenderReceived(body, e);
+  else _capsuleRenderAbout(body, e);
+}
+window.renderCapsuleView = renderCapsuleView;
+var _CAP_BOX = 'padding:14px;border-radius:14px;background:#fff;border:1px solid #e6d8bd;';
+function _capsuleRenderWrite(body, e) {
+  _capsuleRpc('koyomiru_capsule_recipients').then(function(list) {
+    list = list || [];
+    var today = new Date(), next = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+    var minD = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1), maxD = new Date(today.getFullYear() + 30, today.getMonth(), today.getDate());
+    body.innerHTML = '<div style="' + _CAP_BOX + '">' +
+      '<div style="font-weight:700;color:#5a4630;margin-bottom:6px;">宛先</div>' +
+      '<select data-cap="to" style="width:100%;padding:9px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.95em;background:#fff;">' +
+        list.map(function(p) { return '<option value="' + e(p.user_id) + '">' + e(p.name) + '</option>'; }).join('') + '</select>' +
+      '<div style="font-size:0.74em;color:#8a7f6a;margin-top:4px;">送れるのは、自分と、同じ共有カレンダーにいる人だけ。</div>' +
+      '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">開く日</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+        '<button type="button" data-cap="oneyear" style="padding:7px 12px;border-radius:999px;border:1px solid #7a3b1e;background:#fdf0e3;color:#7a3b1e;cursor:pointer;">1年後の今日</button>' +
+        '<input type="date" data-cap="date" min="' + getLocalDateStr(minD) + '" max="' + getLocalDateStr(maxD) + '" value="' + getLocalDateStr(next) + '" style="padding:8px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.95em;"></div>' +
+      '<div style="font-size:0.74em;color:#8a7f6a;margin-top:4px;">明日から30年後まで。開く日の朝から読める。</div>' +
+      '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">📝 手紙</div>' +
+      '<textarea data-cap="body" rows="7" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
+      '<div style="text-align:right;margin-top:10px;"><button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
+      '<div data-cap="msg" style="margin-top:8px;font-size:0.86em;"></div></div>';
+    body.querySelector('[data-cap="oneyear"]').onclick = function() { body.querySelector('[data-cap="date"]').value = getLocalDateStr(next); };
+    body.querySelector('[data-cap="seal"]').onclick = function() {
+      var msg = body.querySelector('[data-cap="msg"]'), txt = String(body.querySelector('[data-cap="body"]').value || '').trim(), dv = body.querySelector('[data-cap="date"]').value, to = body.querySelector('[data-cap="to"]').value;
+      if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
+      var p = String(dv || '').split('-').map(Number); if (p.length !== 3) { msg.style.color = '#c0392b'; msg.textContent = '開く日を選んでほしい。'; return; }
+      var openAt = new Date(p[0], p[1] - 1, p[2], 0, 0, 0);
+      if (openAt <= new Date()) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.bad_open_at; return; }
+      var sealBtn = body.querySelector('[data-cap="seal"]');
+      if (sealBtn.getAttribute('data-armed') !== '1') { msg.style.color = '#8a7f6a'; msg.textContent = '封をすると、あなたも読めなくなり、直せなくなる（取り消すことはできる）。' + _capsuleYmd(openAt.toISOString()) + 'に届ける。'; }
+      _capsuleTwoClick(sealBtn, '🔏 本当に封をする？', function() {
+      msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…';
+      _capsuleRpc('koyomiru_capsule_seal', { p_recipient: to, p_body: txt, p_open_at: openAt.toISOString(), p_sealed_koyomi: koyomiCapsuleSealedKoyomi(new Date()) })
+        .then(function() { if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く', { type: 'success' }); _capsuleTab = 'sealed'; renderCapsuleView(); })
+        .catch(function(err) { msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
+      });
+    };
+  }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
+}
+function _capsuleRenderSealed(body, e) {
+  _capsuleRpc('koyomiru_capsule_list_sent').then(function(rows) {
+    rows = (rows || []).filter(function(r) { return !r.canceled_at; });
+    if (!rows.length) { body.innerHTML = '<div style="' + _CAP_BOX + 'color:#8a7f6a;">封をしている手紙は、まだない。</div>'; return; }
+    body.innerHTML = rows.map(function(r) {
+      var delivered = r.delivered;
+      return '<div style="' + _CAP_BOX + 'margin-bottom:10px;">' +
+        '<div style="font-weight:700;color:#5a4630;">' + (delivered ? '📜 届いた' : '🔏 封をしている') + '　宛先：' + e(r.recipient_name) + '</div>' +
+        '<div style="font-size:0.84em;color:#6b4f2a;margin-top:4px;line-height:1.7;">封をした日：' + _capsuleYmd(r.sealed_at) + '<br>開く日：' + _capsuleYmd(r.open_at) + (delivered ? '' : '（あと' + _capsuleDays(r.open_at) + '日）') + '</div>' +
+        (delivered ? '' : '<div style="text-align:right;margin-top:6px;"><button type="button" data-cap-cancel="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c0392b;background:#fff;color:#c0392b;font-size:0.82em;cursor:pointer;">取り消す</button></div>') + '</div>';
+    }).join('');
+    body.querySelectorAll('[data-cap-cancel]').forEach(function(b) {
+      b.onclick = function() {
+        _capsuleTwoClick(b, '本当に取り消す？（届かなくなる）', function() {
+        _capsuleRpc('koyomiru_capsule_cancel', { p_id: b.getAttribute('data-cap-cancel') }).then(function() { renderCapsuleView(); }).catch(function(err) { if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); });
+        });
+      };
+    });
+  }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
+}
+function _capsuleRenderReceived(body, e) {
+  _capsuleRpc('koyomiru_capsule_list_received').then(function(rows) {
+    rows = rows || [];
+    if (!rows.length) { body.innerHTML = '<div style="' + _CAP_BOX + 'color:#8a7f6a;">届いた手紙は、まだない。</div>'; return; }
+    body.innerHTML = rows.map(function(r) {
+      return '<div style="' + _CAP_BOX + 'margin-bottom:12px;background:#fffdf7;">' +
+        '<div style="font-weight:800;color:#7a3b1e;">📜 ' + e(r.sender_name) + 'から</div>' +
+        '<div style="font-size:0.8em;color:#8a7f6a;margin-top:2px;">封をした日：' + e(koyomiCapsuleKoyomiText(r.sealed_koyomi) || _capsuleYmd(r.sealed_at)) + '</div>' +
+        '<div style="margin-top:10px;white-space:pre-wrap;font-size:15px;line-height:30px;color:#3a2a1a;background-image:repeating-linear-gradient(transparent, transparent 29px, #efe3cc 29px, #efe3cc 30px);">' + e(r.body) + '</div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">' +
+          '<button type="button" data-cap-journal="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;font-size:0.82em;cursor:pointer;">日誌に残す</button>' +
+          '<button type="button" data-cap-del="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c9b9a0;background:#fff;color:#8a7f6a;font-size:0.82em;cursor:pointer;">消す</button></div></div>';
+    }).join('');
+    body.querySelectorAll('[data-cap-journal]').forEach(function(b) {
+      b.onclick = function() {
+        var r = rows.filter(function(x) { return x.id === b.getAttribute('data-cap-journal'); })[0]; if (!r) return;
+        var ok = (typeof saveKoyomiTodayWord === 'function') && saveKoyomiTodayWord('📜 タイムカプセル（' + r.sender_name + 'から・' + (koyomiCapsuleKoyomiText(r.sealed_koyomi) || _capsuleYmd(r.sealed_at)) + 'に封）：' + r.body);
+        if (typeof showToast === 'function') showToast(ok ? '今日の日誌に残した' : '日誌に残せなかった', { type: ok ? 'success' : 'warn' });
+      };
+    });
+    body.querySelectorAll('[data-cap-del]').forEach(function(b) {
+      b.onclick = function() {
+        _capsuleTwoClick(b, '本当に消す？', function() {
+        _capsuleRpc('koyomiru_capsule_delete_received', { p_id: b.getAttribute('data-cap-del') }).then(function() { renderCapsuleView(); }).catch(function(err) { if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); });
+        });
+      };
+    });
+  }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
+}
+function _capsuleRenderAbout(body, e) {
+  var st = window._capsuleStatus || {};
+  body.innerHTML = '<div style="' + _CAP_BOX + 'line-height:1.8;color:#5a4630;font-size:0.92em;">' +
+    '<div style="font-weight:800;color:#7a3b1e;">🏫 タイムカプセル委員会について</div>' +
+    '<div style="margin-top:6px;">未来の日付を決めて、手紙を封じる。宛先は、自分か、同じ共有カレンダーにいる人。封をしたら、書いた本人も読めない。その日が来たら、届く。</div>' +
+    '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:0.92em;"><tr><th></th><th style="text-align:left;padding:4px;">無料</th><th style="text-align:left;padding:4px;">🏫 委員（こよみるONE）</th></tr>' +
+    '<tr><td style="padding:4px;color:#8a7f6a;">封をしておける手紙</td><td style="padding:4px;">3通まで</td><td style="padding:4px;">無制限</td></tr>' +
+    '<tr><td style="padding:4px;color:#8a7f6a;">宛先</td><td style="padding:4px;">自分・同じ共有カレンダーの人</td><td style="padding:4px;">同じ</td></tr>' +
+    '<tr><td style="padding:4px;color:#8a7f6a;">開く日</td><td style="padding:4px;">明日〜30年後</td><td style="padding:4px;">同じ</td></tr></table>' +
+    '<div style="margin-top:10px;font-size:0.82em;color:#8a7f6a;">手紙は、届くまでのあいだ、こよみるのクラウドで預かる（端末を替えても届くように）。開く日より前は、サーバーも中身を誰にも返さない。</div>' +
+    '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;"><input type="checkbox" data-cap="refuse"' + (st.refusing ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#7a3b1e;">人からのタイムカプセルを受け取らない</label></div>';
+  var cb = body.querySelector('[data-cap="refuse"]');
+  cb.onchange = function() { _capsuleRpc('koyomiru_capsule_set_refuse', { p_refuse: cb.checked }).then(function() { if (typeof showToast === 'function') showToast(cb.checked ? '人からのタイムカプセルを受け取らない' : '人からのタイムカプセルを受け取る', { type: 'info' }); }).catch(function(err) { cb.checked = !cb.checked; if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); }); };
+}
+// ===== END v0.72.0 =====
+// ===== v0.71.7: その日の暦（どの日でも調べる） =====
+// 【権威】2026-11-03、「特定の日を検索する機能を。映画は時代設定が様々だから、この映画のこの年月日をこよみるで出せるよ、という感じに」との指示。
+// 名前と日付を入れれば、どの日でも暦が出る。範囲は今の暦になった1873年（明治6年）から2100年まで（それより前は暦の作り方が違うため）。調べた日付は残さない
+function openKoyomiDayLookup(preset) {
+  try {
+    var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+    var old = document.getElementById('koyomiDayLookupOverlay'); if (old) old.remove();
+    var ov = document.createElement('div'); ov.id = 'koyomiDayLookupOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,0.45);display:flex;justify-content:center;overflow-y:auto;padding:calc(env(safe-area-inset-top, 0px) + 16px) 12px calc(env(safe-area-inset-bottom, 0px) + 16px);';
+    ov.innerHTML = '<div role="dialog" aria-modal="true" style="position:relative;width:100%;max-width:440px;margin:auto 0;background:#fffaf2;border-radius:20px;padding:20px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);color:#3a2a1a;">' +
+      '<button type="button" data-dl="close" aria-label="閉じる" style="position:absolute;top:10px;right:12px;width:36px;height:36px;border-radius:50%;border:1px solid #d9c9a6;background:#fff;color:#7a3b1e;font-size:1.2em;cursor:pointer;">×</button>' +
+      '<div style="font-weight:800;font-size:1.1em;color:#7a3b1e;margin-bottom:4px;">📅 その日の暦</div>' +
+      '<div style="font-size:0.78em;color:#8a7f6a;margin-bottom:10px;">映画や本の時代、歴史の日、記念日。どの日でも、その日の暦が出る。</div>' +
+      '<input data-dl="name" maxlength="30" placeholder="名前（なくてもいい。例：東京タワー完成）" value="' + e((preset && preset.name) || '') + '" style="width:100%;box-sizing:border-box;padding:9px 10px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.95em;margin-bottom:8px;">' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;"><input type="date" data-dl="date" min="1873-01-01" max="2100-12-31" value="' + e((preset && preset.date) || '') + '" style="flex:1;min-width:160px;padding:9px 10px;border-radius:10px;border:1px solid #d9c9a6;font-size:1em;">' +
+      '<button type="button" data-dl="go" style="padding:9px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;font-weight:700;cursor:pointer;">見る</button></div>' +
+      '<div data-dl="out" style="font-size:0.95em;"></div>' +
+      '<div style="font-size:0.72em;color:#8a7f6a;margin-top:12px;line-height:1.6;">1873年（明治6年、今の暦に切り替わった年）から2100年まで。それより前の日本は、暦の作り方そのものが違うため。調べた日付は、どこにも残さない。</div></div>';
+    document.body.appendChild(ov);
+    var close = function() { ov.remove(); };
+    ov.addEventListener('click', function(ev) { if (ev.target === ov) close(); });
+    ov.querySelector('[data-dl="close"]').onclick = close;
+    var show = function() {
+      var val = ov.querySelector('[data-dl="date"]').value, nm = String(ov.querySelector('[data-dl="name"]').value || '').trim().slice(0, 30), out = ov.querySelector('[data-dl="out"]');
+      var p = String(val || '').split('-').map(Number), r = p.length === 3 ? koyomiBirthReport(p[0], p[1], p[2], true) : null;
+      if (!r) { out.innerHTML = '<div style="color:#c0392b;">1873年1月1日から2100年12月31日までの日付を選んでほしい。</div>'; return; }
+      r.lead = (nm ? '「' + nm + '」の日は、' : 'この日は、') + r.lunarShort + '。';
+      r.title = nm ? nm + 'の日の暦' : 'その日の暦';
+      out.innerHTML = _koyomiBirthHtml(r, e) + '<div style="text-align:center;margin-top:12px;"><button type="button" data-dl="img" style="padding:7px 14px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">🖼 画像にして持ち帰る</button></div>';
+      out.querySelector('[data-dl="img"]').onclick = function() { shareKoyomiCanvas(drawKoyomiBirthCanvas(r), 'koyomiru-day.png', r.lead + '\\n#こよみる #その日の暦'); };
+    };
+    ov.querySelector('[data-dl="go"]').onclick = show;
+    if (preset && preset.date) show();
+  } catch (e) { if (typeof showToast === 'function') showToast('その日の暦を開けなかった', { type: 'warn' }); }
+}
+window.openKoyomiDayLookup = openKoyomiDayLookup;
+// ===== END v0.71.7 =====
 // ===== END v0.69.0 画像・生まれた日 =====
 // ===== v0.69.0: 世界の暦の手直し（言葉の説明を1か所に・日の出リレー・星空の時間・地球の裏側） =====
 // 【権威】2026-10-30、「足したり、ひいたり、いじったり、遊んだりする余地ある？」への案に「全部やれ」との指示
@@ -13430,14 +13656,28 @@ function koyomiKoku(date, geoOverride) {
     marks.forEach(function(m) { if (m.ms <= t) prev = m; else if (!next) next = m; });
     if (!prev || !next || prev.ake === next.ake || next.ms - prev.ms > 20 * 3600000) throw 0;   // 六つが来ない（白夜・極夜）
     var start = prev.ake ? 3 : 9;   // 明け六つのあとは卯から、暮れ六つのあとは酉から
-    idx = (start + Math.min(5, Math.floor((t - prev.ms) / ((next.ms - prev.ms) / 6)))) % 12;
+    var span = (next.ms - prev.ms) / 6, jj = Math.min(5, Math.floor((t - prev.ms) / span));
+    idx = (start + jj) % 12;
+    var fromMs = prev.ms + jj * span, toMs = fromMs + span;   // v0.71.6: 今の刻の始まりと終わり（今の時計の時刻を添えるため）
   } catch (e) {
     how = 'teiji';
     idx = Math.floor(((d.getHours() + d.getMinutes() / 60 + 1) % 24) / 2);   // 定時法：子の刻＝23〜1時
+    var h0 = idx * 2 - 1, base = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0).getTime();
+    fromMs = base + h0 * 3600000; if (fromMs > d.getTime()) fromMs -= 86400000; toMs = fromMs + 7200000;
   }
   var n = KOYOMI_KOKU_NAMES[idx];
-  return { name: n[0], reading: n[1], how: how };
+  return { name: n[0], reading: n[1], how: how, from: (typeof fromMs === 'number') ? fromMs : null, to: (typeof toMs === 'number') ? toMs : null };
 }
+// v0.71.6: 刻の時刻の幅を、今の時計の言い方で（「午後7時40分〜9時40分ごろ」）
+function koyomiKokuRangeText(k) {
+  try {
+    if (!k || typeof k.from !== 'number' || typeof k.to !== 'number') return '';
+    var a = new Date(k.from), b = new Date(k.to);
+    var ap = function(dt) { return dt.getHours() < 12 ? '午前' : '午後'; }, hm = function(dt) { var h = dt.getHours() % 12; return h + '時' + (dt.getMinutes() ? dt.getMinutes() + '分' : ''); };
+    return ap(a) + hm(a) + '〜' + (ap(a) === ap(b) ? '' : ap(b)) + hm(b) + 'ごろ';
+  } catch (e) { return ''; }
+}
+window.koyomiKokuRangeText = koyomiKokuRangeText;
 window.koyomiKoku = koyomiKoku;
 // ===== END v0.64.2 =====
 // ===== END v0.64.0 =====
@@ -24048,9 +24288,9 @@ var KOYOMI_ORDER_DEFAULT = {
   kou72: true,                                  // 七十二候（チャーシュー）
   moon: 'basic',                                // 月（秘伝のたれ）
   moonTimes: 3,                                 // 「（ ）倍」の数（3〜10）
-  kyureki: 'basic',                             // 旧暦（たまご）。v0.63.1
+  kyureki: 'none',                              // 旧暦（たまご）。v0.63.1。v0.71.6：【権威】2026-11-03「店のおすすめは旧暦を入れるのをやめよう。入れると一気に多くなる」→ 初めは「なし」
   world: 'many',                                // 世界の暦（メンマ）。v0.66.4。初めは今の出方と同じ「多め」
-  kichi: 'all',                                 // 暦注（海苔）。v0.68.1。初めは今の出方と同じ「3枚」
+  kichi: 'none',                                // 暦注（海苔）。v0.68.1。v0.71.6：第0条（運勢は扱わない）に合わせ、初めは「なし」。選んだ人だけ
   ritual: 'few',                                // 儀式（きくらげ）。v0.70.0。初めは「少なめ」
   schedule: 'basic',                            // 今日の予定（タスク）（麺のかたさ）
   timing: 'everyOpen'                           // 出てくる時（季節の風だよりが起動のときに出るか。v0.59.0: 今までどおり毎回出す）
@@ -24932,12 +25172,20 @@ function koyomiTodaySentence(v, order) {
   // v0.69.9: 【権威】2026-11-02、「そして今は、不定時法でいうと辰の刻。ここまで明示的に言うと、AIにも突っ込まれない」との提案。
   // 何の数え方での刻かを言う（白夜などで定時法に戻るときは、正直に「定時法でいうと」）
   var kokuHow = koku.how === 'teiji' ? '定時法' : '不定時法', kokuHowYomi = koku.how === 'teiji' ? 'ていじほう' : 'ふていじほう';
-  var kokuLine = 'そして今は、' + kokuHow + 'でいうと、' + yo(koku.name, koku.reading) + 'の刻。', kokuSpeech = 'そして今は、' + kokuHowYomi + 'でいうと、' + koku.reading + 'のこく。';
-  lines.push(kokuLine);
+  // v0.71.6: 【権威】2026-11-03、「子の刻や酉の刻と言われても、ふつうの人には分からない」との指摘。今の時計の時刻を添える
+  var kokuRange = koyomiKokuRangeText(koku);
+  var kokuLine = 'そして今は、' + kokuHow + 'でいうと、' + yo(koku.name, koku.reading) + 'の刻' + (kokuRange ? '、' + kokuRange : '') + '。', kokuSpeech = 'そして今は、' + kokuHowYomi + 'でいうと、' + koku.reading + 'のこく' + (kokuRange ? '、' + kokuRange : '') + '。';
+  // v0.71.6: 【権威】2026-11-03、「店のおすすめでも、初めての人にはまだ重い」との見立てに「そうしてください」との指示。深さ（こってり度）で長さを変える
+  //   なし・あっさり・基本 … 日付・二十四節気と七十二候・月まで ／ こってり … ＋西暦・旧暦 ／ 超こってり … ＋干支・刻（全部）
+  var _lv = { none: 0, light: 1, basic: 2, rich: 3, extraRich: 4 }[order.richness || 'basic']; if (_lv === undefined) _lv = 2;
+  if (_lv < 3) { seirekiLine = ''; kyureki = null; kyurekiSpeech = ''; }
+  if (_lv < 4) { etoDisp = ''; etoSpeech = ''; kokuSpeech = ''; koku = null; }
+  lines = lines.filter(function(x) { return !((_lv < 3 && /^(西暦でいうと|旧暦でいうと)/.test(x)) || (_lv < 4 && /^干支でいうと/.test(x))); });
+  if (koku) lines.push(kokuLine);
   return {
     year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
     season: season, moon: moon, seirekiLine: seirekiLine, kyureki: kyureki, lines: lines, etoLine: etoDisp, etoParts: etoDisp ? [['年は', v.eto.year], ['月は', v.eto.month], ['日は', v.eto.day]].filter(function(x) { return x[1]; }) : [],
-    koku: koku, kokuHow: kokuHow,
+    koku: koku, kokuHow: kokuHow, kokuRange: kokuRange,
     speech: mainSpeech + seasonSpeech + moonSpeech + seirekiLine + kyurekiSpeech + etoSpeech + kokuSpeech
   };
 }
@@ -24998,7 +25246,7 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     (t.etoParts && t.etoParts.length ? '<div data-sentence-eto style="' + sub + '">' + nw('干支でいうと、') +
       t.etoParts.map(function(x, i) { return nw(x[0] + _koyomiReadInline(x[1].name, x[1].reading, esc) + (i < t.etoParts.length - 1 ? '、' : '。')); }).join('') + '</div>' : '') +
     // ⑦ そして今は、◯の刻。（締め）
-    (t.koku ? '<div data-sentence-koku style="' + sub + 'margin-top:4px;">' + nw('そして今は、' + esc(t.kokuHow || '不定時法') + 'でいうと、') + nw(_koyomiReadInline(t.koku.name, t.koku.reading, esc) + 'の刻。') + '</div>' : '') +
+    (t.koku ? '<div data-sentence-koku style="' + sub + 'margin-top:4px;">' + nw('そして今は、' + esc(t.kokuHow || '不定時法') + 'でいうと、') + nw(_koyomiReadInline(t.koku.name, t.koku.reading, esc) + 'の刻' + (t.kokuRange ? '、' : '') + '。').replace(/、。$/, '、') + (t.kokuRange ? nw(esc(t.kokuRange) + '。') : '') + '</div>' : '') +
     '<div style="margin-top:8px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
       (canSpeak ? '<button type="button" data-kz="speak" data-speech="' + esc(t.speech) + '" style="padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🔊 読み上げる</button>' : '') +
       '<button type="button" data-kz="sentence-image" style="padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🖼 画像にして持ち帰る</button>' +
@@ -25169,8 +25417,9 @@ function renderKazeKoyomi(col, opts) {
   // v0.60.9: 【権威】2026-10-21、同じ日の2回目からは答えの面になるので、いつでも問いから始め直せるように、との指示
   // v0.62.3: 一文の下の1行に「もう一度、問いから」と「旧暦って？」を並べる（旧暦って？を押すと、その下に説明が開く）
   var _linkBtn = function(kz, label) { return '<button type="button" data-kz="' + kz + '" style="border:none;background:none;color:inherit;opacity:0.65;font-size:0.8em;text-decoration:underline;cursor:pointer;margin:0 8px;">' + label + '</button>'; };
-  topEl.insertAdjacentHTML('beforeend', '<div data-sentence-links style="text-align:center;margin:-6px 0 8px;">' + (_qaOn ? _linkBtn('again', 'もう一度、問いから') : '') + (order.kyureki !== 'none' ? _linkBtn('kyureki-help', '旧暦って？') : '') + _linkBtn('birthday', '生まれた日の暦') + '</div>' + (order.kyureki !== 'none' ? koyomiKyurekiHelpHtml(esc) : ''));
+  topEl.insertAdjacentHTML('beforeend', '<div data-sentence-links style="text-align:center;margin:-6px 0 8px;">' + (_qaOn ? _linkBtn('again', 'もう一度、問いから') : '') + (order.kyureki !== 'none' ? _linkBtn('kyureki-help', '旧暦って？') : '') + _linkBtn('birthday', '生まれた日の暦') + _linkBtn('daylookup', 'その日の暦') + '</div>' + (order.kyureki !== 'none' ? koyomiKyurekiHelpHtml(esc) : ''));
   var _bdL = topEl.querySelector('[data-kz="birthday"]'); if (_bdL) _bdL.onclick = function() { openKoyomiBirthday(); };   // v0.69.0
+  var _dlL = topEl.querySelector('[data-kz="daylookup"]'); if (_dlL) _dlL.onclick = function() { openKoyomiDayLookup(); };   // v0.71.7
   var _kh = topEl.querySelector('[data-kz="kyureki-help"]'), _khBox = topEl.querySelector('[data-kyureki-help]');
   if (_kh && _khBox) _kh.onclick = function() { _khBox.style.display = _khBox.style.display === 'none' ? 'block' : 'none'; };
   if (_qaOn) {
@@ -25373,7 +25622,7 @@ window.maybeShowKoyomiToday = maybeShowKoyomiToday;
 // 押すと一気に〇が付き、そこから好きに直せる。「出てくる時」は暮らしで違うので、定番では変えない
 var KOYOMI_ORDER_PRESETS = [
   { key: 'osusume', icon: '🍜', name: '店のおすすめ', sub: 'はじめての一杯・迷ったらこれ',
-    v: { sekkiStrength: 'basic', richness: 'basic', questionCount: 'basic', yearNegi: { white: true, blue: true }, kou72: true, moon: 'basic', schedule: 'basic', kyureki: 'basic', world: 'many', kichi: 'all', ritual: 'few' } },
+    v: { sekkiStrength: 'basic', richness: 'basic', questionCount: 'basic', yearNegi: { white: true, blue: true }, kou72: true, moon: 'basic', schedule: 'basic', kyureki: 'none', world: 'many', kichi: 'none', ritual: 'few' } },
   { key: 'kisetsu', icon: '🍂', name: '季節を味わう', sub: '暦と季節に浸りたい日',
     v: { sekkiStrength: 'rich', richness: 'rich', questionCount: 'three', yearNegi: { white: true, blue: true }, kou72: true, moon: 'double', schedule: 'timed', kyureki: 'rich', world: 'normal', kichi: 'few', ritual: 'normal' } },
   { key: 'yotei', icon: '📋', name: '予定を先に', sub: '忙しい日・仕事の日',
@@ -25606,7 +25855,7 @@ window.shareKoyomiCanvas = shareKoyomiCanvas;
 // その日の言葉で毎日変わる投稿の文。ハッシュタグは、その日だけの言葉（節気・月・行事）と、よく見られている言葉を組み合わせる
 function koyomiXCaption(v, order) {
   order = order || getKoyomiOrder();
-  var lines = ['今日を、声に出して読んでみてください。'], tags = [];
+  var lines = ['声に出して読み上げてみるところから始めよう。'], tags = [];   // v0.71.6: 見出しにそろえ、ですます調をやめる
   var today = [];
   if (v.sekki) { today.push(v.sekki + (v.sekkiDay === 1 ? 'に入りました' : 'の' + v.sekkiDay + '日目')); tags.push(v.sekki); }
   if (v.kou) today.push(v.kou + (v.kouTotal && v.kouDay === v.kouTotal ? 'の最後の日' : (v.kouDay === 1 ? 'のはじまりの日' : 'の' + v.kouDay + '日目')));
@@ -25627,7 +25876,7 @@ function koyomiXCaption(v, order) {
   } catch (e) {}
   // v0.64.1: 【権威】2026-10-28、「こよみるで1枚で作れます、は野暮。試しに作ってみてください、という感じ」との指示
   lines.push('こだわりたい、一回きりの今日がある。');   // v0.70.7: 看板の言葉
-  lines.push('あなたの今日の1枚も、作ってみてください。');
+  lines.push('あなたの今日の1枚も、作ってみよう。');
   lines.push('koyomiru.com');
   ['二十四節気', '七十二候', '今日は何の日', 'こよみる'].forEach(function(x) { tags.push(x); });
   var seen = {};
@@ -26046,7 +26295,8 @@ var NAV_TAB_DEFS = [
   { id: 'navSettingsTab', key: 'settings',  label: '⚙️ 設定', alwaysVisible: true },
   // v0.45.1831: 開発者の声も並び替え・表示切替の対象にする。
   // 設定と違い、こちらは隠しても戻れなくなることはないので普通に消せる。
-  { id: 'navPodcast',    key: 'podcast',   label: '📻 開発者の声' }
+  { id: 'navPodcast',    key: 'podcast',   label: '📻 開発者の声' },
+  { id: 'navCapsule',    key: 'capsule',   label: '📮 タイムカプセル委員会' }   // v0.72.0
 ];
 window.NAV_TAB_DEFS = NAV_TAB_DEFS;
 
@@ -26384,6 +26634,7 @@ function applyVisibleTabsSettings() {
     // この一覧から漏れており、消せない状態だった。
     { id: 'navGarden',     key: 'garden' },
     { id: 'navPodcast',    key: 'podcast' },
+    { id: 'navCapsule',    key: 'capsule' },   // v0.72.0
   ];
   tabs.forEach(function(t) {
     var el = document.getElementById(t.id);
@@ -39699,6 +39950,7 @@ window._repairCloudCalendarIds();
       // 音は止めない。ほかの画面を見ながら聴き続けられるほうが、ながら聴きに合う。
       var _pdvHide = document.getElementById('podcastView');
       if (_pdvHide) _pdvHide.style.display = 'none';
+      var _cpvHide = document.getElementById('capsuleView'); if (_cpvHide) _cpvHide.style.display = 'none';   // v0.72.0
       // 全ビューを非表示
       dailyView.style.display = 'none';
       dailyView.classList.remove('daily-active');
@@ -39880,6 +40132,10 @@ window._repairCloudCalendarIds();
             switchLegalSection('privacy');
           }
         }
+      } else if (view === 'capsule') {   // v0.72.0: タイムカプセル委員会
+        var _cv = document.getElementById('capsuleView'); if (_cv) _cv.style.display = 'block';
+        var _cn = document.getElementById('navCapsule'); if (_cn) _cn.classList.add('active');
+        if (typeof renderCapsuleView === 'function') renderCapsuleView();
       } else if (view === 'podcast') {
         // v0.45.1828: 開発者の声。開くたびに読み直す（新しい回が出ていることがある）。
         var _pv = document.getElementById('podcastView');
@@ -57838,6 +58094,33 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.72.0', date: '2026-11-03',
+    items: [
+      { icon:'📮', t:'「タイムカプセル委員会」を始めました',
+        before:'未来の自分や大切な人に、手紙を預ける方法はありませんでした',
+        after:'ナビの「📮 カプセル」から、未来の日付を決めて手紙を封じられます。宛先は、自分か、同じ共有カレンダーにいる人。封をしたら、書いた本人も読めません。その日が来たら届き、封をした日の暦（節気や月）も一緒に届きます。ログインが必要です。封をしておける手紙は3通まで（委員は無制限）' }
+    ]
+  },
+  {
+    ver: 'v0.71.7', date: '2026-11-03',
+    items: [
+      { icon:'📅', t:'「その日の暦」を作りました',
+        before:'暦を見られるのは、今日と、生まれた日だけでした',
+        after:'名前と日付を入れれば、1873年（明治6年）から2100年まで、どの日でも暦が出ます。映画や本の時代、歴史の日、記念日に。季節の風だよりの「その日の暦」や、生まれた日の暦の「ほかの日の暦も調べる」から開けます。画像にもできます' }
+    ]
+  },
+  {
+    ver: 'v0.71.6', date: '2026-11-03',
+    items: [
+      { icon:'🍜', t:'「店のおすすめ」を、はじめての一杯らしく軽くしました',
+        before:'はじめての人にも、旧暦・干支・十二支の刻まで、長い文が出ていました',
+        after:'「今日を、声に出して」は、深さ（こってり度）で長さが変わります。基本は日付・季節・月まで、こってりで西暦と旧暦、超こってりで干支と刻まで。はじめの設定（店のおすすめ）では、旧暦と暦注は出しません' },
+      { icon:'🕰', t:'十二支の刻に、今の時計の時刻を添えました',
+        before:'「戌（いぬ）の刻」と言われても、今が何時ごろか分かりにくいものでした',
+        after:'「戌（いぬ）の刻、午後7時40分〜9時40分ごろ」のように、今の時計の時刻を添えます' }
+    ]
+  },
+  {
     ver: 'v0.71.5', date: '2026-11-03',
     items: [
       { icon:'🍜', t:'こよみの注文票に「定番」を置きました',
@@ -68118,6 +68401,8 @@ function _stAllSrc() {
   }
   return _stAllSrc._cache;
 }
+// v0.71.6: 初めの設定が「旧暦なし・暦注なし・文は短い（深さ基本）」になったので、旧暦・干支・刻まで試すテストは、この全部入りの注文を使う
+function _stFullOrderBase() { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { richness: 'extraRich', kyureki: 'basic', kichi: 'all' }); }
 function _stFnSrc(sig) {
   var all = _stAllSrc();
   var i = all.indexOf(sig);
@@ -84695,8 +84980,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        delete allSettings.ui.koyomiOrder; delete allSettings.ui.koyomiToday;
        var _d = getKoyomiOrder();
        // v0.63.1: 【権威】2026-10-27、注文票に「旧暦（たまご）」を足して8項目
-       (KOYOMI_ORDER_ITEMS.length === 11 && _n === '3,5,5,3,2,5,5,3,5,3,4' && _d.kichi === 'all' && _d.ritual === 'few'   /* v0.70.0: 儀式（きくらげ） */   /* v0.68.1: 暦注（海苔） */   /* v0.66.7: メンマは5段 */ && _d.world === 'many'   /* v0.66.4: 世界の暦（メンマ）を足して9項目 */ &&   /* v0.63.3: たまごはトッピングなので一番下 */   /* v0.58.5: ねぎに「なし」 */ _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定（タスク）・旧暦・世界の暦・暦注・儀式' &&   /* v0.60.7・v0.63.1 */
-        _d.kyureki === 'basic' &&
+       (KOYOMI_ORDER_ITEMS.length === 11 && _n === '3,5,5,3,2,5,5,3,5,3,4' && _d.kichi === 'none' && _d.ritual === 'few'   /* v0.70.0: 儀式（きくらげ） */   /* v0.68.1: 暦注（海苔） */   /* v0.66.7: メンマは5段 */ && _d.world === 'many'   /* v0.66.4: 世界の暦（メンマ）を足して9項目 */ &&   /* v0.63.3: たまごはトッピングなので一番下 */   /* v0.58.5: ねぎに「なし」 */ _names === '二十四節気・今日の一回の深さ・問いの数・年の数え方・七十二候・月・今日の予定（タスク）・旧暦・世界の暦・暦注・儀式' &&   /* v0.60.7・v0.63.1 */
+        _d.kyureki === 'none' &&
         _d.richness === 'basic' && _d.moon === 'basic' && _d.kou72 === true && _d.yearNegi.white && _d.yearNegi.blue && _d.blueEra === 'koki' &&   /* v0.60.2: 青ねぎの皇紀 */ _d.timing === 'everyOpen' &&   /* v0.59.0: 今までどおり毎回出す */
         KOYOMI_TIMING_OPTIONS.length === 5 && typeof koyomiOwnerWords === 'undefined')
          ? ok('ST-466·①: 注文票は11項目（3・5・5・ねぎ（なし・白・青）・あり/なし・5・5・旧暦3・世界の暦5・暦注3・儀式4）で、全部が暦。店主の一言は無い。出てくる時は別の1行（5つ）')
@@ -85053,7 +85338,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      var _st477ui = JSON.parse(JSON.stringify(allSettings.ui || {})), _st477save = window.saveAllSettings;
      try {
        window.saveAllSettings = function() {};
-       var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
+       var _o = function(p) { return Object.assign(_stFullOrderBase(), p); };
        var _yq = [koyomiYearQuestion(_o({})), koyomiYearQuestion(_o({ blueEra: 'wareki' })), koyomiYearQuestion(_o({ yearNegi: { white: true, blue: false } })), koyomiYearQuestion(_o({ yearNegi: { white: false, blue: false } }))].join('|');
        var _v = koyomiTodayData(new Date(2026, 9, 21, 9, 0, 0));
        var _ts = koyomiTodaySentence(_v, _o({})), _yl = (_ts.seirekiLine.indexOf('西暦でいうと、2026年') === 0 ? '西暦2026年' : '?') + '・' + _ts.year;   // v0.62.2: 西暦は「西暦でいうと」の文で
@@ -85075,7 +85360,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 【権威】2026-10-21「皇紀2686年、10月、神無月の21日、水曜日、これを読ませたい」、2026-10-27「西暦がカッコになっているのがうざい。
      // 皇紀は皇紀の世界観で。最後に西暦でいうと、旧暦でいうと。かっこは辞めろ。読むと見ると同じに」との指示
      try {
-       var _o = function(p) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), p); };
+       var _o = function(p) { return Object.assign(_stFullOrderBase(), p); };
        var _v = koyomiTodayData(new Date(Date.UTC(2026, 9, 21, 0, 0, 0)))   /* 日本時間の9時（端末の時計に左右されない） */, _e = function(x) { return String(x); };
        var _t1 = koyomiTodaySentence(_v, _o({}));                                                  // 皇紀（青ねぎ）＋西暦（白ねぎ）
        var _t2 = koyomiTodaySentence(_v, _o({ yearNegi: { white: true, blue: false } }));          // 西暦だけ
@@ -85085,7 +85370,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(_v, _o({}), _e);
        var _visible = _h.replace(/<button[^>]*data-kz="speak"[\s\S]*?<\/button>/, '').replace(/<div data-kyureki-help[\s\S]*?<\/div>/, '');
        var _parts = koyomiKazeParts(_v, _o({}), _e);
-       (_t1.speech === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今日の月は、じゅういちにちづき、旧暦11日の月。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。そして今は、ふていじほうでいうと、たつのこく。' &&   /* v0.65.1: 刻は最後に締め */   /* v0.62.3: 旧暦の年は元号 */
+       (_t1.speech.replace(/、午[前後]\d+時(\d+分)?〜(午[前後])?\d+時(\d+分)?ごろ。$/, '。') === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今日の月は、じゅういちにちづき、旧暦11日の月。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。そして今は、ふていじほうでいうと、たつのこく。' &&   /* v0.71.6: 刻の時刻は端末の時計で出るので、どの時計でも通るよう外してくらべる */   /* v0.65.1: 刻は最後に締め */   /* v0.62.3: 旧暦の年は元号 */
         _t2.speech.indexOf('西暦2026年10月21日、水曜日。') === 0 && _t2.speech.indexOf('西暦でいうと') === -1 &&
         koyomiTodaySentenceHtml(_v, _o({ yearNegi: { white: true, blue: false } }), _e).indexOf('object') === -1 && _t2.md === '10月21日、' &&   /* v0.65.1: 名前のかぶり */
         _t3.speech.indexOf('令和8年、10月、かんなづきの21日、水曜日。') === 0 &&
@@ -85347,7 +85632,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-491: 旧暦でいうと（年の数字・干支と読み仮名・閏月）（v0.62.1〜・v0.62.2） =====
      // 【権威】2026-10-26「旧暦を知りたい、潜在的ニーズあるのでは？」、2026-10-27「ふりがなもね。何年かも書け」との指示
      try {
-       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), {});
+       var _o = Object.assign(_stFullOrderBase(), {});
        var _t = koyomiTodaySentence(koyomiTodayData(new Date(Date.UTC(2026, 9, 26, 0, 0, 0))), _o);
        var _tl = koyomiTodaySentence(koyomiTodayData(new Date(Date.UTC(2025, 6, 25, 0, 0, 0))), _o);
        var _tj = koyomiTodaySentence(koyomiTodayData(new Date(Date.UTC(2027, 0, 20, 0, 0, 0))), _o);   // 西暦は2027年でも、旧暦はまだ2026年（丙午）
@@ -85390,12 +85675,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-493: 今日を、声に出しての一文を、画像にして持ち帰る（v0.62.5〜） =====
      // 【権威】2026-10-27、「全部やれ」との指示（注文票の画像と同じ仕組み）
      try {
-       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), {});
+       var _o = Object.assign(_stFullOrderBase(), {});
        var _v = koyomiTodayData(new Date(Date.UTC(2026, 9, 27, 0, 0, 0)))   /* 日本時間の9時 */;
        var _t = koyomiTodaySentence(_v, _o);
        var _cv = drawKoyomiTodayCanvas(_v, _o);
        var _h = koyomiTodaySentenceHtml(_v, _o, function(x) { return String(x); });
-       (_cv && _cv.width === 1080 && _cv.height === 1350 && _t.lines.length === 7 && _t.lines[6] === 'そして今は、不定時法でいうと、辰（たつ）の刻。' &&
+       (_cv && _cv.width === 1080 && _cv.height === 1350 && _t.lines.length === 7 && /^そして今は、不定時法でいうと、辰（たつ）の刻、午[前後]\d+時(\d+分)?〜(午[前後])?\d+時(\d+分)?ごろ。$/.test(_t.lines[6]) &&
         _t.lines[0] === '皇紀2686年、10月、神無月（かんなづき）の27日、火曜日。' &&
         _t.lines[5] === '旧暦でいうと、令和8年、丙午（ひのえうま）の年の、9月17日。' &&
         /data-kz="sentence-image"/.test(_h) && /shareKoyomiCanvas\(drawKoyomiTodayCanvas\(v, order\)/.test(renderKazeKoyomi.toString()) &&
@@ -85411,7 +85696,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-494: 注文票の旧暦（たまご）で、旧暦の文・行事の札・月間の旧暦が決まる（v0.63.1〜） =====
      // 【権威】2026-10-27、「こよみの注文票で、制御できるようにしてある？」「たまごとめんま、どっちがいい？」との問い
      try {
-       var _o = function(k) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { kyureki: k }); };
+       var _o = function(k) { return Object.assign(_stFullOrderBase(), { kyureki: k }); };
        var _v = koyomiTodayData(new Date(2026, 8, 25, 21, 0, 0));   // 十五夜
        var _n = koyomiTodaySentence(_v, _o('none')), _b = koyomiTodaySentence(_v, _o('basic'));
        var _nk = function(c) { return !/^(天赦日|一粒万倍日|寅の日|巳の日|己巳の日)$/.test(c.title); };   // v0.68.0: 暦注の札は数えない
@@ -85431,13 +85716,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 【権威】2026-10-27、「月干支を足し、年・月・日の干支を言い分ける。干支の読みは丙午（ひのえうま）のように訓読みで」との指示
      try {
        var _e = function(y, m, d) { var e = koyomiTodayData(new Date(y, m - 1, d, 12)).eto; return [e.year.name, e.month.name, e.day.name].join('/'); };
-       var _o = function(st) { return Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { sekkiStrength: st }); };
+       var _o = function(st) { return Object.assign(_stFullOrderBase(), { sekkiStrength: st }); };
        var _v = koyomiTodayData(new Date(2026, 9, 27, 12));
        var _r = koyomiTodaySentence(_v, _o('rich')), _b = koyomiTodaySentence(_v, _o('basic'));
        var _parts = koyomiKazeParts(_v, _o('rich'), function(x) { return String(x); });
        (_e(2026, 10, 27) === '丙午/戊戌/甲戌' && _e(2026, 2, 3) === '乙巳/己丑/戊申' && _e(2026, 2, 4) === '丙午/庚寅/己酉' && _e(2024, 6, 15) === '甲辰/庚午/庚戌' &&
         _r.etoLine === '干支でいうと、年は丙午（ひのえうま）、月は戊戌（つちのえいぬ）、日は甲戌（きのえいぬ）。' &&
-        /旧暦でいうと、[^。]+。干支でいうと、年はひのえうま、月はつちのえいぬ、日はきのえいぬ。そして今は、[^。]+のこく。$/.test(_r.speech) && _r.lines[_r.lines.length - 2] === _r.etoLine &&   /* v0.63.5: 干支は旧暦のすぐ後ろ、いちばん最後 */
+        /旧暦でいうと、[^。]+。干支でいうと、年はひのえうま、月はつちのえいぬ、日はきのえいぬ。そして今は、[^。]+のこく[^。]*。$/.test(_r.speech) && _r.lines[_r.lines.length - 2] === _r.etoLine &&   /* v0.63.5: 干支は旧暦のすぐ後ろ、いちばん最後 */
         !_b.etoLine && _b.speech.indexOf('干支でいうと') === -1 &&
         _parts.top.indexOf('年 丙午（ひのえうま）・月 戊戌（つちのえいぬ）・日 甲戌（きのえいぬ）') !== -1)
          ? ok('ST-495·①: 年・月・日の干支（月は節で替わる・立春で年も替わる）を言い分け、訓読みを添える。こい味の人だけ、一文と節気の欄に')
@@ -85449,12 +85734,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-496: Xへの投稿の文（その日の言葉・強いハッシュタグ）（v0.63.7〜） =====
      // 【権威】2026-10-27、「ハッシュタグが弱い。Xへの投稿の時、デフォルトで、この文をぶちこんどいて」との指示
      try {
-       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), {});
+       var _o = Object.assign(_stFullOrderBase(), {});
        var _c = koyomiXCaption(koyomiTodayData(new Date(2026, 9, 27, 12)), _o);
        var _c15 = koyomiXCaption(koyomiTodayData(new Date(2026, 8, 25, 21)), _o);
        var _h = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 9, 27, 12)), _o, function(x) { return String(x); });
-       (_c.indexOf('今日を、声に出して読んでみてください。') === 0 && _c.indexOf('霜降の5日目、霜始降の最後の日。今日の月は立待月。') !== -1 && _c.indexOf('今日は、旧暦9月17日。') !== -1 &&
-        _c.indexOf('あなたの今日の1枚も、作ってみてください。') !== -1 && _c.indexOf('毎日この1枚が作れます') === -1 && _c.indexOf('koyomiru.com') !== -1 && /#霜降 /.test(_c) && /#今日は何の日/.test(_c) && /#こよみる$/.test(_c) &&
+       (_c.indexOf('声に出して読み上げてみるところから始めよう。') === 0 && _c.indexOf('霜降の5日目、霜始降の最後の日。今日の月は立待月。') !== -1 && _c.indexOf('今日は、旧暦9月17日。') !== -1 &&
+        _c.indexOf('あなたの今日の1枚も、作ってみよう。') !== -1 && _c.indexOf('毎日この1枚が作れます') === -1 && _c.indexOf('koyomiru.com') !== -1 && /#霜降 /.test(_c) && /#今日は何の日/.test(_c) && /#こよみる$/.test(_c) &&
         _c15.indexOf('今日は、十五夜・中秋節。') !== -1 && /#十五夜/.test(_c15) &&
         /data-kz="sentence-x"/.test(_h) && /postKoyomiTodayToX\(v, order\)/.test(renderKazeKoyomi.toString()))
          ? ok('ST-496·①: Xへの投稿の文は、その日の言葉（節気の何日目・候の最後の日・月・旧暦・行事）と、強いハッシュタグ（#霜降 #今日は何の日 など）。「𝕏 で投稿」で入る')
@@ -85486,7 +85771,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-498: 月の名前は旧暦の日・満ち欠けは瞬間・リアルタイム月齢（v0.63.9〜） =====
      // 【権威】2026-10-28、「突っ込まれないようにするには？」「リアルタイム月齢と言おう。全部進めて」との指示
      try {
-       var _o = Object.assign(JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), {});
+       var _o = Object.assign(_stFullOrderBase(), {});
        var _nm = function(d, h) { return koyomiTodaySentence(koyomiTodayData(new Date(Date.UTC(2026, 9, d, h - 9))), _o).moon.name; };   // 日本時間の d日 h時
        var _ph = function(d) { var e = getMoonPhaseEvents(2026).filter(function(x) { return x.date === '2026-10-' + String(d).padStart(2, '0'); })[0];   // 日本時間で
          return e ? (e.name === '上弦' || e.name === '下弦' ? e.name + 'の月' : e.name) + e.time : ''; };
@@ -85546,7 +85831,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _lon = 0; _userGeoLocation = { lat: 51.5, lng: -0.13 };
        try { for (var _dd = 0; _dd < 366; _dd += 5) for (var _h = 0; _h < 24; _h += 4) if (koyomiKoku(new Date(Date.UTC(2026, 0, 1 + _dd, _h, 17))).how === 'teiji') _lon++; } finally { _userGeoLocation = null; }
        (_lon === 0 && _before === '寅' && _after === '卯' && _summer === '卯' && _winter === '寅' && _k(2026, 10, 28, 12).name === '午' && _k(2026, 10, 28, 2).name === '丑' &&
-        _fb && _fb.how === 'teiji' && /たつのこく/.test(koyomiTodaySentence(koyomiTodayData(new Date(Date.UTC(2026, 9, 21, 0))), KOYOMI_ORDER_DEFAULT).speech))
+        _fb && _fb.how === 'teiji' && /たつのこく/.test(koyomiTodaySentence(koyomiTodayData(new Date(Date.UTC(2026, 9, 21, 0))), _stFullOrderBase()).speech))
          // v0.64.3: 外国（ロンドン）でも1年を通して不定時法で出る（前は311日、定時法に戻っていた）
          ? ok('ST-500·①: 十二支の刻は不定時法（明け六つで寅から卯へ。夏の朝4時は卯、冬の朝6時はまだ寅）。計算できなければ定時法に戻る。旧暦の文に「辰（たつ）の刻」')
          : ng('ST-500·①: 刻が違う', [_before, _after, _summer, _winter, _fb && _fb.name].join(' / '));
@@ -85920,7 +86205,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _cv = drawKoyomiWorldCanvas(_ms);
        var _b = koyomiBirthReport(2000, 1, 1), _bFuture = koyomiBirthReport(2099, 1, 1), _bBad = koyomiBirthReport(2026, 2, 30);
        (/朝を迎え/.test(_relay) && _anOk && /一晩じゅう薄明るい/.test(_star) && _cv.width === 1080 &&
-        _b && _b.lead === 'あなたが生まれた日は、旧暦11月25日。二十五日月（にじゅうごにちづき）の日でした。' && /日 戊午/.test(_b.eto) && _b.wareki === '平成12年' && _bFuture === null && _bBad === null &&
+        _b && _b.lead === 'あなたが生まれた日は、旧暦11月25日、二十五日月（にじゅうごにちづき）の日。' && /日 戊午/.test(_b.eto) && _b.wareki === '平成12年' && _bFuture === null && _bBad === null &&
         !!document.getElementById('dbBirthBtn') && /koyomiWorldLegendHtml\(\)/.test(openKoyomiWorldClock.toString()))
          ? ok('ST-518·①: 言葉の説明は上に1回。日の出リレー。星空の時間（夏至のレイキャビクは一晩じゅう薄明るい）。地球の裏側といちばん近い都市。世界の暦の画像。生まれた日の暦（2000/1/1は旧暦11月25日・戊午の日）')
          : ng('ST-518·①: どこかが違う', [_relay, _anOk, _star, _b && _b.lead, _bFuture, _bBad].join(' / '));
@@ -86235,6 +86520,48 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-532·①: 定番が違う', [_keys, _valid, _isOsusume, _isZenbu].join(' / '));
      } catch(e) {
        ng('ST-532: 例外', e.message);
+     }
+
+     // ===== ST-533: その日の暦（どの日でも調べる）（v0.71.7〜） =====
+     // 【権威】2026-11-03、「特定の日を検索する機能を。映画の時代設定のこの年月日をこよみるで出せるよ、という感じに」との指示
+     try {
+       var _r = koyomiBirthReport(1958, 12, 23, true), _old = koyomiBirthReport(1872, 12, 31, true), _fut = koyomiBirthReport(2100, 12, 31, true), _over = koyomiBirthReport(2101, 1, 1, true), _bFut = koyomiBirthReport(2099, 1, 1);
+       (_r && _r.lunarShort === '旧暦11月13日、十三夜月（じゅうさんやづき）の日' && /冬至/.test(_r.sekki) && /大安/.test(_r.rokuyo) && _old === null && !!_fut && _over === null && _bFut === null &&
+        KOYOMI_TIPS.some(function(t) { return t.title === 'その日の暦'; }) && typeof openKoyomiDayLookup === 'function')
+         ? ok('ST-533·①: その日の暦：1873〜2100年のどの日でも（1958/12/23 東京タワー完成＝旧暦11月13日・十三夜月・冬至・大安）。生まれた日は今日まで。日替わりの紹介にも')
+         : ng('ST-533·①: その日の暦が違う', [_r && _r.lunarShort, _old, !!_fut, _over].join(' / '));
+     } catch(e) {
+       ng('ST-533: 例外', e.message);
+     }
+
+     // ===== ST-534: タイムカプセル委員会の画面（窓口の返事を作り物にして確かめる）（v0.72.0〜） =====
+     // 【権威】2026-11-03、「タイムカプセル委員会をナビタブで独立させる。宛先は厳密に設計して」との指示
+     try {
+       var _sc = window.supabaseClient, _li = window._cloudIsLoggedIn, _calls = [];
+       var _P = '<img src=x onerror="window.__st534=1">';
+       window.supabaseClient = { rpc: function(name, args) { _calls.push(name + ':' + JSON.stringify(args || {})); var d = null;
+         if (name === 'koyomiru_capsule_status') d = [{ is_committee: false, sealed_count: 1, quota: 3, refusing: false }];
+         if (name === 'koyomiru_capsule_recipients') d = [{ user_id: 'me', name: '自分' }, { user_id: 'u2', name: _P }];
+         if (name === 'koyomiru_capsule_list_sent') d = [{ id: 'c1', recipient_name: '自分', sealed_at: '2026-11-03T00:00:00Z', open_at: '2027-11-03T00:00:00Z', canceled_at: null, delivered: false }];
+         if (name === 'koyomiru_capsule_list_received') d = [{ id: 'c9', sender_name: _P, body: _P + '1年前の自分より', sealed_at: '2025-11-03T00:00:00Z', open_at: '2026-11-03T00:00:00Z', sealed_koyomi: { date: '2025-11-03', sekki: '霜降', sekkiDay: 13, moon: '十三夜月', lunar: '9月14日' } }];
+         return Promise.resolve({ data: d, error: null }); } };
+       window._cloudIsLoggedIn = true; window.__st534 = 0;
+       var _host = document.getElementById('capsuleView');
+       _capsuleTab = 'write'; renderCapsuleView();
+       var _opts = _host.querySelectorAll('[data-cap="to"] option').length;   // 非同期の前は0
+       var _logged = /タイムカプセル委員会/.test(_host.innerHTML) && !!_host.querySelector('[data-cap-tab="received"]');
+       window._cloudIsLoggedIn = false; renderCapsuleView(); var _needLogin = /ログインが必要/.test(_host.innerHTML);
+       window._cloudIsLoggedIn = true;
+       var _kt = koyomiCapsuleKoyomiText({ date: '2025-11-03', sekki: '霜降', sekkiDay: 13, moon: '十三夜月', lunar: '9月14日' });
+       var _sk = koyomiCapsuleSealedKoyomi(new Date(2026, 10, 3, 12));
+       window.supabaseClient = _sc; window._cloudIsLoggedIn = _li; _host.innerHTML = '';
+       (_logged && _needLogin && _kt === '2025年11月3日・霜降の13日目・十三夜月・旧暦9月14日' && _sk.date === '2026-11-03' && !!_sk.sekki && window.__st534 === 0 &&
+        !!document.getElementById('navCapsule') && NAV_TAB_DEFS.some(function(t) { return t.key === 'capsule'; }) &&
+        /koyomiru_capsule_seal/.test(_capsuleRenderWrite.toString()) && /koyomiru_capsule_cancel/.test(_capsuleRenderSealed.toString()))
+         ? ok('ST-534·①: 📮 カプセルのタブと、タイムカプセル委員会の画面（書く・封をしている・届いた・委員会について）。ログインしていないと「ログインが必要」。封をした日の暦が一緒に届く。名前や手紙の仕掛けは動かない')
+         : ng('ST-534·①: タイムカプセルの画面が違う', [_logged, _needLogin, _kt, window.__st534].join(' / '));
+     } catch(e) {
+       ng('ST-534: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
