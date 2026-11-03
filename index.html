@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.72.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.72.2 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.72.0';
+    const APP_VERSION = 'v0.72.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7292,7 +7292,7 @@ function _showInviteWelcome() {
          ナビに独立して置く。埋もれても構わない。いつも同じ場所にあることが安心につながる。 -->
     <button class="nav-tab" id="navPodcast" onclick="switchView('podcast')" title="開発者の声"><span class="nav-tab-icon">📻</span><span class="nav-tab-label">開発者の声</span></button>
     <!-- v0.72.0: 【権威】2026-11-03、「タイムカプセル委員会をナビタブで、しっかりした機能として独立させる」との指示 -->
-    <button class="nav-tab" id="navCapsule" onclick="switchView('capsule')" title="タイムカプセル委員会"><span class="nav-tab-icon">📮</span><span class="nav-tab-label">カプセル</span></button>
+    <button class="nav-tab" id="navCapsule" onclick="switchView('capsule')" title="タイムカプセル委員会" style="position:relative;"><span class="nav-tab-icon" id="navCapsuleIcon">📮</span><span class="nav-tab-label">カプセル</span><span id="navCapsuleBadge" title="届いたタイムカプセルがある" style="display:none;position:absolute;top:7px;left:calc(50% + 3px);width:10px;height:10px;border-radius:50%;background:#2ecc71;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.08);"></span></button>
     <div id="navFocusBadge" style="display:none;align-items:center;position:sticky;right:0;background:#fff;padding:0 6px 0 4px;flex-shrink:0;z-index:1;">
       <span id="navFocusText" style="font-size:0.68em;color:#f59e0b;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.01em;cursor:default;" title=""></span>
     </div>
@@ -12961,6 +12961,19 @@ window.openKoyomiBirthday = openKoyomiBirthday;
 // 設計：宛先は自分か、同じ共有カレンダーにいる人だけ。封をしたら送った本人も読めない・直せない（取り消しだけできる）。受け取る人には開く日まで何も見せない。
 // 開く日は今より後〜30年後。表はサーバーが直接の読み書きを拒み、決まった窓口（関数）からだけ触る。開く日より前の中身は、どんな方法でも返さない
 var _capsuleTab = 'write';
+// v0.72.1: 【権威】2026-11-03、「届いたのアイコンをカプセルにできない？円形、2色なアイコン。青と白か、青とベージュ」との指示。
+// 絵文字には丸い2色のカプセルが無い（💊は薬に見える）ので、こよみる専用の小さな絵：上が青、下がベージュ、まん中に継ぎ目と小さな光
+function koyomiCapsuleIconSvg(size) {
+  var z = size || 18;
+  return '<svg data-capsule-icon width="' + z + '" height="' + z + '" viewBox="0 0 24 24" style="vertical-align:-0.18em;flex-shrink:0;" aria-hidden="true">' +
+    '<defs><clipPath id="capClipT"><rect x="0" y="0" width="24" height="12"/></clipPath><clipPath id="capClipB"><rect x="0" y="12" width="24" height="12"/></clipPath></defs>' +
+    '<circle cx="12" cy="12" r="10.5" fill="#3b6ea5" clip-path="url(#capClipT)"/>' +
+    '<circle cx="12" cy="12" r="10.5" fill="#f3e6cf" clip-path="url(#capClipB)"/>' +
+    '<circle cx="12" cy="12" r="10.5" fill="none" stroke="#2c4f78" stroke-width="1.4"/>' +
+    '<line x1="1.5" y1="12" x2="22.5" y2="12" stroke="#2c4f78" stroke-width="1.4"/>' +
+    '<path d="M6.5 7.2 Q8.5 4.8 11.5 4.6" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" opacity="0.75"/></svg>';
+}
+window.koyomiCapsuleIconSvg = koyomiCapsuleIconSvg;
 var KOYOMI_CAPSULE_ERRORS = {
   not_logged_in: 'ログインが必要。', bad_body: '手紙が空か、長すぎる（2000字まで）。', bad_open_at: '開く日は、明日から30年後までの日にしてほしい。',
   bad_recipient: '宛先を選んでほしい。', not_same_calendar: 'この人には送れない（同じ共有カレンダーにいる人だけ）。',
@@ -13013,7 +13026,7 @@ function renderCapsuleView() {
       '<div style="margin-top:12px;"><button type="button" onclick="openCloudLoginModal()" style="padding:9px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;font-weight:700;cursor:pointer;">ログインする</button></div></div></div>';
     return;
   }
-  var tabs = [['write', '📝 書く'], ['sealed', '🔏 封をしている'], ['received', '📜 届いた'], ['about', '🏫 委員会について']];
+  var tabs = [['write', '📝 書く'], ['sealed', '🔏 封をしている'], ['received', koyomiCapsuleIconSvg(17) + ' 届いた'], ['about', '🏫 委員会について']];
   host.innerHTML = head + '<div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;">' + tabs.map(function(t) {
       var on = _capsuleTab === t[0];
@@ -13047,18 +13060,22 @@ function _capsuleRenderWrite(body, e) {
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">開く日</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
         '<button type="button" data-cap="oneyear" style="padding:7px 12px;border-radius:999px;border:1px solid #7a3b1e;background:#fdf0e3;color:#7a3b1e;cursor:pointer;">1年後の今日</button>' +
+        ((typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? '<button type="button" data-cap="test1m" style="padding:7px 12px;border-radius:999px;border:1px dashed #2c4f78;background:#eef4fb;color:#2c4f78;cursor:pointer;" title="管理者だけ。届く流れを確かめるため">🧪 1分後（試し）</button>' : '') +
         '<input type="date" data-cap="date" min="' + getLocalDateStr(minD) + '" max="' + getLocalDateStr(maxD) + '" value="' + getLocalDateStr(next) + '" style="padding:8px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.95em;"></div>' +
       '<div style="font-size:0.74em;color:#8a7f6a;margin-top:4px;">明日から30年後まで。開く日の朝から読める。</div>' +
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">📝 手紙</div>' +
       '<textarea data-cap="body" rows="7" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
       '<div style="text-align:right;margin-top:10px;"><button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
       '<div data-cap="msg" style="margin-top:8px;font-size:0.86em;"></div></div>';
-    body.querySelector('[data-cap="oneyear"]').onclick = function() { body.querySelector('[data-cap="date"]').value = getLocalDateStr(next); };
+    body.querySelector('[data-cap="oneyear"]').onclick = function() { body.querySelector('[data-cap="date"]').value = getLocalDateStr(next); window._capsuleTest1m = false; };
+    var t1 = body.querySelector('[data-cap="test1m"]');
+    if (t1) t1.onclick = function() { window._capsuleTest1m = true; var m0 = body.querySelector('[data-cap="msg"]'); m0.style.color = '#2c4f78'; m0.textContent = '🧪 試し：封をしてから1分後に届く（管理者だけ）。'; };
     body.querySelector('[data-cap="seal"]').onclick = function() {
       var msg = body.querySelector('[data-cap="msg"]'), txt = String(body.querySelector('[data-cap="body"]').value || '').trim(), dv = body.querySelector('[data-cap="date"]').value, to = body.querySelector('[data-cap="to"]').value;
       if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
       var p = String(dv || '').split('-').map(Number); if (p.length !== 3) { msg.style.color = '#c0392b'; msg.textContent = '開く日を選んでほしい。'; return; }
       var openAt = new Date(p[0], p[1] - 1, p[2], 0, 0, 0);
+      if (window._capsuleTest1m && typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) openAt = new Date(Date.now() + 60000);   // v0.72.2: 試しは1分後
       if (openAt <= new Date()) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.bad_open_at; return; }
       var sealBtn = body.querySelector('[data-cap="seal"]');
       if (sealBtn.getAttribute('data-armed') !== '1') { msg.style.color = '#8a7f6a'; msg.textContent = '封をすると、あなたも読めなくなり、直せなくなる（取り消すことはできる）。' + _capsuleYmd(openAt.toISOString()) + 'に届ける。'; }
@@ -13078,7 +13095,7 @@ function _capsuleRenderSealed(body, e) {
     body.innerHTML = rows.map(function(r) {
       var delivered = r.delivered;
       return '<div style="' + _CAP_BOX + 'margin-bottom:10px;">' +
-        '<div style="font-weight:700;color:#5a4630;">' + (delivered ? '📜 届いた' : '🔏 封をしている') + '　宛先：' + e(r.recipient_name) + '</div>' +
+        '<div style="font-weight:700;color:#5a4630;display:flex;align-items:center;gap:6px;">' + (delivered ? koyomiCapsuleIconSvg(18) + '届いた' : '🔏 封をしている') + '　宛先：' + e(r.recipient_name) + '</div>' +
         '<div style="font-size:0.84em;color:#6b4f2a;margin-top:4px;line-height:1.7;">封をした日：' + _capsuleYmd(r.sealed_at) + '<br>開く日：' + _capsuleYmd(r.open_at) + (delivered ? '' : '（あと' + _capsuleDays(r.open_at) + '日）') + '</div>' +
         (delivered ? '' : '<div style="text-align:right;margin-top:6px;"><button type="button" data-cap-cancel="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c0392b;background:#fff;color:#c0392b;font-size:0.82em;cursor:pointer;">取り消す</button></div>') + '</div>';
     }).join('');
@@ -13094,10 +13111,11 @@ function _capsuleRenderSealed(body, e) {
 function _capsuleRenderReceived(body, e) {
   _capsuleRpc('koyomiru_capsule_list_received').then(function(rows) {
     rows = rows || [];
+    koyomiCapsuleMarkSeen(rows.map(function(r) { return r.id; }));   // v0.72.2: 開いたら、読んだ印（🟢を消す）
     if (!rows.length) { body.innerHTML = '<div style="' + _CAP_BOX + 'color:#8a7f6a;">届いた手紙は、まだない。</div>'; return; }
     body.innerHTML = rows.map(function(r) {
       return '<div style="' + _CAP_BOX + 'margin-bottom:12px;background:#fffdf7;">' +
-        '<div style="font-weight:800;color:#7a3b1e;">📜 ' + e(r.sender_name) + 'から</div>' +
+        '<div style="font-weight:800;color:#7a3b1e;display:flex;align-items:center;gap:6px;">' + koyomiCapsuleIconSvg(20) + e(r.sender_name) + 'から</div>' +
         '<div style="font-size:0.8em;color:#8a7f6a;margin-top:2px;">封をした日：' + e(koyomiCapsuleKoyomiText(r.sealed_koyomi) || _capsuleYmd(r.sealed_at)) + '</div>' +
         '<div style="margin-top:10px;white-space:pre-wrap;font-size:15px;line-height:30px;color:#3a2a1a;background-image:repeating-linear-gradient(transparent, transparent 29px, #efe3cc 29px, #efe3cc 30px);">' + e(r.body) + '</div>' +
         '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">' +
@@ -13135,6 +13153,58 @@ function _capsuleRenderAbout(body, e) {
   cb.onchange = function() { _capsuleRpc('koyomiru_capsule_set_refuse', { p_refuse: cb.checked }).then(function() { if (typeof showToast === 'function') showToast(cb.checked ? '人からのタイムカプセルを受け取らない' : '人からのタイムカプセルを受け取る', { type: 'info' }); }).catch(function(err) { cb.checked = !cb.checked; if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); }); };
 }
 // ===== END v0.72.0 =====
+// ===== v0.72.2: タイムカプセルが届いたことに気づける仕掛け =====
+// 【権威】2026-11-03、「ナビタブのアイコンもカプセルに」「本当に届く？」「実地テストが出来ないから、今日から今日へも送りたい」
+// 「風だよりで出るの？ナビタブに🟢とか、届いていることに気付ける仕掛けが欲しい」との指示。
+// 届いたかは、サーバーの「届いた手紙」（開く日を過ぎたもの）から見る。読んだ印（この端末で開いた手紙の番号）を覚え、まだ読んでいないものがあれば知らせる
+function _koyomiCapsuleSeen() { try { return JSON.parse(localStorage.getItem('koyomiCapsuleSeenIds') || '[]') || []; } catch (e) { return []; } }
+function koyomiCapsuleMarkSeen(ids) {
+  try { var s = _koyomiCapsuleSeen(); (ids || []).forEach(function(id) { if (s.indexOf(id) === -1) s.push(id); }); if (s.length > 1000) s = s.slice(-1000); localStorage.setItem('koyomiCapsuleSeenIds', JSON.stringify(s)); } catch (e) {}
+  window._capsuleUnseen = []; koyomiCapsuleSetBadge(0);
+}
+window.koyomiCapsuleMarkSeen = koyomiCapsuleMarkSeen;
+function koyomiCapsuleSetBadge(n) { var b = document.getElementById('navCapsuleBadge'); if (b) b.style.display = n > 0 ? 'block' : 'none'; }
+var _capsuleCheckAt = 0;
+// 届いたかを見に行く（ログインしているときだけ。間を空けて）。まだ読んでいない手紙の一覧を返す
+function koyomiCapsuleCheckArrivals(force) {
+  if (!window._cloudIsLoggedIn || !window.supabaseClient || window._isTesting) return Promise.resolve([]);
+  if (!force && Date.now() - _capsuleCheckAt < 60000) return Promise.resolve(window._capsuleUnseen || []);
+  _capsuleCheckAt = Date.now();
+  return _capsuleRpc('koyomiru_capsule_list_received').then(function(rows) {
+    var seen = _koyomiCapsuleSeen(), unseen = (rows || []).filter(function(r) { return seen.indexOf(r.id) === -1; });
+    window._capsuleUnseen = unseen; koyomiCapsuleSetBadge(unseen.length);
+    return unseen;
+  }).catch(function() { return []; });
+}
+window.koyomiCapsuleCheckArrivals = koyomiCapsuleCheckArrivals;
+// 季節の風だよりの札（締めの一言・紹介・儀式より上）
+function koyomiRenderCapsuleNotice(host) {
+  try {
+    if (!host || !window._cloudIsLoggedIn) return;
+    koyomiCapsuleCheckArrivals(false).then(function(unseen) {
+      host.querySelectorAll('[data-capsule-notice]').forEach(function(x) { x.remove(); });
+      if (!unseen || !unseen.length) return;
+      var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+      var who = unseen.map(function(r) { return r.sender_name; }).filter(function(v, i, a) { return a.indexOf(v) === i; }).slice(0, 3).join('・');
+      var html = '<div data-capsule-notice style="margin:12px 0 0;padding:12px 14px;border-radius:14px;background:#eef4fb;border:1px solid #b8cde6;text-align:left;color:#2c4f78;">' +
+        '<div style="font-weight:800;display:flex;align-items:center;gap:6px;">' + koyomiCapsuleIconSvg(20) + 'タイムカプセルが届いた（' + unseen.length + '通）</div>' +
+        '<div style="font-size:0.84em;margin-top:4px;">' + e(who) + 'から。封をした日の暦と一緒に。</div>' +
+        '<div style="margin-top:8px;"><button type="button" data-capsule-open style="padding:6px 14px;border-radius:999px;border:1px solid #2c4f78;background:#fff;color:#2c4f78;font-weight:700;cursor:pointer;">開く</button></div></div>';
+      var anchor = host.querySelector('[data-ritual]') || host.querySelector('[data-tip]') || host.querySelector('[data-kaze-closing]');
+      if (anchor) anchor.insertAdjacentHTML('beforebegin', html); else host.insertAdjacentHTML('beforeend', html);
+      var b = host.querySelector('[data-capsule-open]');
+      if (b) b.onclick = function() { var ov = document.getElementById('kazedayoriModal'); if (ov) ov.style.display = 'none'; _capsuleTab = 'received'; switchView('capsule'); };
+    });
+  } catch (e) {}
+}
+window.koyomiRenderCapsuleNotice = koyomiRenderCapsuleNotice;
+// 起動して少し後・10分ごとに見に行く。ナビのタブの絵をカプセルに
+setTimeout(function() {
+  try { var ic = document.getElementById('navCapsuleIcon'); if (ic) ic.innerHTML = koyomiCapsuleIconSvg(22); } catch (e) {}
+  try { koyomiCapsuleCheckArrivals(true); } catch (e) {}
+  setInterval(function() { try { koyomiCapsuleCheckArrivals(true); } catch (e) {} }, 600000);
+}, 8000);
+// ===== END v0.72.2 =====
 // ===== v0.71.7: その日の暦（どの日でも調べる） =====
 // 【権威】2026-11-03、「特定の日を検索する機能を。映画は時代設定が様々だから、この映画のこの年月日をこよみるで出せるよ、という感じに」との指示。
 // 名前と日付を入れれば、どの日でも暦が出る。範囲は今の暦になった1873年（明治6年）から2100年まで（それより前は暦の作り方が違うため）。調べた日付は残さない
@@ -25431,6 +25501,8 @@ function renderKazeKoyomi(col, opts) {
   botEl.innerHTML = parts.bottom;
   // v0.69.2: 「今日は、こんなこともできます」（日替わりの使い方の紹介）
   try { koyomiRenderTip(botEl, (typeof esc === 'function') ? esc : function(x) { return String(x); }); } catch (eTip) {}
+  // v0.72.2: 届いたタイムカプセルの札（いちばん上の知らせ）
+  try { koyomiRenderCapsuleNotice(botEl); } catch (eCap) {}
   // v0.70.0: 儀式（きくらげ）。紹介より上・締めの一言より上
   try { koyomiRenderRituals(botEl, (typeof esc === 'function') ? esc : function(x) { return String(x); }, new Date()); } catch (eRt) {}
   var _moonAsked = _qaOn && questions.indexOf(KOYOMI_Q.moon) !== -1;
@@ -58094,6 +58166,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.72.2', date: '2026-11-03',
+    items: [
+      { icon:'🟢', t:'タイムカプセルが届いたら、気づけるようにしました',
+        before:'届いた手紙は、自分でタイムカプセル委員会を開かないと気づけませんでした',
+        after:'届いた手紙があると、ナビの「カプセル」に🟢が付き、季節の風だよりに「タイムカプセルが届いた」の札が出ます。開くと🟢は消えます。ナビの絵も、青とベージュのカプセルにしました' }
+    ]
+  },
+  {
+    ver: 'v0.72.1', date: '2026-11-03',
+    items: [
+      { icon:'🔵', t:'タイムカプセルの「届いた」を、カプセルの絵にしました',
+        before:'届いた手紙は、巻き手紙の絵（📜）でした',
+        after:'上が青・下がベージュの、丸いカプセルの絵にしました' }
+    ]
+  },
+  {
     ver: 'v0.72.0', date: '2026-11-03',
     items: [
       { icon:'📮', t:'「タイムカプセル委員会」を始めました',
@@ -86556,12 +86644,35 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _sk = koyomiCapsuleSealedKoyomi(new Date(2026, 10, 3, 12));
        window.supabaseClient = _sc; window._cloudIsLoggedIn = _li; _host.innerHTML = '';
        (_logged && _needLogin && _kt === '2025年11月3日・霜降の13日目・十三夜月・旧暦9月14日' && _sk.date === '2026-11-03' && !!_sk.sekki && window.__st534 === 0 &&
-        !!document.getElementById('navCapsule') && NAV_TAB_DEFS.some(function(t) { return t.key === 'capsule'; }) &&
+        !!document.getElementById('navCapsule') && NAV_TAB_DEFS.some(function(t) { return t.key === 'capsule'; }) && /data-capsule-icon/.test(koyomiCapsuleIconSvg()) &&
         /koyomiru_capsule_seal/.test(_capsuleRenderWrite.toString()) && /koyomiru_capsule_cancel/.test(_capsuleRenderSealed.toString()))
-         ? ok('ST-534·①: 📮 カプセルのタブと、タイムカプセル委員会の画面（書く・封をしている・届いた・委員会について）。ログインしていないと「ログインが必要」。封をした日の暦が一緒に届く。名前や手紙の仕掛けは動かない')
+         ? ok('ST-534·①: 📮 カプセルのタブと、タイムカプセル委員会の画面（書く・封をしている・届いた〈丸い2色のカプセルの絵〉・委員会について）。ログインしていないと「ログインが必要」。封をした日の暦が一緒に届く。名前や手紙の仕掛けは動かない')
          : ng('ST-534·①: タイムカプセルの画面が違う', [_logged, _needLogin, _kt, window.__st534].join(' / '));
      } catch(e) {
        ng('ST-534: 例外', e.message);
+     }
+
+     // ===== ST-535: タイムカプセルが届いたことに気づける仕掛け（🟢・季節の風だよりの札・試しの1分後）（v0.72.2〜） =====
+     // 【権威】2026-11-03、「本当に届く？」「今日から今日へも送りたい」「風だよりで出るの？ナビタブに🟢とか」との指示
+     // 作り物のサーバーは、呼び出す一瞬だけ置いて、すぐ元に戻す（ほかのテストと干渉しないように）
+     try {
+       var _sc = window.supabaseClient, _li = window._cloudIsLoggedIn, _tst = window._isTesting, _seenSnap = localStorage.getItem('koyomiCapsuleSeenIds');
+       var _mock = Object.assign(Object.create(_sc || {}), { rpc: function(name) { return Promise.resolve({ data: name === 'koyomiru_capsule_list_received' ? [{ id: 'a1', sender_name: '自分', body: 'x', sealed_at: '2026-11-03T00:00:00Z', open_at: '2026-11-03T01:00:00Z', sealed_koyomi: null }] : [], error: null }); } });
+       window.supabaseClient = _mock; window._cloudIsLoggedIn = true; window._isTesting = false; localStorage.removeItem('koyomiCapsuleSeenIds');
+       var _p = koyomiCapsuleCheckArrivals(true);   // ここで一度だけ呼ぶ（中で、すぐ作り物に問い合わせる）
+       window.supabaseClient = _sc; window._cloudIsLoggedIn = _li; window._isTesting = _tst;   // すぐ戻す
+       _p.then(function(u) {
+         window.__st535 = { n: u.length, badge: document.getElementById('navCapsuleBadge').style.display };
+         koyomiCapsuleMarkSeen(['a1']); window.__st535.after = document.getElementById('navCapsuleBadge').style.display;
+         if (_seenSnap === null) localStorage.removeItem('koyomiCapsuleSeenIds'); else localStorage.setItem('koyomiCapsuleSeenIds', _seenSnap);
+         koyomiCapsuleSetBadge(0);
+       });
+       var _syncOk = /koyomiRenderCapsuleNotice\(botEl\)/.test(renderKazeKoyomi.toString()) && !!document.getElementById('navCapsuleBadge') && /data-cap="test1m"/.test(_capsuleRenderWrite.toString()) && /isKoyomiruAdminMode\(\)\) openAt = new Date\(Date\.now\(\) \+ 60000\)/.test(_capsuleRenderWrite.toString()) && /koyomiCapsuleMarkSeen\(rows\.map/.test(_capsuleRenderReceived.toString());
+       (_syncOk)
+         ? ok('ST-535·①: 届いた知らせ：季節の風だよりの札・ナビのタブの🟢（読んでいない手紙があるとき）。届いたを開くと消える。管理者は「🧪 1分後（試し）」で今日から今日へ送れる')
+         : ng('ST-535·①: 届いた知らせが違う', String(_syncOk));
+     } catch(e) {
+       ng('ST-535: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
