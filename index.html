@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.73.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.73.3 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.73.2';
+    const APP_VERSION = 'v0.73.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13055,12 +13055,37 @@ function renderCapsuleView() {
 }
 window.renderCapsuleView = renderCapsuleView;
 var _CAP_BOX = 'padding:14px;border-radius:14px;background:#fff;border:1px solid #e6d8bd;';
+// ===== v0.73.3: 一晩置いてから封をする（下書き） =====
+// 【権威】2026-11-04、恋文の議論で「取り消せない決まりは重い。勢いで出して後悔しないよう、一晩置いてから封をする」を採用（「はい」）。
+// 下書きはこの端末の中にだけ置く（迷っている手紙は、サーバーに預けない）。置いた手紙は、翌朝5時まで封ができない。読み返す・直す・捨てるはいつでも
+function _capsuleDrafts() { try { var a = JSON.parse(localStorage.getItem('koyomiCapsuleDrafts') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function _capsuleDraftsSave(a) { try { localStorage.setItem('koyomiCapsuleDrafts', JSON.stringify(a.slice(-50))); } catch (e) {} }
+// 置いた時刻の翌朝5時（夜中の0〜5時に置いたら、その日の朝5時ではなく、翌日の朝5時）
+function koyomiCapsuleDraftReadyAt(savedIso) {
+  var d = new Date(savedIso); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 5, 0, 0).getTime();
+}
+window.koyomiCapsuleDraftReadyAt = koyomiCapsuleDraftReadyAt;
+function koyomiCapsuleDraftsReady() { var n = Date.now(); return _capsuleDrafts().filter(function(d) { return koyomiCapsuleDraftReadyAt(d.savedAt) <= n; }); }
+window.koyomiCapsuleDraftsReady = koyomiCapsuleDraftsReady;
+var _capsuleLoadDraftId = null;
+// ===== END v0.73.3 =====
 function _capsuleRenderWrite(body, e) {
   _capsuleRpc('koyomiru_capsule_recipients').then(function(list) {
     list = list || [];
     var today = new Date(), next = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
     var minD = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1), maxD = new Date(today.getFullYear() + 30, today.getMonth(), today.getDate());
-    body.innerHTML = '<div style="' + _CAP_BOX + '">' +
+    // v0.73.3: 一晩置いた手紙の一覧
+    var drafts = _capsuleDrafts(), nowMs = Date.now();
+    var draftHtml = drafts.length ? '<div style="' + _CAP_BOX + 'margin-bottom:12px;background:#f4f1fa;border-color:#d7cfe8;">' +
+      '<div style="font-weight:700;color:#4a3f6b;margin-bottom:6px;">🌙 一晩置いた手紙</div>' +
+      drafts.map(function(d) {
+        var ready = koyomiCapsuleDraftReadyAt(d.savedAt), left = ready - nowMs, hrs = Math.ceil(left / 3600000);
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed #d7cfe8;font-size:0.86em;color:#4a3f6b;">' +
+          '<div>宛先：' + e(d.toName || '') + '<br><span style="font-size:0.9em;color:#7a7094;">置いた日時：' + _capsuleYmd(d.savedAt) + ' ' + String(new Date(d.savedAt).getHours()).padStart(2, '0') + ':' + String(new Date(d.savedAt).getMinutes()).padStart(2, '0') + '　' + (left > 0 ? 'あと約' + hrs + '時間で封ができる' : '封ができる') + '</span></div>' +
+          '<div style="display:flex;gap:6px;flex-shrink:0;"><button type="button" data-cap-draft-load="' + e(d.id) + '" style="padding:4px 10px;border-radius:999px;border:1px solid #4a3f6b;background:#fff;color:#4a3f6b;font-size:0.9em;cursor:pointer;">読み返す</button>' +
+          '<button type="button" data-cap-draft-del="' + e(d.id) + '" style="padding:4px 10px;border-radius:999px;border:1px solid #c9bfdc;background:#fff;color:#7a7094;font-size:0.9em;cursor:pointer;">捨てる</button></div></div>';
+      }).join('') + '</div>' : '';
+    body.innerHTML = draftHtml + '<div style="' + _CAP_BOX + '">' +
       '<div style="font-weight:700;color:#5a4630;margin-bottom:6px;">宛先</div>' +
       '<select data-cap="to" style="width:100%;padding:9px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.95em;background:#fff;">' +
         list.map(function(p) { return '<option value="' + e(p.user_id) + '">' + e(p.name) + '</option>'; }).join('') + '</select>' +
@@ -13081,9 +13106,43 @@ function _capsuleRenderWrite(body, e) {
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">📝 手紙</div>' +
       '<textarea data-cap="body" rows="7" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
       '<div style="font-size:0.74em;color:#8a7f6a;margin-top:10px;line-height:1.6;">封をしたら、取り消せない。30年後まで選べるが、届けられるのは、こよみるが続いている限り。もしこよみるを終えるときは、前もって知らせ、封をした手紙を開けられるようにする。</div>' +
-      '<div style="text-align:right;margin-top:10px;"><button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap;"><button type="button" data-cap="draft" style="padding:10px 14px;border-radius:12px;border:1px solid #4a3f6b;background:#f4f1fa;color:#4a3f6b;font-weight:700;cursor:pointer;" title="この端末に置いておき、翌朝5時から封ができる">🌙 一晩置く</button>' +
+      '<button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
       '<div data-cap="msg" style="margin-top:8px;font-size:0.86em;"></div></div>';
     var _dIn = body.querySelector('[data-cap="date"]'), _tIn = body.querySelector('[data-cap="time"]'), _when = body.querySelector('[data-cap="when"]');
+    // v0.73.3: 一晩置く
+    var _toSel = body.querySelector('[data-cap="to"]'), _bodyIn = body.querySelector('[data-cap="body"]'), _msg0 = body.querySelector('[data-cap="msg"]');
+    body.querySelector('[data-cap="draft"]').onclick = function() {
+      var t0 = String(_bodyIn.value || '').trim(); if (!t0) { _msg0.style.color = '#c0392b'; _msg0.textContent = '手紙が空。'; return; }
+      var a = _capsuleDrafts().filter(function(x) { return x.id !== _capsuleLoadDraftId; });
+      var opt = _toSel.options[_toSel.selectedIndex];
+      a.push({ id: _capsuleLoadDraftId || ('d' + Date.now().toString(36)), to: _toSel.value, toName: opt ? opt.textContent : '', date: _dIn.value, time: _tIn.value, body: t0.slice(0, 2000), savedAt: (function() { var old = _capsuleDrafts().filter(function(x) { return x.id === _capsuleLoadDraftId; })[0]; return old ? old.savedAt : new Date().toISOString(); })() });
+      _capsuleDraftsSave(a); _capsuleLoadDraftId = null;
+      if (typeof showToast === 'function') showToast('🌙 一晩置いた。明日の朝5時から封ができる（この端末の中にだけ置いている）', { type: 'info' });
+      renderCapsuleView();
+    };
+    body.querySelectorAll('[data-cap-draft-load]').forEach(function(b) {
+      b.onclick = function() {
+        var d = _capsuleDrafts().filter(function(x) { return x.id === b.getAttribute('data-cap-draft-load'); })[0]; if (!d) return;
+        _capsuleLoadDraftId = d.id;
+        for (var oi = 0; oi < _toSel.options.length; oi++) if (_toSel.options[oi].value === d.to) _toSel.selectedIndex = oi;
+        _dIn.value = d.date || _dIn.value; _tIn.value = d.time || _tIn.value; _bodyIn.value = d.body || ''; _showWhen0();
+        var ready = koyomiCapsuleDraftReadyAt(d.savedAt);
+        _msg0.style.color = '#4a3f6b';
+        _msg0.textContent = ready > Date.now() ? '🌙 一晩置いている手紙。直すことはできるが、封ができるのは ' + _capsuleYmd(new Date(ready).toISOString()) + ' 5:00 から。' : '🌙 一晩置いた手紙。読み返して、よければ封をしよう。';
+        _bodyIn.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      };
+    });
+    body.querySelectorAll('[data-cap-draft-del]').forEach(function(b) {
+      b.onclick = function() {
+        _capsuleTwoClick(b, '本当に捨てる？', function() {
+          _capsuleDraftsSave(_capsuleDrafts().filter(function(x) { return x.id !== b.getAttribute('data-cap-draft-del'); }));
+          if (_capsuleLoadDraftId === b.getAttribute('data-cap-draft-del')) _capsuleLoadDraftId = null;
+          renderCapsuleView();
+        });
+      };
+    });
+    var _showWhen0 = function() { try { _showWhen(); } catch (eSw) {} };
     var _pad = function(n) { return String(n).padStart(2, '0'); };
     var _openAtOf = function() { var p = String(_dIn.value || '').split('-').map(Number), q = String(_tIn.value || '').split(':').map(Number); if (p.length !== 3) return null; return new Date(p[0], p[1] - 1, p[2], q[0] || 0, q[1] || 0, 0); };
     var _showWhen = function() {
@@ -13109,6 +13168,7 @@ function _capsuleRenderWrite(body, e) {
       var msg = body.querySelector('[data-cap="msg"]'), txt = String(body.querySelector('[data-cap="body"]').value || '').trim(), dv = body.querySelector('[data-cap="date"]').value, to = body.querySelector('[data-cap="to"]').value;
       if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
       var openAt = _openAtOf(); if (!openAt) { msg.style.color = '#c0392b'; msg.textContent = '開く日と時刻を選んでほしい。'; return; }
+      if (_capsuleLoadDraftId) { var _dd = _capsuleDrafts().filter(function(x) { return x.id === _capsuleLoadDraftId; })[0]; if (_dd && koyomiCapsuleDraftReadyAt(_dd.savedAt) > Date.now()) { msg.style.color = '#4a3f6b'; msg.textContent = '🌙 一晩置いている手紙。封ができるのは ' + _capsuleYmd(new Date(koyomiCapsuleDraftReadyAt(_dd.savedAt)).toISOString()) + ' 5:00 から。'; return; } }
       if (openAt <= new Date(Date.now() + 5000)) { msg.style.color = '#c0392b'; msg.textContent = '届く日時が、もう過ぎている。「1分後」を押すか、少し先の時刻を選んでほしい。'; _showWhen(); return; }   // v0.73.1: 今より先なら封をできる
       if (openAt > new Date(new Date().getFullYear() + 30, new Date().getMonth(), new Date().getDate() + 1)) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.bad_open_at; return; }
       var sealBtn = body.querySelector('[data-cap="seal"]');
@@ -13116,7 +13176,7 @@ function _capsuleRenderWrite(body, e) {
       _capsuleTwoClick(sealBtn, '🔏 本当に封をする？', function() {
       msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…';
       _capsuleRpc('koyomiru_capsule_seal', { p_recipient: to, p_body: txt, p_open_at: openAt.toISOString(), p_sealed_koyomi: koyomiCapsuleSealedKoyomi(new Date()) })
-        .then(function() { if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く', { type: 'success' }); _capsuleTab = 'sealed'; renderCapsuleView(); })
+        .then(function() { if (_capsuleLoadDraftId) { _capsuleDraftsSave(_capsuleDrafts().filter(function(x) { return x.id !== _capsuleLoadDraftId; })); _capsuleLoadDraftId = null; } if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く', { type: 'success' }); _capsuleTab = 'sealed'; renderCapsuleView(); })
         .catch(function(err) { msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
       });
     };
@@ -13292,6 +13352,19 @@ window.koyomiCapsuleCheckArrivals = koyomiCapsuleCheckArrivals;
 function koyomiRenderCapsuleNotice(host) {
   try {
     if (!host || !window._cloudIsLoggedIn) return;
+    // v0.73.3: 一晩置いた手紙が、封をできる朝になったら知らせる
+    try {
+      host.querySelectorAll('[data-capsule-draft-notice]').forEach(function(x) { x.remove(); });
+      var rd = koyomiCapsuleDraftsReady();
+      if (rd.length) {
+        var dh = '<div data-capsule-draft-notice style="margin:12px 0 0;padding:12px 14px;border-radius:14px;background:#f4f1fa;border:1px solid #d7cfe8;text-align:left;color:#4a3f6b;">' +
+          '<div style="font-weight:800;">🌙 一晩置いた手紙が' + rd.length + '通</div><div style="font-size:0.84em;margin-top:4px;">読み返して、封をするか決めよう。</div>' +
+          '<div style="margin-top:8px;"><button type="button" data-capsule-draft-open style="padding:6px 14px;border-radius:999px;border:1px solid #4a3f6b;background:#fff;color:#4a3f6b;font-weight:700;cursor:pointer;">読み返す</button></div></div>';
+        var anc = host.querySelector('[data-ritual]') || host.querySelector('[data-tip]') || host.querySelector('[data-kaze-closing]');
+        if (anc) anc.insertAdjacentHTML('beforebegin', dh); else host.insertAdjacentHTML('beforeend', dh);
+        var ob = host.querySelector('[data-capsule-draft-open]'); if (ob) ob.onclick = function() { var ov = document.getElementById('kazedayoriModal'); if (ov) ov.style.display = 'none'; _capsuleTab = 'write'; switchView('capsule'); };
+      }
+    } catch (eDn) {}
     koyomiCapsuleCheckArrivals(false).then(function(unseen) {
       host.querySelectorAll('[data-capsule-notice]').forEach(function(x) { x.remove(); });
       if (!unseen || !unseen.length) return;
@@ -58321,6 +58394,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.73.3', date: '2026-11-04',
+    items: [
+      { icon:'🌙', t:'タイムカプセルを「一晩置いてから封をする」ことができるようにしました',
+        before:'書いたらすぐ封をするしかなく、封をしたら取り消せませんでした',
+        after:'「書く」の「🌙 一晩置く」で、手紙をこの端末に置いておけます。翌朝5時から封ができ、朝になったら季節の風だよりで知らせます。読み返す・直す・捨てるは、いつでもできます' }
+    ]
+  },
+  {
     ver: 'v0.73.2', date: '2026-11-04',
     items: [
       { icon:'💌', t:'タイムカプセルを、カプセルごと開けるようにしました',
@@ -87047,6 +87128,19 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-544·①: 開ける演出が違う', [_line, _line2].join(' / '));
      } catch(e) {
        ng('ST-544: 例外', e.message);
+     }
+
+     // ===== ST-545: 一晩置いてから封をする（下書きはこの端末だけ・翌朝5時まで封ができない・朝に知らせる）（v0.73.3〜） =====
+     // 【権威】2026-11-04、恋文の議論で「一晩置いてから封をする」を採用
+     try {
+       var _r1 = new Date(koyomiCapsuleDraftReadyAt(new Date(2026, 10, 4, 22, 30).toISOString())), _r2 = new Date(koyomiCapsuleDraftReadyAt(new Date(2026, 10, 5, 2, 0).toISOString()));
+       var _wv = _capsuleRenderWrite.toString();
+       (_r1.getDate() === 5 && _r1.getHours() === 5 && _r2.getDate() === 6 && _r2.getHours() === 5 && /data-cap="draft"/.test(_wv) && /一晩置いている手紙。封ができるのは/.test(_wv) &&
+        /koyomiCapsuleDrafts/.test(_stAllSrc()) && /data-capsule-draft-notice/.test(koyomiRenderCapsuleNotice.toString()) && !/koyomiCapsuleDrafts[\s\S]{0,80}supabase/.test(_wv))
+         ? ok('ST-545·①: 一晩置く：下書きはこの端末だけ。夜に置いたら翌朝5時、夜中の2時に置いても翌日の朝5時から封ができる。読み返す・捨てるはいつでも。朝になったら季節の風だよりで知らせる')
+         : ng('ST-545·①: 一晩置くが違う', [_r1.toString(), _r2.toString()].join(' / '));
+     } catch(e) {
+       ng('ST-545: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
