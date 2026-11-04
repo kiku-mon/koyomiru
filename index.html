@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.72.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.72.6 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.72.5';
+    const APP_VERSION = 'v0.72.6';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -22543,6 +22543,16 @@ function myDeckApply(idx) {
         };
         var _md = _calcMeeusIllum(age);
         var _il = _md.il, _isWax = _md.isWax;
+        // v0.72.6: 【権威】2026-11-04、「月を実測したら、ダッシュボードの月の方が少し太い。中の真ん中の肉がつきすぎ」との報告。
+        // ①光っている割合：上の式は、月の動きのむらの補正に使う近点角を「新月で0、月齢に比例」と置いていて、日によって最大13ポイント外れた。
+        //   今この瞬間の月なら、正確な月と太陽の黄経の差（ミーウスの方法の主な項・Astronomy Engine と0.0035度で一致）から出す（外れは最大0.2ポイント）
+        try {
+          var _ageNow = calcMoonAgeNAOJ(new Date());
+          if (typeof koyomiMoonSunElongation === 'function' && Math.abs(_ageNow - age) < 0.05) {
+            var _psi = koyomiMoonSunElongation(Date.now());
+            _il = (1 - Math.cos(_psi * Math.PI / 180)) / 2; _isWax = _psi < 180;
+          }
+        } catch (eIl) {}
         _ctx.save();
         // 月の中心を軸に、明るい側の向きぶんだけ回す。
         // ここから _ctx.restore() までが月の形。星・暈・縁光はこの外なので回らない。
@@ -22557,6 +22567,34 @@ function myDeckApply(idx) {
           _ctx.rotate(-_tilt * Math.PI / 180);   // 画面のy軸は下向きなので符号を反転
           _ctx.translate(-_cx, -_cy);
         }
+        // ②光の塗り方：境目まで同じ明るさで塗ると、本物より太く見える（本物の三日月は、境目に近いほど光が斜めになって暗い）。
+        //   月の面の明るさの式（ロンメル・ゼーリガー：明るさ ∝ 光の当たる角の余弦 ÷（それ＋見る角の余弦））で、点ごとに塗る
+        var _shaded = false;
+        try {
+          if (_il > 0.01 && _il < 0.99 && typeof _ctx.getImageData === 'function') {
+            var _ci = 2 * _il - 1, _si = Math.sqrt(Math.max(0, 1 - _ci * _ci));            // 位相角 i の余弦・正弦
+            var _a = _tilt ? (-_tilt * Math.PI / 180) : (_isWax ? 0 : Math.PI);              // 画面上で光っている側の向き（下向きが正のy）
+            var _sx = _si * Math.cos(_a), _sy = _si * Math.sin(_a), _sz = _ci;               // 太陽の向き（xは右・yは下・zは手前）
+            var _img = _ctx.getImageData(_cx - _R, _cy - _R, _R * 2, _R * 2), _px = _img.data;
+            for (var _yy = 0; _yy < _R * 2; _yy++) for (var _xx = 0; _xx < _R * 2; _xx++) {
+              var _nx = (_xx + 0.5 - _R) / _R, _ny = (_yy + 0.5 - _R) / _R, _r2 = _nx * _nx + _ny * _ny;
+              var _cov = Math.max(0, Math.min(1, (1 - Math.sqrt(_r2)) * _R + 0.5));   // 縁はなめらかに（はみ出した分だけ背景と混ぜる）
+              if (_cov <= 0) continue;
+              var _nz = Math.sqrt(Math.max(0, 1 - Math.min(1, _r2))), _mu0 = _nx * _sx + _ny * _sy + _nz * _sz;
+              var _k = (_yy * _R * 2 + _xx) * 4, _o0 = _px[_k], _o1 = _px[_k + 1], _o2 = _px[_k + 2];
+              if (_mu0 <= 0) { _px[_k] = Math.round(_o0 + (4 - _o0) * _cov); _px[_k + 1] = Math.round(_o1 + (4 - _o1) * _cov); _px[_k + 2] = Math.round(_o2 + (14 - _o2) * _cov); _px[_k + 3] = 255; continue; }
+              var _b = Math.min(1, (_mu0 / (_mu0 + _nz)) * 2.05);                              // 0〜1（縁はほどよく明るく、境目に向かって暗く）
+              var _g = 0.5 + 0.5 * (1 - Math.min(1, Math.sqrt((_nx + 0.25) * (_nx + 0.25) + (_ny + 0.25) * (_ny + 0.25)))); // 左上が少し明るい（今までの色の流れ）
+              var _cr = 184 + (255 - 184) * _g, _cg = 134 + (240 - 134) * _g, _cb = 11 + (190 - 11) * _g * 0.8;
+              var _f0 = 4 + (_cr - 4) * _b, _f1 = 4 + (_cg - 4) * _b, _f2 = 14 + (_cb - 14) * _b;
+              _px[_k] = Math.round(_o0 + (_f0 - _o0) * _cov); _px[_k + 1] = Math.round(_o1 + (_f1 - _o1) * _cov); _px[_k + 2] = Math.round(_o2 + (_f2 - _o2) * _cov); _px[_k + 3] = 255;
+            }
+            _ctx.restore(); _ctx.save();   // 回転は使わない（向きは太陽の向きに入れた）
+            _ctx.putImageData(_img, _cx - _R, _cy - _R);
+            _shaded = true;
+          }
+        } catch (eSh) { _shaded = false; }
+        if (_shaded) { _ctx.restore(); throw { __koyomiShaded: true }; }
         _ctx.beginPath(); _ctx.arc(_cx,_cy,_R,0,Math.PI*2); _ctx.clip();
         var _mg=_ctx.createRadialGradient(_cx-_R*.25,_cy-_R*.25,_R*.05,_cx,_cy,_R);
         _mg.addColorStop(0,'rgba(255,251,230,.95)'); _mg.addColorStop(.5,'rgba(244,216,120,.9)'); _mg.addColorStop(1,'rgba(184,134,11,.85)');
@@ -58194,6 +58232,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.72.6', date: '2026-11-04',
+    items: [
+      { icon:'🌙', t:'月の絵を、本物の見え方に近づけました',
+        before:'月の絵は、本物より少し太って見えることがありました',
+        after:'光っている所を、縁は明るく、欠けの境目に向かって暗くなるように塗りました（本物の三日月は、境目に近いほど光が斜めに当たって暗いため）。光っている割合の計算も、正確な月と太陽の位置から出すようにしました' }
+    ]
+  },
+  {
     ver: 'v0.72.5', date: '2026-11-03',
     items: [
       { icon:'⏰', t:'タイムカプセルを、何時何分まで指定して届けられるようにしました',
@@ -86771,6 +86817,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-538·①: タイムカプセルの直しが違う', [_chips].join(' / '));
      } catch(e) {
        ng('ST-538: 例外', e.message);
+     }
+
+     // ===== ST-539: 月の絵：光っている割合は正確な計算・境目に向かって暗く塗る（v0.72.6〜） =====
+     // 【権威】2026-11-04、「月を実測したら、ダッシュボードの月の方が少し太い。中の真ん中の肉がつきすぎ」との報告
+     try {
+       var _src = _drawMoonCanvas.toString();
+       var _c = document.createElement('canvas'); _c.id = '_st539c'; document.body.appendChild(_c);
+       window._drawMoonCanvas('_st539c', 9.5, 0);   // 右が光る上弦前の月（傾きなし）
+       var _cx = _c.getContext('2d');
+       var _right = _cx.getImageData(80 + 50, 80, 1, 1).data, _left = _cx.getImageData(80 - 50, 80, 1, 1).data, _mid = _cx.getImageData(80 + 8, 80, 1, 1).data;
+       _c.remove();
+       var _lum = function(d) { return d[0] + d[1] + d[2]; };
+       (/koyomiMoonSunElongation\(Date\.now\(\)\)/.test(_src) && /_mu0 \/ \(_mu0 \+ _nz\)/.test(_src) && _lum(_right) > _lum(_left) + 150 && _lum(_right) > _lum(_mid))
+         ? ok('ST-539·①: 月の絵：今の月は正確な月と太陽の離れ角から光る割合を出す（外れ最大0.2ポイント）。月の面の明るさの式で、縁は明るく境目に向かって暗く塗る（本物の三日月の細さに近い）。光る側の向きは変わらない')
+         : ng('ST-539·①: 月の絵が違う', [_lum(_right), _lum(_left), _lum(_mid)].join(' / '));
+     } catch(e) {
+       ng('ST-539: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
