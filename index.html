@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.73.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.73.2 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.73.1';
+    const APP_VERSION = 'v0.73.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13145,34 +13145,105 @@ function _capsuleRenderSealed(body, e) {
     });
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
 }
+// v0.73.2: 【権威】2026-11-04、「どこきみは、タイムカプセルに恋文を入れていた。気障っぽくなく、演出はできる？」「前提として、カプセルは開かないの？」との議論。
+// 言葉で飾らず、「開ける手ざわり」と「書いた夜の暦」で演出する。閉じたカプセル → 押すと殻が外れて封筒 → 封を切ると便箋。
+// 開封の印は、封を切ったその時に付ける。一度開けたものは、次から便箋をそのまま見せる。動きを控える設定の人には、動かさずに切り替える
+function koyomiCapsuleWrittenLine(r) {
+  try {
+    var k = r.sealed_koyomi || {}, at = new Date(r.sealed_at), now = new Date();
+    var days = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(at.getFullYear(), at.getMonth(), at.getDate())) / 86400000);
+    var months = (now.getFullYear() - at.getFullYear()) * 12 + (now.getMonth() - at.getMonth()) - (now.getDate() < at.getDate() ? 1 : 0);
+    var ago = months >= 12 ? Math.floor(months / 12) + '年前' : (months >= 1 ? months + 'か月前' : (days >= 1 ? days + '日前' : '今日'));
+    var h = at.getHours(), tod = (h >= 5 && h < 10) ? '朝' : (h >= 10 && h < 16) ? '昼' : (h >= 16 && h < 19) ? '夕方' : '夜';
+    var line = 'この手紙は、' + ago + '、' + (k.sekki ? k.sekki + (k.sekkiDay ? 'の' + k.sekkiDay + '日目' : '') + 'の' : '') + tod + 'に書かれた。';
+    if (k.moon) line += 'その' + (tod === '夜' ? '夜' : '日') + 'の月は、' + k.moon + '。';
+    return line;
+  } catch (e) { return ''; }
+}
+window.koyomiCapsuleWrittenLine = koyomiCapsuleWrittenLine;
+function _capsuleBigIconSvg() {
+  return '<svg data-cap-shell viewBox="0 0 120 120" width="112" height="112" aria-hidden="true" style="overflow:visible;">' +
+    '<g data-cap-bottom><path d="M12 60 A48 48 0 0 0 108 60 Z" fill="#f3e6cf" stroke="#2c4f78" stroke-width="3"/></g>' +
+    '<g data-cap-top style="transform-box:fill-box;transform-origin:85% 100%;transition:transform 0.7s cubic-bezier(.3,.7,.3,1), opacity 0.7s ease;">' +
+      '<path d="M12 60 A48 48 0 0 1 108 60 Z" fill="#3b6ea5" stroke="#2c4f78" stroke-width="3"/>' +
+      '<path d="M32 34 Q42 22 58 20" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/></g>' +
+  '</svg>';
+}
+function _capsuleEnvelopeHtml() {
+  return '<div data-cap-env style="position:relative;width:220px;height:136px;margin:0 auto;cursor:pointer;perspective:600px;">' +
+    '<div style="position:absolute;inset:0;background:#f6ecd8;border:1px solid #d9c9a6;border-radius:6px;box-shadow:0 4px 14px rgba(90,70,40,0.15);"></div>' +
+    '<div style="position:absolute;left:0;right:0;bottom:0;height:70%;background:linear-gradient(160deg,#efe2c8,#f6ecd8);clip-path:polygon(0 100%,0 15%,50% 60%,100% 15%,100% 100%);border-radius:0 0 6px 6px;"></div>' +
+    '<div data-cap-flap style="position:absolute;left:0;right:0;top:0;height:62%;background:#efe0c2;clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top center;transition:transform 0.6s ease;border-top:1px solid #d9c9a6;"></div>' +
+    '<div data-cap-seal style="position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#d0645a,#a63a31);box-shadow:0 1px 3px rgba(0,0,0,0.25);transition:transform 0.4s ease, opacity 0.4s ease;"></div></div>';
+}
+function _capsuleLetterHtml(r, e) {
+  var line = koyomiCapsuleWrittenLine(r);
+  return '<div data-cap-letter style="animation:capLetterIn 0.6s ease;">' +
+    (line ? '<div style="font-size:0.84em;color:#7a3b1e;margin:2px 0 10px;line-height:1.7;">' + e(line) + '</div>' : '') +
+    '<div style="white-space:pre-wrap;font-size:15px;line-height:30px;color:#3a2a1a;padding:4px 14px;background:#fffdf7;border:1px solid #efe3cc;border-radius:8px;background-image:repeating-linear-gradient(transparent, transparent 29px, #efe3cc 29px, #efe3cc 30px);">' + e(r.body) + '</div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">' +
+      '<button type="button" data-cap-journal="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;font-size:0.82em;cursor:pointer;">日誌に残す</button>' +
+      '<button type="button" data-cap-del="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c9b9a0;background:#fff;color:#8a7f6a;font-size:0.82em;cursor:pointer;">消す</button></div></div>';
+}
 function _capsuleRenderReceived(body, e) {
   _capsuleRpc('koyomiru_capsule_list_received').then(function(rows) {
     rows = rows || [];
-    koyomiCapsuleMarkSeen(rows.map(function(r) { return r.id; }));   // v0.72.2: 開いたら、読んだ印（🟢を消す）
-    // v0.72.7: 開封の印をサーバーへ（まだ印の無いものだけ）。窓口が無い古いサーバーでも、画面は止めない
-    try { var _unopened = rows.filter(function(r) { return !r.opened_at; }).map(function(r) { return r.id; }); if (_unopened.length) _capsuleRpc('koyomiru_capsule_mark_opened', { p_ids: _unopened }).catch(function() {}); } catch (eMo) {}
-    if (!rows.length) { body.innerHTML = '<div style="' + _CAP_BOX + 'color:#8a7f6a;">届いた手紙は、まだない。</div>'; return; }
+    koyomiCapsuleMarkSeen(rows.map(function(r) { return r.id; }));   // v0.72.2: 到着に気づいた印（🟢を消す）。開封の印は、封を切った時に付ける
+    if (!rows.length) { body.innerHTML = '<div style="' + _CAP_BOX + 'color:#8a7f6a;">受け取った手紙は、まだない。</div>'; return; }
+    if (!document.getElementById('capOpenFxStyle')) { var st0 = document.createElement('style'); st0.id = 'capOpenFxStyle'; st0.textContent = '@keyframes capLetterIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes capEnvIn{from{opacity:0;transform:translateY(16px) scale(0.92)}to{opacity:1;transform:none}}'; document.head.appendChild(st0); }
+    var reduce = false; try { reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (eRm) {}
+    var opened = {}; try { (JSON.parse(localStorage.getItem('koyomiCapsuleOpenedIds') || '[]') || []).forEach(function(id) { opened[id] = 1; }); } catch (eOp) {}
     body.innerHTML = rows.map(function(r) {
-      return '<div style="' + _CAP_BOX + 'margin-bottom:12px;background:#fffdf7;">' +
-        '<div style="font-weight:800;color:#7a3b1e;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' + koyomiCapsuleIconSvg(20) + e(r.sender_name) + 'から' + ((r.sender_label && r.sender_label !== r.sender_name && r.sender_name !== '自分') ? '<span style="font-weight:400;font-size:0.8em;color:#8a7f6a;">（封をしたときは「' + e(r.sender_label) + '」）</span>' : '') + '</div>' +
-        '<div style="font-size:0.8em;color:#8a7f6a;margin-top:2px;">封をした日：' + e(koyomiCapsuleKoyomiText(r.sealed_koyomi) || _capsuleYmd(r.sealed_at)) + '</div>' +
-        '<div style="margin-top:10px;white-space:pre-wrap;font-size:15px;line-height:30px;color:#3a2a1a;background-image:repeating-linear-gradient(transparent, transparent 29px, #efe3cc 29px, #efe3cc 30px);">' + e(r.body) + '</div>' +
-        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">' +
-          '<button type="button" data-cap-journal="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;font-size:0.82em;cursor:pointer;">日誌に残す</button>' +
-          '<button type="button" data-cap-del="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c9b9a0;background:#fff;color:#8a7f6a;font-size:0.82em;cursor:pointer;">消す</button></div></div>';
+      var isOpen = !!(r.opened_at || opened[r.id]);
+      var head = '<div style="font-weight:800;color:#7a3b1e;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' + koyomiCapsuleIconSvg(20) + e(r.sender_name) + 'から' + ((r.sender_label && r.sender_label !== r.sender_name && r.sender_name !== '自分') ? '<span style="font-weight:400;font-size:0.8em;color:#8a7f6a;">（封をしたときは「' + e(r.sender_label) + '」）</span>' : '') + '</div>' +
+        '<div style="font-size:0.78em;color:#8a7f6a;margin-top:2px;">到着：' + _capsuleYmd(r.open_at) + '</div>';
+      var stage = isOpen ? _capsuleLetterHtml(r, e)
+        : '<div data-cap-closed="' + e(r.id) + '" style="text-align:center;padding:14px 0 6px;cursor:pointer;">' + _capsuleBigIconSvg() + '<div style="font-size:0.82em;color:#2c4f78;margin-top:6px;">押して、カプセルを開ける</div></div>';
+      return '<div data-cap-card="' + e(r.id) + '" style="' + _CAP_BOX + 'margin-bottom:12px;background:#fffdf7;">' + head + '<div data-cap-stage style="margin-top:10px;">' + stage + '</div></div>';
     }).join('');
-    body.querySelectorAll('[data-cap-journal]').forEach(function(b) {
-      b.onclick = function() {
-        var r = rows.filter(function(x) { return x.id === b.getAttribute('data-cap-journal'); })[0]; if (!r) return;
-        var ok = (typeof saveKoyomiTodayWord === 'function') && saveKoyomiTodayWord('📜 タイムカプセル（' + r.sender_name + 'から・' + (koyomiCapsuleKoyomiText(r.sealed_koyomi) || _capsuleYmd(r.sealed_at)) + 'に封）：' + r.body);
-        if (typeof showToast === 'function') showToast(ok ? '今日の日誌に残した' : '日誌に残せなかった', { type: ok ? 'success' : 'warn' });
-      };
-    });
-    body.querySelectorAll('[data-cap-del]').forEach(function(b) {
-      b.onclick = function() {
-        _capsuleTwoClick(b, '本当に消す？', function() {
-        _capsuleRpc('koyomiru_capsule_delete_received', { p_id: b.getAttribute('data-cap-del') }).then(function() { renderCapsuleView(); }).catch(function(err) { if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); });
-        });
+    var wire = function(card, r) {
+      card.querySelectorAll('[data-cap-journal]').forEach(function(b) {
+        b.onclick = function() {
+          var ok = (typeof saveKoyomiTodayWord === 'function') && saveKoyomiTodayWord('📜 タイムカプセル（' + r.sender_name + 'から・' + (koyomiCapsuleKoyomiText(r.sealed_koyomi) || _capsuleYmd(r.sealed_at)) + 'に封）：' + r.body);
+          if (typeof showToast === 'function') showToast(ok ? '今日の日誌に残した' : '日誌に残せなかった', { type: ok ? 'success' : 'warn' });
+        };
+      });
+      card.querySelectorAll('[data-cap-del]').forEach(function(b) {
+        b.onclick = function() {
+          _capsuleTwoClick(b, '本当に消す？', function() {
+            _capsuleRpc('koyomiru_capsule_delete_received', { p_id: r.id }).then(function() { renderCapsuleView(); }).catch(function(err) { if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); });
+          });
+        };
+      });
+    };
+    rows.forEach(function(r) {
+      var card = body.querySelector('[data-cap-card="' + r.id + '"]'); if (!card) return;
+      wire(card, r);
+      var closed = card.querySelector('[data-cap-closed]'); if (!closed) return;
+      closed.onclick = function() {
+        closed.onclick = null;
+        var stageEl = card.querySelector('[data-cap-stage]'), top = closed.querySelector('[data-cap-top]');
+        var showEnvelope = function() {
+          stageEl.innerHTML = '<div style="padding:10px 0 4px;' + (reduce ? '' : 'animation:capEnvIn 0.5s ease;') + '">' + _capsuleEnvelopeHtml() + '<div style="text-align:center;font-size:0.82em;color:#7a3b1e;margin-top:8px;">押して、封を切る</div></div>';
+          var env = stageEl.querySelector('[data-cap-env]');
+          env.onclick = function() {
+            env.onclick = null;
+            var flap = env.querySelector('[data-cap-flap]'), seal = env.querySelector('[data-cap-seal]');
+            var showLetter = function() {
+              stageEl.innerHTML = _capsuleLetterHtml(r, e); wire(card, r);
+              // 開封の印：封を切ったこの時に（この端末にも覚え、サーバーへ）
+              try { var L = JSON.parse(localStorage.getItem('koyomiCapsuleOpenedIds') || '[]') || []; if (L.indexOf(r.id) === -1) { L.push(r.id); if (L.length > 1000) L = L.slice(-1000); localStorage.setItem('koyomiCapsuleOpenedIds', JSON.stringify(L)); } } catch (eL) {}
+              if (!r.opened_at) _capsuleRpc('koyomiru_capsule_mark_opened', { p_ids: [r.id] }).catch(function() {});
+            };
+            if (reduce) { showLetter(); return; }
+            seal.style.transform = 'scale(0.4)'; seal.style.opacity = '0';
+            setTimeout(function() { flap.style.transform = 'rotateX(180deg)'; }, 250);
+            setTimeout(showLetter, 900);
+          };
+        };
+        if (reduce || !top) { showEnvelope(); return; }
+        top.style.transform = 'translate(18px,-34px) rotate(28deg)'; top.style.opacity = '0';
+        setTimeout(showEnvelope, 750);
       };
     });
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
@@ -58250,6 +58321,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.73.2', date: '2026-11-04',
+    items: [
+      { icon:'💌', t:'タイムカプセルを、カプセルごと開けるようにしました',
+        before:'受け取った手紙は、いきなり中身が見えていました',
+        after:'受け取った手紙は、閉じたカプセルで届きます。押すとカプセルが開いて封筒が出て、封を切ると便箋が開きます。便箋には「この手紙は、1年前、霜降の13日目の夜に書かれた。その夜の月は、二十四日月。」のように、書いた日の暦が添えられます。相手の「開封済み」は、封を切った時に付きます' }
+    ]
+  },
+  {
     ver: 'v0.73.1', date: '2026-11-04',
     items: [
       { icon:'⏱', t:'タイムカプセルを、1分後にも届けられるようにしました',
@@ -86953,6 +87032,21 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-543·①: タイムカプセルの言葉が違う', '');
      } catch(e) {
        ng('ST-543: 例外', e.message);
+     }
+
+     // ===== ST-544: タイムカプセルを開ける演出（カプセル → 封筒 → 便箋）・書いた夜の暦・開封の印は封を切った時（v0.73.2〜） =====
+     // 【権威】2026-11-04、「気障っぽくなく、演出はできる？」「前提として、カプセルは開かないの？」との議論
+     try {
+       var _rv = _capsuleRenderReceived.toString();
+       var _line = koyomiCapsuleWrittenLine({ sealed_at: new Date(new Date().getFullYear() - 1, new Date().getMonth(), new Date().getDate(), 22, 10).toISOString(), sealed_koyomi: { sekki: '霜降', sekkiDay: 13, moon: '二十四日月' } });
+       var _line2 = koyomiCapsuleWrittenLine({ sealed_at: new Date(Date.now() - 3 * 86400000).toISOString().replace(/T.*/, 'T03:00:00Z'), sealed_koyomi: {} });
+       (/data-cap-closed/.test(_rv) && /data-cap-env/.test(_capsuleEnvelopeHtml()) && /data-cap-top/.test(_capsuleBigIconSvg()) && /prefers-reduced-motion/.test(_rv) &&
+        /showLetter[\s\S]*koyomiru_capsule_mark_opened/.test(_rv) && !/_unopened\.length\) _capsuleRpc\('koyomiru_capsule_mark_opened'/.test(_rv) &&
+        _line === 'この手紙は、1年前、霜降の13日目の夜に書かれた。その夜の月は、二十四日月。' && /^この手紙は、3日前、/.test(_line2))
+         ? ok('ST-544·①: 受け取った手紙は、閉じたカプセル → 押すと殻が外れて封筒 → 封を切ると便箋。書いた夜の暦の一文つき。開封の印は封を切った時。動きを控える設定では動かさない')
+         : ng('ST-544·①: 開ける演出が違う', [_line, _line2].join(' / '));
+     } catch(e) {
+       ng('ST-544: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
