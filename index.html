@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.73.6 ★ -->
+<!-- ★ CURRENT VERSION: v0.74.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.73.6';
+    const APP_VERSION = 'v0.74.0';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -12983,7 +12983,7 @@ window.koyomiCapsuleIconSvg = koyomiCapsuleIconSvg;
 var KOYOMI_CAPSULE_ERRORS = {
   not_logged_in: 'ログインが必要。', bad_body: '手紙が空か、長すぎる（2000字まで）。', bad_open_at: '届く日時は、今より少し先から30年後までにしてほしい。',
   bad_recipient: '宛先を選んでほしい。', not_same_calendar: 'この人には送れない（同じ共有カレンダーにいる人だけ）。',
-  refused: 'この人は、人からのタイムカプセルを受け取らない設定にしている。', committee_only: '返事をしたためるのは、委員（こよみるONE）の特典。', bad_reply: 'この手紙には、返事を送れない。', quota: '到着待ちの手紙の数がいっぱい（無料は3通・委員は30通）。到着したら、また書ける。'
+  refused: 'この人は、人からのタイムカプセルを受け取らない設定にしている。', committee_only: '返事をしたためるのは、委員（こよみるONE）の特典。', suspended: '今は、手紙を書けない期間（決まりに反した手紙があったため）。', pledge_required: '人に手紙を送る前に、委員会の心得への同意が必要。', cannot_send: 'この人には送れない。', report_limit: '今日はこれ以上、通報できない。', already_reported: 'この手紙は、もう通報してある。', bad_report: 'この手紙は通報できない。', bad_reply: 'この手紙には、返事を送れない。', quota: '到着待ちの手紙の数がいっぱい（無料は3通・委員は30通）。到着したら、また書ける。'
 };
 function _capsuleErr(err) {
   var m = String((err && (err.message || err.details)) || err || '');
@@ -13069,6 +13069,39 @@ function koyomiCapsuleDraftsReady() { var n = Date.now(); return _capsuleDrafts(
 window.koyomiCapsuleDraftsReady = koyomiCapsuleDraftsReady;
 var _capsuleLoadDraftId = null;
 // ===== END v0.73.3 =====
+// ===== v0.74.0: 想いと心得（初めて人に手紙を送るとき） =====
+// 【権威】2026-11-04、最高峰会議で決定。「想いを先に、決まりは後に。法律文だけポンと置いても誰も読まない」
+// 「タイムカプセルは、信じ合える二人のあいだで、いちばんよく働く」。同意した日時はサーバーに記録（規約への合意の証し）
+var KOYOMI_CAPSULE_PLEDGE_VERSION = 1;
+var KOYOMI_CAPSULE_OMOI_HTML = '<div style="line-height:1.9;color:#5a4630;">タイムカプセルは、信じ合える二人のあいだで、いちばんよく働く。<br><br>' +
+  '書く人は、相手が未来のその日まで待っていてくれると信じて、封をする。<br>受け取る人は、書いた人がその日の自分のために言葉を選んでくれたと信じて、封を切る。<br><br>委員会は、その信頼を、預かる。</div>';
+var KOYOMI_CAPSULE_KOKOROE_HTML = '<div style="font-size:0.88em;line-height:1.8;color:#5a4630;"><div style="font-weight:800;color:#7a3b1e;margin-bottom:4px;">タイムカプセル委員会の心得</div>' +
+  '手紙は、未来の大切な人へ届けるもの。善意で、したためよう。<ul style="margin:6px 0 6px 1.2em;padding:0;">' +
+  '<li>出会いを求めること、お金のやり取りに誘うこと（パパ活など）、つきまといに使うことは、利用規約で禁止している。</li>' +
+  '<li>通報があれば、運営が利用規約に基づいて審査し、違反があれば、手紙を書けなくするなどの措置をとる。悪質な場合は、一度で期限のない措置となる。</li>' +
+  '<li>法令に反するおそれがある場合は、関係機関に情報を提供することがある。</li>' +
+  '<li>嫌な手紙が届いたら、ためらわず通報・ブロックを。誰が通報したかは、相手に伝わらない。</li></ul>' +
+  '誰もが安心して、未来へ手紙を託せる場所であるために。</div>';
+function koyomiCapsulePledgeModal(onAgree) {
+  var old = document.getElementById('capsulePledgeOverlay'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'capsulePledgeOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,0.45);display:flex;justify-content:center;overflow-y:auto;padding:calc(env(safe-area-inset-top, 0px) + 16px) 12px calc(env(safe-area-inset-bottom, 0px) + 16px);';
+  ov.innerHTML = '<div role="dialog" aria-modal="true" style="width:100%;max-width:460px;margin:auto 0;background:#fffaf2;border-radius:20px;padding:20px 18px 16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
+    '<div style="font-weight:800;font-size:1.05em;color:#7a3b1e;display:flex;align-items:center;gap:8px;margin-bottom:10px;">' + koyomiCapsuleIconSvg(22) + 'タイムカプセル委員会について</div>' +
+    KOYOMI_CAPSULE_OMOI_HTML + '<div style="border-top:1px dashed #d9c9a6;margin:14px 0 10px;"></div>' + KOYOMI_CAPSULE_KOKOROE_HTML +
+    '<div data-pl="msg" style="font-size:0.84em;color:#c0392b;margin-top:8px;"></div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;"><button type="button" data-pl="agree" style="padding:11px 14px;border-radius:12px;border:none;background:#7a3b1e;color:#fff;font-weight:800;cursor:pointer;">利用規約とこの心得を守って、手紙をしたためる</button>' +
+    '<button type="button" data-pl="cancel" style="padding:8px;border:none;background:none;color:#8a7f6a;text-decoration:underline;cursor:pointer;">今はやめておく</button></div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('[data-pl="cancel"]').onclick = function() { ov.remove(); };
+  ov.querySelector('[data-pl="agree"]').onclick = function() {
+    var b = this; b.disabled = true;
+    _capsuleRpc('koyomiru_capsule_pledge', { p_version: KOYOMI_CAPSULE_PLEDGE_VERSION }).then(function() { ov.remove(); if (typeof onAgree === 'function') onAgree(); })
+      .catch(function(err) { b.disabled = false; ov.querySelector('[data-pl="msg"]').textContent = _capsuleErr(err); });
+  };
+}
+window.koyomiCapsulePledgeModal = koyomiCapsulePledgeModal;
+// ===== END v0.74.0 =====
 function _capsuleRenderWrite(body, e) {
   _capsuleRpc('koyomiru_capsule_recipients').then(function(list) {
     list = list || [];
@@ -13194,6 +13227,7 @@ function _capsuleRenderWrite(body, e) {
       if (sealBtn.getAttribute('data-armed') !== '1') { msg.style.color = '#8a7f6a'; msg.textContent = '封をすると、あなたも読めなくなり、直せない。取り消しもできない（一度埋めたカプセルは、掘り出さない）。' + _capsuleYmd(openAt.toISOString()) + ' ' + String(openAt.getHours()).padStart(2, '0') + ':' + String(openAt.getMinutes()).padStart(2, '0') + 'に届ける。'; }
       _capsuleTwoClick(sealBtn, '🔏 本当に封をする？', function() {
       msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…';
+      var _doSeal = function() {
       var _sealArgs = { p_recipient: (_capsuleReplyTo ? _capsuleReplyTo.to : to), p_body: txt, p_open_at: openAt.toISOString(), p_sealed_koyomi: koyomiCapsuleSealedKoyomi(new Date()) };
       if (_capsuleReplyTo) _sealArgs.p_reply_to = _capsuleReplyTo.id;   // v0.73.5: 返事
       _capsuleRpc('koyomiru_capsule_seal', Object.assign({ p_stationery: _paper }, _sealArgs)).catch(function(err0) {
@@ -13202,7 +13236,11 @@ function _capsuleRenderWrite(body, e) {
         throw err0;
       })
         .then(function() { if (_capsuleLoadDraftId) { _capsuleDraftsSave(_capsuleDrafts().filter(function(x) { return x.id !== _capsuleLoadDraftId; })); _capsuleLoadDraftId = null; } _capsuleReplyTo = null; if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く', { type: 'success' }); _capsuleTab = 'sealed'; renderCapsuleView(); })
-        .catch(function(err) { msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
+        .catch(function(err) {
+        if (/pledge_required/.test(String((err && err.message) || err))) { msg.textContent = ''; koyomiCapsulePledgeModal(function() { msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…'; _doSeal(); }); return; }   // v0.74.0
+        msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
+      };
+      _doSeal();
       });
     };
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
@@ -13372,6 +13410,7 @@ function _capsuleRenderAbout(body, e) {
   var st = window._capsuleStatus || {};
   body.innerHTML = '<div style="' + _CAP_BOX + 'line-height:1.8;color:#5a4630;font-size:0.92em;">' +
     '<div style="font-weight:800;color:#7a3b1e;">🏫 タイムカプセル委員会について</div>' +
+    '<div style="margin:8px 0 12px;">' + KOYOMI_CAPSULE_OMOI_HTML + '</div>' + KOYOMI_CAPSULE_KOKOROE_HTML + '<div style="border-top:1px dashed #d9c9a6;margin:12px 0 8px;"></div>' +   // v0.74.0
     '<div style="margin-top:6px;">手紙をしたためて封をし、未来のその日に届ける。宛先は、自分か、同じ共有カレンダーにいる人。封をしたら、書いた本人も読めない。その日が来たら、届く。</div>' +
     '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:0.92em;"><tr><th></th><th style="text-align:left;padding:4px;">無料</th><th style="text-align:left;padding:4px;">🏫 委員（こよみるONE）</th></tr>' +
     '<tr><td style="padding:4px;color:#8a7f6a;">封をしておける手紙</td><td style="padding:4px;">3通まで</td><td style="padding:4px;">30通まで</td></tr>' +
@@ -58454,6 +58493,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.74.0', date: '2026-11-04',
+    items: [
+      { icon:'🤝', t:'タイムカプセル委員会に「想い」と「心得」を置きました',
+        before:'人に手紙を送るときの決まりが、どこにも書かれていませんでした',
+        after:'初めて人に手紙を送るとき、委員会の想いと心得が一度だけ出ます。「利用規約とこの心得を守って、手紙をしたためる」を押すと、そのまま封をします。委員会についての画面にも、いつでも読めるように置きました' }
+    ]
+  },
+  {
     ver: 'v0.73.6', date: '2026-11-04',
     items: [
       { icon:'🖋', t:'タイムカプセルの言葉を、手紙らしく直しました',
@@ -87269,6 +87316,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-548·①: 手紙の言葉が違う', (_src.match(/.{0,12}(封じ|封印).{0,12}/g) || []).slice(0, 4).join(' / '));
      } catch(e) {
        ng('ST-548: 例外', e.message);
+     }
+
+     // ===== ST-549: 想いと心得（初めて人に手紙を送るとき・同意したら封をし直す）（v0.74.0〜） =====
+     // 【権威】2026-11-04、最高峰会議で決定「想いを先に、決まりは後に」
+     try {
+       var _wv = _capsuleRenderWrite.toString();
+       (/pledge_required/.test(_wv) && /koyomiCapsulePledgeModal\(function\(\) \{[^}]*_doSeal\(\)/.test(_wv) && /信じ合える二人/.test(KOYOMI_CAPSULE_OMOI_HTML) && /関係機関に情報を提供/.test(KOYOMI_CAPSULE_KOKOROE_HTML) &&
+        !/喝|容赦/.test(KOYOMI_CAPSULE_KOKOROE_HTML) && /KOYOMI_CAPSULE_OMOI_HTML/.test(_capsuleRenderAbout.toString()) && /cannot_send/.test(JSON.stringify(KOYOMI_CAPSULE_ERRORS)))
+         ? ok('ST-549·①: 人宛ての封で心得への同意が要るときは、想いと心得を出し、同意したら封をし直す。委員会についての先頭にも想いと心得。新しいサーバーの返事を分かる言葉で')
+         : ng('ST-549·①: 想いと心得が違う', '');
+     } catch(e) {
+       ng('ST-549: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
