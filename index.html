@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.75.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.75.4 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.75.3';
+    const APP_VERSION = 'v0.75.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13081,7 +13081,11 @@ function renderCapsuleView() {
       '<div style="margin-top:12px;"><button type="button" onclick="openCloudLoginModal()" style="padding:9px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;font-weight:700;cursor:pointer;">ログインする</button></div></div></div>';
     return;
   }
+  // v0.75.4: 【権威】2026-11-05「タイムカプセルはわざと不便にするところに活路」→ 封をしたら手を離れる。出した手紙の一覧は管理者だけ（利用者は、届く日がカレンダーの予定に入る）
+  var _isAdm0 = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode());
+  if (!_isAdm0 && _capsuleTab === 'sealed') _capsuleTab = 'write';
   var tabs = [['write', '📝 書く'], ['sealed', '🔏 出した手紙'], ['received', koyomiCapsuleIconSvg(17) + ' 受け取った手紙<span data-cap-recv-dot title="まだ開いていない手紙がある" style="display:none;position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:#2ecc71;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.08);"></span>'], ['about', '🏫 委員会について']];
+  if (!_isAdm0) tabs = tabs.filter(function(t) { return t[0] !== 'sealed'; });
   if (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) tabs.push(['admin', '🛡 通報<span data-adm-badge></span>']);   // v0.74.4: 管理者だけ。v0.75.0: 【権威】2026-11-05「審査より通報のが良くね？」→ タブは置き場所の名詞に
   host.innerHTML = head + '<div data-cap-results-slot style="margin-top:10px;"></div><div data-cap-safety-slot style="margin-top:8px;"></div><div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;">' + tabs.map(function(t) {
@@ -13294,7 +13298,19 @@ function _capsuleRenderWrite(body, e) {
         if (!_sealArgs.p_reply_to && /p_stationery|function .*does not exist|Could not find the function|PGRST202/i.test(m0)) return _capsuleRpc('koyomiru_capsule_seal', _sealArgs);   // ⑥のSQLの前のサーバー（返事は⑦が要るので送り直さない）
         throw err0;
       })
-        .then(function() { if (_capsuleLoadDraftId) { _capsuleDraftsSave(_capsuleDrafts().filter(function(x) { return x.id !== _capsuleLoadDraftId; })); _capsuleLoadDraftId = null; } _capsuleReplyTo = null; if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く', { type: 'success' }); _capsuleTab = 'sealed'; renderCapsuleView(); })
+        .then(function() {
+          if (_capsuleLoadDraftId) { _capsuleDraftsSave(_capsuleDrafts().filter(function(x) { return x.id !== _capsuleLoadDraftId; })); _capsuleLoadDraftId = null; }
+          // v0.75.4: 届く日を、自分のカレンダーの予定に入れる（届く日を覚えておく場所は、カレンダーに任せる。検索でも見つかる）
+          var _toName = (function() { var sel = body.querySelector('[data-cap="to"]'); var o = sel && sel.options[sel.selectedIndex]; var nm = _capsuleReplyTo ? _capsuleReplyTo.name : (o ? o.textContent : ''); return nm; })();
+          try {
+            var _hm = String(openAt.getHours()).padStart(2, '0') + ':' + String(openAt.getMinutes()).padStart(2, '0');
+            createTask({ text: '🔵 ' + (_toName === '自分' ? '自分' : _toName + 'さん') + 'に、手紙が届く日（' + _capsuleYmd(new Date().toISOString()) + 'に封をした手紙）', date: getLocalDateStr(openAt), time: _hm, displayScope: 'both', calendarId: (typeof getMainCalendarId === 'function' ? getMainCalendarId() : null), memo: 'タイムカプセル委員会' });
+            if (typeof saveAllTasks === 'function') saveAllTasks();
+          } catch (eEv) {}
+          _capsuleReplyTo = null;
+          if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く。カレンダーのその日に、予定を入れた', { type: 'success' });
+          _capsuleTab = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? 'sealed' : 'write'; renderCapsuleView();
+        })
         .catch(function(err) {
         if (/pledge_required/.test(String((err && err.message) || err))) { msg.textContent = ''; koyomiCapsulePledgeModal(function() { msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…'; _doSeal(); }); return; }   // v0.74.0
         msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
@@ -58753,6 +58769,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.75.4', date: '2026-11-05',
+    items: [
+      { icon:'🔵', t:'タイムカプセルは、封をしたら手を離れるようにしました',
+        before:'出した手紙の一覧で、届いたか・開けられたかを追いかけられました',
+        after:'本物のタイムカプセルのように、封をしたら手を離れます。届く日は、自分のカレンダーのその日に予定として入ります（検索でも見つかります）。受け取った人が開けたかどうかは、分からなくなりました。読んだ気持ちは、返事で届きます' }
+    ]
+  },
+  {
     ver: 'v0.75.3', date: '2026-11-05',
     items: [
       { icon:'🛡', t:'運営の安全管理の画面を整えました',
@@ -87803,6 +87827,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-559·①: 手紙の流れが違う', '');
      } catch(e) {
        ng('ST-559: 例外', e.message);
+     }
+
+     // ===== ST-560: 封をしたら手を離れる（出した手紙の一覧は管理者だけ・届く日をカレンダーの予定に）（v0.75.4〜） =====
+     try {
+       var _rv = renderCapsuleView.toString(), _wv = _capsuleRenderWrite.toString();
+       (/if \(!_isAdm0\) tabs = tabs\.filter\(function\(t\) \{ return t\[0\] !== 'sealed'; \}\)/.test(_rv) && /createTask\(\{ text: '🔵 '/.test(_wv) && /displayScope: 'both'/.test(_wv) && /getMainCalendarId/.test(_wv))
+         ? ok('ST-560·①: 封をしたら手を離れる：利用者には出した手紙の一覧を出さず、届く日を自分のカレンダーの予定に入れる（検索でも見つかる）。管理者は出した手紙のタブを持つ')
+         : ng('ST-560·①: 封をしたあとが違う', '');
+     } catch(e) {
+       ng('ST-560: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
