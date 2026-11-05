@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.75.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.75.5 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.75.4';
+    const APP_VERSION = 'v0.75.5';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13096,6 +13096,7 @@ function renderCapsuleView() {
   var st = host.querySelector('[data-cap-status]'), body = host.querySelector('[data-cap-body]');
   koyomiCapsuleShowReportResults(host.querySelector('[data-cap-results-slot]'));
   koyomiCapsuleShowSafety(host.querySelector('[data-cap-safety-slot]'));
+  try { koyomiCapsuleBackfillEvents(); } catch (eBf) {}   // v0.75.5
   if (_capsuleTab !== 'received') { koyomiCapsuleSetBadge((window._capsuleUnseen || []).length); try { koyomiCapsuleCheckArrivals(false); } catch (eCa) {} }   // v0.74.8   // v0.74.2: 書けない期間・品性値（記録がある人にだけ）   // v0.74.1: 通報の結果の知らせ（専用の置き場。今の状態の表示に上書きされないように）
   _capsuleRpc('koyomiru_capsule_status').then(function(rows) {
     var r = (rows && rows[0]) || {};
@@ -13162,6 +13163,31 @@ function koyomiCapsulePledgeModal(onAgree) {
 }
 window.koyomiCapsulePledgeModal = koyomiCapsulePledgeModal;
 // ===== END v0.74.0 =====
+// ===== v0.75.5: 届く日の予定（前に封をした手紙の分も） =====
+// 【権威】2026-11-05「1はやる」。出した手紙のタブをなくしたので、v0.75.4より前に封をした到着待ちの手紙が見えなくなっていた（穴）。
+// 委員会の画面を開いたとき（起動ごとに1回）、まだ予定の無い到着待ちの手紙の分だけ、届く日に予定を足す。予定には capsuleId を付け、同じ手紙の予定を2つ作らない
+function koyomiCapsuleEventFor(capsuleId, toName, sealedIso, openIso) {
+  try {
+    if (capsuleId && (allTasks || []).some(function(t) { return t && t.capsuleId === capsuleId; })) return null;
+    var at = new Date(openIso), hm = String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0');
+    var task = createTask({ text: '🔵 ' + (toName === '自分' ? '自分' : toName + 'さん') + 'に、手紙が届く日（' + _capsuleYmd(sealedIso) + 'に封をした手紙）', date: getLocalDateStr(at), time: hm, displayScope: 'both', calendarId: (typeof getMainCalendarId === 'function' ? getMainCalendarId() : null), memo: 'タイムカプセル委員会' });
+    if (task && capsuleId) task.capsuleId = capsuleId;
+    return task;
+  } catch (e) { return null; }
+}
+window.koyomiCapsuleEventFor = koyomiCapsuleEventFor;
+var _capsuleBackfillDone = false;
+function koyomiCapsuleBackfillEvents() {
+  if (_capsuleBackfillDone || !window._cloudIsLoggedIn || window._isTesting) return;
+  _capsuleBackfillDone = true;
+  _capsuleRpc('koyomiru_capsule_list_sent').then(function(rows) {
+    var n = 0;
+    (rows || []).forEach(function(r) { if (!r.delivered && !r.canceled_at && koyomiCapsuleEventFor(r.id, r.recipient_name, r.sealed_at, r.open_at)) n++; });
+    if (n && typeof saveAllTasks === 'function') { saveAllTasks(); if (typeof showToast === 'function') showToast('🔵 前に封をした手紙' + n + '通の届く日を、カレンダーに入れた', { type: 'info' }); }
+  }).catch(function() { _capsuleBackfillDone = false; });
+}
+window.koyomiCapsuleBackfillEvents = koyomiCapsuleBackfillEvents;
+// ===== END v0.75.5 =====
 function _capsuleRenderWrite(body, e) {
   _capsuleRpc('koyomiru_capsule_recipients').then(function(list) {
     list = list || [];
@@ -13298,15 +13324,11 @@ function _capsuleRenderWrite(body, e) {
         if (!_sealArgs.p_reply_to && /p_stationery|function .*does not exist|Could not find the function|PGRST202/i.test(m0)) return _capsuleRpc('koyomiru_capsule_seal', _sealArgs);   // ⑥のSQLの前のサーバー（返事は⑦が要るので送り直さない）
         throw err0;
       })
-        .then(function() {
+        .then(function(_newCapId) {
           if (_capsuleLoadDraftId) { _capsuleDraftsSave(_capsuleDrafts().filter(function(x) { return x.id !== _capsuleLoadDraftId; })); _capsuleLoadDraftId = null; }
-          // v0.75.4: 届く日を、自分のカレンダーの予定に入れる（届く日を覚えておく場所は、カレンダーに任せる。検索でも見つかる）
-          var _toName = (function() { var sel = body.querySelector('[data-cap="to"]'); var o = sel && sel.options[sel.selectedIndex]; var nm = _capsuleReplyTo ? _capsuleReplyTo.name : (o ? o.textContent : ''); return nm; })();
-          try {
-            var _hm = String(openAt.getHours()).padStart(2, '0') + ':' + String(openAt.getMinutes()).padStart(2, '0');
-            createTask({ text: '🔵 ' + (_toName === '自分' ? '自分' : _toName + 'さん') + 'に、手紙が届く日（' + _capsuleYmd(new Date().toISOString()) + 'に封をした手紙）', date: getLocalDateStr(openAt), time: _hm, displayScope: 'both', calendarId: (typeof getMainCalendarId === 'function' ? getMainCalendarId() : null), memo: 'タイムカプセル委員会' });
-            if (typeof saveAllTasks === 'function') saveAllTasks();
-          } catch (eEv) {}
+          // v0.75.4: 届く日を、自分のカレンダーの予定に入れる（v0.75.5: どの手紙の予定かの印を付ける）
+          var _toName = (function() { var sel = body.querySelector('[data-cap="to"]'); var o = sel && sel.options[sel.selectedIndex]; return _capsuleReplyTo ? _capsuleReplyTo.name : (o ? o.textContent : ''); })();
+          try { koyomiCapsuleEventFor(typeof _newCapId === 'string' ? _newCapId : null, _toName, new Date().toISOString(), openAt.toISOString()); if (typeof saveAllTasks === 'function') saveAllTasks(); } catch (eEv) {}
           _capsuleReplyTo = null;
           if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く。カレンダーのその日に、予定を入れた', { type: 'success' });
           _capsuleTab = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? 'sealed' : 'write'; renderCapsuleView();
@@ -58769,6 +58791,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.75.5', date: '2026-11-05',
+    items: [
+      { icon:'🔵', t:'前に封をしたタイムカプセルの届く日も、カレンダーに入るようにしました',
+        before:'前の版で封をした手紙は、届く日がカレンダーに入っていませんでした',
+        after:'タイムカプセル委員会を開いたときに、まだ届いていない手紙の届く日を、カレンダーの予定に入れます。同じ手紙の予定が2つできることはありません' }
+    ]
+  },
+  {
     ver: 'v0.75.4', date: '2026-11-05',
     items: [
       { icon:'🔵', t:'タイムカプセルは、封をしたら手を離れるようにしました',
@@ -87832,11 +87862,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-560: 封をしたら手を離れる（出した手紙の一覧は管理者だけ・届く日をカレンダーの予定に）（v0.75.4〜） =====
      try {
        var _rv = renderCapsuleView.toString(), _wv = _capsuleRenderWrite.toString();
-       (/if \(!_isAdm0\) tabs = tabs\.filter\(function\(t\) \{ return t\[0\] !== 'sealed'; \}\)/.test(_rv) && /createTask\(\{ text: '🔵 '/.test(_wv) && /displayScope: 'both'/.test(_wv) && /getMainCalendarId/.test(_wv))
+       (/if \(!_isAdm0\) tabs = tabs\.filter\(function\(t\) \{ return t\[0\] !== 'sealed'; \}\)/.test(_rv) && /koyomiCapsuleEventFor\(/.test(_wv) && /displayScope: 'both'/.test(koyomiCapsuleEventFor.toString()) && /getMainCalendarId/.test(koyomiCapsuleEventFor.toString()))
          ? ok('ST-560·①: 封をしたら手を離れる：利用者には出した手紙の一覧を出さず、届く日を自分のカレンダーの予定に入れる（検索でも見つかる）。管理者は出した手紙のタブを持つ')
          : ng('ST-560·①: 封をしたあとが違う', '');
      } catch(e) {
        ng('ST-560: 例外', e.message);
+     }
+
+     // ===== ST-561: 前に封をした手紙の届く日も、カレンダーの予定に（同じ手紙の予定は2つ作らない）（v0.75.5〜） =====
+     try {
+       var _len = allTasks.length, _st = saveAllTasks; window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       var _a = koyomiCapsuleEventFor('st561-cap', 'T.KAIMORI', '2026-11-03T00:00:00Z', '2027-11-03T00:00:00Z');
+       var _b = koyomiCapsuleEventFor('st561-cap', 'T.KAIMORI', '2026-11-03T00:00:00Z', '2027-11-03T00:00:00Z');   // 2回目は作らない
+       var _ok = _a && _a.capsuleId === 'st561-cap' && /T\.KAIMORIさんに、手紙が届く日/.test(_a.text || '') && _b === null;
+       allTasks.splice(_len); window.saveAllTasks = _st; saveAllTasks = _st;
+       (_ok && /koyomiCapsuleBackfillEvents\(\)/.test(renderCapsuleView.toString()) && /function\(_newCapId\)/.test(_capsuleRenderWrite.toString()))
+         ? ok('ST-561·①: 前に封をした到着待ちの手紙も、委員会の画面を開いたときに届く日の予定を足す。同じ手紙の予定は2つ作らない。これからの封も印つき')
+         : ng('ST-561·①: 届く日の予定が違う', '');
+     } catch(e) {
+       ng('ST-561: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
