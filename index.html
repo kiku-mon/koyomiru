@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.74.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.74.2 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.74.1';
+    const APP_VERSION = 'v0.74.2';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13035,14 +13035,15 @@ function renderCapsuleView() {
     return;
   }
   var tabs = [['write', '📝 書く'], ['sealed', '🔏 出した手紙'], ['received', koyomiCapsuleIconSvg(17) + ' 受け取った手紙'], ['about', '🏫 委員会について']];
-  host.innerHTML = head + '<div data-cap-results-slot style="margin-top:10px;"></div><div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
+  host.innerHTML = head + '<div data-cap-results-slot style="margin-top:10px;"></div><div data-cap-safety-slot style="margin-top:8px;"></div><div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;">' + tabs.map(function(t) {
       var on = _capsuleTab === t[0];
       return '<button type="button" data-cap-tab="' + t[0] + '" style="padding:7px 12px;border-radius:999px;cursor:pointer;font-size:0.88em;border:' + (on ? '2px solid #7a3b1e' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdf0e3' : '#fff') + ';color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + t[1] + '</button>';
     }).join('') + '</div><div data-cap-body style="padding-bottom:20px;"></div></div>';
   host.querySelectorAll('[data-cap-tab]').forEach(function(b) { b.onclick = function() { _capsuleTab = b.getAttribute('data-cap-tab'); renderCapsuleView(); }; });
   var st = host.querySelector('[data-cap-status]'), body = host.querySelector('[data-cap-body]');
-  koyomiCapsuleShowReportResults(host.querySelector('[data-cap-results-slot]'));   // v0.74.1: 通報の結果の知らせ（専用の置き場。今の状態の表示に上書きされないように）
+  koyomiCapsuleShowReportResults(host.querySelector('[data-cap-results-slot]'));
+  koyomiCapsuleShowSafety(host.querySelector('[data-cap-safety-slot]'));   // v0.74.2: 書けない期間・品性値（記録がある人にだけ）   // v0.74.1: 通報の結果の知らせ（専用の置き場。今の状態の表示に上書きされないように）
   _capsuleRpc('koyomiru_capsule_status').then(function(rows) {
     var r = (rows && rows[0]) || {};
     window._capsuleStatus = r;
@@ -13155,6 +13156,8 @@ function _capsuleRenderWrite(body, e) {
       '<button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
       '<div data-cap="msg" style="margin-top:8px;font-size:0.86em;"></div></div>';
     var _dIn = body.querySelector('[data-cap="date"]'), _tIn = body.querySelector('[data-cap="time"]'), _when = body.querySelector('[data-cap="when"]');
+    // v0.74.2: 書けない期間なら、描いた時点で封をする・一晩置くを止める
+    if (window._capsuleSuspended) body.querySelectorAll('[data-cap="seal"], [data-cap="draft"]').forEach(function(b) { b.disabled = true; b.style.opacity = '0.45'; b.style.cursor = 'not-allowed'; });
     // v0.73.5: 返事なら、宛先を差出人に決めて動かせなくする
     var _toSel0 = body.querySelector('[data-cap="to"]');
     if (_capsuleReplyTo && _toSel0) { for (var ri = 0; ri < _toSel0.options.length; ri++) if (_toSel0.options[ri].value === _capsuleReplyTo.to) _toSel0.selectedIndex = ri; _toSel0.disabled = true; }
@@ -13222,6 +13225,7 @@ function _capsuleRenderWrite(body, e) {
       if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
       var openAt = _openAtOf(); if (!openAt) { msg.style.color = '#c0392b'; msg.textContent = '開く日と時刻を選んでほしい。'; return; }
       if (_capsuleLoadDraftId) { var _dd = _capsuleDrafts().filter(function(x) { return x.id === _capsuleLoadDraftId; })[0]; if (_dd && koyomiCapsuleDraftReadyAt(_dd.savedAt) > Date.now()) { msg.style.color = '#4a3f6b'; msg.textContent = '🌙 一晩置いている手紙。封ができるのは ' + _capsuleYmd(new Date(koyomiCapsuleDraftReadyAt(_dd.savedAt)).toISOString()) + ' 5:00 から。'; return; } }
+      if (window._capsuleSuspended) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.suspended; return; }   // v0.74.2
       if (openAt <= new Date(Date.now() + 5000)) { msg.style.color = '#c0392b'; msg.textContent = '届く日時が、もう過ぎている。「1分後」を押すか、少し先の時刻を選んでほしい。'; _showWhen(); return; }   // v0.73.1: 今より先なら封をできる
       if (openAt > new Date(new Date().getFullYear() + 30, new Date().getMonth(), new Date().getDate() + 1)) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.bad_open_at; return; }
       var sealBtn = body.querySelector('[data-cap="seal"]');
@@ -13397,6 +13401,41 @@ function koyomiCapsuleShowReportResults(host) {
   } catch (e) {}
 }
 // ===== END v0.74.1 =====
+// ===== v0.74.2: 書けない期間・品性値の表示（違反の記録がある人にだけ） =====
+// 【権威】2026-11-04、最高峰会議で決定。Meta のアカウントステータスにならい、記録・今の制限・いつまでか・異議の出し方を本人が見られる。何もない人には何も出さない
+var _KOYOMI_CAT_LABEL = { abuse: '悪口・下品な言葉', spam: '宣伝・勧誘', sexual: '性的な内容', stalking: 'つきまとい', dating: '出会い目的・お金の誘い', illegal: '法に触れる内容', other: 'その他' };
+window._capsuleSuspended = false;
+function _capsuleFmtDT(iso) { var d = new Date(iso); return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + d.getHours() + '時' + (d.getMinutes() ? String(d.getMinutes()).padStart(2, '0') + '分' : ''); }
+function koyomiCapsuleShowSafety(slot) {
+  if (!slot) return;
+  // 1日1回、タスクで品性値が戻るかを確かめる
+  try { var today0 = getLocalDateStr(new Date()); if (localStorage.getItem('koyomiCapsuleRecoverOn') !== today0) { localStorage.setItem('koyomiCapsuleRecoverOn', today0); _capsuleRpc('koyomiru_capsule_recover').catch(function() {}); } } catch (eRc) {}
+  _capsuleRpc('koyomiru_capsule_my_safety').then(function(rows) {
+    var r = (rows && rows[0]) || {}; var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+    var susp = !!(r.forever || (r.suspended_until && new Date(r.suspended_until) > new Date()));
+    window._capsuleSuspended = susp;
+    if (!r.has_record && !susp) { slot.innerHTML = ''; return; }
+    var html = '';
+    if (susp) html += '<div style="padding:10px 12px;border-radius:12px;background:#fdecea;border:1px solid #f0c4bf;color:#8a2c22;font-size:0.88em;line-height:1.7;margin-bottom:8px;">' +
+      (r.forever ? '手紙を書けない（期限なし）。決まりに反した手紙があったため。' : _capsuleFmtDT(r.suspended_until) + 'まで、手紙を書けない（決まりに反した手紙があったため）。') +
+      '<br><span style="font-size:0.9em;">受け取る・開ける・通報することは、今までどおりできる。</span></div>';
+    html += '<details style="font-size:0.86em;color:#5a4630;margin-bottom:6px;"><summary style="cursor:pointer;">わたしの品性値：<b>' + e(String(r.hinsei)) + '</b>（100から）</summary><div data-cap-penalties style="padding:6px 0 0 4px;color:#6b4f2a;">読み込んでいる…</div>' +
+      '<div style="font-size:0.9em;color:#8a7f6a;margin-top:6px;line-height:1.7;">品性値は、タスクを作って1時間以上たってから完了すると戻る（3件で1・1日1まで）。<br>措置に納得できないときは、こよみるの運営に申し出ることができる（連絡先は、利用規約に書いてある）。</div></details>';
+    slot.innerHTML = html;
+    _capsuleRpc('koyomiru_capsule_my_penalties').then(function(list) {
+      var el = slot.querySelector('[data-cap-penalties]'); if (!el) return;
+      if (!list || !list.length) { el.textContent = '記録はない。'; return; }
+      el.innerHTML = list.map(function(p) {
+        var mes = p.forever ? '期限なし' : (p.until ? _capsuleFmtDT(p.until) + 'まで' : '注意');
+        return '<div style="padding:3px 0;border-top:1px dashed #e6d8bd;">' + _capsuleYmd(p.created_at) + '　' + e(_KOYOMI_CAT_LABEL[p.category] || p.category) + '　−' + e(String(p.points)) + '　' + e(mes) + '</div>';
+      }).join('');
+    }).catch(function() {});
+    // 書けない期間なら、書く画面の封をするボタンを止める
+    if (susp) { var w = document.querySelectorAll('#capsuleView [data-cap="seal"], #capsuleView [data-cap="draft"]'); w.forEach(function(b) { b.disabled = true; b.style.opacity = '0.45'; b.style.cursor = 'not-allowed'; }); }
+  }).catch(function() { slot.innerHTML = ''; });
+}
+window.koyomiCapsuleShowSafety = koyomiCapsuleShowSafety;
+// ===== END v0.74.2 =====
 function _capsuleRenderReceived(body, e) {
   _capsuleRpc('koyomiru_capsule_list_received').then(function(rows) {
     rows = rows || [];
@@ -58567,6 +58606,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.74.2', date: '2026-11-04',
+    items: [
+      { icon:'📋', t:'タイムカプセルの「品性値」を、記録がある人にだけ見せるようにしました',
+        before:'決まりに反して措置を受けても、いつまで・なぜかを確かめる場所がありませんでした',
+        after:'措置を受けた人には、委員会の画面の上に、手紙を書けない期間と、わたしの品性値・記録・申し出の案内が出ます。何もない人には何も出ません。品性値は、タスクを完了すると少しずつ戻ります' }
+    ]
+  },
+  {
     ver: 'v0.74.1', date: '2026-11-04',
     items: [
       { icon:'⚠', t:'タイムカプセルに「通報」と「受け取らない」を置きました',
@@ -87423,6 +87470,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-550·①: 通報とブロックが違う', '');
      } catch(e) {
        ng('ST-550: 例外', e.message);
+     }
+
+     // ===== ST-551: 書けない期間・品性値の表示（記録がある人にだけ・ボタンを止める・1日1回の回復）（v0.74.2〜） =====
+     try {
+       var _src = koyomiCapsuleShowSafety.toString();
+       (/if \(!r\.has_record && !susp\) \{ slot\.innerHTML = ''; return; \}/.test(_src) && /手紙を書けない（期限なし）/.test(_src) && /koyomiru_capsule_my_penalties/.test(_src) && /koyomiru_capsule_recover/.test(_src) &&
+        /連絡先は、利用規約に書いてある/.test(_src) && /window\._capsuleSuspended\) \{ msg\.style\.color/.test(_capsuleRenderWrite.toString()) && /data-cap-safety-slot/.test(renderCapsuleView.toString()))
+         ? ok('ST-551·①: 違反の記録がある人にだけ「わたしの品性値」と記録・異議の案内。書けない期間は上に知らせ、封をする・一晩置くを止める。何もない人には何も出さない。1日1回、タスクで品性値が戻るかを確かめる')
+         : ng('ST-551·①: 品性値の表示が違う', '');
+     } catch(e) {
+       ng('ST-551: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
