@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.74.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.74.4 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.74.3';
+    const APP_VERSION = 'v0.74.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13035,6 +13035,7 @@ function renderCapsuleView() {
     return;
   }
   var tabs = [['write', '📝 書く'], ['sealed', '🔏 出した手紙'], ['received', koyomiCapsuleIconSvg(17) + ' 受け取った手紙'], ['about', '🏫 委員会について']];
+  if (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) tabs.push(['admin', '🛡 審査<span data-adm-badge></span>']);   // v0.74.4: 管理者だけ
   host.innerHTML = head + '<div data-cap-results-slot style="margin-top:10px;"></div><div data-cap-safety-slot style="margin-top:8px;"></div><div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;">' + tabs.map(function(t) {
       var on = _capsuleTab === t[0];
@@ -13053,7 +13054,10 @@ function renderCapsuleView() {
   if (_capsuleTab === 'write') _capsuleRenderWrite(body, e);
   else if (_capsuleTab === 'sealed') _capsuleRenderSealed(body, e);
   else if (_capsuleTab === 'received') _capsuleRenderReceived(body, e);
+  else if (_capsuleTab === 'admin') _capsuleRenderAdmin(body, e);
   else _capsuleRenderAbout(body, e);
+  // v0.74.4: 管理者には、まだ決めていない通報の数を🔴で
+  if (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) _capsuleRpc('koyomiru_capsule_admin_open_count').then(function(n) { var bd = host.querySelector('[data-adm-badge]'); if (bd && n > 0) bd.innerHTML = ' <span style="display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#e74c3c;color:#fff;font-size:0.8em;font-weight:800;">' + n + '</span>'; }).catch(function() {});
 }
 window.renderCapsuleView = renderCapsuleView;
 var _CAP_BOX = 'padding:14px;border-radius:14px;background:#fff;border:1px solid #e6d8bd;';
@@ -13520,6 +13524,57 @@ function _capsuleRenderReceived(body, e) {
     });
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
 }
+// ===== v0.74.4: 管理者の審査の画面 =====
+// 【権威】2026-11-04、最高峰会議で決定。管理者は通報された手紙だけ読める。決めるのは人（自動では決めない）。措置の重さはサーバーが表のとおりに当てはめる。したことは記録に残る
+function _capsuleRenderAdmin(body, e) {
+  if (!(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())) { body.innerHTML = ''; return; }
+  _capsuleRpc('koyomiru_capsule_admin_list_reports', { p_status: 'open' }).then(function(rows) {
+    rows = rows || [];
+    var cats = KOYOMI_REPORT_CATEGORIES.filter(function(c) { return c[0] !== 'other'; });
+    var html = rows.length ? '' : '<div style="' + _CAP_BOX + 'color:#8a7f6a;">まだ決めていない通報は、ない。</div>';
+    html += rows.map(function(r) {
+      var heavy = /^(dating|illegal|stalking)$/.test(r.category);
+      return '<div data-adm-card="' + e(r.id) + '" style="' + _CAP_BOX + 'margin-bottom:12px;' + (heavy ? 'border-color:#e3a59d;background:#fff6f5;' : '') + '">' +
+        '<div style="font-weight:800;color:' + (heavy ? '#b0443a' : '#7a3b1e') + ';">' + (heavy ? '🔴 ' : '') + e(_KOYOMI_CAT_LABEL[r.category] || r.category) + '</div>' +
+        '<div style="font-size:0.84em;color:#6b4f2a;line-height:1.8;margin-top:4px;">通報された人：<b>' + e(r.reported_name) + '</b>（品性値 ' + e(String(r.reported_hinsei)) + '・これまでの措置 ' + e(String(r.reported_penalties)) + '件・未決の通報 ' + e(String(r.reported_open_reports)) + '件）<br>' +
+          '通報した人：' + e(r.reporter_name) + '　' + _capsuleFmtDT(r.created_at) + (r.detail ? '<br>くわしく：' + e(r.detail) : '') + '</div>' +
+        '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:0.84em;color:#7a3b1e;">手紙を読む（通報された手紙の写し）</summary><div style="white-space:pre-wrap;font-size:0.92em;line-height:1.8;background:#fffdf7;border:1px solid #efe3cc;border-radius:8px;padding:8px 10px;margin-top:6px;">' + e(r.body_snapshot || '（写しなし）') + '</div></details>' +
+        '<div style="font-size:0.84em;font-weight:700;margin:10px 0 6px;">カテゴリー</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' + cats.map(function(c) {
+          var on = c[0] === r.category;
+          return '<button type="button" data-adm-cat="' + c[0] + '" style="padding:5px 10px;border-radius:999px;font-size:0.82em;cursor:pointer;border:' + (on ? '2px solid #b0443a' : '1px solid #d9c9a6') + ';background:#fff;color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + c[1] + '</button>';
+        }).join('') + '</div>' +
+        '<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.82em;color:#6b4f2a;"><input type="checkbox" data-adm-cancel' + (/^(dating|illegal)$/.test(r.category) ? ' checked' : '') + '>この人の到着待ちの手紙も取り消す</label>' +
+        '<div data-adm-msg style="font-size:0.84em;margin-top:6px;"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" data-adm-ok style="padding:7px 14px;border-radius:10px;border:1px solid #2e7d4f;background:#fff;color:#2e7d4f;cursor:pointer;">問題なし</button>' +
+          '<button type="button" data-adm-violate style="padding:7px 14px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">違反として措置</button></div></div>';
+    }).join('');
+    html += '<details style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">管理者の記録</summary><div data-adm-log style="margin-top:6px;color:#6b4f2a;">読み込んでいる…</div></details>';
+    body.innerHTML = html;
+    rows.forEach(function(r) {
+      var card = body.querySelector('[data-adm-card="' + r.id + '"]'); if (!card) return;
+      var cat = r.category === 'other' ? null : r.category, msg = card.querySelector('[data-adm-msg]');
+      card.querySelectorAll('[data-adm-cat]').forEach(function(b) { b.onclick = function() { cat = b.getAttribute('data-adm-cat'); card.querySelectorAll('[data-adm-cat]').forEach(function(x) { var on = x === b; x.style.border = on ? '2px solid #b0443a' : '1px solid #d9c9a6'; x.style.fontWeight = on ? '700' : '400'; }); }; });
+      var go = function(violated, btn) {
+        if (violated && !cat) { msg.style.color = '#c0392b'; msg.textContent = 'カテゴリーを選んでほしい。'; return; }
+        _capsuleTwoClick(btn, violated ? '本当に措置する？' : '本当に問題なし？', function() {
+          _capsuleRpc('koyomiru_capsule_admin_resolve', { p_report: r.id, p_violated: violated, p_category: cat, p_cancel_pending: violated && card.querySelector('[data-adm-cancel]').checked })
+            .then(function(res) {
+              var t = res === 'no_violation' ? '問題なしとした' : (res === 'forever' ? '期限なしの措置をした' : (res === 'warning' ? '注意とした' : '措置をした（' + String(res).replace('until ', '') + 'まで）'));
+              if (typeof showToast === 'function') showToast('🛡 ' + t + '。通報した人に結果が届く', { type: 'success' });
+              renderCapsuleView();
+            }).catch(function(err) { msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
+        });
+      };
+      card.querySelector('[data-adm-ok]').onclick = function() { go(false, this); };
+      card.querySelector('[data-adm-violate]').onclick = function() { go(true, this); };
+    });
+    _capsuleRpc('koyomiru_capsule_admin_log_list', { p_limit: 50 }).then(function(list) {
+      var el = body.querySelector('[data-adm-log]'); if (!el) return;
+      el.innerHTML = (list && list.length) ? list.map(function(x) { var d = x.detail || {}; return '<div style="padding:3px 0;border-top:1px dashed #e6d8bd;">' + _capsuleFmtDT(x.created_at) + '　' + e(x.target_name || '') + '　' + e(x.action === 'violation' ? '措置（' + (_KOYOMI_CAT_LABEL[d.category] || d.category || '') + '・' + (d.result || '') + '）' : '問題なし') + '</div>'; }).join('') : 'まだない。';
+    }).catch(function() {});
+  }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
+}
+// ===== END v0.74.4 =====
 function _capsuleRenderAbout(body, e) {
   var st = window._capsuleStatus || {};
   body.innerHTML = '<div style="' + _CAP_BOX + 'line-height:1.8;color:#5a4630;font-size:0.92em;">' +
@@ -58615,6 +58670,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.74.4', date: '2026-11-04',
+    items: [
+      { icon:'🛡', t:'タイムカプセルの通報を、運営が審査する画面を作りました',
+        before:'届いた通報を、運営が確かめて決める画面がありませんでした',
+        after:'運営は、通報された手紙だけを確かめ、決まりに沿って措置するか、問題なしとするかを決めます。決めたことは記録に残り、通報した人に結果が届きます' }
+    ]
+  },
+  {
     ver: 'v0.74.3', date: '2026-11-04',
     items: [
       { icon:'🧹', t:'出した手紙の一覧から、届いた手紙を消せるようにしました',
@@ -87508,6 +87571,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-552·①: 一覧から消すが違う', '');
      } catch(e) {
        ng('ST-552: 例外', e.message);
+     }
+
+     // ===== ST-553: 管理者の審査の画面（管理者だけ・🔴の数・手紙の写しは開いたときだけ・カテゴリーを選んで措置か問題なし・記録）（v0.74.4〜） =====
+     try {
+       var _av = _capsuleRenderAdmin.toString(), _rv = renderCapsuleView.toString();
+       (/isKoyomiruAdminMode\(\)\) tabs\.push\(\['admin'/.test(_rv) && /koyomiru_capsule_admin_open_count/.test(_rv) && /koyomiru_capsule_admin_resolve/.test(_av) && /<details[^>]*><summary[^>]*>手紙を読む/.test(_av) &&
+        /koyomiru_capsule_admin_log_list/.test(_av) && /_capsuleTwoClick\(btn, violated/.test(_av) && /if \(!\(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode\(\)\)\) \{ body\.innerHTML = ''; return; \}/.test(_av))
+         ? ok('ST-553·①: 管理者だけ「🛡 審査」。未決の数を🔴で。手紙の写しは開いたときだけ。カテゴリーを選んで「違反として措置」か「問題なし」（2回押し）。重いものは到着待ちの取り消しも。管理者の記録')
+         : ng('ST-553·①: 審査の画面が違う', '');
+     } catch(e) {
+       ng('ST-553: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
