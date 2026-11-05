@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.74.7 ★ -->
+<!-- ★ CURRENT VERSION: v0.74.8 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.74.7';
+    const APP_VERSION = 'v0.74.8';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13072,17 +13072,18 @@ function renderCapsuleView() {
       '<div style="margin-top:12px;"><button type="button" onclick="openCloudLoginModal()" style="padding:9px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;font-weight:700;cursor:pointer;">ログインする</button></div></div></div>';
     return;
   }
-  var tabs = [['write', '📝 書く'], ['sealed', '🔏 出した手紙'], ['received', koyomiCapsuleIconSvg(17) + ' 受け取った手紙'], ['about', '🏫 委員会について']];
+  var tabs = [['write', '📝 書く'], ['sealed', '🔏 出した手紙'], ['received', koyomiCapsuleIconSvg(17) + ' 受け取った手紙<span data-cap-recv-dot title="まだ開いていない手紙がある" style="display:none;position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:#2ecc71;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.08);"></span>'], ['about', '🏫 委員会について']];
   if (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) tabs.push(['admin', '🛡 審査<span data-adm-badge></span>']);   // v0.74.4: 管理者だけ
   host.innerHTML = head + '<div data-cap-results-slot style="margin-top:10px;"></div><div data-cap-safety-slot style="margin-top:8px;"></div><div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;">' + tabs.map(function(t) {
       var on = _capsuleTab === t[0];
-      return '<button type="button" data-cap-tab="' + t[0] + '" style="padding:7px 12px;border-radius:999px;cursor:pointer;font-size:0.88em;border:' + (on ? '2px solid #7a3b1e' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdf0e3' : '#fff') + ';color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + t[1] + '</button>';
+      return '<button type="button" data-cap-tab="' + t[0] + '" style="position:relative;padding:7px 12px;border-radius:999px;cursor:pointer;font-size:0.88em;border:' + (on ? '2px solid #7a3b1e' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdf0e3' : '#fff') + ';color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + t[1] + '</button>';
     }).join('') + '</div><div data-cap-body style="padding-bottom:20px;"></div></div>';
   host.querySelectorAll('[data-cap-tab]').forEach(function(b) { b.onclick = function() { _capsuleTab = b.getAttribute('data-cap-tab'); renderCapsuleView(); }; });
   var st = host.querySelector('[data-cap-status]'), body = host.querySelector('[data-cap-body]');
   koyomiCapsuleShowReportResults(host.querySelector('[data-cap-results-slot]'));
-  koyomiCapsuleShowSafety(host.querySelector('[data-cap-safety-slot]'));   // v0.74.2: 書けない期間・品性値（記録がある人にだけ）   // v0.74.1: 通報の結果の知らせ（専用の置き場。今の状態の表示に上書きされないように）
+  koyomiCapsuleShowSafety(host.querySelector('[data-cap-safety-slot]'));
+  if (_capsuleTab !== 'received') { koyomiCapsuleSetBadge((window._capsuleUnseen || []).length); try { koyomiCapsuleCheckArrivals(false); } catch (eCa) {} }   // v0.74.8   // v0.74.2: 書けない期間・品性値（記録がある人にだけ）   // v0.74.1: 通報の結果の知らせ（専用の置き場。今の状態の表示に上書きされないように）
   _capsuleRpc('koyomiru_capsule_status').then(function(rows) {
     var r = (rows && rows[0]) || {};
     window._capsuleStatus = r;
@@ -13648,7 +13649,11 @@ function koyomiCapsuleMarkSeen(ids) {
   window._capsuleUnseen = []; koyomiCapsuleSetBadge(0);
 }
 window.koyomiCapsuleMarkSeen = koyomiCapsuleMarkSeen;
-function koyomiCapsuleSetBadge(n) { var b = document.getElementById('navCapsuleBadge'); if (b) b.style.display = n > 0 ? 'block' : 'none'; }
+function koyomiCapsuleSetBadge(n) {
+  var b = document.getElementById('navCapsuleBadge'); if (b) b.style.display = n > 0 ? 'block' : 'none';
+  // v0.74.8: 【権威】2026-11-05「受け取った手紙のチップの右上にも緑丸を」。ナビの🟢と一緒に付け外す
+  document.querySelectorAll('[data-cap-recv-dot]').forEach(function(d) { d.style.display = n > 0 ? 'block' : 'none'; });
+}
 var _capsuleCheckAt = 0;
 // 届いたかを見に行く（ログインしているときだけ。間を空けて）。まだ読んでいない手紙の一覧を返す
 function koyomiCapsuleCheckArrivals(force) {
@@ -58708,6 +58713,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.74.8', date: '2026-11-05',
+    items: [
+      { icon:'🟢', t:'「受け取った手紙」のタブにも🟢を付けました',
+        before:'ナビには🟢が付いても、委員会の画面のどこを開けばいいかが分かりにくいものでした',
+        after:'まだ開いていない手紙があると、「受け取った手紙」のタブの右上にも🟢が付きます。開くと、ナビの🟢と一緒に消えます' }
+    ]
+  },
+  {
     ver: 'v0.74.7', date: '2026-11-05',
     items: [
       { icon:'⚖️', t:'利用規約の「サービスの終了」を整えました',
@@ -87655,6 +87668,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-554·①: 利用規約が違う', '');
      } catch(e) {
        ng('ST-554: 例外', e.message);
+     }
+
+     // ===== ST-555: 受け取った手紙のタブにも🟢（ナビと一緒に付け外し）（v0.74.8〜） =====
+     try {
+       var _host = document.createElement('div'); _host.innerHTML = '<span data-cap-recv-dot style="display:none"></span>'; document.body.appendChild(_host);
+       var _nb = document.getElementById('navCapsuleBadge'), _nbSnap = _nb ? _nb.style.display : '';
+       koyomiCapsuleSetBadge(2); var _on = _host.firstChild.style.display === 'block';
+       koyomiCapsuleSetBadge(0); var _off = _host.firstChild.style.display === 'none';
+       _host.remove(); if (_nb) _nb.style.display = _nbSnap;
+       (_on && _off && /data-cap-recv-dot/.test(renderCapsuleView.toString()))
+         ? ok('ST-555·①: 受け取った手紙のタブの右上にも🟢。ナビの🟢と一緒に付いて、一緒に消える')
+         : ng('ST-555·①: タブの🟢が違う', [_on, _off].join(' / '));
+     } catch(e) {
+       ng('ST-555: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
