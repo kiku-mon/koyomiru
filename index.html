@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.74.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.74.3 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.74.2';
+    const APP_VERSION = 'v0.74.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13262,8 +13262,17 @@ function _capsuleRenderSealed(body, e) {
         (delivered && r.opened_at ? '<div style="font-size:0.84em;color:#2e7d4f;margin-top:4px;">開封：' + _capsuleYmd(r.opened_at) + ' ' + String(new Date(r.opened_at).getHours()).padStart(2, '0') + ':' + String(new Date(r.opened_at).getMinutes()).padStart(2, '0') + '</div>' : '') +
         '<div style="font-size:0.84em;color:#6b4f2a;margin-top:4px;line-height:1.7;">封をした日：' + _capsuleYmd(r.sealed_at) + '<br>開く日時：' + _capsuleYmd(r.open_at) + ' ' + String(new Date(r.open_at).getHours()).padStart(2, '0') + ':' + String(new Date(r.open_at).getMinutes()).padStart(2, '0') + (delivered ? '' : '（あと' + _capsuleDays(r.open_at) + '日）') + '</div>' +
         // v0.72.5: 【権威】2026-11-03「取り消しは、一度埋めたタイムカプセルを一人のわがままで掘り出すようなこと。できないように。管理者だけ」
+        // v0.74.3: 【権威】2026-11-04、最高峰会議で決定「届いた手紙は、出した手紙の一覧から消せる。相手の手紙は消えない」
+        (delivered ? '<div style="text-align:right;margin-top:6px;"><button type="button" data-cap-hide="' + e(r.id) + '" style="border:none;background:none;color:#8a7f6a;text-decoration:underline;font-size:0.8em;cursor:pointer;">一覧から消す（相手の手紙は消えない）</button></div>' : '') +
         ((delivered || !(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())) ? '' : '<div style="text-align:right;margin-top:6px;"><button type="button" data-cap-cancel="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c0392b;background:#fff;color:#c0392b;font-size:0.82em;cursor:pointer;">取り消す</button></div>') + '</div>';
     }).join('');
+    body.querySelectorAll('[data-cap-hide]').forEach(function(btn) {
+      btn.onclick = function() {
+        _capsuleTwoClick(btn, '本当に一覧から消す？（相手の手紙は消えない）', function() {
+          _capsuleRpc('koyomiru_capsule_hide_sent', { p_id: btn.getAttribute('data-cap-hide') }).then(function() { renderCapsuleView(); }).catch(function(err) { if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); });
+        });
+      };
+    });
     body.querySelectorAll('[data-cap-cancel]').forEach(function(b) {
       b.onclick = function() {
         _capsuleTwoClick(b, '本当に取り消す？（届かなくなる）', function() {
@@ -58606,6 +58615,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.74.3', date: '2026-11-04',
+    items: [
+      { icon:'🧹', t:'出した手紙の一覧から、届いた手紙を消せるようにしました',
+        before:'出した手紙は、届いたあとも一覧に残り続けていました',
+        after:'相手に届いた手紙は「一覧から消す」で、自分の一覧から消せます。相手の手元の手紙は消えません。到着待ちの手紙は消せません' }
+    ]
+  },
+  {
     ver: 'v0.74.2', date: '2026-11-04',
     items: [
       { icon:'📋', t:'タイムカプセルの「品性値」を、記録がある人にだけ見せるようにしました',
@@ -87481,6 +87498,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-551·①: 品性値の表示が違う', '');
      } catch(e) {
        ng('ST-551: 例外', e.message);
+     }
+
+     // ===== ST-552: 出した手紙の一覧から消す（届いたものだけ・相手の手紙は消えない）（v0.74.3〜） =====
+     try {
+       var _sv = _capsuleRenderSealed.toString();
+       (/delivered \? '<div style="text-align:right;margin-top:6px;"><button type="button" data-cap-hide/.test(_sv) && /koyomiru_capsule_hide_sent/.test(_sv) && /相手の手紙は消えない/.test(_sv))
+         ? ok('ST-552·①: 出した手紙のうち、相手に届いたものだけ「一覧から消す（相手の手紙は消えない）」。2回押し。到着待ちには出さない')
+         : ng('ST-552·①: 一覧から消すが違う', '');
+     } catch(e) {
+       ng('ST-552: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
