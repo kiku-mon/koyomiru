@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.74.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.74.1 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.74.0';
+    const APP_VERSION = 'v0.74.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13035,13 +13035,14 @@ function renderCapsuleView() {
     return;
   }
   var tabs = [['write', '📝 書く'], ['sealed', '🔏 出した手紙'], ['received', koyomiCapsuleIconSvg(17) + ' 受け取った手紙'], ['about', '🏫 委員会について']];
-  host.innerHTML = head + '<div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
+  host.innerHTML = head + '<div data-cap-results-slot style="margin-top:10px;"></div><div data-cap-status style="margin-top:10px;font-size:0.82em;color:#6b4f2a;"></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;">' + tabs.map(function(t) {
       var on = _capsuleTab === t[0];
       return '<button type="button" data-cap-tab="' + t[0] + '" style="padding:7px 12px;border-radius:999px;cursor:pointer;font-size:0.88em;border:' + (on ? '2px solid #7a3b1e' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdf0e3' : '#fff') + ';color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + t[1] + '</button>';
     }).join('') + '</div><div data-cap-body style="padding-bottom:20px;"></div></div>';
   host.querySelectorAll('[data-cap-tab]').forEach(function(b) { b.onclick = function() { _capsuleTab = b.getAttribute('data-cap-tab'); renderCapsuleView(); }; });
   var st = host.querySelector('[data-cap-status]'), body = host.querySelector('[data-cap-body]');
+  koyomiCapsuleShowReportResults(host.querySelector('[data-cap-results-slot]'));   // v0.74.1: 通報の結果の知らせ（専用の置き場。今の状態の表示に上書きされないように）
   _capsuleRpc('koyomiru_capsule_status').then(function(rows) {
     var r = (rows && rows[0]) || {};
     window._capsuleStatus = r;
@@ -13338,8 +13339,64 @@ function _capsuleLetterHtml(r, e) {
       (canReply ? (isComm ? '<button type="button" data-cap-reply="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #2c4f78;background:#eef4fb;color:#2c4f78;font-size:0.82em;font-weight:700;cursor:pointer;">✉️ 返事をしたためる</button>'
         : '<span style="font-size:0.74em;color:#8a7f6a;">返事をしたためるのは、委員（こよみるONE）の特典</span>') : '') +
       '<button type="button" data-cap-journal="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;font-size:0.82em;cursor:pointer;">日誌に残す</button>' +
-      '<button type="button" data-cap-del="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c9b9a0;background:#fff;color:#8a7f6a;font-size:0.82em;cursor:pointer;">消す</button></div></div>';
+      '<button type="button" data-cap-del="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #c9b9a0;background:#fff;color:#8a7f6a;font-size:0.82em;cursor:pointer;">消す</button></div>' +
+      (canReply ? '<div style="display:flex;gap:14px;justify-content:flex-end;margin-top:8px;font-size:0.76em;"><button type="button" data-cap-block="' + e(r.id) + '" style="border:none;background:none;color:#8a7f6a;text-decoration:underline;cursor:pointer;">この人からは受け取らない</button>' +
+        '<button type="button" data-cap-report="' + e(r.id) + '" style="border:none;background:none;color:#b0443a;text-decoration:underline;cursor:pointer;">⚠ 通報</button></div>' : '') + '</div>';
 }
+// ===== v0.74.1: 通報とブロック（受け取った手紙から） =====
+// 【権威】2026-11-04、最高峰会議で決定。第五人格の通報の仕組みを真似る。7カテゴリー。通報と同時にブロック。相手には伝わらない
+var KOYOMI_REPORT_CATEGORIES = [['abuse', '悪口・下品な言葉'], ['spam', '宣伝・勧誘'], ['sexual', '性的な内容'], ['stalking', 'つきまとい'], ['dating', '出会い目的・お金の誘い'], ['illegal', '法に触れる内容'], ['other', 'その他']];
+window.KOYOMI_REPORT_CATEGORIES = KOYOMI_REPORT_CATEGORIES;
+function koyomiCapsuleReportModal(r, onDone) {
+  var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var old = document.getElementById('capsuleReportOverlay'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'capsuleReportOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,0.45);display:flex;justify-content:center;overflow-y:auto;padding:calc(env(safe-area-inset-top, 0px) + 16px) 12px calc(env(safe-area-inset-bottom, 0px) + 16px);';
+  ov.innerHTML = '<div role="dialog" aria-modal="true" style="width:100%;max-width:440px;margin:auto 0;background:#fffaf2;border-radius:20px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.3);color:#3a2a1a;">' +
+    '<div style="font-weight:800;font-size:1.05em;color:#7a3b1e;">⚠ 通報する</div>' +
+    '<div style="font-size:0.82em;color:#8a7f6a;margin:4px 0 12px;">' + e(r.sender_name) + 'からの手紙について。運営が利用規約に基づいて確かめる。</div>' +
+    '<div style="font-weight:700;font-size:0.9em;margin-bottom:6px;">どれにあたる？</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + KOYOMI_REPORT_CATEGORIES.map(function(c) {
+      return '<button type="button" data-rp-cat="' + c[0] + '" style="padding:6px 11px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-size:0.85em;cursor:pointer;">' + c[1] + '</button>';
+    }).join('') + '</div>' +
+    '<div style="font-weight:700;font-size:0.9em;margin:12px 0 6px;">くわしく（なくてもいい）</div>' +
+    '<textarea data-rp="detail" maxlength="500" rows="3" placeholder="何が困ったか" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.92em;"></textarea>' +
+    '<div style="font-size:0.78em;color:#6b4f2a;line-height:1.7;margin-top:8px;">・通報すると、この人からの手紙は届かなくなる（相手には伝わらない）。<br>・誰が通報したかは、相手に伝わらない。<br>・<b>すぐ危ないときは、警察（110番）へ</b>。</div>' +
+    '<div data-rp="msg" style="font-size:0.85em;margin-top:8px;"></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button type="button" data-rp="cancel" style="padding:8px 14px;border-radius:10px;border:1px solid #d9c9a6;background:#fff;color:#8a7f6a;cursor:pointer;">やめる</button>' +
+    '<button type="button" data-rp="send" style="padding:8px 16px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">通報する</button></div></div>';
+  document.body.appendChild(ov);
+  var cat = null, msg = ov.querySelector('[data-rp="msg"]');
+  ov.querySelectorAll('[data-rp-cat]').forEach(function(b) { b.onclick = function() { cat = b.getAttribute('data-rp-cat'); ov.querySelectorAll('[data-rp-cat]').forEach(function(x) { var on = x === b; x.style.border = on ? '2px solid #b0443a' : '1px solid #d9c9a6'; x.style.fontWeight = on ? '700' : '400'; }); }; });
+  ov.querySelector('[data-rp="cancel"]').onclick = function() { ov.remove(); };
+  ov.querySelector('[data-rp="send"]').onclick = function() {
+    if (!cat) { msg.style.color = '#c0392b'; msg.textContent = 'どれにあたるかを選んでほしい。'; return; }
+    var b = this; b.disabled = true;
+    _capsuleRpc('koyomiru_capsule_report', { p_capsule: r.id, p_category: cat, p_detail: String(ov.querySelector('[data-rp="detail"]').value || '').slice(0, 500) })
+      .then(function() {
+        ov.querySelector('[role=dialog]').innerHTML = '<div style="font-weight:800;color:#7a3b1e;">通報を受け付けた</div><div style="font-size:0.9em;line-height:1.8;margin-top:8px;color:#5a4630;">運営が確かめ、対処したら、タイムカプセル委員会の画面でお知らせする。<br>この人からの手紙は、もう届かない。誰が通報したかは、相手に伝わらない。</div>' +
+          '<div style="text-align:right;margin-top:12px;"><button type="button" data-rp="ok" style="padding:8px 16px;border-radius:10px;border:none;background:#7a3b1e;color:#fff;cursor:pointer;">閉じる</button></div>';
+        ov.querySelector('[data-rp="ok"]').onclick = function() { ov.remove(); if (typeof onDone === 'function') onDone(); };
+      })
+      .catch(function(err) { b.disabled = false; msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
+  };
+}
+window.koyomiCapsuleReportModal = koyomiCapsuleReportModal;
+// 運営の結果の知らせ（委員会の画面の上に）
+function koyomiCapsuleShowReportResults(host) {
+  try {
+    _capsuleRpc('koyomiru_capsule_my_report_results').then(function(rows) {
+      if (!rows || !rows.length || !host) return;
+      var html = rows.map(function(r) {
+        return '<div style="padding:10px 12px;border-radius:12px;margin-bottom:8px;background:#eef6ee;border:1px solid #c9e2c9;color:#2e5d34;font-size:0.86em;line-height:1.7;">' +
+          (r.violated ? '通報した手紙について、運営が確かめ、相応の対処をした。ご協力ありがとう。' : '通報した手紙について、運営が確かめたが、違反とは判断しなかった。その人からの手紙は、引き続き届かない。') + '</div>';
+      }).join('');
+      host.insertAdjacentHTML('afterbegin', '<div data-cap-results>' + html + '</div>');
+      _capsuleRpc('koyomiru_capsule_mark_report_results_seen').catch(function() {});
+    }).catch(function() {});
+  } catch (e) {}
+}
+// ===== END v0.74.1 =====
 function _capsuleRenderReceived(body, e) {
   _capsuleRpc('koyomiru_capsule_list_received').then(function(rows) {
     rows = rows || [];
@@ -13361,6 +13418,15 @@ function _capsuleRenderReceived(body, e) {
         b.onclick = function() {
           var ok = (typeof saveKoyomiTodayWord === 'function') && saveKoyomiTodayWord('📜 タイムカプセル（' + r.sender_name + 'から・' + (koyomiCapsuleKoyomiText(r.sealed_koyomi) || _capsuleYmd(r.sealed_at)) + 'に封）：' + r.body);
           if (typeof showToast === 'function') showToast(ok ? '今日の日誌に残した' : '日誌に残せなかった', { type: ok ? 'success' : 'warn' });
+        };
+      });
+      card.querySelectorAll('[data-cap-report]').forEach(function(b) { b.onclick = function() { koyomiCapsuleReportModal(r, function() { renderCapsuleView(); }); }; });   // v0.74.1
+      card.querySelectorAll('[data-cap-block]').forEach(function(b) {
+        b.onclick = function() {
+          _capsuleTwoClick(b, '本当に受け取らない？（相手には伝わらない）', function() {
+            _capsuleRpc('koyomiru_capsule_block', { p_user: r.sender_id, p_on: true }).then(function() { if (typeof showToast === 'function') showToast(r.sender_name + 'からの手紙は、もう届かない（相手には伝わらない）', { type: 'info' }); renderCapsuleView(); })
+              .catch(function(err) { if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); });
+          });
         };
       });
       card.querySelectorAll('[data-cap-reply]').forEach(function(b) {
@@ -13419,6 +13485,14 @@ function _capsuleRenderAbout(body, e) {
     '<tr><td style="padding:4px;color:#8a7f6a;">取り消し</td><td style="padding:4px;">できない</td><td style="padding:4px;">できない</td></tr></table>' +
     '<div style="margin-top:10px;font-size:0.82em;color:#8a7f6a;">手紙は、届くまでのあいだ、こよみるのクラウドで預かる（端末を替えても届くように）。開く日時より前は、サーバーも中身を誰にも返さない。<br>封をしたら、取り消せない。30年後まで選べるが、届けられるのは、こよみるが続いている限り。もしこよみるを終えるときは、前もって知らせ、封をした手紙を開けられるようにする。</div>' +
     '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;"><input type="checkbox" data-cap="refuse"' + (st.refusing ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#7a3b1e;">人からのタイムカプセルを受け取らない</label></div>';
+  // v0.74.1: 受け取らないことにした人
+  body.insertAdjacentHTML('beforeend', '<div data-cap-blocks style="' + _CAP_BOX + 'margin-top:12px;font-size:0.9em;color:#5a4630;"><div style="font-weight:800;color:#7a3b1e;">受け取らないことにした人</div><div data-cap-blocklist style="margin-top:6px;color:#8a7f6a;">読み込んでいる…</div></div>');
+  _capsuleRpc('koyomiru_capsule_list_blocks').then(function(list) {
+    var el = body.querySelector('[data-cap-blocklist]'); if (!el) return;
+    if (!list || !list.length) { el.textContent = 'いない。'; return; }
+    el.innerHTML = list.map(function(x) { return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-top:1px dashed #e6d8bd;"><span>' + e(x.name) + '</span><button type="button" data-cap-unblock="' + e(x.user_id) + '" style="padding:3px 10px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#7a3b1e;font-size:0.85em;cursor:pointer;">受け取りを戻す</button></div>'; }).join('');
+    el.querySelectorAll('[data-cap-unblock]').forEach(function(b) { b.onclick = function() { _capsuleTwoClick(b, '本当に戻す？', function() { _capsuleRpc('koyomiru_capsule_block', { p_user: b.getAttribute('data-cap-unblock'), p_on: false }).then(function() { renderCapsuleView(); }).catch(function() {}); }); }; });
+  }).catch(function() { var el = body.querySelector('[data-cap-blocklist]'); if (el) el.textContent = ''; });
   var cb = body.querySelector('[data-cap="refuse"]');
   cb.onchange = function() { _capsuleRpc('koyomiru_capsule_set_refuse', { p_refuse: cb.checked }).then(function() { if (typeof showToast === 'function') showToast(cb.checked ? '人からのタイムカプセルを受け取らない' : '人からのタイムカプセルを受け取る', { type: 'info' }); }).catch(function(err) { cb.checked = !cb.checked; if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); }); };
 }
@@ -58493,6 +58567,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.74.1', date: '2026-11-04',
+    items: [
+      { icon:'⚠', t:'タイムカプセルに「通報」と「受け取らない」を置きました',
+        before:'困る手紙が届いても、運営に知らせたり、その人からの手紙を止めたりする方法がありませんでした',
+        after:'受け取った手紙の下の「⚠ 通報」で、7つの理由から選んで運営に知らせられます。通報すると、その人からの手紙は届かなくなります（相手には伝わりません）。「この人からは受け取らない」だけもできます。運営が確かめたら、結果をお知らせします' }
+    ]
+  },
+  {
     ver: 'v0.74.0', date: '2026-11-04',
     items: [
       { icon:'🤝', t:'タイムカプセル委員会に「想い」と「心得」を置きました',
@@ -87328,6 +87410,19 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-549·①: 想いと心得が違う', '');
      } catch(e) {
        ng('ST-549: 例外', e.message);
+     }
+
+     // ===== ST-550: 通報とブロック（受け取った手紙から・7カテゴリー・結果の知らせ・受け取らない人の一覧）（v0.74.1〜） =====
+     try {
+       var _lh = _capsuleLetterHtml({ id: 'a', sender_id: 'u2', sender_name: 'すず', body: 'x', sealed_at: new Date().toISOString() }, function(x) { return String(x); });
+       var _self = _capsuleLetterHtml({ id: 'b', sender_id: 'me', sender_name: '自分', body: 'x', sealed_at: new Date().toISOString() }, function(x) { return String(x); });
+       (KOYOMI_REPORT_CATEGORIES.length === 7 && /data-cap-report="a"/.test(_lh) && /data-cap-block="a"/.test(_lh) && !/data-cap-report/.test(_self) &&
+        /koyomiru_capsule_report/.test(koyomiCapsuleReportModal.toString()) && /110番/.test(koyomiCapsuleReportModal.toString()) &&
+        /違反とは判断しなかった/.test(koyomiCapsuleShowReportResults.toString()) && /koyomiru_capsule_list_blocks/.test(_capsuleRenderAbout.toString()))
+         ? ok('ST-550·①: 受け取った手紙に「通報」と「受け取らない」（自分の手紙には出さない）。通報は7カテゴリー・くわしく500字・110番の案内。結果の知らせ（違反のとき・でないとき）。受け取らない人の一覧と戻す')
+         : ng('ST-550·①: 通報とブロックが違う', '');
+     } catch(e) {
+       ng('ST-550: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
