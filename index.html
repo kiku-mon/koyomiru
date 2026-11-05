@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.75.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.75.1 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.75.0';
+    const APP_VERSION = 'v0.75.1';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13095,7 +13095,9 @@ function renderCapsuleView() {
   _capsuleRpc('koyomiru_capsule_status').then(function(rows) {
     var r = (rows && rows[0]) || {};
     window._capsuleStatus = r;
-    st.innerHTML = (r.is_committee ? '🏫 あなたは<b>委員</b>。' : '') + '到着待ちの手紙：<b>' + (r.sealed_count || 0) + '</b> ／ ' + (r.is_committee ? 30 : (r.quota || 3)) + '通（到着したら、また書ける）';
+    // v0.75.1: 【権威】2026-11-05「タイムカプセルを使うときは、その人の現在の品性値を見せよう。見せることが牽制にもなる」。見せるのは自分の値だけ
+    st.innerHTML = (r.is_committee ? '🏫 あなたは<b>委員</b>。' : '') + '<span data-cap-hinsei style="margin-right:10px;">品性値 <b>' + (typeof window._capsuleHinsei === 'number' ? window._capsuleHinsei : '…') + '</b></span>' +
+      '到着待ちの手紙：<b>' + (r.sealed_count || 0) + '</b> ／ ' + (r.is_committee ? 30 : (r.quota || 3)) + '通（到着したら、また書ける）';
   }).catch(function() { st.textContent = ''; });
   body.innerHTML = '<div style="color:#8a7f6a;font-size:0.9em;">読み込んでいる…</div>';
   if (_capsuleTab === 'write') _capsuleRenderWrite(body, e);
@@ -13474,6 +13476,9 @@ function koyomiCapsuleShowSafety(slot) {
     var r = (rows && rows[0]) || {}; var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
     var susp = !!(r.forever || (r.suspended_until && new Date(r.suspended_until) > new Date()));
     window._capsuleSuspended = susp;
+    // v0.75.1: 上の一行に、自分の品性値（いつも）
+    window._capsuleHinsei = (typeof r.hinsei === 'number') ? r.hinsei : 100;
+    document.querySelectorAll('#capsuleView [data-cap-hinsei]').forEach(function(el) { el.innerHTML = '品性値 <b style="color:' + (window._capsuleHinsei < 100 ? '#b0443a' : 'inherit') + ';">' + window._capsuleHinsei + '</b>'; });
     if (!r.has_record && !susp) { slot.innerHTML = ''; return; }
     var html = '';
     if (susp) html += '<div style="padding:10px 12px;border-radius:12px;background:#fdecea;border:1px solid #f0c4bf;color:#8a2c22;font-size:0.88em;line-height:1.7;margin-bottom:8px;">' +
@@ -58721,6 +58726,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.75.1', date: '2026-11-05',
+    items: [
+      { icon:'📋', t:'タイムカプセル委員会の画面に、自分の品性値を出すようにしました',
+        before:'品性値は、措置を受けた人にだけ見えていました',
+        after:'委員会の画面のいちばん上に、いつも自分の品性値が出ます（はじめは100）。見えるのは自分の値だけです' }
+    ]
+  },
+  {
     ver: 'v0.75.0', date: '2026-11-05',
     items: [
       { icon:'🛡', t:'運営のタブの名前を「通報」にしました',
@@ -87717,6 +87730,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-556·①: 免責事項が違う', '');
      } catch(e) {
        ng('ST-556: 例外', e.message);
+     }
+
+     // ===== ST-557: 自分の品性値を、委員会の画面の上にいつも出す（自分の値だけ）（v0.75.1〜） =====
+     try {
+       (/data-cap-hinsei/.test(renderCapsuleView.toString()) && /window\._capsuleHinsei = /.test(koyomiCapsuleShowSafety.toString()) && !/reported_hinsei/.test(_capsuleRenderReceived.toString() + _capsuleRenderSealed.toString()))
+         ? ok('ST-557·①: 委員会の画面の上に、自分の品性値をいつも出す（下がっていれば赤）。他人の品性値は、利用者の画面には出さない')
+         : ng('ST-557·①: 品性値の表示が違う', '');
+     } catch(e) {
+       ng('ST-557: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
