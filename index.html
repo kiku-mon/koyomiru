@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.75.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.75.3 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.75.2';
+    const APP_VERSION = 'v0.75.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13601,6 +13601,11 @@ function _capsuleRenderAdmin(body, e) {
         '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" data-adm-ok style="padding:7px 14px;border-radius:10px;border:1px solid #2e7d4f;background:#fff;color:#2e7d4f;cursor:pointer;">問題なし</button>' +
           '<button type="button" data-adm-violate style="padding:7px 14px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">違反として措置</button></div></div>';
     }).join('');
+    // v0.75.3: 【権威】2026-11-05「管理者は安全管理のため、全員の手紙の流れを見られるようにする」。中身は出さない。開いたときだけ聞きに行き、見たことはサーバーの記録に残る
+    html += '<details data-adm-flowbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">手紙の流れ（中身は出ない）</summary>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;"><input data-adm-flowq placeholder="名前で絞り込む" style="flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid #d9c9a6;font-size:0.95em;"><button type="button" data-adm-flowgo style="padding:6px 12px;border-radius:8px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">探す</button></div>' +
+      '<div data-adm-flow style="margin-top:8px;color:#6b4f2a;"></div></details>';
+    html += '<details data-adm-statbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">送った人ごとの数（この30日）</summary><div data-adm-stats style="margin-top:6px;color:#6b4f2a;"></div></details>';
     html += '<details style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">管理者の記録</summary><div data-adm-log style="margin-top:6px;color:#6b4f2a;">読み込んでいる…</div></details>';
     body.innerHTML = html;
     rows.forEach(function(r) {
@@ -13621,9 +13626,30 @@ function _capsuleRenderAdmin(body, e) {
       card.querySelector('[data-adm-ok]').onclick = function() { go(false, this); };
       card.querySelector('[data-adm-violate]').onclick = function() { go(true, this); };
     });
+    // v0.75.3: 手紙の流れ・送った人ごとの数（開いたときだけ）
+    var loadFlow = function() {
+      var el = body.querySelector('[data-adm-flow]'), q = String((body.querySelector('[data-adm-flowq]') || {}).value || '').trim(); if (!el) return;
+      el.textContent = '読み込んでいる…';
+      _capsuleRpc('koyomiru_capsule_admin_flow', { p_name: q || null, p_limit: 200 }).then(function(list) {
+        el.innerHTML = (list && list.length) ? list.map(function(x) {
+          var stt = x.canceled ? '取り消し' : (x.delivered ? '届いた' : '到着待ち');
+          return '<div style="padding:4px 0;border-top:1px dashed #e6d8bd;line-height:1.6;"><b>' + e(x.sender_name) + '</b> → <b>' + e(x.recipient_name) + '</b>　<span style="color:#8a7f6a;">' + stt + '</span><br><span style="font-size:0.92em;color:#8a7f6a;">封：' + _capsuleFmtDT(x.sealed_at) + '　届く：' + _capsuleFmtDT(x.open_at) + '</span></div>';
+        }).join('') : 'ない。';
+      }).catch(function(err) { el.textContent = _capsuleErr(err); });
+    };
+    var fb = body.querySelector('[data-adm-flowbox]'); if (fb) fb.addEventListener('toggle', function() { if (fb.open) loadFlow(); });
+    var fg = body.querySelector('[data-adm-flowgo]'); if (fg) fg.onclick = loadFlow;
+    var sb = body.querySelector('[data-adm-statbox]');
+    if (sb) sb.addEventListener('toggle', function() {
+      if (!sb.open) return; var el = body.querySelector('[data-adm-stats]'); el.textContent = '読み込んでいる…';
+      _capsuleRpc('koyomiru_capsule_admin_sender_stats').then(function(list) {
+        el.innerHTML = (list && list.length) ? list.map(function(x) { return '<div style="padding:4px 0;border-top:1px dashed #e6d8bd;"><b>' + e(x.sender_name) + '</b>　相手 ' + e(String(x.recipients)) + '人・' + e(String(x.letters)) + '通　<span style="color:#8a7f6a;">最後：' + _capsuleFmtDT(x.last_sealed_at) + '</span></div>'; }).join('') : 'ない。';
+      }).catch(function(err) { el.textContent = _capsuleErr(err); });
+    });
     _capsuleRpc('koyomiru_capsule_admin_log_list', { p_limit: 50 }).then(function(list) {
       var el = body.querySelector('[data-adm-log]'); if (!el) return;
-      el.innerHTML = (list && list.length) ? list.map(function(x) { var d = x.detail || {}; return '<div style="padding:3px 0;border-top:1px dashed #e6d8bd;">' + _capsuleFmtDT(x.created_at) + '　' + e(x.target_name || '') + '　' + e(x.action === 'violation' ? '措置（' + (_KOYOMI_CAT_LABEL[d.category] || d.category || '') + '・' + (d.result || '') + '）' : '問題なし') + '</div>'; }).join('') : 'まだない。';
+      var _actLabel = function(x, d) { return x.action === 'violation' ? '措置（' + (_KOYOMI_CAT_LABEL[d.category] || d.category || '') + '・' + (d.result || '') + '）' : (x.action === 'no_violation' ? '問題なし' : (x.action === 'view_flow' ? '手紙の流れを見た' + (d.name ? '（' + d.name + '）' : '') : (x.action === 'view_stats' ? '送った人ごとの数を見た' : x.action))); };
+      el.innerHTML = (list && list.length) ? list.map(function(x) { var d = x.detail || {}; return '<div style="padding:3px 0;border-top:1px dashed #e6d8bd;">' + _capsuleFmtDT(x.created_at) + '　' + e(x.target_name || '') + '　' + e(_actLabel(x, d)) + '</div>'; }).join('') : 'まだない。';
     }).catch(function() {});
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
 }
@@ -58727,6 +58753,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.75.3', date: '2026-11-05',
+    items: [
+      { icon:'🛡', t:'運営の安全管理の画面を整えました',
+        before:'運営は、通報された手紙しか確かめられませんでした',
+        after:'運営の画面に、安全管理のための記録の確認を足しました（手紙の内容は、通報された場合を除き確認しません）' }
+    ]
+  },
+  {
     ver: 'v0.75.2', date: '2026-11-05',
     items: [
       { icon:'⚖️', t:'利用規約とプライバシーポリシーを整えました',
@@ -87759,6 +87793,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-558·①: 規約の一文が違う', '');
      } catch(e) {
        ng('ST-558: 例外', e.message);
+     }
+
+     // ===== ST-559: 管理者の「手紙の流れ」と「送った人ごとの数」（中身なし・開いたときだけ・見たことは記録）（v0.75.3〜） =====
+     try {
+       var _av = _capsuleRenderAdmin.toString();
+       (/koyomiru_capsule_admin_flow/.test(_av) && /koyomiru_capsule_admin_sender_stats/.test(_av) && /addEventListener\('toggle'/.test(_av) && /手紙の流れを見た/.test(_av) && !/body_snapshot[^)]*admin_flow/.test(_av))
+         ? ok('ST-559·①: 管理者の通報のタブに「手紙の流れ（中身は出ない）」「送った人ごとの数」。開いたときだけ聞きに行き、見たことは記録に残る')
+         : ng('ST-559·①: 手紙の流れが違う', '');
+     } catch(e) {
+       ng('ST-559: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
