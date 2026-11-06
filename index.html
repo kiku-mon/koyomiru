@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.4 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.3';
+    const APP_VERSION = 'v0.76.4';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13272,7 +13272,7 @@ function _capsuleRenderCeremony(body, e) {
         // v0.76.2: 宛先は、その開封式のカレンダーの仲間だけ（⑮の前のサーバーなら、今までの一覧）
         _capsuleRpc('koyomiru_capsule_ceremony_recipients', { p_ceremony: c.id }).catch(function() { return _capsuleRpc('koyomiru_capsule_recipients'); }).then(function(list) {
           pane.innerHTML = '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e6d8bd;"><select data-cw="to" style="width:100%;padding:8px;border-radius:10px;border:1px solid #d9c9a6;margin-bottom:6px;">' + (list || []).map(function(x) { return '<option value="' + e(x.user_id) + '">' + e(x.name) + '</option>'; }).join('') + '</select>' +
-            '<textarea data-cw="body" maxlength="2000" rows="7"></textarea>' +
+            '<textarea data-cw="body" maxlength="2000" rows="9"></textarea>' + koyomiLetterChipsHtml(e) +
             '<div data-cw="msg" style="font-size:0.84em;margin:4px 0;"></div><div style="text-align:right;"><button type="button" data-cw="seal" style="padding:8px 16px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をして入れる</button></div></div>';
           var sb = pane.querySelector('[data-cw="seal"]'), msg = pane.querySelector('[data-cw="msg"]');
           // v0.76.3: 拝啓 ○○様 … 敬具 の型・紙
@@ -13280,6 +13280,7 @@ function _capsuleRenderCeremony(body, e) {
           var cwNm = function() { var o = cwSel.options[cwSel.selectedIndex]; return o ? o.textContent : '自分'; };
           koyomiApplyPaperToTextarea(cwTa, 'ruled'); cwTa.value = koyomiLetterTemplate(cwNm());
           cwSel.addEventListener('change', function() { cwTa.value = koyomiLetterRename(cwTa.value, cwNm()); });
+          koyomiWireLetterChips(pane, cwTa);   // v0.76.4
           sb.onclick = function() {
             var txt = String(pane.querySelector('[data-cw="body"]').value || '').trim(); if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
             var cwFe = koyomiLetterFormError(txt); if (cwFe) { msg.style.color = '#c0392b'; msg.textContent = cwFe; return; }   // v0.76.3
@@ -13408,6 +13409,62 @@ function koyomiApplyPaperToTextarea(ta, kind) {
 }
 window.koyomiApplyPaperToTextarea = koyomiApplyPaperToTextarea;
 // ===== END v0.76.3 =====
+// ===== v0.76.4: 手紙の型をチップで（本文だけは手で書く） =====
+// 【権威】2026-11-06「みんな文が短い」「定型文をチップにしてポチポチ作っていくやり方を足して、肝心なところは手で書く・手で直す。体裁が整った手紙になるかな？やってみたい」。
+// 日本の手紙の型（頭語 → 時候 → 安否 → 本文 → 結び → 結語）。前の方のあいさつは「拝啓」の下に順に積み、結びは「敬具」のすぐ上へ
+var KOYOMI_JIKOU = {
+  1: ['新春の候、', '寒さ厳しき折、'], 2: ['立春の候、', '春の訪れが待ち遠しい頃となりました。'], 3: ['早春の候、', '日ごとに春めいてまいりました。'],
+  4: ['陽春の候、', '桜の便りが聞かれる頃となりました。'], 5: ['新緑の候、', '風薫る季節となりました。'], 6: ['梅雨の候、', '紫陽花の美しい季節となりました。'],
+  7: ['盛夏の候、', '暑さ厳しき折、'], 8: ['残暑の候、', '暑さもようやく峠を越えたようです。'], 9: ['初秋の候、', '朝夕はしのぎやすくなりました。'],
+  10: ['秋晴れの候、', '秋も深まってまいりました。'], 11: ['晩秋の候、', '朝晩の冷え込みが増してまいりました。'], 12: ['師走の候、', '今年も残りわずかとなりました。']
+};
+var KOYOMI_LETTER_CHIPS = [
+  { key: 'jikou', label: '時候のあいさつ', where: 'top' },
+  { key: 'anpi', label: '安否のあいさつ', where: 'top', items: ['いかがお過ごしでしょうか。', 'お元気ですか。', 'こちらは元気にしています。'] },
+  { key: 'kakidashi', label: '本文の書き出し', where: 'top', items: ['さて、', '今日は、未来のあなたに伝えたいことがあって、筆をとりました。', 'この手紙を開くころ、あなたはどうしているでしょう。'] },
+  { key: 'musubi', label: '結びのあいさつ', where: 'bottom', items: ['季節の変わり目、どうかご自愛ください。', 'また会える日を楽しみにしています。', 'これからも、よろしくお願いします。'] }
+];
+function koyomiLetterChipItems(group, d) {
+  if (group.key !== 'jikou') return group.items;
+  var dd = d || new Date(), list = (KOYOMI_JIKOU[dd.getMonth() + 1] || []).slice();
+  try { var sk = (koyomiTodayData(dd) || {}).sekki; if (sk) list.push(sk + 'を迎え、'); } catch (e) {}
+  return list;
+}
+function _koyomiAllTopChipTexts(d) { var a = []; KOYOMI_LETTER_CHIPS.forEach(function(g) { if (g.where === 'top') a = a.concat(koyomiLetterChipItems(g, d)); }); return a; }
+// 型に沿って1行入れる（拝啓の下に積む／敬具の上へ）。型が崩れていたら、末尾の敬具の前に入れる
+function koyomiLetterInsert(text, phrase, where, d) {
+  var lines = String(text || '').split('\n');
+  var head = lines.findIndex(function(l) { return /^\s*拝啓/.test(l); });
+  var foot = -1; for (var i = lines.length - 1; i >= 0; i--) { if (/^\s*敬具\s*$/.test(lines[i])) { foot = i; break; } }
+  if (where === 'bottom' || head === -1) {
+    var at = foot === -1 ? lines.length : foot;
+    while (at > 0 && lines[at - 1] === '' && at - 1 > head) at--;   // 本文の終わりのすぐ下へ
+    lines.splice(at, 0, (at > 0 && lines[at - 1] !== '' ? '' : '') + phrase);
+    if (foot !== -1 && lines[at + 1] !== '' ) lines.splice(at + 1, 0, '');
+    return lines.join('\n').replace(/\n{3,}敬具/, '\n\n敬具');
+  }
+  // 前のあいさつ：拝啓の下で、すでに入っている型の行のあとへ
+  var tops = _koyomiAllTopChipTexts(d), k = head + 1;
+  while (k < lines.length && tops.indexOf(lines[k]) !== -1) k++;
+  lines.splice(k, 0, phrase);
+  return lines.join('\n');
+}
+window.koyomiLetterInsert = koyomiLetterInsert;
+function koyomiLetterChipsHtml(e) {
+  var d = new Date();
+  return '<div data-letter-chips style="margin:8px 0 2px;">' + KOYOMI_LETTER_CHIPS.map(function(g) {
+    return '<div style="margin-bottom:6px;"><div style="font-size:0.74em;color:#8a7f6a;margin-bottom:3px;">' + e(g.label) + '</div><div style="display:flex;flex-wrap:wrap;gap:5px;">' +
+      koyomiLetterChipItems(g, d).map(function(t) { return '<button type="button" data-letter-chip="' + e(g.where) + '" data-letter-text="' + e(t) + '" style="padding:4px 10px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-size:0.8em;cursor:pointer;text-align:left;">' + e(t) + '</button>'; }).join('') + '</div></div>';
+  }).join('') + '<div style="font-size:0.74em;color:#8a7f6a;">あいさつはチップで。いちばん伝えたいことは、自分の手で書こう。</div></div>';
+}
+function koyomiWireLetterChips(root, ta) {
+  if (!root || !ta) return;
+  root.querySelectorAll('[data-letter-chip]').forEach(function(b) {
+    b.onclick = function() { ta.value = koyomiLetterInsert(ta.value, b.getAttribute('data-letter-text'), b.getAttribute('data-letter-chip'), new Date()); ta.dispatchEvent(new Event('input')); };
+  });
+}
+window.koyomiLetterChipsHtml = koyomiLetterChipsHtml; window.koyomiWireLetterChips = koyomiWireLetterChips;
+// ===== END v0.76.4 =====
 // ===== v0.75.5: 届く日の予定（前に封をした手紙の分も） =====
 // 【権威】2026-11-05「1はやる」。出した手紙のタブをなくしたので、v0.75.4より前に封をした到着待ちの手紙が見えなくなっていた（穴）。
 // 委員会の画面を開いたとき（起動ごとに1回）、まだ予定の無い到着待ちの手紙の分だけ、届く日に予定を足す。予定には capsuleId を付け、同じ手紙の予定を2つ作らない
@@ -13479,7 +13536,8 @@ function _capsuleRenderWrite(body, e) {
       }).join('') + '</div>' +
       '<div style="font-size:0.74em;color:#8a7f6a;margin-bottom:8px;">季節の便箋は、封をした日の季節の色で届く。</div>' +
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">📝 手紙</div>' +
-      '<textarea data-cap="body" rows="7" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
+      '<textarea data-cap="body" rows="9" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
+      koyomiLetterChipsHtml(e) +   // v0.76.4
       '<div style="font-size:0.74em;color:#8a7f6a;margin-top:10px;line-height:1.6;">封をしたら、取り消せない。30年後まで選べるが、届けられるのは、こよみるが続いている限り。もしこよみるを終えるときは、できる限り前もって知らせ、封をした手紙を開けられるようにする。</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap;"><button type="button" data-cap="draft" style="padding:10px 14px;border-radius:12px;border:1px solid #4a3f6b;background:#f4f1fa;color:#4a3f6b;font-weight:700;cursor:pointer;" title="この端末に置いておき、翌朝5時から封ができる">🌙 一晩置く</button>' +
       '<button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
@@ -13501,6 +13559,7 @@ function _capsuleRenderWrite(body, e) {
       if (ta0 && !String(ta0.value || '').trim()) ta0.value = koyomiLetterTemplate(nm0());
       if (sel0) sel0.addEventListener('change', function() { ta0.value = koyomiLetterRename(ta0.value, nm0()); });
       koyomiApplyPaperToTextarea(ta0, 'ruled');
+      koyomiWireLetterChips(body, ta0);   // v0.76.4
     })();
     body.querySelectorAll('[data-cap-paper-pick]').forEach(function(b) { b.onclick = function() { _pickPaper(b.getAttribute('data-cap-paper-pick')); }; });
     // v0.73.3: 一晩置く
@@ -59083,6 +59142,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.4', date: '2026-11-06',
+    items: [
+      { icon:'✉️', t:'手紙のあいさつを、チップで入れられるようにしました',
+        before:'手紙は、はじめから終わりまで自分で書くしかありませんでした',
+        after:'手紙の欄の下に、時候のあいさつ（今の月と今日の節気）・安否のあいさつ・本文の書き出し・結びのあいさつのチップを並べました。押すと、手紙の型どおりの場所に入ります。いちばん伝えたいことは、自分の手で書いてください' }
+    ]
+  },
+  {
     ver: 'v0.76.3', date: '2026-11-06',
     items: [
       { icon:'✉️', t:'タイムカプセルの手紙は、「拝啓」で始めて「敬具」で結ぶ形にしました',
@@ -88340,6 +88407,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-568·①: 手紙の形が違う', [_e1, _e2, _e3, _e4].join(' / '));
      } catch(e) {
        ng('ST-568: 例外', e.message);
+     }
+
+     // ===== ST-569: 手紙の型をチップで（時候・安否・書き出し・結び。本文だけは手で書く）（v0.76.4〜） =====
+     try {
+       var _d = new Date(2026, 10, 7, 9, 0);
+       var _t = koyomiLetterTemplate('すず');
+       _t = koyomiLetterInsert(_t, '晩秋の候、', 'top', _d);
+       _t = koyomiLetterInsert(_t, 'お元気ですか。', 'top', _d);
+       _t = koyomiLetterInsert(_t, 'また会える日を楽しみにしています。', 'bottom', _d);
+       var _lines = _t.split('\n');
+       var _jk = koyomiLetterChipItems(KOYOMI_LETTER_CHIPS[0], _d);
+       (_lines[0] === '拝啓　すず様' && _lines[1] === '晩秋の候、' && _lines[2] === 'お元気ですか。' && /また会える日を楽しみにしています。\n\n敬具$/.test(_t) && koyomiLetterFormError(_t) === '' &&
+        _jk.indexOf('晩秋の候、') !== -1 && _jk.some(function(x) { return /を迎え、$/.test(x); }) && /koyomiWireLetterChips\(body, ta0\)/.test(_capsuleRenderWrite.toString()) && /koyomiWireLetterChips\(pane, cwTa\)/.test(_capsuleRenderCeremony.toString()))
+         ? ok('ST-569·①: 手紙の型のチップ（時候は今の月と今日の節気・安否・書き出し・結び）。前のあいさつは拝啓の下に順に積み、結びは敬具の上へ。書く・開封式の両方')
+         : ng('ST-569·①: 手紙のチップが違う', JSON.stringify(_t));
+     } catch(e) {
+       ng('ST-569: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
