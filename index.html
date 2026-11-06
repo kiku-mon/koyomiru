@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.3 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.2';
+    const APP_VERSION = 'v0.76.3';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13034,6 +13034,7 @@ var KOYOMI_CAPSULE_ERRORS = {
   refused: 'この人は、人からのタイムカプセルを受け取らない設定にしている。', committee_only: '返事をしたためるのは、委員（こよみるONE）の特典。', not_member: 'この共有カレンダーの仲間ではない（共有カレンダーでだけ開ける）。', bad_title: '開封式の名前を入れてほしい（60字まで）。', ceremony_closed: 'この開封式は、もう締め切っている。', not_now: '今は、その時間ではない（合言葉は、予定の1時間前から、開封の1時間後まで）。', too_many_tries: '合言葉は、5回まで。', not_allowed: 'それができるのは、係だけ。', bad_pass: '合言葉は、1〜12文字にしてほしい。', suspended: '今は、手紙を書けない期間（決まりに反した手紙があったため）。', pledge_required: '人に手紙を送る前に、委員会の心得への同意が必要。', cannot_send: 'この人には送れない。', report_limit: '今日はこれ以上、通報できない。', already_reported: 'この手紙は、もう通報してある。', bad_report: 'この手紙は通報できない。', bad_reply: 'この手紙には、返事を送れない。', quota: '到着待ちの手紙の数がいっぱい（無料は3通・委員は30通）。到着したら、また書ける。'
 };
 function _capsuleErr(err) {
+  if (/letter_form/.test(String((err && (err.message || err.details)) || err || ''))) return '手紙は「拝啓　○○様」で始めて、「敬具」で結んでほしい。';   // v0.76.3: サーバーの決まり（⑯）
   var m = String((err && (err.message || err.details)) || err || '');
   for (var k in KOYOMI_CAPSULE_ERRORS) if (m.indexOf(k) !== -1) return KOYOMI_CAPSULE_ERRORS[k];
   return '送れなかった。少し時間をおいて、もう一度。';
@@ -13271,11 +13272,17 @@ function _capsuleRenderCeremony(body, e) {
         // v0.76.2: 宛先は、その開封式のカレンダーの仲間だけ（⑮の前のサーバーなら、今までの一覧）
         _capsuleRpc('koyomiru_capsule_ceremony_recipients', { p_ceremony: c.id }).catch(function() { return _capsuleRpc('koyomiru_capsule_recipients'); }).then(function(list) {
           pane.innerHTML = '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e6d8bd;"><select data-cw="to" style="width:100%;padding:8px;border-radius:10px;border:1px solid #d9c9a6;margin-bottom:6px;">' + (list || []).map(function(x) { return '<option value="' + e(x.user_id) + '">' + e(x.name) + '</option>'; }).join('') + '</select>' +
-            '<textarea data-cw="body" maxlength="2000" rows="5" placeholder="開封式の日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:10px;border:1px solid #d9c9a6;line-height:1.8;"></textarea>' +
+            '<textarea data-cw="body" maxlength="2000" rows="7"></textarea>' +
             '<div data-cw="msg" style="font-size:0.84em;margin:4px 0;"></div><div style="text-align:right;"><button type="button" data-cw="seal" style="padding:8px 16px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をして入れる</button></div></div>';
           var sb = pane.querySelector('[data-cw="seal"]'), msg = pane.querySelector('[data-cw="msg"]');
+          // v0.76.3: 拝啓 ○○様 … 敬具 の型・紙
+          var cwTa = pane.querySelector('[data-cw="body"]'), cwSel = pane.querySelector('[data-cw="to"]');
+          var cwNm = function() { var o = cwSel.options[cwSel.selectedIndex]; return o ? o.textContent : '自分'; };
+          koyomiApplyPaperToTextarea(cwTa, 'ruled'); cwTa.value = koyomiLetterTemplate(cwNm());
+          cwSel.addEventListener('change', function() { cwTa.value = koyomiLetterRename(cwTa.value, cwNm()); });
           sb.onclick = function() {
             var txt = String(pane.querySelector('[data-cw="body"]').value || '').trim(); if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
+            var cwFe = koyomiLetterFormError(txt); if (cwFe) { msg.style.color = '#c0392b'; msg.textContent = cwFe; return; }   // v0.76.3
             var go = function() {
               sb.disabled = true;
               _capsuleRpc('koyomiru_capsule_ceremony_seal', { p_ceremony: c.id, p_recipient: pane.querySelector('[data-cw="to"]').value, p_body: txt, p_sealed_koyomi: koyomiCapsuleSealedKoyomi(new Date()), p_stationery: 'ruled' })
@@ -13372,6 +13379,35 @@ function koyomiRenderCeremonyNotice(host) {
 }
 window.koyomiRenderCeremonyNotice = koyomiRenderCeremonyNotice;
 // ===== END v0.76.2 =====
+// ===== v0.76.3: 手紙の形（拝啓 ○○様 … 敬具）・書く欄も便箋に合わせる =====
+// 【権威】2026-11-06「テスト運用したが、ろくなことに使わない。拝啓 ○○様、敬具と必ずこう書かせろ」「便箋を選べるのに、書く所は切り替わらない。変。切り替えろ」。
+// サーバーにも決まり（⑯：本文は「拝啓」で始まり「敬具」で終わる）を入れた。画面は、はじめから型を入れ、宛先を変えれば宛名も変える
+function koyomiLetterSalute(name) { return (!name || name === '自分') ? '未来の自分' : name; }
+function koyomiLetterTemplate(name) { return '拝啓　' + koyomiLetterSalute(name) + '様\n\n\n\n敬具'; }
+// 宛先を変えたら、1行目の宛名だけ書き換える（中身は触らない）
+function koyomiLetterRename(text, name) {
+  var t = String(text || '');
+  if (!t.trim()) return koyomiLetterTemplate(name);
+  return /^\s*拝啓[^\n]*/.test(t) ? t.replace(/^\s*拝啓[^\n]*/, '拝啓　' + koyomiLetterSalute(name) + '様') : t;
+}
+// 形の確かめ：拝啓で始まり、敬具で終わり、そのあいだに中身があること
+function koyomiLetterFormError(text) {
+  var t = String(text || '').trim();
+  if (!/^拝啓/.test(t) || !/敬具$/.test(t)) return '手紙は「拝啓　○○様」で始めて、「敬具」で結んでほしい。';
+  var inner = t.replace(/^拝啓[^\n]*\n?/, '').replace(/敬具$/, '').trim();
+  if (!inner) return '「拝啓」と「敬具」のあいだに、手紙を書いてほしい。';
+  return '';
+}
+window.koyomiLetterTemplate = koyomiLetterTemplate; window.koyomiLetterRename = koyomiLetterRename; window.koyomiLetterFormError = koyomiLetterFormError;
+// 書く欄の紙を、選んだ便箋にする（行の高さ30pxにそろえる）
+function koyomiApplyPaperToTextarea(ta, kind) {
+  if (!ta) return;
+  var sk = (typeof koyomiTodayData === 'function' ? (koyomiTodayData(new Date()) || {}).sekki : '');
+  var css = koyomiStationeryStyle(kind || 'ruled', sk).replace(/white-space:[^;]+;|position:[^;]+;|padding:[^;]+;|border-radius:[^;]+;/g, '');
+  ta.style.cssText = 'width:100%;box-sizing:border-box;padding:4px 12px;border-radius:12px;font-size:15px;line-height:30px;resize:vertical;background-attachment:local;background-position:0 4px;' + css;
+}
+window.koyomiApplyPaperToTextarea = koyomiApplyPaperToTextarea;
+// ===== END v0.76.3 =====
 // ===== v0.75.5: 届く日の予定（前に封をした手紙の分も） =====
 // 【権威】2026-11-05「1はやる」。出した手紙のタブをなくしたので、v0.75.4より前に封をした到着待ちの手紙が見えなくなっていた（穴）。
 // 委員会の画面を開いたとき（起動ごとに1回）、まだ予定の無い到着待ちの手紙の分だけ、届く日に予定を足す。予定には capsuleId を付け、同じ手紙の予定を2つ作らない
@@ -13457,7 +13493,15 @@ function _capsuleRenderWrite(body, e) {
     var _rc = body.querySelector('[data-cap-replycancel]'); if (_rc) _rc.onclick = function() { _capsuleReplyTo = null; renderCapsuleView(); };
     // v0.73.4: 便箋を選ぶ
     var _paper = 'ruled';
-    var _pickPaper = function(k) { _paper = k; body.querySelectorAll('[data-cap-paper-pick]').forEach(function(b) { b.style.border = b.getAttribute('data-cap-paper-pick') === k ? '2px solid #7a3b1e' : '1px solid #d9c9a6'; }); };
+    var _pickPaper = function(k) { _paper = k; body.querySelectorAll('[data-cap-paper-pick]').forEach(function(b) { b.style.border = b.getAttribute('data-cap-paper-pick') === k ? '2px solid #7a3b1e' : '1px solid #d9c9a6'; }); koyomiApplyPaperToTextarea(body.querySelector('[data-cap="body"]'), k); };   // v0.76.3: 書く欄も便箋に
+    // v0.76.3: 拝啓 ○○様 … 敬具 の型をはじめから入れ、宛先を変えたら宛名も変える
+    (function() {
+      var ta0 = body.querySelector('[data-cap="body"]'), sel0 = body.querySelector('[data-cap="to"]');
+      var nm0 = function() { var o = sel0 && sel0.options[sel0.selectedIndex]; return _capsuleReplyTo ? _capsuleReplyTo.name : (o ? o.textContent : '自分'); };
+      if (ta0 && !String(ta0.value || '').trim()) ta0.value = koyomiLetterTemplate(nm0());
+      if (sel0) sel0.addEventListener('change', function() { ta0.value = koyomiLetterRename(ta0.value, nm0()); });
+      koyomiApplyPaperToTextarea(ta0, 'ruled');
+    })();
     body.querySelectorAll('[data-cap-paper-pick]').forEach(function(b) { b.onclick = function() { _pickPaper(b.getAttribute('data-cap-paper-pick')); }; });
     // v0.73.3: 一晩置く
     var _toSel = body.querySelector('[data-cap="to"]'), _bodyIn = body.querySelector('[data-cap="body"]'), _msg0 = body.querySelector('[data-cap="msg"]');
@@ -13516,6 +13560,7 @@ function _capsuleRenderWrite(body, e) {
     body.querySelector('[data-cap="seal"]').onclick = function() {
       var msg = body.querySelector('[data-cap="msg"]'), txt = String(body.querySelector('[data-cap="body"]').value || '').trim(), dv = body.querySelector('[data-cap="date"]').value, to = body.querySelector('[data-cap="to"]').value;
       if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
+      var _fe = koyomiLetterFormError(txt); if (_fe) { msg.style.color = '#c0392b'; msg.textContent = _fe; return; }   // v0.76.3
       var openAt = _openAtOf(); if (!openAt) { msg.style.color = '#c0392b'; msg.textContent = '開く日と時刻を選んでほしい。'; return; }
       if (_capsuleLoadDraftId) { var _dd = _capsuleDrafts().filter(function(x) { return x.id === _capsuleLoadDraftId; })[0]; if (_dd && koyomiCapsuleDraftReadyAt(_dd.savedAt) > Date.now()) { msg.style.color = '#4a3f6b'; msg.textContent = '🌙 一晩置いている手紙。封ができるのは ' + _capsuleYmd(new Date(koyomiCapsuleDraftReadyAt(_dd.savedAt)).toISOString()) + ' 5:00 から。'; return; } }
       if (window._capsuleSuspended) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.suspended; return; }   // v0.74.2
@@ -59038,6 +59083,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.3', date: '2026-11-06',
+    items: [
+      { icon:'✉️', t:'タイムカプセルの手紙は、「拝啓」で始めて「敬具」で結ぶ形にしました',
+        before:'手紙の形は自由で、選んだ便箋も、書く欄には映りませんでした',
+        after:'手紙の欄には、はじめから「拝啓　○○様」と「敬具」が入っています。宛先を変えると、宛名も変わります。選んだ便箋の紙で書けるようにもしました' }
+    ]
+  },
+  {
     ver: 'v0.76.2', date: '2026-11-05',
     items: [
       { icon:'🎉', t:'開封式を、仲間に知らせるようにしました',
@@ -88273,6 +88326,20 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-567·①: 開封式の直しが違う', '');
      } catch(e) {
        ng('ST-567: 例外', e.message);
+     }
+
+     // ===== ST-568: 手紙の形（拝啓 ○○様 … 敬具）・書く欄も便箋に（v0.76.3〜） =====
+     try {
+       var _t1 = koyomiLetterTemplate('T.KAIMORI'), _t2 = koyomiLetterTemplate('自分');
+       var _r = koyomiLetterRename('拝啓　自分様\n\nこんにちは\n\n敬具', 'すず');
+       var _e1 = koyomiLetterFormError(_t1), _e2 = koyomiLetterFormError('拝啓　すず様\n元気？\n敬具'), _e3 = koyomiLetterFormError('元気？'), _e4 = koyomiLetterFormError('拝啓　すず様\n元気？');
+       var _ta = document.createElement('textarea'); koyomiApplyPaperToTextarea(_ta, 'season'); var _seasonBg = _ta.style.backgroundColor; koyomiApplyPaperToTextarea(_ta, 'plain');
+       (/^拝啓　T\.KAIMORI様\n[\s\S]*敬具$/.test(_t1) && /^拝啓　未来の自分様/.test(_t2) && /^拝啓　すず様\n\nこんにちは/.test(_r) && /あいだに、手紙を書いて/.test(_e1) && _e2 === '' && /拝啓/.test(_e3) && /敬具/.test(_e4) &&
+        !!_seasonBg && /koyomiLetterFormError\(txt\)/.test(_capsuleRenderWrite.toString()) && /koyomiLetterFormError\(txt\)/.test(_capsuleRenderCeremony.toString()) && /letter_form/.test(_capsuleErr.toString()))
+         ? ok('ST-568·①: 手紙は「拝啓　○○様」で始まり「敬具」で結ぶ（はじめから型・宛先を変えれば宛名も・中身が空や型くずれは封ができない・開封式も同じ・サーバーの決まりにも合わせる）。書く欄も選んだ便箋の紙になる')
+         : ng('ST-568·①: 手紙の形が違う', [_e1, _e2, _e3, _e4].join(' / '));
+     } catch(e) {
+       ng('ST-568: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
