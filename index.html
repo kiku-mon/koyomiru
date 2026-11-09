@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.9 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.8';
+    const APP_VERSION = 'v0.76.9';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -44884,14 +44884,27 @@ function renderMonthlyMoneyLine() {
         // v0.76.8: 【権威】2026-11-09「PCだと入る・出るの数字がでかい。PCを見られたとき用に、他の数字の大きさくらいに小さく」。
         //   広い画面（600px以上）は手持ちと同じ大きさ（1em）。スマホは v0.76.5 の「大きな字」（1.25em）のまま
         var _big = (window.innerWidth < 600) ? '1.25em' : '1em';
+        // v0.76.9: 【権威】2026-11-09 改善案C「今日 +○○」。その日最初に描いたときの入る（今月＋来月）を覚え、増えた分だけ出す。
+        //   畳んでいても描くたびに覚えるので、開く前に足した分も数える。日付が変わったら覚え直す。端末ごとに覚える
+        var _todayUp = 0;
+        try {
+          var _inNow = _sum.cur['in'] + _sum.next['in'];
+          var _base = null; try { _base = JSON.parse(localStorage.getItem('moneyInDayBase') || 'null'); } catch (eB) { _base = null; }
+          if (!_base || _base.date !== today || typeof _base.v !== 'number') {
+            _base = { date: today, v: _inNow };
+            localStorage.setItem('moneyInDayBase', JSON.stringify(_base));
+          }
+          _todayUp = _inNow - _base.v;
+        } catch (eT) { _todayUp = 0; }
         var _row = function(label, sm, k, first) {
           var d = sm['in'] - sm.out;
           var g = (_glow[k] !== undefined) ? ' class="money-in-glow" style="animation-delay:-' + _glow[k] + 'ms;' : ' style="';
           return '<div data-money-row="' + k + '" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;' + (first ? '' : 'margin-top:2px;') + '">' +
             '<span style="color:' + GRAY + ';white-space:nowrap;">' + label + '</span>' +
-            '<span style="white-space:nowrap;"><span style="color:' + RED + ';font-size:0.85em;">▲</span> <span style="color:' + RED + ';font-weight:800;font-size:' + (first ? _big : '1em') + ';">' + y(sm.out) + '</span></span>' +
-            '<span style="white-space:nowrap;"><span style="color:' + GREEN + ';font-size:0.85em;">▽</span> <span data-money-in="' + k + '"' + g + 'color:' + GREEN + ';font-weight:800;padding:0 2px;font-size:' + (first ? _big : '1em') + ';">' + y(sm['in']) + '</span></span>' +
+            '<span style="white-space:nowrap;"><span style="color:' + RED + ';font-size:0.85em;">▲ 出る</span> <span style="color:' + RED + ';font-weight:800;font-size:' + (first ? _big : '1em') + ';">' + y(sm.out) + '</span></span>' +
+            '<span style="white-space:nowrap;"><span style="color:' + GREEN + ';font-size:0.85em;">▽ 入る</span> <span data-money-in="' + k + '"' + g + 'color:' + GREEN + ';font-weight:800;padding:0 2px;font-size:' + (first ? _big : '1em') + ';">' + y(sm['in']) + '</span></span>' +
             '<span style="white-space:nowrap;color:' + GRAY + ';font-size:0.85em;">差 ' + sg(d) + '</span>' +
+            ((first && _todayUp > 0) ? '<span data-money-today style="white-space:nowrap;color:' + GREEN + ';font-size:0.85em;">今日 +' + y(_todayUp) + '</span>' : '') +
           '</div>';
         };
         var _rowsHtml = '';
@@ -44904,10 +44917,12 @@ function renderMonthlyMoneyLine() {
         if (_pt.count > 0) {
           var _parts = ['<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">💰 手持ち</span> <span style="color:' + GREEN + ';font-weight:800;">' + y(_pt.total) + '</span></span>'];
           if (_fore !== null) {
-            _parts.push('<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">→ ' + _m + '月末</span> <span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;">' + y(_fore) + '</span></span>');
+            // v0.76.9: 改善案B。月末がマイナスの月は「プラスまであと ○○」（あと何件の目安）
+            var _plusTo = function(v) { return v < 0 ? ' <span data-money-plusto style="color:' + GRAY + ';font-size:0.85em;">プラスまであと ' + y(-v) + '</span>' : ''; };
+            _parts.push('<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">→ ' + _m + '月末</span> <span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;">' + y(_fore) + '</span>' + _plusTo(_fore) + '</span>');
             if (_sum.next.out || _sum.next['in']) {
               var _f2 = _fore + _sum.next['in'] - _sum.next.out;
-              _parts.push('<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">→ ' + _nm + '月末</span> <span style="color:' + (_f2 < 0 ? RED : GREEN) + ';font-weight:800;">' + y(_f2) + '</span></span>');
+              _parts.push('<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">→ ' + _nm + '月末</span> <span style="color:' + (_f2 < 0 ? RED : GREEN) + ';font-weight:800;">' + y(_f2) + '</span>' + _plusTo(_f2) + '</span>');
             }
           }
           _restHtml = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;">' + _parts.join('') + '</div>';
@@ -59184,6 +59199,20 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.9', date: '2026-11-09',
+    items: [
+      { icon:'💰', t:'お金の欄に「出る」「入る」の字を戻しました',
+        before:'▲と▽の記号だけで、どちらがどちらか分かりにくくなっていました',
+        after:'「▲ 出る」「▽ 入る」と字が付きます' },
+      { icon:'🎯', t:'月末がマイナスのとき「プラスまであと ○○」が出るようにしました',
+        before:'月末がマイナスでも、あといくら入ればいいかは自分で計算していました',
+        after:'手持ちから見た月末がマイナスの月は、その横に「プラスまであと ○○」と出ます' },
+      { icon:'✨', t:'今日増えた入るが「今日 +○○」で分かるようにしました',
+        before:'今日どれだけ入るを足したかは、覚えておくしかありませんでした',
+        after:'その日最初に開いたときより入るが増えると、1行目の端に「今日 +○○」と出ます。日付が変わると0からです' }
+    ]
+  },
   {
     ver: 'v0.76.8', date: '2026-11-09',
     items: [
@@ -86719,7 +86748,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
 
      // ===== ST-473: お金の表の右の列は、手持ちから見た「月末の残り」（v0.59.5〜） =====
      // 【権威】2026-10-19、「この版は手持ちを無視して差を出してしまう」との指摘
-     var _st473tasks = allTasks.slice(), _st473open = null, _st473seen = localStorage.getItem('moneyInSeen'), _st473glow = window._moneyGlowAt;
+     var _st473base = localStorage.getItem('moneyInDayBase'); var _st473tasks = allTasks.slice(), _st473open = null, _st473seen = localStorage.getItem('moneyInSeen'), _st473glow = window._moneyGlowAt;
      try {
        try { _st473open = localStorage.getItem('moneyLineOpen'); } catch (e0) {}
        var _t = getLocalDateStr(new Date()), _d = new Date();
@@ -86747,6 +86776,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        allTasks = _st473tasks;
        try { if (_st473open === null) localStorage.removeItem('moneyLineOpen'); else localStorage.setItem('moneyLineOpen', _st473open); } catch (e1) {}
+       try { if (_st473base === null) localStorage.removeItem('moneyInDayBase'); else localStorage.setItem('moneyInDayBase', _st473base); } catch (e4) {}
        try { if (_st473seen === null) localStorage.removeItem('moneyInSeen'); else localStorage.setItem('moneyInSeen', _st473seen); window._moneyGlowAt = _st473glow; } catch (e3) {}
        try { renderMonthlyMoneyLine(); } catch (e2) {}
      }
@@ -88519,7 +88549,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
 
      // ===== ST-571: 畳んだお金の欄は「💰 ▸」だけ。金額を一つも出さない（v0.76.6〜） =====
      // 【権威】2026-11-09「畳むを押しても、手持ちを隠せない」
-     var _st571tasks = allTasks.slice(), _st571seen = localStorage.getItem('moneyInSeen'), _st571glow = window._moneyGlowAt, _st571open = null, _c571 = '', _o571 = '', _e571 = null;
+     var _st571base = localStorage.getItem('moneyInDayBase'); var _st571tasks = allTasks.slice(), _st571seen = localStorage.getItem('moneyInSeen'), _st571glow = window._moneyGlowAt, _st571open = null, _c571 = '', _o571 = '', _e571 = null;
      try {
        try { _st571open = localStorage.getItem('moneyLineOpen'); } catch (e0) {}
        var _t571 = getLocalDateStr(new Date());
@@ -88540,6 +88570,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        allTasks = _st571tasks;
        try { if (_st571open === null) localStorage.removeItem('moneyLineOpen'); else localStorage.setItem('moneyLineOpen', _st571open); } catch (e1) {}
+       try { if (_st571base === null) localStorage.removeItem('moneyInDayBase'); else localStorage.setItem('moneyInDayBase', _st571base); } catch (e4) {}
        try { if (_st571seen === null) localStorage.removeItem('moneyInSeen'); else localStorage.setItem('moneyInSeen', _st571seen); window._moneyGlowAt = _st571glow; } catch (e3) {}
        try { renderMonthlyMoneyLine(); } catch (e2) {}
      }
@@ -88556,7 +88587,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
 
      // ===== ST-572: 開いたお金の欄は、1行目に今月の ▲出る ▽入る 差。入るが増えたら光る（v0.76.7〜） =====
      // 【権威】2026-11-09「火曜日の入るを少しずつ増やして、全体の入るに反映されるのが楽しみだった」→ B＋C
-     var _st572tasks = allTasks.slice(), _st572open = null, _st572seen = null, _st572glow = window._moneyGlowAt, _r572 = {}, _e572 = null;
+     var _st572base = localStorage.getItem('moneyInDayBase'); var _st572tasks = allTasks.slice(), _st572open = null, _st572seen = null, _st572glow = window._moneyGlowAt, _r572 = {}, _e572 = null;
      try {
        try { _st572open = localStorage.getItem('moneyLineOpen'); _st572seen = localStorage.getItem('moneyInSeen'); } catch (e0) {}
        var _t572 = getLocalDateStr(new Date());
@@ -88572,7 +88603,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        renderMonthlyMoneyLine();   // 初めて見る：覚えるだけで光らない
        var _first = _el572.querySelector('[data-money-row]');
        _r572.order = !!_first && _first.getAttribute('data-money-row') === 'cur' &&
-         /▲\s*30,000/.test(_first.textContent) && /▽\s*8,000/.test(_first.textContent) && /差\s*-22,000/.test(_first.textContent) &&
+         /▲ 出る\s*30,000/.test(_first.textContent) && /▽ 入る\s*8,000/.test(_first.textContent) && /差\s*-22,000/.test(_first.textContent) &&
          _el572.textContent.indexOf('▽') < _el572.textContent.indexOf('💰 手持ち');
        _r572.rest = /💰 手持ち\s*100,000/.test(_el572.textContent) && /月末\s*78,000/.test(_el572.textContent);
        _r572.noGlowFirst = !_el572.querySelector('.money-in-glow');
@@ -88597,6 +88628,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } finally {
        allTasks = _st572tasks;
        try { if (_st572open === null) localStorage.removeItem('moneyLineOpen'); else localStorage.setItem('moneyLineOpen', _st572open); } catch (e1) {}
+       try { if (_st572base === null) localStorage.removeItem('moneyInDayBase'); else localStorage.setItem('moneyInDayBase', _st572base); } catch (e4) {}
        try { if (_st572seen === null) localStorage.removeItem('moneyInSeen'); else localStorage.setItem('moneyInSeen', _st572seen); } catch (e3) {}
        window._moneyGlowAt = _st572glow;
        try { renderMonthlyMoneyLine(); } catch (e2) {}
@@ -88610,6 +88642,67 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r572.glow ? ok('ST-572·④: 入るを増やすと、その数字が光る') : ng('ST-572·④: 入るが増えても光らない', '');
        _r572.glowKeep ? ok('ST-572·⑤: すぐ描き直しても、光は途切れず残り時間ぶん続く') : ng('ST-572·⑤: 描き直しで光が始めからになる・消える', '');
        _r572.noGlowDown ? ok('ST-572·⑥: 入るが減ったときは光らない') : ng('ST-572·⑥: 減ったのに光った', '');
+     }
+
+     // ===== ST-573: お金の欄の「出る・入る」の字・「プラスまであと」・「今日 +」（v0.76.9〜） =====
+     // 【権威】2026-11-09 改善案 A・B・C をすべて入れる、との指示
+     var _st573base = localStorage.getItem('moneyInDayBase'), _st573tasks = allTasks.slice(), _st573open = localStorage.getItem('moneyLineOpen'),
+         _st573seen = localStorage.getItem('moneyInSeen'), _st573glow = window._moneyGlowAt, _r573 = {}, _e573 = null;
+     try {
+       var _t573 = getLocalDateStr(new Date());
+       var _el573 = document.getElementById('monthlyMoneyLine'), _prev573 = _el573 ? _el573.style.display : '';
+       var _txt573 = function() { return _el573.textContent; };
+       var _set573 = function(purse) {
+         allTasks = _st573tasks.filter(function(x) { return x && x.kind !== 'money' && !(x.kind === 'task' && x.text && /[▲▽△▼]/.test(x.text)); });
+         if (purse !== null) allTasks.push({ id: 'st573p', kind: 'money', name: 'ST573の財布', amount: purse, order: 0 });
+         allTasks.push({ id: 'st573a', kind: 'task', text: '▲50,000 ST573カード', date: _t573 });
+         var pay = { id: 'st573b', kind: 'task', text: 'ST573ウーバー ▼6,000', date: _t573 };
+         allTasks.push(pay); return pay;
+       };
+       localStorage.setItem('moneyLineOpen', '1');
+       localStorage.removeItem('moneyInDayBase');
+       var _pay573 = _set573(20000);
+       renderMonthlyMoneyLine();
+       _r573.words = /▲ 出る\s*50,000/.test(_txt573()) && /▽ 入る\s*6,000/.test(_txt573());
+       // 手持ち20,000＋6,000−50,000＝−24,000 → プラスまであと24,000
+       var _pt573 = _el573.querySelector('[data-money-plusto]');
+       _r573.plusNeg = !!_pt573 && /プラスまであと\s*24,000/.test(_pt573.textContent);
+       _r573.todayNone = !_el573.querySelector('[data-money-today]');
+       _pay573.text = 'ST573ウーバー ▼9,500';
+       renderMonthlyMoneyLine();
+       var _td = _el573.querySelector('[data-money-today]');
+       _r573.todayUp = !!_td && /今日\s*\+3,500/.test(_td.textContent);
+       _pay573.text = 'ST573ウーバー ▼5,000';
+       renderMonthlyMoneyLine();
+       _r573.todayDown = !_el573.querySelector('[data-money-today]');
+       localStorage.setItem('moneyInDayBase', JSON.stringify({ date: '2000-01-01', v: 0 }));
+       renderMonthlyMoneyLine();
+       _r573.todayReset = !_el573.querySelector('[data-money-today]') && JSON.parse(localStorage.getItem('moneyInDayBase')).date === _t573;
+       _set573(100000); renderMonthlyMoneyLine();
+       _r573.plusPos = !_el573.querySelector('[data-money-plusto]');
+       _set573(null); renderMonthlyMoneyLine();
+       _r573.plusNoPurse = !_el573.querySelector('[data-money-plusto]');
+       if (_el573) _el573.style.display = _prev573;
+     } catch(e) {
+       _e573 = e;
+     } finally {
+       allTasks = _st573tasks;
+       try { if (_st573open === null) localStorage.removeItem('moneyLineOpen'); else localStorage.setItem('moneyLineOpen', _st573open); } catch (e1) {}
+       try { if (_st573base === null) localStorage.removeItem('moneyInDayBase'); else localStorage.setItem('moneyInDayBase', _st573base); } catch (e4) {}
+       try { if (_st573seen === null) localStorage.removeItem('moneyInSeen'); else localStorage.setItem('moneyInSeen', _st573seen); } catch (e3) {}
+       window._moneyGlowAt = _st573glow;
+       try { renderMonthlyMoneyLine(); } catch (e2) {}
+     }
+     if (_e573) ng('ST-573: 例外', _e573.message);
+     else {
+       _r573.words ? ok('ST-573·①: 「▲ 出る」「▽ 入る」と字が付く（▼で書いた入るも数える）') : ng('ST-573·①: 出る・入るの字が無い', '');
+       _r573.plusNeg ? ok('ST-573·②: 月末がマイナスなら「プラスまであと」その額') : ng('ST-573·②: プラスまであとが出ない・額が違う', '');
+       _r573.plusPos ? ok('ST-573·③: 月末がプラスなら「プラスまであと」は出さない') : ng('ST-573·③: プラスなのに出た', '');
+       _r573.plusNoPurse ? ok('ST-573·④: 手持ちを入れていなければ「プラスまであと」は出さない') : ng('ST-573·④: 手持ち無しで出た', '');
+       _r573.todayNone ? ok('ST-573·⑤: その日まだ入るが増えていなければ「今日 +」は出さない') : ng('ST-573·⑤: 増えていないのに出た', '');
+       _r573.todayUp ? ok('ST-573·⑥: 入るを足すと「今日 +」に増えた分が出る') : ng('ST-573·⑥: 今日 + が出ない・額が違う', '');
+       _r573.todayDown ? ok('ST-573·⑦: 朝より減ったときは「今日 +」を出さない') : ng('ST-573·⑦: 減ったのに出た', '');
+       _r573.todayReset ? ok('ST-573·⑧: 前の日の記録は使わず、今日から覚え直す') : ng('ST-573·⑧: 前の日の記録を使った', '');
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
