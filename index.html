@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.6 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.5';
+    const APP_VERSION = 'v0.76.6';
   const APP_LAST_UPDATED = '2026-10-06'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -44904,6 +44904,16 @@ function renderMonthlyMoneyLine() {
         // v0.76.5: 【権威】2026-11-08「お金の表が小さい。見やすく大きくして」「B全体。昔、キツキツで大きな字の方がたくさん使ってた」。
         //   v0.69.6 のスマホで字を縮める直しをやめ、入れ物の字も 0.78em → 0.95em に。数字は 1.25em で太く。収まらなければ折り返す
         var _mNarrow = window.innerWidth < 600, _mNum = '1.25em';
+        // v0.76.6: 【権威】2026-11-09「畳むを押しても、手持ちを隠せない」→「何も数字なし『💰 ▸』だけ」。
+        //   畳んだときは金額を一つも出さない（手持ち・月末・差とも）。開いたときの中身は変えない。
+        //   読めない金額の⚠️は額ではないので、畳んでも残す（直す手がかりを消さない）
+        var _arrow = '<span style="color:#2f6fed;margin-left:auto;">' + (_moneyOpen ? (_mNarrow ? '▾' : '▾ 畳む') : (_mNarrow ? '▸' : '▸ くわしく')) + '</span>';
+        if (!_moneyOpen) {
+          el.innerHTML = '<div onclick="toggleMoneyLineOpen()" style="cursor:pointer;display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap;">' +
+            '<span>💰</span>' + (bad > 0 ? '<span style="color:#c07a2a;">⚠️' + bad + '</span>' : '') + _arrow + '</div>';
+          el.style.display = '';
+          return;
+        }
         var _short =
           '<div onclick="toggleMoneyLineOpen()" style="cursor:pointer;display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap;">' +
             // v0.69.8: 【権威】2026-11-02、「手持ちは残してほしかった。よく使うから」との指示。言葉は残し、字を小さくして1行に
@@ -44912,7 +44922,7 @@ function renderMonthlyMoneyLine() {
               ? '<span><span style="color:' + GRAY + ';">→ ' + _m + '月末</span> <span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:800;font-size:' + _mNum + ';">' + y(_fore) + '</span></span>'
               : ((_sum.cur.out > 0 || _sum.cur['in'] > 0) ? '<span><span style="color:' + GRAY + ';">' + _m + '月の差</span> <span style="color:' + (_curDiff < 0 ? RED : GREEN) + ';font-weight:800;">' + sg(_curDiff) + '</span></span>' : '')) +
             (bad > 0 ? '<span style="color:#c07a2a;">⚠️' + bad + '</span>' : '') +
-            '<span style="color:#2f6fed;margin-left:auto;">' + (_moneyOpen ? (_mNarrow ? '▾' : '▾ 畳む') : (_mNarrow ? '▸' : '▸ くわしく')) + '</span>' +
+            _arrow +
           '</div>';
         el.innerHTML = _short + (_moneyOpen ? '<div style="margin-top:4px;">' + html + '</div>' : '');
         el.style.display = '';
@@ -59143,6 +59153,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.6', date: '2026-11-09',
+    items: [
+      { icon:'💰', t:'お金の欄を畳むと、金額が見えなくなりました',
+        before:'畳んでも「💰 手持ち」と月末の金額が出たままでした',
+        after:'畳むと「💰 ▸」だけになり、金額は一つも出ません。押すと、手持ち・月末の残り・表が出ます' }
+    ]
+  },
   {
     ver: 'v0.76.5', date: '2026-11-08',
     items: [
@@ -88444,6 +88462,42 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-570·①: お金の欄の大きさが違う', _ml ? _ml.style.fontSize : 'なし');
      } catch(e) {
        ng('ST-570: 例外', e.message);
+     }
+
+     // ===== ST-571: 畳んだお金の欄は「💰 ▸」だけ。金額を一つも出さない（v0.76.6〜） =====
+     // 【権威】2026-11-09「畳むを押しても、手持ちを隠せない」
+     var _st571tasks = allTasks.slice(), _st571open = null, _c571 = '', _o571 = '', _e571 = null;
+     try {
+       try { _st571open = localStorage.getItem('moneyLineOpen'); } catch (e0) {}
+       var _t571 = getLocalDateStr(new Date());
+       allTasks = allTasks.filter(function(x) { return x && x.kind !== 'money' && !(x.kind === 'task' && x.text && /[▲▽△▼]/.test(x.text)); });
+       allTasks.push({ id: 'st571a', kind: 'money', name: 'ST571の財布', amount: 123456, order: 0 });
+       allTasks.push({ id: 'st571b', kind: 'task', text: '▲7,000 ST571家賃', date: _t571 });
+       var _el571 = document.getElementById('monthlyMoneyLine');
+       var _prev571 = _el571 ? _el571.style.display : '';
+       localStorage.setItem('moneyLineOpen', '0');
+       renderMonthlyMoneyLine();
+       _c571 = _el571 ? _el571.textContent : '';
+       localStorage.setItem('moneyLineOpen', '1');
+       renderMonthlyMoneyLine();
+       _o571 = _el571 ? _el571.textContent : '';
+       if (_el571) _el571.style.display = _prev571;
+     } catch(e) {
+       _e571 = e;
+     } finally {
+       allTasks = _st571tasks;
+       try { if (_st571open === null) localStorage.removeItem('moneyLineOpen'); else localStorage.setItem('moneyLineOpen', _st571open); } catch (e1) {}
+       try { renderMonthlyMoneyLine(); } catch (e2) {}
+     }
+     // 仮の予定を片付けてから合否を書く（予定の数の記録に、仮の分が出ないように）
+     if (_e571) ng('ST-571: 例外', _e571.message);
+     else {
+       (_c571.indexOf('💰') !== -1 && !/[0-9０-９]/.test(_c571) && _c571.indexOf('手持ち') === -1)
+         ? ok('ST-571·①: 畳んだお金の欄は「💰 ▸」だけで、金額も「手持ち」の言葉も出さない')
+         : ng('ST-571·①: 畳んでも金額が見える', _c571.slice(0, 80));
+       (_o571.indexOf('123,456') !== -1 && _o571.indexOf('116,456') !== -1)
+         ? ok('ST-571·②: 開くと、手持ちと月末の残りが出る')
+         : ng('ST-571·②: 開いても金額が出ない', _o571.slice(0, 120));
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
