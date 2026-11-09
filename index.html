@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.15 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.16 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.15';
+    const APP_VERSION = 'v0.76.16';
   const APP_LAST_UPDATED = '2026-11-09'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13588,6 +13588,53 @@ function koyomiCapsuleBackfillEvents() {
 }
 window.koyomiCapsuleBackfillEvents = koyomiCapsuleBackfillEvents;
 // ===== END v0.75.5 =====
+// ===== v0.76.16: 封をする前の、日時の確かめの窓 =====
+// 【権威】2026-11-09「2027年、と年度間違いをする人多発。日付間違いも多発。確認の窓出すか？本当に封をしますか？の後に、何年何月何日何時何分に本当に出しますか？みたいな」
+//   →「『本当に？』は残し、そのあとにこの窓も出す（3回）」。届く日時を大きく・曜日つき・今から何後か・宛先。今年でない年は赤
+// 今から届くまでの長さ（「1年と7日後」「2か月と3日後」「3日と4時間後」「2時間5分後」）
+function koyomiCapsuleUntilText(openAt, now) {
+  var n = now ? new Date(now) : new Date(), t = new Date(openAt);
+  if (!(t > n)) return '今';
+  var add = function(d, y, m) { return new Date(d.getFullYear() + y, d.getMonth() + m, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()); };
+  var y = 0, m = 0;
+  while (add(n, y + 1, 0) <= t) y++;
+  while (add(n, y, m + 1) <= t) m++;
+  var base = add(n, y, m), rest = t - base, days = Math.floor(rest / 86400000), hrs = Math.floor((rest % 86400000) / 3600000), mins = Math.round((rest % 3600000) / 60000);
+  if (mins === 60) { hrs++; mins = 0; }
+  if (y || m) return '今から ' + (y ? y + '年' : '') + (m ? m + 'か月' : '') + (days ? 'と' + days + '日' : '') + '後';
+  if (days) return '今から ' + days + '日' + (hrs ? 'と' + hrs + '時間' : '') + '後';
+  if (hrs) return '今から ' + hrs + '時間' + (mins ? mins + '分' : '') + '後';
+  return '今から ' + Math.max(1, mins) + '分後';
+}
+window.koyomiCapsuleUntilText = koyomiCapsuleUntilText;
+function koyomiCapsuleSealConfirm(o, onOk) {
+  var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  var at = new Date(o.openAt), now = new Date(), wd = '日月火水木金土'.charAt(at.getDay()), otherYear = at.getFullYear() !== now.getFullYear();
+  var old = document.getElementById('capsuleSealConfirm'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'capsuleSealConfirm';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(40,30,20,0.45);display:flex;align-items:center;justify-content:center;z-index:10060;padding:16px;';
+  ov.innerHTML = '<div role="dialog" aria-modal="true" style="background:#fffdf5;border-radius:14px;max-width:380px;width:100%;padding:18px 18px 14px;box-shadow:0 12px 36px rgba(0,0,0,0.3);color:#5a4630;">' +
+    '<div style="font-weight:800;color:#7a3b1e;margin-bottom:10px;">この日時に届けますか？</div>' +
+    '<div data-cf-date style="font-size:1.35em;font-weight:800;line-height:1.5;"><span data-cf-year style="color:' + (otherYear ? '#c0392b' : '#5a4630') + ';">' + at.getFullYear() + '年</span> ' + (at.getMonth() + 1) + '月' + at.getDate() + '日（' + wd + '）' + String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0') + '</div>' +
+    '<div data-cf-until style="margin-top:2px;font-weight:700;color:#2c4f78;">' + e(koyomiCapsuleUntilText(at, now)) + '</div>' +
+    '<div data-cf-to style="margin-top:6px;">宛先：' + e(o.toName || '') + '</div>' +
+    '<div style="margin-top:10px;font-size:0.85em;color:#8a7f6a;">封をすると、直せない・取り消せない。</div>' +
+    '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">' +
+      '<button type="button" data-cf="ok" style="flex:1 1 150px;padding:10px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">この日時で封をする</button>' +
+      '<button type="button" data-cf="back" style="flex:1 1 110px;padding:10px;border-radius:10px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-weight:700;cursor:pointer;">戻って直す</button>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+  var close = function() { ov.remove(); document.removeEventListener('keydown', onKey); if (typeof o.onBack === 'function') o.onBack(); };
+  var onKey = function(ev) { if (ev.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  ov.addEventListener('click', function(ev) { if (ev.target === ov) close(); });
+  ov.querySelector('[data-cf="back"]').onclick = close;
+  ov.querySelector('[data-cf="ok"]').onclick = function() { ov.remove(); document.removeEventListener('keydown', onKey); onOk(); };
+  try { ov.querySelector('[data-cf="back"]').focus(); } catch (eF) {}
+  return ov;
+}
+window.koyomiCapsuleSealConfirm = koyomiCapsuleSealConfirm;
+// ===== END v0.76.16 =====
 function _capsuleRenderWrite(body, e) {
   _capsuleRpc('koyomiru_capsule_recipients').then(function(list) {
     list = list || [];
@@ -13726,6 +13773,9 @@ function _capsuleRenderWrite(body, e) {
       var sealBtn = body.querySelector('[data-cap="seal"]');
       if (sealBtn.getAttribute('data-armed') !== '1') { msg.style.color = '#8a7f6a'; msg.textContent = '封をすると、あなたも読めなくなり、直せない。取り消しもできない（一度埋めたカプセルは、掘り出さない）。' + _capsuleYmd(openAt.toISOString()) + ' ' + String(openAt.getHours()).padStart(2, '0') + ':' + String(openAt.getMinutes()).padStart(2, '0') + 'に届ける。'; }
       _capsuleTwoClick(sealBtn, '🔏 本当に封をする？', function() {
+      // v0.76.16: 「本当に？」のあとに、届く日時の確かめの窓
+      var _toSel1 = body.querySelector('[data-cap="to"]'), _toOpt1 = _toSel1 && _toSel1.options[_toSel1.selectedIndex];
+      koyomiCapsuleSealConfirm({ openAt: openAt, toName: _capsuleReplyTo ? (_capsuleReplyTo.name || '') : (_toOpt1 ? _toOpt1.textContent : '自分'), onBack: function() { msg.style.color = '#8a7f6a'; msg.textContent = '届く日時を直してから、もう一度「封をする」を押してほしい。'; try { _dIn.focus(); _dIn.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (eB) {} } }, function() {
       msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…';
       var _doSeal = function() {
       var _sealArgs = { p_recipient: (_capsuleReplyTo ? _capsuleReplyTo.to : to), p_body: txt, p_open_at: openAt.toISOString(), p_sealed_koyomi: koyomiCapsuleSealedKoyomi(new Date()) };
@@ -13749,6 +13799,7 @@ function _capsuleRenderWrite(body, e) {
         msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
       };
       _doSeal();
+      });
       });
     };
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
@@ -59281,6 +59332,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.16', date: '2026-11-09',
+    items: [
+      { icon:'📅', t:'封をする前に、届く日時を大きく確かめる窓を出すようにしました',
+        before:'「本当に封をする？」を押すと、そのまま封をしていました。届く年や日を取り違えても気づきにくいままでした',
+        after:'「本当に封をする？」のあとに、届く日時（年・月日・曜日・時刻）と「今から何年何日後」、宛先を大きく出します。今年でない年は赤です。「戻って直す」で日付の欄に戻れます' }
+    ]
+  },
+  {
     ver: 'v0.76.15', date: '2026-11-09',
     items: [
       { icon:'✉️', t:'本文のきっかけを、選ばずに全部眺められるようにしました',
@@ -88965,6 +89024,35 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _ui ? ok('ST-577·④: 32テーマの言葉を見出し付きで全部そのまま並べる（選び箱は無い・押すのは言葉だけ）。押すと本文の頭へ。並びは手紙の順（前のあいさつ → きっかけ → 結び）') : ng('ST-577·④: きっかけの並べ方が違う', _ta577.value.slice(0, 80));
      } catch(e) {
        ng('ST-577: 例外', e.message);
+     }
+
+     // ===== ST-578: 封をする前の、日時の確かめの窓（本当に？ のあと。年・月日・曜日・時刻・今から何後・宛先。今年でない年は赤）（v0.76.16〜） =====
+     // 【権威】2026-11-09「2027年、と年度間違いをする人多発。日付間違いも多発」→「本当に？は残し、そのあとにこの窓も出す（3回）」
+     try {
+       var _n578 = new Date(2026, 10, 9, 22, 0, 0);
+       var _u1 = koyomiCapsuleUntilText(new Date(2027, 10, 16, 23, 0), _n578), _u2 = koyomiCapsuleUntilText(new Date(2027, 0, 12, 22, 0), _n578),
+           _u3 = koyomiCapsuleUntilText(new Date(2026, 10, 12, 23, 0), _n578), _u4 = koyomiCapsuleUntilText(new Date(2026, 10, 9, 23, 5), _n578),
+           _u5 = koyomiCapsuleUntilText(new Date(2026, 10, 9, 22, 1), _n578);
+       var _okU = _u1 === '今から 1年と7日後' && _u2 === '今から 2か月と3日後' && _u3 === '今から 3日と1時間後' && _u4 === '今から 1時間5分後' && _u5 === '今から 1分後';
+       var _hit = 0, _back = 0;
+       var _nw = new Date(), _ov = koyomiCapsuleSealConfirm({ openAt: new Date(_nw.getFullYear() + 1, _nw.getMonth(), _nw.getDate() + 7, 23, 0), toName: '宮', onBack: function() { _back++; } }, function() { _hit++; });
+       var _okW = !!_ov && /^\d{4}年 \d{1,2}月\d{1,2}日（[日月火水木金土]）23:00$/.test(_ov.querySelector('[data-cf-date]').textContent) && /宮/.test(_ov.querySelector('[data-cf-to]').textContent) &&
+         /c0392b|192, 57, 43/.test(_ov.querySelector('[data-cf-year]').style.color) && /今から 1年/.test(_ov.querySelector('[data-cf-until]').textContent);
+       _ov.querySelector('[data-cf="back"]').click();
+       var _okBack = _hit === 0 && _back === 1 && !document.getElementById('capsuleSealConfirm');
+       var _ov2 = koyomiCapsuleSealConfirm({ openAt: new Date(new Date().getFullYear(), 11, 31, 23, 0), toName: '自分' }, function() { _hit++; });
+       var _thisYearPlain = !/c0392b|192, 57, 43/.test(_ov2.querySelector('[data-cf-year]').style.color);
+       _ov2.querySelector('[data-cf="ok"]').click();
+       var _okGo = _hit === 1 && !document.getElementById('capsuleSealConfirm');
+       var _wv578 = _capsuleRenderWrite.toString();
+       var _flow = /_capsuleTwoClick\(sealBtn, '🔏 本当に封をする？', function\(\) \{[\s\S]{0,400}koyomiCapsuleSealConfirm\(/.test(_wv578);
+       _okU ? ok('ST-578·①: 今から何後（1年と7日後・2か月と3日後・3日と1時間後・1時間5分後・1分後）') : ng('ST-578·①: 今から何後が違う', [_u1, _u2, _u3, _u4, _u5].join(' / '));
+       _okW ? ok('ST-578·②: 窓に年・月日・曜日・時刻・今から何後・宛先。今年でない年は赤') : ng('ST-578·②: 窓の中身が違う', '');
+       (_okBack && _thisYearPlain && _okGo) ? ok('ST-578·③: 「戻って直す」は封をしない・「この日時で封をする」で封へ進む。今年の年は赤くしない') : ng('ST-578·③: 窓のボタンが違う', [_hit, _back, _thisYearPlain].join('/'));
+       _flow ? ok('ST-578·④: 「本当に封をする？」のあとに、この窓が出る') : ng('ST-578·④: 窓が封の流れに入っていない', '');
+     } catch(e) {
+       ng('ST-578: 例外', e.message);
+       var _cf = document.getElementById('capsuleSealConfirm'); if (_cf) _cf.remove();
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
