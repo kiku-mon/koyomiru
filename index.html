@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.33 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.36 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.33';
+    const APP_VERSION = 'v0.76.36';
   const APP_LAST_UPDATED = '2026-11-10'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13904,7 +13904,9 @@ var _KOYOMI_SEASON_OF_SEKKI = { '立春': 'spring', '雨水': 'spring', '啓蟄'
 var _KOYOMI_SEASON_TINT = { spring: ['#fcf0f2', '#f2d9de'], summer: ['#eff7ee', '#d6e8d3'], autumn: ['#fbf2e3', '#efdcbc'], winter: ['#eef2f7', '#d6dde8'] };
 // 便箋の見た目（文字の行の高さ30pxにそろえる）。sekki は季節の便箋で使う
 function koyomiStationeryStyle(kind, sekki) {
-  var base = 'white-space:pre-wrap;font-size:15px;line-height:30px;color:#3a2a1a;padding:4px 14px;border-radius:8px;position:relative;';
+  // v0.76.36: 【権威】2026-11-10「はみ出る。スマホだともっとひどかった。ｗｗｗｗｗってやつね。直し方任せる」→ 長い英字の続き（ｗｗｗ・URL）も枠の端で折り返す。
+  //   罫線は30pxごとなので、折り返した行もそのまま罫線に乗る。中身は変えない
+  var base = 'white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;min-width:0;max-width:100%;box-sizing:border-box;font-size:15px;line-height:30px;color:#3a2a1a;padding:4px 14px;border-radius:8px;position:relative;';
   if (kind === 'plain') return base + 'background:#fffdf7;border:1px solid #efe3cc;';
   if (kind === 'washi') return base + 'background-color:#f7f1e3;border:1px solid #e6dcc4;background-image:radial-gradient(rgba(150,120,80,0.06) 1px, transparent 1.5px),radial-gradient(rgba(150,120,80,0.05) 1px, transparent 1.5px);background-size:7px 9px,11px 13px;background-position:0 0,3px 5px;';
   if (kind === 'season') { var t = _KOYOMI_SEASON_TINT[_KOYOMI_SEASON_OF_SEKKI[sekki] || 'autumn']; return base + 'background-color:' + t[0] + ';border:1px solid ' + t[1] + ';background-image:repeating-linear-gradient(transparent, transparent 29px, ' + t[1] + ' 29px, ' + t[1] + ' 30px);'; }
@@ -27155,7 +27157,7 @@ function koyomiXCaption(v, order) {
   var mn = '';
   if (order.moon !== 'none') { var mdx = koyomiMoonOfDay(v.date || new Date()); if (mdx) { mn = mdx.name; tags.push(mn); } }   // v0.63.9: 旧暦の日の呼び名
   var pmx = (order.moon !== 'none') ? koyomiMoonPhaseMoment(v.date || new Date()) : null;
-  if (pmx) tags.push(pmx.name.replace(/の月$/, ''));
+  // v0.76.35: ハッシュタグは「節気・月・こよみる」の3つにそろえる（新月・満月などの名前は本文にだけ）
   if (today.length || mn) lines.push(today.join('、') + (today.length ? '。' : '') + (mn ? '今日の月は' + mn + '。' : '') + (pmx ? '今日の' + _koyomiTimeJaAP(pmx.time) + 'が、' + pmx.name + '。' : ''));
   if (order.kyureki !== 'none' && typeof koyomiLunarDate === 'function') {
     var lu = koyomiLunarDate(v.date || new Date(), 9);
@@ -27164,18 +27166,37 @@ function koyomiXCaption(v, order) {
   try {
     (koyomiCalendarCards(v, order) || []).forEach(function(c) {
       var name = String(c.title || '').split('・')[0];
-      if (name && lines.join('').indexOf(c.title) === -1) { lines.push('今日は、' + c.title + '。'); tags.push(name); }   // v0.63.9: 月の名前と行事の名前が同じ十五夜でも、行事の文は出す
+      if (name && lines.join('').indexOf(c.title) === -1) { lines.push('今日は、' + c.title + '。'); }   // v0.76.35: 行事は本文にだけ（ハッシュタグは3つ）   // v0.63.9: 月の名前と行事の名前が同じ十五夜でも、行事の文は出す
     });
   } catch (e) {}
+  // v0.76.34: 【権威】2026-11-10 レッド・ブルー演習🔴1「Xへの投稿文に、開いた時刻が入っていない」→「A：海外は短く書き、ハッシュタグ1つ外す」（v0.76.35で、タグは日本も海外も3つにそろえた）
+  //   日本：「そして今は、日本時間午前8時12分。」 海外：「そして今は、現地時間午前1時11分（日本時間午後3時11分）。」
+  var _np = koyomiNowPhrase(v.date || new Date()), _abroad = /^現地時間/.test(_np);
+  if (_np) lines.push('そして今は、' + (_abroad ? _np.replace('、日本時間', '（日本時間') + '）' : _np) + '。');
   // v0.64.1: 【権威】2026-10-28、「こよみるで1枚で作れます、は野暮。試しに作ってみてください、という感じ」との指示
   lines.push('こだわりたい、一回きりの今日がある。');   // v0.70.7: 看板の言葉
-  lines.push('あなたの今日の1枚も、作ってみよう。');
+  // v0.76.35: 【権威】2026-11-10「B：海外だけ『あなたの今日の1枚も…』を外す」。海外は時刻の行が長いので、この一行を外してタグ3つを残す
+  if (!_abroad) lines.push('あなたの今日の1枚も、作ってみよう。');
   lines.push('koyomiru.com');
-  ['二十四節気', '七十二候', '今日は何の日', 'こよみる'].forEach(function(x) { tags.push(x); });
+  // v0.76.35: 【権威】2026-11-10「C：ハッシュタグは節気・月・こよみるの3つにそろえる」。日本も海外も同じ。いつも同じ長さで、削れ方が日によって変わらない
+  tags.push('こよみる');
   var seen = {};
   tags = tags.filter(function(x) { x = String(x).replace(/\s/g, ''); if (!x || seen[x]) return false; seen[x] = 1; return true; });
-  return lines.join('\n') + '\n' + tags.map(function(x) { return '#' + x.replace(/\s/g, ''); }).join(' ');
+  var _cap = function() { return lines.join('\n') + '\n' + tags.map(function(x) { return '#' + x.replace(/\s/g, ''); }).join(' '); };
+  // v0.76.35: 行事の日など本文が長くてあふれたら、まず「あなたの今日の1枚も…」を外す（海外と同じ考え方）。それでも足りなければタグを減らす
+  if (koyomiXWeight(_cap()) > 280) { var _inv = lines.indexOf('あなたの今日の1枚も、作ってみよう。'); if (_inv !== -1) lines.splice(_inv, 1); }
+  // v0.76.34: どんな組み合わせでも X の上限（280）を超えないよう、超えたら後ろのハッシュタグから外す（#こよみる は残す）
+  while (koyomiXWeight(_cap()) > 280 && tags.length > 1) { var _ix = tags.length - 2; if (_ix < 0) break; tags.splice(_ix, 1); }
+  return _cap();
 }
+// X の文字の数え方（ふつうの全角は2、半角英数などは1、URLは23）
+function koyomiXWeight(text) {
+  var w = 0;
+  String(text || '').replace(/https?:\/\/\S+/g, function() { w += 23; return ''; }).replace(/(?:[a-z0-9-]+\.)+(?:com|jp|net|org)\b\S*/gi, function() { w += 23; return ''; })
+    .split('').forEach(function(ch) { w += /[\u0000-\u10FF\u2000-\u200D\u2010-\u201F\u2032-\u2037]/.test(ch) ? 1 : 2; });
+  return w;
+}
+window.koyomiXWeight = koyomiXWeight;
 window.koyomiXCaption = koyomiXCaption;
 // Xで投稿：スマホは共有の画面（画像と文が一緒に）。PCは画像を保存し、文の入った X の投稿画面を開く。文はクリップボードにも写す
 function postKoyomiTodayToX(v, order) {
@@ -59463,6 +59484,30 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.36', date: '2026-11-10',
+    items: [
+      { icon:'✉️', t:'手紙の中の長い英字が、便箋からはみ出さないようにしました',
+        before:'「ｗｗｗｗ…」や長いURLが続くと、便箋の枠を突き破って横にはみ出していました。スマホではさらに目立っていました',
+        after:'便箋の端で折り返し、次の罫線に続きます。手紙の中身は変わりません' }
+    ]
+  },
+  {
+    ver: 'v0.76.35', date: '2026-11-10',
+    items: [
+      { icon:'#️⃣', t:'Xに投稿するときのハッシュタグを、節気・月・こよみるの3つにそろえました',
+        before:'ハッシュタグが日によって多く、時刻を入れるとXの文字数の上限を超えて、日によって削られ方が変わっていました',
+        after:'「#立冬 #二日月 #こよみる」のように、いつも3つです。日本でも海外でも同じです。海外では時刻の行が長いので、「あなたの今日の1枚も、作ってみよう。」を外して収めます' }
+    ]
+  },
+  {
+    ver: 'v0.76.34', date: '2026-11-10',
+    items: [
+      { icon:'🕰', t:'Xに投稿する文にも、開いた時刻を入れました',
+        before:'Xへの投稿文には時刻が無く、いつ投稿しても同じ文でした',
+        after:'「そして今は、日本時間午前8時12分。」が入ります。海外では「そして今は、現地時間午前1時11分（日本時間午後3時11分）。」です。Xの文字数の上限を超えないよう、長いときはハッシュタグを減らします' }
+    ]
+  },
+  {
     ver: 'v0.76.33', date: '2026-11-10',
     items: [
       { icon:'🌏', t:'海外では、刻の行に「日本の」を添えるようにしました',
@@ -87707,10 +87752,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _c15 = koyomiXCaption(koyomiTodayData(new Date(2026, 8, 25, 21)), _o);
        var _h = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 9, 27, 12)), _o, function(x) { return String(x); });
        (_c.indexOf('～今日を声に出して味わってみよう～') === 0 && _c.indexOf('霜降の5日目、霜始降の最後の日。今日の月は立待月。') !== -1 && _c.indexOf('今日は、旧暦9月17日。') !== -1 &&
-        _c.indexOf('あなたの今日の1枚も、作ってみよう。') !== -1 && _c.indexOf('毎日この1枚が作れます') === -1 && _c.indexOf('koyomiru.com') !== -1 && /#霜降 /.test(_c) && /#今日は何の日/.test(_c) && /#こよみる$/.test(_c) &&
-        _c15.indexOf('今日は、十五夜・中秋節。') !== -1 && /#十五夜/.test(_c15) &&
+        ((/そして今は、日本時間/.test(_c)) === (_c.indexOf('あなたの今日の1枚も、作ってみよう。') !== -1)) && koyomiXWeight(_c) <= 280 && koyomiXWeight(_c15) <= 280 && _c.indexOf('毎日この1枚が作れます') === -1 && _c.indexOf('koyomiru.com') !== -1 && /\n#霜降 #立待月 #こよみる$/.test(_c) && /そして今は、(日本時間|現地時間)/.test(_c) &&
+        _c15.indexOf('今日は、十五夜・中秋節。') !== -1 && (/そして今は、日本時間/.test(_c15) ? (_c15.match(/#\S+/g) || []).length === 3 : (/#こよみる$/.test(_c15) && (_c15.match(/#\S+/g) || []).length <= 3)) &&   /* v0.76.35: 行事の名前は本文にだけ。日本はタグ3つ。海外・行事の日・日付ずれが重なると、280に収めるため月のタグが外れることがある */
         /data-kz="sentence-x"/.test(_h) && /postKoyomiTodayToX\(v, order\)/.test(renderKazeKoyomi.toString()))
-         ? ok('ST-496·①: Xへの投稿の文は、その日の言葉（節気の何日目・候の最後の日・月・旧暦・行事）と、強いハッシュタグ（#霜降 #今日は何の日 など）。「𝕏 で投稿」で入る')
+         ? ok('ST-496·①: Xへの投稿の文は、その日の言葉（節気の何日目・候の最後の日・月・旧暦・行事）と、ハッシュタグは節気・月・こよみるの3つ（v0.76.35〜）。開いた時刻も。「𝕏 で投稿」で入る')
          : ng('ST-496·①: 投稿の文が違う', _c.replace(/\n/g, ' / '));
      } catch(e) {
        ng('ST-496: 例外', e.message);
@@ -89661,6 +89706,45 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-588·①: 締めの時刻の出方が違う', JSON.stringify(_res588).slice(0, 400));
      } catch(e) {
        ng('ST-588: 例外', e.message);
+     }
+
+     // ===== ST-589: Xの投稿文に開いた時刻（日本：日本時間／海外：現地時間（日本時間））。海外は「#今日は何の日」を外す。どんな時もXの上限280以内（v0.76.34〜） =====
+     // 【権威】2026-11-10 レッド・ブルー演習🔴1 →「A：海外は短く書き、ハッシュタグ1つ外す」
+     try {
+       var _o589 = Object.assign({}, JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { kyureki: 'basic', richness: 'extraRich' });
+       var _v589 = koyomiTodayData(new Date(2026, 10, 10, 1, 11, 0)), _save589 = window.koyomiNowPhrase, _jp = '', _ab = '', _abDay = '';
+       try {
+         window.koyomiNowPhrase = function() { return '日本時間午前8時12分'; }; _jp = koyomiXCaption(_v589, _o589);
+         window.koyomiNowPhrase = function() { return '現地時間午前1時11分、日本時間午後3時11分'; }; _ab = koyomiXCaption(_v589, _o589);
+         window.koyomiNowPhrase = function() { return '現地時間午後7時12分、日本時間11月10日午前9時12分'; }; _abDay = koyomiXCaption(_v589, _o589);
+       } finally { window.koyomiNowPhrase = _save589; }
+       var _okJp = /\nそして今は、日本時間午前8時12分。\n/.test(_jp) && /\n#立冬 #二日月 #こよみる$/.test(_jp) && /あなたの今日の1枚も、作ってみよう。/.test(_jp);
+       var _okAb = /\nそして今は、現地時間午前1時11分（日本時間午後3時11分）。\n/.test(_ab) && /\n#立冬 #二日月 #こよみる$/.test(_ab) && !/あなたの今日の1枚も/.test(_ab);
+       var _okAbDay = /そして今は、現地時間午後7時12分（日本時間11月10日午前9時12分）。/.test(_abDay) && /\n#立冬 #二日月 #こよみる$/.test(_abDay);
+       var _okLen = [_jp, _ab, _abDay].every(function(c) { return koyomiXWeight(c) <= 280; });
+       // 長すぎるときは後ろのハッシュタグから外す（#こよみる は残す）
+       var _okTrim = koyomiXWeight('あ'.repeat(141)) === 282 && koyomiXWeight('koyomiru.com') === 23;
+       (_okJp && _okAb && _okAbDay && _okLen && _okTrim)
+         ? ok('ST-589·①: Xの投稿文に開いた時刻。日本は「日本時間…」、海外は「現地時間…（日本時間…）」。ハッシュタグは節気・月・こよみるの3つ（海外は「あなたの今日の1枚も…」を外して収める）。どれもXの上限280以内')
+         : ng('ST-589·①: Xの投稿文の時刻が違う', [koyomiXWeight(_jp), koyomiXWeight(_ab), koyomiXWeight(_abDay)].join('/') + ' ' + _ab.slice(0, 200));
+     } catch(e) {
+       ng('ST-589: 例外', e.message);
+     }
+
+     // ===== ST-590: 便箋は長い英字の続き（ｗｗｗ・URL）も枠の端で折り返し、はみ出さない（v0.76.36〜） =====
+     // 【権威】2026-11-10「はみ出る。スマホだともっとひどかった。ｗｗｗｗｗってやつね」
+     try {
+       var _box590 = document.createElement('div'); _box590.style.cssText = 'position:absolute;left:-9999px;top:0;width:320px;';
+       document.body.appendChild(_box590);
+       var _r590 = ['ruled', 'plain', 'washi', 'season'].map(function(k) {
+         _box590.innerHTML = '<div style="' + koyomiStationeryStyle(k, '立冬') + '">拝啓　きくモン様\n' + 'w'.repeat(120) + '\nhttps://koyomiru.com/' + 'a'.repeat(80) + '\n敬具</div>';
+         var el = _box590.firstChild; return el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().width <= 321;
+       });
+       _box590.remove();
+       _r590.every(Boolean) ? ok('ST-590·①: 便箋4種とも、長い英字の続きやURLを枠の端で折り返し、はみ出さない（幅320px）')
+         : ng('ST-590·①: 便箋からはみ出る', _r590.join(','));
+     } catch(e) {
+       ng('ST-590: 例外', e.message);
      }
 
      // ===== APAG LAUNCH SEQUENCE =====
