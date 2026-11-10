@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.36 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.37 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.36';
+    const APP_VERSION = 'v0.76.37';
   const APP_LAST_UPDATED = '2026-11-10'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -59484,6 +59484,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.37', date: '2026-11-10',
+    items: [
+      { icon:'🔒', t:'プロフィール画像の扱いを、より安全にしました',
+        before:'プロフィール画像として扱う中身の確かめが、十分ではありませんでした',
+        after:'端末で選んだ画像と、httpsの画像の住所だけを表示します。それ以外は表示しません' }
+    ]
+  },
+  {
     ver: 'v0.76.36', date: '2026-11-10',
     items: [
       { icon:'✉️', t:'手紙の中の長い英字が、便箋からはみ出さないようにしました',
@@ -65829,11 +65837,23 @@ window.fetchPublicProfiles = fetchPublicProfiles;
 
 // 画像を設定していない人のアイコン。名前から色を決めるので、
 // 同じ人なら常に同じ色になり、見分けがつく。画像を持たないので容量も食わない。
+// v0.76.37: 【権威】2026-11-10「セッションハイジャック…クロスサイト…は防いでるの？」の演習で見つけた穴。
+//   アバターは本人が自由に書き換えられて誰でも読める表にあり、消毒せずに <img src="…"> へ入れていたため、
+//   アバターに命令を仕込むと、コメントを見た全員の画面で動いた（ログインの証明書を持ち出せる）。
+//   入れてよいのは「端末で選んだ画像（data:image/…;base64）」か「https の画像の住所」だけ。それ以外は使わず、入れるときも必ず消毒する
+function koyomiSafeImgSrc(a) {
+  a = String(a == null ? '' : a).trim();
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+\/=]+$/i.test(a)) return a;
+  if (/^https:\/\/[^\s"'<>()\\]+$/i.test(a)) return a;
+  return '';
+}
+window.koyomiSafeImgSrc = koyomiSafeImgSrc;
 function publicProfileAvatarHtml(prof, size) {
-  size = size || 36;
+  size = Math.max(8, Math.min(200, parseInt(size, 10) || 36));
   var _name = (prof && prof.display_name) || '？';
-  if (prof && prof.avatar) {
-    return '<img src="' + prof.avatar + '" alt="" style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;object-fit:cover;flex-shrink:0;">';
+  var _src = koyomiSafeImgSrc(prof && prof.avatar);
+  if (_src) {
+    return '<img src="' + _escapeHtml(_src) + '" alt="" style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;object-fit:cover;flex-shrink:0;">';
   }
   var _h = 0;
   for (var i = 0; i < _name.length; i++) _h = (_h * 31 + _name.charCodeAt(i)) % 360;
@@ -67466,9 +67486,9 @@ function _renderAccountMenu() {
   // ナビのアバター画像があれば、そのままメニューにも出す
   if (avEl) {
     var navImg = document.getElementById('navAvatar');
-    var src = (navImg && navImg.src && navImg.src.indexOf('data:') === 0) ? navImg.src : (prof.avatar || '');
+    var src = koyomiSafeImgSrc((navImg && navImg.src && navImg.src.indexOf('data:') === 0) ? navImg.src : (prof.avatar || ''));   // v0.76.37
     avEl.innerHTML = src
-      ? '<img src="' + src + '" alt="" style="width:100%;height:100%;object-fit:cover;">'
+      ? '<img src="' + _escapeHtml(src) + '" alt="" style="width:100%;height:100%;object-fit:cover;">'
       : '👤';
   }
 
@@ -89746,6 +89766,49 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-590: 例外', e.message);
      }
+
+     // ===== ST-591: 他人が書ける文字に命令を仕込んでも動かない（アバター・コメント・手紙・式・備考）（v0.76.37〜） =====
+     // 【権威】2026-11-10「セッションハイジャック…クロスサイト…は防いでるの？」の演習で、アバターの穴（消毒せずに画像の住所へ入れていた）を見つけて直した
+     enqueueSmokeAsyncTest('ST-591', function() {
+     return (async function() {
+     var _r591 = {}, _e591 = null, _rpc591 = window._capsuleRpc, _box591 = null, _orig591 = window.fetchPodcastComments, _pc591 = window._publicProfileCache;
+     try {
+       window.__xss591 = [];
+       var P = function(t) { return '"><img src=x onerror="window.__xss591.push(\'' + t + '\')">\'<svg onload="window.__xss591.push(\'' + t + 's\')"></svg>' + t; };
+       _r591.safe = koyomiSafeImgSrc('x" onerror="steal(1)') === '' && koyomiSafeImgSrc('javascript:steal(1)') === '' && koyomiSafeImgSrc('data:text/html;base64,PHNjcmlwdD4=') === '' &&
+         koyomiSafeImgSrc('data:image/png;base64,iVBORw0KGgo=') === 'data:image/png;base64,iVBORw0KGgo=' && koyomiSafeImgSrc('https://example.com/a.png') === 'https://example.com/a.png' &&
+         koyomiSafeImgSrc('https://example.com/a.png" onerror="x') === '';
+       _box591 = document.createElement('div'); _box591.style.cssText = 'position:absolute;left:-9999px;top:0;'; document.body.appendChild(_box591);
+       // アバター・名前・本文（ポッドキャストのコメント）
+       window._publicProfileCache = Object.assign({}, _pc591 || {}, { st591: { display_name: P('pname'), avatar: 'x" onerror="window.__xss591.push(\'avatar\')' } });
+       var _pcBox = document.getElementById('podcastComments'), _made = false;
+       if (!_pcBox) { _pcBox = document.createElement('div'); _pcBox.id = 'podcastComments'; _box591.appendChild(_pcBox); _made = true; }
+       var _pcBefore = _pcBox.innerHTML;
+       window.fetchPodcastComments = async function() { return [{ id: 'st591c', user_id: 'st591', body: P('pbody'), created_at: new Date().toISOString(), replies: [] }]; };
+       await renderPodcastComments('st591ep');
+       // 手紙
+       var _d = document.createElement('div'); _box591.appendChild(_d);
+       _d.innerHTML = _capsuleLetterHtml({ id: 'st591L', sender_id: 'u', sender_name: P('sender'), body: P('lbody'), sealed_at: new Date().toISOString(), sealed_koyomi: { sekki: P('sekki') }, stationery: 'season' }, _escapeHtml);
+       // 式・出欠表
+       window._capsuleRpc = function(n) {
+         if (n === 'koyomiru_capsule_ceremony_list') return Promise.resolve([{ id: 'st591C', calendar_id: 'cal1', title: P('ctitle'), place: P('cplace'), starts_at: new Date(Date.now() + 600000).toISOString(), host_name: P('host'), is_host: false, kind: 'open' }]);
+         if (n === 'koyomiru_capsule_ceremony_board') return Promise.resolve([{ user_id: 'u1', name: P('bname'), answer: 'yes', note: P('note'), is_me: false }]);
+         return Promise.resolve([]);
+       };
+       var _c = document.createElement('div'); _box591.appendChild(_c); _capsuleRenderCeremony(_c, _escapeHtml);
+       await new Promise(function(r) { setTimeout(r, 300); });
+       _r591.hits = window.__xss591.slice();
+       if (_made) _pcBox.remove(); else _pcBox.innerHTML = _pcBefore;
+     } catch(e) { _e591 = e; } finally {
+       window._capsuleRpc = _rpc591; window.fetchPodcastComments = _orig591; window._publicProfileCache = _pc591; if (_box591) _box591.remove();
+     }
+     if (_e591) ng('ST-591: 例外', _e591.message);
+     else {
+       _r591.safe ? ok('ST-591·①: 画像の住所に入れてよいのは data:image/…;base64 と https の住所だけ（命令や引用符を含むものは使わない）') : ng('ST-591·①: 画像の住所の見分けが違う', '');
+       (_r591.hits && _r591.hits.length === 0) ? ok('ST-591·②: アバター・名前・コメント・手紙・式・備考に命令を仕込んでも、画面で動かない') : ng('ST-591·②: 仕込んだ命令が動いた（重大）', (_r591.hits || []).join(','));
+     }
+     })();
+     });
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
