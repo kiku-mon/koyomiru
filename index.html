@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.28 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.29 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.28';
+    const APP_VERSION = 'v0.76.29';
   const APP_LAST_UPDATED = '2026-11-10'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -15494,14 +15494,27 @@ window.highlightSafe = highlightSafe;
 // なお空のままなら、この確認は行わない。IDを書く前のこの版で、
 // きくモンさん自身が締め出されることを避けるための逃げ道である。
 // IDは 設定 → クラウド か、管理者メニューの開発者ログで見られる。
-    var KOYOMIRU_OWNER_IDS = [
-      // v0.47.0: きくモンさんのIDを書く。
-      // これまで空のままで、合言葉さえ知っていれば誰でも管理者モードに入れた。
-      // 過去に王姫コマンドを2〜3人へ伝えた記録もあり、その人たちも入れる状態だった。
-      // ここに書けば、他の端末では入れなくなる。
-      'fcef1c30-599c-4c05-9730-af3059832e0a',   // きくモン
-    ];
-window.KOYOMIRU_OWNER_IDS = KOYOMIRU_OWNER_IDS;
+    // v0.76.29: 【権威】2026-11-10「管理者たる自分のＩＤなど露呈してないよね？」→「直す（ファイルからIDと名前を消す）」。
+    //   管理者のIDをファイルに書くのをやめた。ログインしたら、サーバー㊸（koyomiru_am_i_admin）に「私は管理者？」と聞き、
+    //   答えを window._koyomiruIsAdmin に持つ（その端末のその起動のあいだだけ。端末には書かない）。
+    //   本当の守りは今までどおりサーバー側（管理者の窓口は、ログインしている本人が管理者かを毎回確かめる）。
+    //   答えは「どのアカウントについての答えか」（_koyomiruAdminFor）と一緒に持ち、今のアカウントと一致するときだけ使う
+    //   （アカウントを切り替えた直後、確かめ直しが返るまでに、別の人が管理者扱いになるのを防ぐ）
+    window._koyomiruIsAdmin = false; window._koyomiruAdminFor = null;
+    function koyomiruRefreshAdmin() {
+      try {
+        var uid = window._cloudUserId || null;
+        window._koyomiruIsAdmin = false; window._koyomiruAdminFor = null;
+        if (!window.supabaseClient || !uid) return Promise.resolve(false);
+        return window.supabaseClient.rpc('koyomiru_am_i_admin').then(function(res) {
+          if (window._cloudUserId !== uid) return false;   // 返ってくる前にアカウントが変わったら使わない
+          window._koyomiruIsAdmin = !!(res && res.data === true); window._koyomiruAdminFor = uid;
+          return window._koyomiruIsAdmin;
+        }, function() { return false; });
+      } catch (e) { window._koyomiruIsAdmin = false; return Promise.resolve(false); }
+    }
+    function _koyomiruAdminNow() { return !!(window._cloudUserId && window._koyomiruIsAdmin === true && window._koyomiruAdminFor === window._cloudUserId); }
+    window.koyomiruRefreshAdmin = koyomiruRefreshAdmin;
 
 // v0.47.16: 【権威】2026-09-17、開発者ツールを開いた人に警告を出してもよい、との判断。
 // Discord と同じ考え方で、狙いは攻撃者を止めることではない。
@@ -15560,13 +15573,8 @@ window.KOYOMIRU_OWNER_IDS = KOYOMIRU_OWNER_IDS;
 })();
 
 function isKoyomiruOwner() {
-  // 一覧が空なら確かめない（IDを書く前でも、これまでどおり使えるようにする）
-  if (!KOYOMIRU_OWNER_IDS.length) return true;
-  try {
-    var uid = window._cloudUserId || null;
-    if (!uid) return false;   // ログインしていないなら、本人と確かめようがない
-    return KOYOMIRU_OWNER_IDS.indexOf(uid) !== -1;
-  } catch (e) { return false; }
+  // v0.76.29: サーバーに確かめた答え（ログインしていなければ false）
+  return _koyomiruAdminNow();
 }
 window.isKoyomiruOwner = isKoyomiruOwner;
 
@@ -41426,7 +41434,7 @@ window._repairCloudCalendarIds();
         try {
           var _dvBox = document.getElementById('devVoiceSettingsBox');
           if (_dvBox) {
-            var _amAdmin = (window._cloudUserId === KOYOMIRU_ADMIN_UID);
+            var _amAdmin = isKoyomiruDeveloper();   // v0.76.29
             _dvBox.style.display = _amAdmin ? 'block' : 'none';
           }
         } catch(eDv) {}
@@ -53860,12 +53868,23 @@ var _KOYOMIRU_DEV_KEY = 'koyomiru_dev_visitor';
 // 判定を関数ひとつにまとめること。散らばると必ず食い違う」に従い統一する。
 // 同じIDが _KOYOMIRU_ADMIN_UID と KOYOMIRU_ADMIN_UID の2つの名前で
 // 別々に定義されていた。片方を変えたときにもう片方が取り残される。
-var KOYOMIRU_ADMIN_UID = 'fcef1c30-599c-4c05-9730-af3059832e0a';
-window.KOYOMIRU_ADMIN_UID = KOYOMIRU_ADMIN_UID;
-var _KOYOMIRU_ADMIN_UID = KOYOMIRU_ADMIN_UID;   // 旧名（既存の参照のため残す）
+// v0.76.29: 管理者のIDそのものは書かない。ポッドキャストのコメントに「開発者」の印を付けるときだけ、IDから作った元に戻せない印（SHA-256）と比べる
+var KOYOMIRU_DEV_HASH = '46dc0c55a1429805d83549aa700476b87bfd71606ba3c74db22163555d323d4c';
+var _koyomiruHashCache = {};
+function koyomiruSha256Hex(str) {
+  try {
+    if (_koyomiruHashCache[str]) return Promise.resolve(_koyomiruHashCache[str]);
+    if (!(window.crypto && crypto.subtle && window.TextEncoder)) return Promise.resolve('');
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(str))).then(function(buf) {
+      var h = Array.prototype.map.call(new Uint8Array(buf), function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+      _koyomiruHashCache[str] = h; return h;
+    }, function() { return ''; });
+  } catch (e) { return Promise.resolve(''); }
+}
+window.koyomiruSha256Hex = koyomiruSha256Hex;
 // 開発者本人かどうか。判定はこの関数ひとつを正とする。
 function isKoyomiruDeveloper() {
-  return window._cloudUserId === KOYOMIRU_ADMIN_UID;
+  return _koyomiruAdminNow();   // v0.76.29: サーバーに確かめた答え（今のアカウントについての答えだけ）
 }
 window.isKoyomiruDeveloper = isKoyomiruDeveloper;
 
@@ -53875,7 +53894,7 @@ function _isDeveloperVisitor() {
     // v0.45.1506: 【権威】2026-08-04、当初は管理者モードのON/OFFも判定材料にしていたが、
     // 管理者モードの入り方を知っている協力者が複数いるため、実際に使ってくれている人まで
     // 統計から消えてしまう。判定は開発者本人のアカウントIDのみに限定する。
-    if (window._cloudUserId === _KOYOMIRU_ADMIN_UID) {
+    if (isKoyomiruDeveloper()) {   // v0.76.29
       localStorage.setItem(_KOYOMIRU_DEV_KEY, '1');
       return true;
     }
@@ -59404,6 +59423,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.29', date: '2026-11-10',
+    items: [
+      { icon:'🔒', t:'運営のアカウントの情報を、アプリの中に書かないようにしました',
+        before:'アプリのファイルの中に、運営のアカウントを見分けるための情報がそのまま書いてありました',
+        after:'運営かどうかは、ログインしたときにサーバーに確かめます。アプリのファイルからは読み取れません' }
+    ]
+  },
+  {
     ver: 'v0.76.28', date: '2026-11-10',
     items: [
       { icon:'🔧', t:'運営の記録で、相手の名前の出し方を直しました',
@@ -62629,7 +62656,7 @@ async function _syncNewsToCloud() {
   try {
     if (window._isTesting || window._smokeTestRunning) return { skipped: 'testing' };
     if (!window.supabaseClient || !window._cloudIsLoggedIn) return { skipped: 'offline' };
-    if (typeof KOYOMIRU_ADMIN_UID === 'undefined' || window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+    if (!isKoyomiruDeveloper()) {   // v0.76.29
       return { skipped: 'not-admin' };
     }
     if (window._newsSyncedOnce) return { skipped: 'done' };
@@ -65802,7 +65829,13 @@ async function renderPodcastComments(episodeGuid) {
 
   var rows = await fetchPodcastComments(episodeGuid);
   var _me = window._cloudUserId || null;
-  var _isAdmin = (_me === KOYOMIRU_ADMIN_UID);
+  var _isAdmin = isKoyomiruDeveloper();   // v0.76.29
+  // v0.76.29: 開発者のコメントの印は、IDから作った元に戻せない印と比べて決める（IDそのものはファイルに書かない）
+  var _devIds = {};
+  try {
+    var _uids = {}; (rows || []).forEach(function(c) { if (c && c.user_id) _uids[c.user_id] = 1; (c && c.replies || []).forEach(function(r) { if (r && r.user_id) _uids[r.user_id] = 1; }); });
+    await Promise.all(Object.keys(_uids).map(function(u) { return koyomiruSha256Hex(u).then(function(h) { if (h === KOYOMIRU_DEV_HASH) _devIds[u] = 1; }); }));
+  } catch (eDev) {}
   var _esc = function(s){ return String(s == null ? '' : s).replace(/</g, '&lt;'); };
   var _when = function(iso) {
     var _d = new Date(iso); if (isNaN(_d)) return '';
@@ -65817,7 +65850,7 @@ async function renderPodcastComments(episodeGuid) {
   var _one = function(c, isReply) {
     var _p = (window._publicProfileCache && window._publicProfileCache[c.user_id]) || null;
     var _nm = (_p && _p.display_name) || '名無しさん';
-    var _isDev = (c.user_id === KOYOMIRU_ADMIN_UID);
+    var _isDev = !!_devIds[c.user_id];
     var _mine = (_me && c.user_id === _me);
     return '<div style="display:flex;gap:10px;padding:12px 0;' + (isReply ? 'margin-left:44px;' : '') + '">' +
       publicProfileAvatarHtml(_p, isReply ? 28 : 36) +
@@ -65942,7 +65975,7 @@ window.renderPodcastAbout = renderPodcastAbout;
 function savePodcastAbout(text) {
   // v0.45.1913: 開発者本人以外は設定できない。画面で欄を隠すだけでは
   // 守りにならず、直接呼ばれれば通ってしまう。保存する側でも確かめる。
-  if (window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+  if (!isKoyomiruDeveloper()) {   // v0.76.29
     console.warn('[設定] 開発者の声の設定は開発者のみが変更できます');
     return;
   }
@@ -65998,7 +66031,7 @@ function openSupportPage() {
   // v0.45.1914: 支援の飛び先は、開発者本人の設定だけを使う。
   // 他の人の端末に残っている設定は使わない。過去に書き換えられていた場合、
   // その人の押した支援が別の場所へ流れてしまう。
-  var _amAdmin = (window._cloudUserId === KOYOMIRU_ADMIN_UID);
+  var _amAdmin = isKoyomiruDeveloper();   // v0.76.29
   var _saved = _amAdmin ? ((allSettings.ui && allSettings.ui.supportUrl) || '') : '';
   var _dest = _isValidSupportUrl(_saved) ? _saved : 'https://ofuse.me/b9ca4c85';
   (async function() {
@@ -66011,7 +66044,7 @@ window.openSupportPage = openSupportPage;
 function saveSupportUrl(url) {
   // v0.45.1913: 開発者本人以外は設定できない。画面で欄を隠すだけでは
   // 守りにならず、直接呼ばれれば通ってしまう。保存する側でも確かめる。
-  if (window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+  if (!isKoyomiruDeveloper()) {   // v0.76.29
     console.warn('[設定] 開発者の声の設定は開発者のみが変更できます');
     return;
   }
@@ -66052,7 +66085,7 @@ window.saveSupportUrl = saveSupportUrl;
 function savePodcastFeedUrl(url) {
   // v0.45.1913: 開発者本人以外は設定できない。画面で欄を隠すだけでは
   // 守りにならず、直接呼ばれれば通ってしまう。保存する側でも確かめる。
-  if (window._cloudUserId !== KOYOMIRU_ADMIN_UID) {
+  if (!isKoyomiruDeveloper()) {   // v0.76.29
     console.warn('[設定] 開発者の声の設定は開発者のみが変更できます');
     return;
   }
@@ -68048,16 +68081,20 @@ try {
       // 外部キー制約違反（409 Conflict）でPushが常に失敗する重大バグがあった。
       // 全認証イベント共通でここに正しいユーザーIDを保持し、Push時に参照する。
       window._cloudUserId = (session && session.user && session.user.id) || null;
-      // v0.45.1505: 管理者アカウントでのログインを検知したら印を残す（次回起動から除外）
-      if (window._cloudUserId === _KOYOMIRU_ADMIN_UID && typeof _markDeveloperVisitor === 'function') _markDeveloperVisitor();
-      _cloudSetNavRing(!!session);
-      // v0.47.49: 管理者がログインしたら、アプリにあるお知らせを表へ入れる（蓄積）。
-      // 起動直後の同期と重ならないよう、少し待ってから動かす。1回だけ動く。
-      if (session && window._cloudUserId === _KOYOMIRU_ADMIN_UID && typeof _syncNewsToCloud === 'function') {
-        setTimeout(function() { _syncNewsToCloud().then(function(r) {
+      // v0.76.29: 管理者かどうかは、サーバー㊸に聞いて決める（IDはファイルに書かない）
+      if (!session) { window._koyomiruIsAdmin = false; window._koyomiruAdminFor = null; }
+      if (session && typeof koyomiruRefreshAdmin === 'function') koyomiruRefreshAdmin().then(function(isAdm) {
+        if (!isAdm) return;
+        // v0.45.1505: 管理者アカウントでのログインを検知したら印を残す（次回起動から除外）
+        if (typeof _markDeveloperVisitor === 'function') _markDeveloperVisitor();
+        // v0.47.49: 管理者がログインしたら、アプリにあるお知らせを表へ入れる（蓄積）。起動直後の同期と重ならないよう、少し待つ。1回だけ動く
+        if (typeof _syncNewsToCloud === 'function') setTimeout(function() { _syncNewsToCloud().then(function(r) {
           if (r && typeof r.written === 'number') console.log('[お知らせ] 表へ入れた版の数:', r.written);
         }); }, 8000);
-      }
+        // 管理者のタブ（出した手紙・届いた通報）を出すため、開いていれば描き直す
+        try { if (typeof currentView !== 'undefined' && currentView === 'capsule' && typeof renderCapsuleView === 'function') renderCapsuleView(); } catch (eRv) {}
+      });
+      _cloudSetNavRing(!!session);
       // v0.45.1607: 【権威】2026-08-13、新規の方がパスワードを忘れて何度も失敗し離脱、との報告。
       // 調べたところ、再設定メールは送れるのに、リンクを開いた後の画面が無かった。
       // Supabaseはリンクから戻ると PASSWORD_RECOVERY を発火させるが、
@@ -69067,7 +69104,7 @@ function checkAdminPw() {
   // 合言葉の前に、本人かどうかを確かめる。
   // 一覧が空のままだと確かめようがないので、そのときは合言葉だけで通す（これまで通り）。
   // IDを書けば、その人以外は入れなくなる。
-  if (KOYOMIRU_OWNER_IDS.length && typeof isKoyomiruOwner === 'function' && !isKoyomiruOwner()) {
+  if (typeof isKoyomiruOwner === 'function' && !isKoyomiruOwner()) {   // v0.76.29: サーバーに確かめた答えで
     if (typeof showToast === 'function') showToast('この端末では使えません', {type:'warn'});
     input.value = '';
     return;
@@ -69193,10 +69230,9 @@ function showDebugLog(_initOnly) {
     lsInfo.push('tokuPoints: ' + (localStorage.getItem('tokuPoints')||'0'));
     lsInfo.push('gouPoints: ' + (localStorage.getItem('gouPoints')||'0'));
     lsInfo.push('currentView: ' + (localStorage.getItem('currentView')||'null'));
-    // v0.45.2061: 管理者を絞るのに使うID。ここに書き写して KOYOMIRU_OWNER_IDS に入れる。
+    // v0.45.2061: 自分のユーザーID（自分の端末でだけ見える）。v0.76.29 から管理者はサーバーで決める
     lsInfo.push('★ あなたのユーザーID: ' + (window._cloudUserId || '(未ログイン)'));
-    lsInfo.push('★ 本人と認めた一覧: ' + (window.KOYOMIRU_OWNER_IDS && window.KOYOMIRU_OWNER_IDS.length
-      ? window.KOYOMIRU_OWNER_IDS.join(', ') : '(まだ空・誰でも入れる状態)'));
+    lsInfo.push('★ 管理者か（サーバーに確かめた答え）: ' + (typeof _koyomiruAdminNow === 'function' && _koyomiruAdminNow() ? 'はい' : 'いいえ'));   // v0.76.29: 一覧のIDは出さない
     var allKeys = [];
     for (var i = 0; i < localStorage.length; i++) allKeys.push(localStorage.key(i));
     allKeys.sort();
@@ -89485,6 +89521,36 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) { _e586 = e; } finally { window._capsuleRpc = _rpc586; }
      if (_e586) ng('ST-586: 例外', _e586.message);
      else _ok586 ? ok('ST-586·①: 管理者の記録は、措置・問題なしの行だけ「相手：○○」。見た行に（名前なし）を出さない') : ng('ST-586·①: 記録の出し方が違う', _txt586);
+     })();
+     });
+
+     // ===== ST-587: 管理者のIDはファイルに書かない。管理者かはサーバーに聞いた答えで決める。開発者のコメントの印は元に戻せない印で比べる（v0.76.29〜） =====
+     // 【権威】2026-11-10「管理者たる自分のＩＤなど露呈してないよね？」→「直す（ファイルからIDと名前を消す）」。サーバーは㊸
+     enqueueSmokeAsyncTest('ST-587', function() {
+     return (async function() {
+     var _sv587 = { uid: window._cloudUserId, adm: window._koyomiruIsAdmin, for_: window._koyomiruAdminFor }, _r587 = {}, _e587 = null;
+     try {
+       var _src587 = Array.prototype.map.call(document.scripts, function(sc) { return sc.textContent; }).join('\n').replace(/\/\/[^\n]*/g, '');
+       _r587.noId = !/KOYOMIRU_OWNER_IDS\s*=\s*\[/.test(_src587) && !/KOYOMIRU_ADMIN_UID\s*=\s*'/.test(_src587) && /^[0-9a-f]{64}$/.test(KOYOMIRU_DEV_HASH);
+       window._cloudUserId = 'someone'; window._koyomiruIsAdmin = false; window._koyomiruAdminFor = 'someone';
+       var _no = !isKoyomiruOwner() && !isKoyomiruDeveloper() && !isKoyomiruAdminMode();
+       window._koyomiruIsAdmin = true;
+       var _yes = isKoyomiruOwner() && isKoyomiruDeveloper();
+       window._cloudUserId = 'another';   // 別のアカウントに切り替わった直後（確かめ直し前）
+       var _switched = !isKoyomiruOwner() && !isKoyomiruDeveloper();
+       window._cloudUserId = null;
+       var _out = !isKoyomiruOwner();
+       _r587.judge = _no && _yes && _switched && _out;
+       _r587.hash = (await koyomiruSha256Hex('abc')) === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
+       _r587.server = /koyomiru_am_i_admin/.test(koyomiruRefreshAdmin.toString()) && /_devIds\[c\.user_id\]/.test(renderPodcastComments.toString()) && /KOYOMIRU_DEV_HASH/.test(renderPodcastComments.toString());
+     } catch(e) { _e587 = e; } finally { window._cloudUserId = _sv587.uid; window._koyomiruIsAdmin = _sv587.adm; window._koyomiruAdminFor = _sv587.for_; }
+     if (_e587) ng('ST-587: 例外', _e587.message);
+     else {
+       _r587.noId ? ok('ST-587·①: 管理者のIDはファイルに書かない（一覧も別名も無い）') : ng('ST-587·①: 管理者のIDが残っている', '');
+       _r587.judge ? ok('ST-587·②: 管理者かどうかは、サーバーに聞いた答え。今のアカウントについての答えだけ使う（切り替え直後・ログアウトでは管理者ではない）') : ng('ST-587·②: 管理者の見分けが違う', '');
+       _r587.hash ? ok('ST-587·③: 元に戻せない印（SHA-256）を正しく作れる') : ng('ST-587·③: 印の作り方が違う', '');
+       _r587.server ? ok('ST-587·④: ログイン後にサーバー㊸へ聞く。開発者のコメントの印は、元に戻せない印で比べる') : ng('ST-587·④: 聞き方・比べ方が違う', '');
+     }
      })();
      });
 
