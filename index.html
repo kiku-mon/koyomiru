@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.27 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.28 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.27';
+    const APP_VERSION = 'v0.76.28';
   const APP_LAST_UPDATED = '2026-11-10'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14242,7 +14242,9 @@ function _capsuleRenderAdmin(body, e) {
     _capsuleRpc('koyomiru_capsule_admin_log_list', { p_limit: 50 }).then(function(list) {
       var el = body.querySelector('[data-adm-log]'); if (!el) return;
       var _actLabel = function(x, d) { return x.action === 'violation' ? '措置（' + (_KOYOMI_CAT_LABEL[d.category] || d.category || '') + '・' + (d.result || '') + '）' : (x.action === 'no_violation' ? '問題なし' : (x.action === 'view_flow' ? '手紙の流れを見た' + (d.name ? '（' + d.name + '）' : '') : (x.action === 'view_stats' ? '送った人ごとの数を見た' : x.action))); };
-      el.innerHTML = (list && list.length) ? list.map(function(x) { var d = x.detail || {}; return '<div style="padding:3px 0;border-top:1px dashed #e6d8bd;">' + _capsuleFmtDT(x.created_at) + '　' + e(x.target_name || '') + '　' + e(_actLabel(x, d)) + '</div>'; }).join('') : 'まだない。';
+      el.innerHTML = (list && list.length) ? list.map(function(x) { var d = x.detail || {}; // v0.76.28: 【権威】2026-11-10「自分管理者だけど、なまえなしなんだ？」→ この欄は「相手」。相手のいる行（措置・問題なし）だけ出し、「見た」の行は空ける
+        var _who = (x.action === 'violation' || x.action === 'no_violation') ? (x.target_name || '') : '';
+        return '<div data-adm-log-row style="padding:3px 0;border-top:1px dashed #e6d8bd;">' + _capsuleFmtDT(x.created_at) + (_who ? '　相手：' + e(_who) : '') + '　' + e(_actLabel(x, d)) + '</div>'; }).join('') : 'まだない。';
     }).catch(function() {});
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
 }
@@ -59402,6 +59404,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.28', date: '2026-11-10',
+    items: [
+      { icon:'🔧', t:'運営の記録で、相手の名前の出し方を直しました',
+        before:'相手のいない「見た」の記録にも「（名前なし）」と出て、誰の名前か紛らわしくなっていました',
+        after:'措置や「問題なし」の記録にだけ「相手：○○」と出します' }
+    ]
+  },
+  {
     ver: 'v0.76.27', date: '2026-11-10',
     items: [
       { icon:'🔧', t:'運営が、サーバーの決まりをいつでも点検できるようにしました',
@@ -89448,6 +89458,33 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r585.box ? ok('ST-585·①: 管理者の画面に「🔧 サーバー点検」（読むだけ）') : ng('ST-585·①: サーバー点検が無い', '');
        _r585.list ? ok('ST-585·②: 点検の結果を✅／❌で並べ、おかしい数を頭に出す（おかしい項目には理由）') : ng('ST-585·②: 点検の出し方が違う', '');
      }
+     })();
+     });
+
+     // ===== ST-586: 管理者の記録は「相手」のいる行だけ相手の名前を出す（「見た」の行に（名前なし）を出さない）（v0.76.28〜） =====
+     // 【権威】2026-11-10「自分管理者だけど、なまえなしなんだ？」
+     enqueueSmokeAsyncTest('ST-586', function() {
+     return (async function() {
+     var _rpc586 = window._capsuleRpc, _ok586 = false, _e586 = null, _txt586 = '';
+     try {
+       var _iso = new Date().toISOString();
+       window._capsuleRpc = function(name) {
+         if (name === 'koyomiru_capsule_admin_log_list') return Promise.resolve([
+           { created_at: _iso, target_name: '（名前なし）', action: 'view_flow', detail: {} },
+           { created_at: _iso, target_name: '犬飼', action: 'no_violation', detail: {} }
+         ]);
+         return Promise.resolve([]);
+       };
+       var _b = document.createElement('div'); document.body.appendChild(_b);
+       _capsuleRenderAdmin(_b, function(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); });
+       await new Promise(function(r) { setTimeout(r, 60); });
+       var _rows = _b.querySelectorAll('[data-adm-log-row]');
+       _txt586 = Array.prototype.map.call(_rows, function(x) { return x.textContent; }).join(' | ');
+       _ok586 = _rows.length === 2 && !/名前なし/.test(_rows[0].textContent) && /手紙の流れを見た/.test(_rows[0].textContent) && /相手：犬飼　問題なし/.test(_rows[1].textContent);
+       _b.remove();
+     } catch(e) { _e586 = e; } finally { window._capsuleRpc = _rpc586; }
+     if (_e586) ng('ST-586: 例外', _e586.message);
+     else _ok586 ? ok('ST-586·①: 管理者の記録は、措置・問題なしの行だけ「相手：○○」。見た行に（名前なし）を出さない') : ng('ST-586·①: 記録の出し方が違う', _txt586);
      })();
      });
 
