@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.29 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.33 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.29';
+    const APP_VERSION = 'v0.76.33';
   const APP_LAST_UPDATED = '2026-11-10'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14892,6 +14892,37 @@ function koyomiKokuRangeSpoken(k) {
   return t ? t.replace('〜', 'から').replace(/ごろ$/, 'ごろまで') : '';
 }
 window.koyomiKokuRangeSpoken = koyomiKokuRangeSpoken;
+// v0.76.30: 【権威】2026-11-10「現在時刻を肝心のやつ出してなくない？暦専門店だから、1回きりのっていうのを体験してもらいたい。ユーザーが開いた時刻を取ってきて、その時刻も出してあげた方がよくない？」
+//   開いた瞬間の時刻を、今の時計の言い方で（「午前8時12分」「午後3時ちょうど」）。時計のように動かさない
+function koyomiNowText(d) {
+  try {
+    var dt = d ? new Date(d) : new Date(), h = dt.getHours(), m = dt.getMinutes();
+    return (h < 12 ? '午前' : '午後') + (h % 12) + '時' + (m ? m + '分' : 'ちょうど');
+  } catch (e) { return ''; }
+}
+window.koyomiNowText = koyomiNowText;
+// v0.76.32: 【権威】2026-11-10「そして今は、日本時間午前8時12分。としたい」「海外で使う人、海外の場合は、現地時間と日本時間を出したい」
+//   端末の時間帯（許可は要らない）で見分ける。日本と同じ時差なら「日本時間午前8時12分」。
+//   ちがえば「現地時間午後7時12分、日本時間11月10日午前9時12分」（日本と日付がずれるときだけ、日本時間に日付を添える）
+//   offMin は Date#getTimezoneOffset と同じ向き（日本は -540）。テストのために外から渡せる
+function koyomiNowPhrase(d, offMin) {
+  try {
+    var dt = d ? new Date(d) : new Date(), utc = dt.getTime();
+    var off = (typeof offMin === 'number') ? offMin : dt.getTimezoneOffset();
+    var fmt = function(x) { var h = x.getUTCHours(), m = x.getUTCMinutes(); return (h < 12 ? '午前' : '午後') + (h % 12) + '時' + (m ? m + '分' : 'ちょうど'); };
+    var jst = new Date(utc + 540 * 60000);
+    if (off === -540) return '日本時間' + fmt(jst);
+    var loc = new Date(utc - off * 60000);
+    var sameDay = loc.getUTCFullYear() === jst.getUTCFullYear() && loc.getUTCMonth() === jst.getUTCMonth() && loc.getUTCDate() === jst.getUTCDate();
+    return '現地時間' + fmt(loc) + '、日本時間' + (sameDay ? '' : (jst.getUTCMonth() + 1) + '月' + jst.getUTCDate() + '日') + fmt(jst);
+  } catch (e) { return ''; }
+}
+window.koyomiNowPhrase = koyomiNowPhrase;
+// 画面用：「現地時間…、」「日本時間…。」をそれぞれ折り返さない塊にする（言葉の途中で折り返さない）
+function _koyomiNowPhraseHtml(phrase, esc, nw) {
+  var parts = String(phrase || '').split('、');
+  return parts.map(function(x, i) { return nw('<b data-sentence-now-part>' + esc(x) + '</b>' + (i < parts.length - 1 ? '、' : '。')); }).join('');
+}
 window.koyomiKoku = koyomiKoku;
 // ===== END v0.64.2 =====
 // ===== END v0.64.0 =====
@@ -26439,19 +26470,26 @@ function koyomiTodaySentence(v, order) {
   //   →「そして今は、不定時法でいうと、辰（たつ）の刻。今日の辰の刻は、午前7時33分から9時29分ごろまで。」
   //   「今日の」で、刻の長さが日ごとに変わることも伝わる。声に出して読める「から〜まで」。画面・画像の文・読み上げの3つとも同じ形
   kokuRange = koyomiKokuRangeSpoken(koku);
-  var kokuLine = 'そして今は、' + kokuHow + 'でいうと、' + yo(koku.name, koku.reading) + 'の刻。' + (kokuRange ? '今日の' + koku.name + 'の刻は、' + kokuRange + '。' : ''),
-      kokuSpeech = 'そして今は、' + kokuHowYomi + 'でいうと、' + koku.reading + 'のこく。' + (kokuRange ? 'きょうの' + koku.reading + 'のこくは、' + kokuRange + '。' : '');
+  // v0.76.30: 締めの頭に、開いた瞬間の時刻（「そして今は、午前8時12分。不定時法でいうと、…」）
+  var nowText = koyomiNowPhrase(d);   // v0.76.32: 日本時間（海外なら現地時間と日本時間）
+  // v0.76.33: 【権威】2026-11-10 海外の刻の行は「A：『日本の』を添える」。刻は日本の空で決まるので、海外の端末では
+  //   「日本の不定時法でいうと、未（ひつじ）の刻。日本の未の刻は、現地時間で午後11時20分から午前1時16分ごろまで。」
+  var abroad = /^現地時間/.test(nowText || '');
+  var kokuLine = 'そして今は、' + (nowText ? nowText + '。' : '') + (abroad ? '日本の' : '') + kokuHow + 'でいうと、' + yo(koku.name, koku.reading) + 'の刻。' + (kokuRange ? (abroad ? '日本の' : '今日の') + koku.name + 'の刻は、' + (abroad ? '現地時間で' : '') + kokuRange + '。' : ''),
+      kokuSpeech = 'そして今は、' + (nowText ? nowText + '。' : '') + (abroad ? 'にほんの' : '') + kokuHowYomi + 'でいうと、' + koku.reading + 'のこく。' + (kokuRange ? (abroad ? 'にほんの' : 'きょうの') + koku.reading + 'のこくは、' + (abroad ? 'げんちじかんで' : '') + kokuRange + '。' : '');
   // v0.71.6: 【権威】2026-11-03、「店のおすすめでも、初めての人にはまだ重い」との見立てに「そうしてください」との指示。深さ（こってり度）で長さを変える
   //   なし・あっさり・基本 … 日付・二十四節気と七十二候・月まで ／ こってり … ＋西暦・旧暦 ／ 超こってり … ＋干支・刻（全部）
   var _lv = { none: 0, light: 1, basic: 2, rich: 3, extraRich: 4 }[order.richness || 'basic']; if (_lv === undefined) _lv = 2;
   if (_lv < 3) { seirekiLine = ''; kyureki = null; kyurekiSpeech = ''; }
-  if (_lv < 4) { etoDisp = ''; etoSpeech = ''; kokuSpeech = ''; koku = null; }
+  // v0.76.31: 【権威】2026-11-10「B：どの濃さの人にも『そして今は、午前8時12分。』だけは出す」。刻は今までどおり超こってりだけ
+  var nowLine = nowText ? 'そして今は、' + nowText + '。' : '';
+  if (_lv < 4) { etoDisp = ''; etoSpeech = ''; kokuSpeech = nowLine; koku = null; }
   lines = lines.filter(function(x) { return !((_lv < 3 && /^(西暦でいうと|旧暦でいうと)/.test(x)) || (_lv < 4 && /^干支でいうと/.test(x))); });
-  if (koku) lines.push(kokuLine);
+  if (koku) lines.push(kokuLine); else if (nowLine) lines.push(nowLine);
   return {
     year: year, wafuOn: wafuOn, month: (d.getMonth() + 1) + '月、', wafu: wm[0], wafuReading: wm[1], day: d.getDate() + '日、', md: md, weekday: wd,
     season: season, moon: moon, seirekiLine: seirekiLine, kyureki: kyureki, lines: lines, etoLine: etoDisp, etoParts: etoDisp ? [['年は', v.eto.year], ['月は', v.eto.month], ['日は', v.eto.day]].filter(function(x) { return x[1]; }) : [],
-    koku: koku, kokuHow: kokuHow, kokuRange: kokuRange,
+    koku: koku, kokuHow: kokuHow, kokuRange: kokuRange, nowText: nowText, abroad: abroad,
     speech: mainSpeech + seasonSpeech + moonSpeech + seirekiLine + kyurekiSpeech + etoSpeech + kokuSpeech
   };
 }
@@ -26513,7 +26551,9 @@ function koyomiTodaySentenceHtml(v, order, esc) {
     (t.etoParts && t.etoParts.length ? '<div data-sentence-eto style="' + sub + '">' + nw('干支でいうと、') +
       t.etoParts.map(function(x, i) { return nw(x[0] + _koyomiReadInline(x[1].name, x[1].reading, esc) + (i < t.etoParts.length - 1 ? '、' : '。')); }).join('') + '</div>' : '') +
     // ⑦ そして今は、◯の刻。（締め）
-    (t.koku ? '<div data-sentence-koku style="' + sub + 'margin-top:4px;">' + nw('そして今は、' + esc(t.kokuHow || '不定時法') + 'でいうと、') + nw(_koyomiReadInline(t.koku.name, t.koku.reading, esc) + 'の刻。') + (t.kokuRange ? nw('今日の' + esc(t.koku.name) + 'の刻は、') + nw(esc(t.kokuRange) + '。') : '') + '</div>' : '') +   // v0.76.23
+    (t.koku ? '<div data-sentence-koku style="' + sub + 'margin-top:4px;">' + nw('そして今は、') + (t.nowText ? '<span data-sentence-now>' + _koyomiNowPhraseHtml(t.nowText, esc, nw) + '</span>' : '') + nw((t.abroad ? '日本の' : '') + esc(t.kokuHow || '不定時法') + 'でいうと、') + nw(_koyomiReadInline(t.koku.name, t.koku.reading, esc) + 'の刻。') + (t.kokuRange ? nw((t.abroad ? '日本の' : '今日の') + esc(t.koku.name) + 'の刻は、') + (t.abroad ? nw('現地時間で') : '') + nw(esc(t.kokuRange) + '。') : '') + '</div>' :
+      // v0.76.31: 超こってりでない人にも、開いた瞬間の時刻だけは締めに出す
+      (t.nowText ? '<div data-sentence-nowline style="' + sub + 'margin-top:4px;">' + nw('そして今は、') + '<span data-sentence-now>' + _koyomiNowPhraseHtml(t.nowText, esc, nw) + '</span>' + '</div>' : '')) +   // v0.76.23
     '<div style="margin-top:8px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
       (canSpeak ? '<button type="button" data-kz="speak" data-speech="' + esc(t.speech) + '" style="padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🔊 読み上げる</button>' : '') +
       '<button type="button" data-kz="sentence-image" style="padding:5px 14px;border:1px solid currentColor;border-radius:999px;background:rgba(255,255,255,0.6);color:inherit;font-size:0.85em;cursor:pointer;">🖼 画像にして持ち帰る</button>' +
@@ -59423,6 +59463,38 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.33', date: '2026-11-10',
+    items: [
+      { icon:'🌏', t:'海外では、刻の行に「日本の」を添えるようにしました',
+        before:'海外でも「不定時法でいうと、未（ひつじ）の刻。今日の未の刻は、…」と、日本の空の刻を現地の時刻で言っていて、ちぐはぐでした',
+        after:'海外の端末では「日本の不定時法でいうと、未（ひつじ）の刻。日本の未の刻は、現地時間で午後11時20分から午前1時16分ごろまで。」と言います' }
+    ]
+  },
+  {
+    ver: 'v0.76.32', date: '2026-11-10',
+    items: [
+      { icon:'🌏', t:'締めの時刻に「日本時間」と添え、海外では現地時間も出すようにしました',
+        before:'「そして今は、午前8時12分。」と、どこの時刻か言っていませんでした',
+        after:'日本では「そして今は、日本時間午前8時12分。」。海外の端末では「そして今は、現地時間午後7時12分、日本時間11月10日午前9時12分。」と、両方を言います（日付がずれるときだけ日本の日付も）。端末の時間帯の設定で見分けるので、位置情報の許可は要りません' }
+    ]
+  },
+  {
+    ver: 'v0.76.31', date: '2026-11-10',
+    items: [
+      { icon:'🕰', t:'開いた瞬間の時刻を、どのこってり度でも締めに出すようにしました',
+        before:'開いた時刻は、こってり度が「超こってり」の人にしか出ませんでした',
+        after:'どの濃さでも、一文の最後は「そして今は、午前8時12分。」で締めます。刻（不定時法）は今までどおり超こってりだけです' }
+    ]
+  },
+  {
+    ver: 'v0.76.30', date: '2026-11-10',
+    items: [
+      { icon:'🕰', t:'季節の風だよりの締めに、開いた瞬間の時刻を入れました',
+        before:'「そして今は、不定時法でいうと、辰（たつ）の刻。」と、刻の幅でしか今を言っていませんでした',
+        after:'「そして今は、午前8時12分。不定時法でいうと、辰（たつ）の刻。…」と、あなたが開いたその時刻から始まります。時刻は開いた瞬間で止まり、画像にして持ち帰っても、その時刻のまま残ります' }
+    ]
+  },
+  {
     ver: 'v0.76.29', date: '2026-11-10',
     items: [
       { icon:'🔒', t:'運営のアカウントの情報を、アプリの中に書かないようにしました',
@@ -87266,7 +87338,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _h = koyomiTodaySentenceHtml(_v, _o({}), _e);
        var _visible = _h.replace(/<button[^>]*data-kz="speak"[\s\S]*?<\/button>/, '').replace(/<div data-kyureki-help[\s\S]*?<\/div>/, '');
        var _parts = koyomiKazeParts(_v, _o({}), _e);
-       (_t1.speech.replace(/きょうの[ぁ-ん]+のこくは、午[前後]\d+時(\d+分)?から(午[前後])?\d+時(\d+分)?ごろまで。$/, '') === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今日の月は、じゅういちにちづき、旧暦11日の月。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。そして今は、ふていじほうでいうと、たつのこく。' &&   /* v0.71.6: 刻の時刻は端末の時計で出るので、どの時計でも通るよう外してくらべる */   /* v0.65.1: 刻は最後に締め */   /* v0.62.3: 旧暦の年は元号 */
+       (_t1.speech.replace(/そして今は、(日本時間|現地時間)[^。]*。(にほんの)?/, 'そして今は、').replace(/(きょうの|にほんの)[ぁ-ん]+のこくは、(げんちじかんで)?午[前後]\d+時(\d+分)?から(午[前後])?\d+時(\d+分)?ごろまで。$/, '') === '皇紀2686年、10月、かんなづきの21日、水曜日。二十四節気はかんろの14日目。七十二候はきりぎりすとにありの4日目。今日の月は、じゅういちにちづき、旧暦11日の月。西暦でいうと、2026年10月21日、水曜日。旧暦でいうと、令和8年、ひのえうまの年の、9月11日。そして今は、ふていじほうでいうと、たつのこく。' &&   /* v0.71.6: 刻の時刻は端末の時計で出るので、どの時計でも通るよう外してくらべる */   /* v0.65.1: 刻は最後に締め */   /* v0.62.3: 旧暦の年は元号 */
         _t2.speech.indexOf('西暦2026年10月21日、水曜日。') === 0 && _t2.speech.indexOf('西暦でいうと') === -1 &&
         koyomiTodaySentenceHtml(_v, _o({ yearNegi: { white: true, blue: false } }), _e).indexOf('object') === -1 && _t2.md === '10月21日、' &&   /* v0.65.1: 名前のかぶり */
         _t3.speech.indexOf('令和8年、10月、かんなづきの21日、水曜日。') === 0 &&
@@ -87576,7 +87648,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _t = koyomiTodaySentence(_v, _o);
        var _cv = drawKoyomiTodayCanvas(_v, _o);
        var _h = koyomiTodaySentenceHtml(_v, _o, function(x) { return String(x); });
-       (_cv && _cv.width === 1080 && _cv.height === 1350 && _t.lines.length === 7 && /^そして今は、不定時法でいうと、辰（たつ）の刻。今日の辰の刻は、午[前後]\d+時(\d+分)?から(午[前後])?\d+時(\d+分)?ごろまで。$/.test(_t.lines[6]) &&
+       (_cv && _cv.width === 1080 && _cv.height === 1350 && _t.lines.length === 7 && /^そして今は、(日本時間|現地時間)[^。]*。(日本の)?不定時法でいうと、辰（たつ）の刻。(今日|日本)の辰の刻は、(現地時間で)?午[前後]\d+時(\d+分)?から(午[前後])?\d+時(\d+分)?ごろまで。$/.test(_t.lines[6]) &&
         _t.lines[0] === '皇紀2686年、10月、神無月（かんなづき）の27日、火曜日。' &&
         _t.lines[5] === '旧暦でいうと、令和8年、丙午（ひのえうま）の年の、9月17日。' &&
         /data-kz="sentence-image"/.test(_h) && /shareKoyomiCanvas\(drawKoyomiTodayCanvas\(v, order\)/.test(renderKazeKoyomi.toString()) &&
@@ -87618,7 +87690,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _parts = koyomiKazeParts(_v, _o('rich'), function(x) { return String(x); });
        (_e(2026, 10, 27) === '丙午/戊戌/甲戌' && _e(2026, 2, 3) === '乙巳/己丑/戊申' && _e(2026, 2, 4) === '丙午/庚寅/己酉' && _e(2024, 6, 15) === '甲辰/庚午/庚戌' &&
         _r.etoLine === '干支でいうと、年は丙午（ひのえうま）、月は戊戌（つちのえいぬ）、日は甲戌（きのえいぬ）。' &&
-        /旧暦でいうと、[^。]+。干支でいうと、年はひのえうま、月はつちのえいぬ、日はきのえいぬ。そして今は、[^。]+のこく。(きょうの[^。]+ごろまで。)?$/.test(_r.speech) && _r.lines[_r.lines.length - 2] === _r.etoLine &&   /* v0.63.5: 干支は旧暦のすぐ後ろ、いちばん最後 */
+        /旧暦でいうと、[^。]+。干支でいうと、年はひのえうま、月はつちのえいぬ、日はきのえいぬ。そして今は、((日本時間|現地時間)[^。]+。)?[^。]+のこく。((きょうの|にほんの)[^。]+ごろまで。)?$/.test(_r.speech) && _r.lines[_r.lines.length - 2] === _r.etoLine &&   /* v0.63.5: 干支は旧暦のすぐ後ろ、いちばん最後 */
         !_b.etoLine && _b.speech.indexOf('干支でいうと') === -1 &&
         _parts.top.indexOf('年 丙午（ひのえうま）・月 戊戌（つちのえいぬ）・日 甲戌（きのえいぬ）') !== -1)
          ? ok('ST-495·①: 年・月・日の干支（月は節で替わる・立春で年も替わる）を言い分け、訓読みを添える。こい味の人だけ、一文と節気の欄に')
@@ -89371,13 +89443,32 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _ord581 = Object.assign({}, JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT)), { kyureki: 'basic', richness: 'extraRich' });
        var _t581 = koyomiTodaySentence(koyomiTodayData(new Date(2026, 10, 10, 8, 0, 0)), _ord581);
        var _kl = (_t581.lines || []).filter(function(x) { return /^そして今は/.test(x); })[0] || '';
-       var _okLine = /^そして今は、(不定時法|定時法)でいうと、(.)（[^）]+）の刻。今日の\2の刻は、午(前|後)\d+時(\d+分)?から(午(前|後))?\d+時(\d+分)?ごろまで。$/.test(_kl);
-       var _okSpeech = /でいうと、([ぁ-ん]+)のこく。きょうの\1のこくは、午(前|後)\d+時(\d+分)?から(午(前|後))?\d+時(\d+分)?ごろまで。$/.test(_t581.speech || '');
+       var _np581 = koyomiNowPhrase(new Date(2026, 10, 10, 8, 0, 0)), _pre581 = 'そして今は、' + _np581 + '。';
+       var _ab581 = /^現地時間/.test(_np581);
+       var _okLine = _kl.indexOf(_pre581) === 0 && /^(日本の)?(不定時法|定時法)でいうと、(.)（[^）]+）の刻。(今日|日本)の\3の刻は、(現地時間で)?午(前|後)\d+時(\d+分)?から(午(前|後))?\d+時(\d+分)?ごろまで。$/.test(_kl.slice(_pre581.length)) && (_ab581 === /^日本の/.test(_kl.slice(_pre581.length))) && (_ab581 === /日本の.の刻は、現地時間で/.test(_kl));
+       var _okSpeech = /でいうと、([ぁ-ん]+)のこく。(きょうの|にほんの)\1のこくは、(げんちじかんで)?午(前|後)\d+時(\d+分)?から(午(前|後))?\d+時(\d+分)?ごろまで。$/.test(_t581.speech || '');
        var _hd = document.createElement('div'); _hd.innerHTML = koyomiTodaySentenceHtml(koyomiTodayData(new Date(2026, 10, 10, 8, 0, 0)), _ord581, function(x) { return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); });
        var _kd = _hd.querySelector('[data-sentence-koku]'), _kt = _kd ? _kd.textContent.replace(/\s+/g, '') : '';
-       var _okHtml = !!_kd && !/、。/.test(_kt) && /の刻。今日の.の刻は、午(前|後).+ごろまで。$/.test(_kt);
-       (_okLine && _okSpeech && _okHtml && !/、。/.test(_kl))
-         ? ok('ST-581·①: 刻の文は「そして今は、不定時法でいうと、辰（たつ）の刻。今日の辰の刻は、午前…から…ごろまで。」（画面・画像の文・読み上げとも。「、。」は出さない）')
+       var _okHtml = !!_kd && !/、。/.test(_kt) && /の刻。(今日|日本)の.の刻は、(現地時間で)?午(前|後).+ごろまで。$/.test(_kt) && !!_kd.querySelector('[data-sentence-now]') && _kd.querySelector('[data-sentence-now]').textContent.replace(/\s+/g, '') === _np581 + '。';
+       // v0.76.30: 開いた時刻の言い方
+       var _okNow = koyomiNowText(new Date(2026, 10, 10, 0, 5)) === '午前0時5分' && koyomiNowText(new Date(2026, 10, 10, 12, 0)) === '午後0時ちょうど' && koyomiNowText(new Date(2026, 10, 10, 23, 59)) === '午後11時59分' &&
+         _t581.speech.slice(_t581.speech.indexOf('そして今は')).indexOf(_pre581) === 0 &&
+         // v0.76.32: 日本の端末は「日本時間」だけ、海外の端末は「現地時間、日本時間（日付がずれれば日付も）」
+         koyomiNowPhrase(new Date(Date.UTC(2026, 10, 9, 23, 12)), -540) === '日本時間午前8時12分' &&
+         koyomiNowPhrase(new Date(Date.UTC(2026, 10, 10, 0, 12)), 300) === '現地時間午後7時12分、日本時間11月10日午前9時12分' &&
+         koyomiNowPhrase(new Date(Date.UTC(2026, 10, 10, 3, 0)), 0) === '現地時間午前3時ちょうど、日本時間午後0時ちょうど';
+       // v0.76.33: 海外の端末の刻の行（「日本の」を添え、時刻は「現地時間で」）・日本の端末は添えない。どちらの時計でも両方を試す
+       var _npSave = window.koyomiNowPhrase, _abLine = '', _jpLine = '';
+       try {
+         window.koyomiNowPhrase = function() { return '現地時間午前1時7分、日本時間午後3時7分'; };
+         _abLine = (koyomiTodaySentence(koyomiTodayData(new Date(2026, 10, 10, 8, 0, 0)), _ord581).lines || []).filter(function(x) { return /^そして今は/.test(x); })[0] || '';
+         window.koyomiNowPhrase = function() { return '日本時間午前8時ちょうど'; };
+         _jpLine = (koyomiTodaySentence(koyomiTodayData(new Date(2026, 10, 10, 8, 0, 0)), _ord581).lines || []).filter(function(x) { return /^そして今は/.test(x); })[0] || '';
+       } finally { window.koyomiNowPhrase = _npSave; }
+       var _okAbroad = /^そして今は、現地時間午前1時7分、日本時間午後3時7分。日本の(不定時法|定時法)でいうと、(.)（[^）]+）の刻。日本の\2の刻は、現地時間で午(前|後)/.test(_abLine) &&
+         /^そして今は、日本時間午前8時ちょうど。(不定時法|定時法)でいうと、(.)（[^）]+）の刻。今日の\2の刻は、午(前|後)/.test(_jpLine);
+       (_okLine && _okSpeech && _okHtml && _okNow && _okAbroad && !/、。/.test(_kl))
+         ? ok('ST-581·①: 刻の文は「そして今は、日本時間午前8時ちょうど。不定時法でいうと、辰（たつ）の刻。今日の辰の刻は、午前…から…ごろまで。」（開いた瞬間の時刻を頭に。海外の端末は現地時間と日本時間、刻は「日本の…日本の○の刻は、現地時間で…」。画面・画像の文・読み上げとも。「、。」は出さない）')
          : ng('ST-581·①: 刻の文の形が違う', _kl + ' ／ ' + _kt + ' ／ ' + String(_t581.speech || '').slice(-70));
      } catch(e) {
        ng('ST-581: 例外', e.message);
@@ -89553,6 +89644,24 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      }
      })();
      });
+
+     // ===== ST-588: どの濃さの人にも、締めに「そして今は、午前8時12分。」（刻は超こってりだけ）（v0.76.31〜） =====
+     // 【権威】2026-11-10「B：どの濃さの人にも『そして今は、午前8時12分。』だけは出す」
+     try {
+       var _e588 = function(x) { return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+       var _np588 = 'そして今は、' + koyomiNowPhrase(new Date(2026, 10, 10, 8, 12, 0)) + '。', _v588 = koyomiTodayData(new Date(2026, 10, 10, 8, 12, 0)), _base588 = JSON.parse(JSON.stringify(KOYOMI_ORDER_DEFAULT));
+       var _res588 = ['none', 'light', 'basic', 'rich', 'extraRich'].map(function(rc) {
+         var o = Object.assign({}, _base588, { kyureki: 'basic', richness: rc }), t = koyomiTodaySentence(_v588, o);
+         var last = t.lines[t.lines.length - 1] || '', d = document.createElement('div'); d.innerHTML = koyomiTodaySentenceHtml(_v588, o, _e588);
+         return { rc: rc, last: last, speechEnd: t.speech.indexOf(_np588) !== -1, koku: !!t.koku, nowline: !!d.querySelector('[data-sentence-nowline] [data-sentence-now]'), kokuDiv: !!d.querySelector('[data-sentence-koku] [data-sentence-now]') };
+       });
+       var _okLow = _res588.slice(0, 4).every(function(r) { return r.last === _np588 && r.speechEnd && !r.koku && r.nowline && !r.kokuDiv; });
+       var _top = _res588[4], _okTop = _top.last.indexOf(_np588) === 0 && /^(日本の)?(不定時法|定時法)でいうと、/.test(_top.last.slice(_np588.length)) && _top.koku && _top.kokuDiv && !_top.nowline;
+       (_okLow && _okTop) ? ok('ST-588·①: どの濃さでも締めは「そして今は、日本時間午前8時12分。」（海外は現地時間と日本時間）。超こってりだけ、その後に刻が続く（画面・画像の文・読み上げとも）')
+         : ng('ST-588·①: 締めの時刻の出方が違う', JSON.stringify(_res588).slice(0, 400));
+     } catch(e) {
+       ng('ST-588: 例外', e.message);
+     }
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
