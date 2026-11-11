@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.45 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.46 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -258,7 +258,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.45';
+    const APP_VERSION = 'v0.76.46';
   const APP_LAST_UPDATED = '2026-11-11'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -16198,6 +16198,8 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
       // allSettings.calendar.listが存在すればそちらを優先（Phase B以降）
       if (allSettings && allSettings.calendar && allSettings.calendar.list && allSettings.calendar.list.length > 0) {
         calendars = allSettings.calendar.list;
+        // v0.76.46: 起動したときも、墓石のあるカレンダーは外す（前に戻ってきてしまった分を片付ける）
+        try { if (typeof koyomiFilterTombedCalendars === 'function' && koyomiFilterTombedCalendars() > 0) saveAllSettings(); } catch (eTf0) {}
         return;
       }
       const saved = localStorage.getItem('calendars');
@@ -43715,6 +43717,8 @@ window.unshareCalendar = unshareCalendar;
   try {
     var _rcCal = (calendars || []).filter(function(c) { return c && c.id === calId; })[0];
     if (_rcCal && _rcCal.cloudCalendarId && !_rcCal.isPersonal && koyomiCalTombAdd(_rcCal.cloudCalendarId)) saveAllSettings();
+    // v0.76.46: 器の無い手元だけのカレンダーにも、手元のIDで墓石を立てる（別の端末の古い一覧で戻らないように）
+    if (_rcCal && !_rcCal.isPersonal && calendars.length > 1) { _koyomiCalTombMap()['cal:' + _rcCal.id] = { dead: true, at: new Date().toISOString() }; saveAllSettings(); }
   } catch (eRc) {}
 
       if (calendars.length <= 1) { showToast('最後のカレンダーは削除できません', {type:'warn'}); return; }
@@ -56106,6 +56110,33 @@ function koyomiMergeCalTombs(target, localMap) {
 }
 window.koyomiMergeCalTombs = koyomiMergeCalTombs;
 window.koyomiIsCalTombed = koyomiIsCalTombed; window.koyomiCalTombAdd = koyomiCalTombAdd; window.koyomiCalTombRemove = koyomiCalTombRemove;
+// v0.76.46: 【権威】2026-11-11「消したはずのカレンダーがまた復活する。きくまおとか消したもん。右側全部復活してる。意図せず」
+//   原因：端末どうしで設定を合わせるとき、カレンダーの一覧はクラウドの一覧（有る・無い）をそのまま使っていた。墓石は器からの取り込みにだけ効き、
+//   別の端末に残った古い一覧が上がってくると、消したカレンダーが戻った。→ 設定を取り込んだあと・起動したときに、墓石のあるカレンダーを必ず外す。
+//   器を持たない手元だけのカレンダーも、消したら 'cal:'+手元のID で墓石を立てる。個人用の器・最後の1つは外さない。メインが外れたら残りをメインに
+function koyomiFilterTombedCalendars() {
+  try {
+    if (!allSettings.calendar || !Array.isArray(allSettings.calendar.list)) return 0;
+    var list = allSettings.calendar.list;
+    var keep = list.filter(function(c) {
+      if (!c || !c.id) return true;
+      if (c.isPersonal) return true;
+      if (c.cloudCalendarId && window._personalCalendarId && c.cloudCalendarId === window._personalCalendarId) return true;
+      return !(koyomiIsCalTombed('cal:' + c.id) || (c.cloudCalendarId && koyomiIsCalTombed(c.cloudCalendarId)));
+    });
+    var removed = list.length - keep.length;
+    if (!removed || !keep.length) return 0;
+    list.length = 0; Array.prototype.push.apply(list, keep);
+    var mainId = allSettings.calendar.mainId;
+    if (mainId && !list.some(function(c) { return c && c.id === mainId; })) {
+      allSettings.calendar.mainId = list[0].id;
+      try { localStorage.setItem('mainCalendarId', list[0].id); } catch (eM) {}
+    }
+    if (typeof calendars !== 'undefined') calendars = allSettings.calendar.list;
+    return removed;
+  } catch (e) { return 0; }
+}
+window.koyomiFilterTombedCalendars = koyomiFilterTombedCalendars;
 // ===== END v0.71.0 =====
 // ===== v0.66.3: カレンダーを消す・外す・抜ける前の確認 =====
 // 【権威】2026-10-28、「バツ1回で消えた。ここは絶対直して」「ついているタスクはメインに振り分けますか」との指示。
@@ -59307,6 +59338,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.46', date: '2026-11-11',
+    items: [
+      { icon:'🗓', t:'消したカレンダーが、また出てくることがある不具合を直しました',
+        before:'別の端末に消す前の一覧が残っていると、その端末から設定が届いたときに、消したカレンダーが戻ってくることがありました',
+        after:'消したカレンダーは、どの端末から設定が届いても戻りません。前に戻ってきてしまった分も、開いたときに片付きます。参加し直したカレンダーは、ふつうに戻ります' }
+    ]
+  },
   {
     ver: 'v0.76.45', date: '2026-11-11',
     items: [
@@ -64214,7 +64253,9 @@ async function unifiedPullSettings() {
     // v0.60.18: 手元の方が新しいカレンダーがあったら、すぐクラウドへ上げ直す（クラウドを正しい状態に戻す）
     // v0.71.4: 墓石の名簿は、行ごとに新しい方を残す。手元の方が新しい行があれば、クラウドへ送り返す
     var _tombNewer = 0; try { _tombNewer = koyomiMergeCalTombs(_koyomiCalTombMap(), _localTombs || {}); } catch (eTm) {}
-    if (_localNewerCals > 0 || _tombNewer > 0) { try { if (_tombNewer > 0) saveAllSettings(true); setTimeout(function() { unifiedPushSettings(); }, 300); } catch (ePs) {} }
+    // v0.76.46: 墓石のあるカレンダーは、クラウドの古い一覧から戻ってきても外す。外したら、正しい一覧をクラウドへ送り返す
+    var _tombRemoved = 0; try { _tombRemoved = koyomiFilterTombedCalendars(); if (_tombRemoved > 0) saveAllSettings(true); } catch (eTf) {}
+    if (_localNewerCals > 0 || _tombNewer > 0 || _tombRemoved > 0) { try { if (_tombNewer > 0) saveAllSettings(true); setTimeout(function() { unifiedPushSettings(); }, 300); } catch (ePs) {} }
     if (typeof window._dbgLog === 'function') window._dbgLog('[Unified] 設定プル反映完了');
     if (typeof applyMobileNavPosition === 'function' && allSettings.ui && allSettings.ui.mobileNavPosition) {
       applyMobileNavPosition(allSettings.ui.mobileNavPosition);
@@ -89730,6 +89771,43 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      }
      })();
      });
+
+     // ===== ST-596: 消したカレンダーは、別の端末の古い一覧が届いても戻らない（墓石で外す・手元だけのカレンダーにも墓石・最後の1つとメインは守る）（v0.76.46〜） =====
+     // 【権威】2026-11-11「消したはずのカレンダーがまた復活する。きくまおとか消したもん。右側全部復活してる。意図せず」
+     var _sv596 = null, _svCal596 = null, _svMain596 = null, _svLs596 = localStorage.getItem('mainCalendarId');
+     try {
+       _sv596 = JSON.parse(JSON.stringify(allSettings.calendar.tombs || {})); _svCal596 = JSON.parse(JSON.stringify(allSettings.calendar.list || [])); _svMain596 = allSettings.calendar.mainId;
+       allSettings.calendar.list = [
+         { id: 'st596A', name: 'A', color: '#90caf9', visible: true, cloudCalendarId: 'cloud596A' },
+         { id: 'st596B', name: 'B', color: '#90caf9', visible: true },
+         { id: 'st596C', name: 'C', color: '#90caf9', visible: true },
+         { id: 'st596P', name: '個人', color: '#90caf9', visible: true, isPersonal: true, cloudCalendarId: 'cloud596P' }
+       ];
+       allSettings.calendar.mainId = 'st596A';
+       allSettings.calendar.tombs = { cloud596A: { dead: true, at: '2026-11-01T00:00:00Z' }, 'cal:st596B': { dead: true, at: '2026-11-01T00:00:00Z' }, cloud596P: { dead: true, at: '2026-11-01T00:00:00Z' } };
+       var _rm596 = koyomiFilterTombedCalendars();
+       var _ids596 = allSettings.calendar.list.map(function(c) { return c.id; }).join(',');
+       var _okF = _rm596 === 2 && _ids596 === 'st596C,st596P' && allSettings.calendar.mainId === 'st596C';
+       // 墓石を外した（参加し直した）ものは戻ってよい
+       allSettings.calendar.list.push({ id: 'st596A', name: 'A', color: '#90caf9', visible: true, cloudCalendarId: 'cloud596A' });
+       koyomiCalTombRemove('cloud596A');
+       var _okBack = koyomiFilterTombedCalendars() === 0 && allSettings.calendar.list.some(function(c) { return c.id === 'st596A'; });
+       // 全部に墓石があっても、空にはしない
+       allSettings.calendar.list = [{ id: 'st596Z', name: 'Z', color: '#90caf9', visible: true }];
+       allSettings.calendar.tombs['cal:st596Z'] = { dead: true, at: '2026-11-01T00:00:00Z' };
+       var _okLast = koyomiFilterTombedCalendars() === 0 && allSettings.calendar.list.length === 1;
+       var _src596 = unifiedPullSettings.toString(), _okPull = /koyomiFilterTombedCalendars\(\)/.test(_src596) && /koyomiFilterTombedCalendars/.test(loadCalendars.toString()) && /'cal:' \+ _rcCal\.id/.test(removeCalendar.toString());
+       (_okF && _okBack && _okLast && _okPull)
+         ? ok('ST-596·①: 消したカレンダーは、設定の取り込み・起動のたびに墓石で外す（手元だけのものも）。参加し直したものは戻る。個人用・最後の1つは外さず、メインは残りへ')
+         : ng('ST-596·①: 消したカレンダーが戻る', [_okF, _okBack, _okLast, _okPull, _ids596, allSettings.calendar.mainId].join(' / '));
+     } catch(e) {
+       ng('ST-596: 例外', e.message);
+     } finally {
+       if (_svCal596) { allSettings.calendar.list = _svCal596; calendars = allSettings.calendar.list; }
+       if (_sv596) allSettings.calendar.tombs = _sv596;
+       allSettings.calendar.mainId = _svMain596;
+       try { if (_svLs596 === null) localStorage.removeItem('mainCalendarId'); else localStorage.setItem('mainCalendarId', _svLs596); } catch (eLs) {}
+     }
 
      // ===== APAG LAUNCH SEQUENCE =====
      // v0.48.23: 【権威】2026-09-29、最高峰会議①。この目印より前が普通のテスト（新しいテストは目印の直前に足す）。
