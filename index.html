@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.44 ★ -->
+<!-- ★ CURRENT VERSION: v0.76.45 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -258,7 +258,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.44';
+    const APP_VERSION = 'v0.76.45';
   const APP_LAST_UPDATED = '2026-11-11'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14174,12 +14174,25 @@ function _capsuleRenderAdmin(body, e) {
           var ua = String(x.ua || ''), br = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : (ua ? ua.slice(0, 24) : '—');
           var os = /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
           return '<div data-adm-acc-row style="padding:5px 0;border-top:1px dashed #e6d8bd;' + (x.is_test ? 'opacity:0.6;' : '') + '">' +
-            '<div>' + _capsuleFmtDT(x.at) + '　<b>' + e(x.what) + '</b>' + (x.is_test ? '　<span style="color:#8a7f6a;">（試し）</span>' : '') + (x.seen ? '' : '　<span style="color:#e74c3c;font-weight:800;">新</span>') + '</div>' +
+            '<div style="display:flex;gap:6px;align-items:baseline;"><div style="flex:1;">' + _capsuleFmtDT(x.at) + '　<b>' + e(x.what) + '</b>' + (x.is_test ? '　<span style="color:#8a7f6a;">（試し）</span>' : '') + (x.seen ? '' : '　<span style="color:#e74c3c;font-weight:800;">新</span>') + '</div>' +
+            // v0.76.45: 【権威】2026-11-11「どれを消すかは選べないの？」→ 行ごとに消せる（2回押し）。本物の記録は「証拠が消える」と念を押す
+            (x.id ? '<button type="button" data-adm-acc-del="' + e(x.id) + '" data-adm-acc-test="' + (x.is_test ? '1' : '0') + '" style="padding:2px 10px;border-radius:8px;border:1px solid #d9c9a6;background:#fff;color:#7a6a50;font-size:0.9em;cursor:pointer;white-space:nowrap;">消す</button>' : '') + '</div>' +
             '<div style="color:#8a7f6a;">' + (x.has_account ? 'アカウント：' + e(x.uname || '（名前なし）') : 'ログインなし') + '　IP：' + e(x.ip || '—') + '　' + e(x.tool || '') + '（' + e(br) + (os ? '・' + e(os) : '') + '）</div>' +
             ((x.referer || x.origin) ? '<div style="color:#8a7f6a;word-break:break-all;">来た道：' + e(String(x.origin || x.referer).slice(0, 80)) + '</div>' : '') +
             (x.action_taken ? '<div style="color:#c0392b;font-weight:700;">対応：' + e(x.action_taken) + '</div>' : '') +
             (x.args ? '<div style="color:#8a7f6a;word-break:break-all;">渡した値：' + e(String(x.args).slice(0, 120)) + '</div>' : '') + '</div>';
         }).join('') : '<div style="color:#8a7f6a;">記録は無い。</div>';
+        _accList.querySelectorAll('[data-adm-acc-del]').forEach(function(btn) {
+          btn.onclick = function() {
+            var isTest = btn.getAttribute('data-adm-acc-test') === '1';
+            _capsuleTwoClick(btn, isTest ? '本当に消す？' : '証拠が消える。本当に消す？', function() {
+              _capsuleRpc('koyomiru_capsule_admin_access_delete', { p_id: btn.getAttribute('data-adm-acc-del') }).then(function() {
+                var row = btn.closest('[data-adm-acc-row]'); if (row) row.remove();
+                if (!_accList.querySelector('[data-adm-acc-row]')) _accList.innerHTML = '<div style="color:#8a7f6a;">記録は無い。</div>';
+              }).catch(function(err) { if (typeof showToast === 'function') showToast(_capsuleErr(err), { type: 'warn' }); });
+            });
+          };
+        });
       }).catch(function(err) { _accList.textContent = _capsuleErr(err); });
     });
     // v0.75.3: 手紙の流れ・送った人ごとの数（開いたときだけ）
@@ -59295,6 +59308,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.45', date: '2026-11-11',
+    items: [
+      { icon:'🧹', t:'運営の画面を整えました',
+        before:'運営の画面で、記録を選んで片付けることができませんでした',
+        after:'行ごとに片付けられるようにしました' }
+    ]
+  },
+  {
     ver: 'v0.76.44', date: '2026-11-11',
     items: [
       { icon:'🧹', t:'見えないところを整えました',
@@ -89670,8 +89691,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _calls595.push(name + ':' + JSON.stringify(args || {}));
          if (name === 'koyomiru_capsule_admin_access_summary') return Promise.resolve([{ n: 2, title: '見出しS' }]);
          if (name === 'koyomiru_capsule_admin_access_log') return Promise.resolve([
-           { at: new Date().toISOString(), what: '窓口A', uname: null, has_account: false, args: '<b>x</b>', ip: '203.0.113.5', ua: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120', tool: 'ブラウザ', origin: 'https://example.com', action_taken: null, is_test: false, seen: false },
-           { at: new Date().toISOString(), what: '窓口B', uname: '自分', has_account: true, args: '', ip: '198.51.100.7', ua: 'curl/8.0', tool: '道具', action_taken: '止めた', is_test: true, seen: true }
+           { id: 'acc1', at: new Date().toISOString(), what: '窓口A', uname: null, has_account: false, args: '<b>x</b>', ip: '203.0.113.5', ua: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120', tool: 'ブラウザ', origin: 'https://example.com', action_taken: null, is_test: false, seen: false },
+           { id: 'acc2', at: new Date().toISOString(), what: '窓口B', uname: '自分', has_account: true, args: '', ip: '198.51.100.7', ua: 'curl/8.0', tool: '道具', action_taken: '止めた', is_test: true, seen: true }
          ]);
          return Promise.resolve([]);
        };
@@ -89686,11 +89707,18 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r595.list = _rows.length === 2 && /ログインなし/.test(_rows[0].textContent) && /203\.0\.113\.5/.test(_rows[0].textContent) && /Chrome・Windows/.test(_rows[0].textContent) && /新/.test(_rows[0].textContent) &&
          /（試し）/.test(_rows[1].textContent) && /道具/.test(_rows[1].textContent) && /対応：止めた/.test(_rows[1].textContent) && /来た道：https:\/\/example\.com/.test(_rows[0].textContent) && !_rows[0].querySelector('b b') &&
          _calls595.some(function(x) { return x === 'koyomiru_capsule_admin_access_log:' + JSON.stringify({ p_mark_seen: true }); });
+       // 行ごとに消す（2回押し）。本物は「証拠が消える」と念を押す
+       var _d1 = _rows[0].querySelector('[data-adm-acc-del]'), _d2 = _rows[1].querySelector('[data-adm-acc-del]');
+       _d1.click(); var _warn = /証拠が消える/.test(_d1.textContent); _d1.click();
+       _d2.click(); var _warnT = /^本当に消す？$/.test(_d2.textContent.trim()); _d2.click();
+       await new Promise(function(r) { setTimeout(r, 60); });
+       _r595.del = _warn && _warnT && _calls595.some(function(x) { return x === 'koyomiru_capsule_admin_access_delete:' + JSON.stringify({ p_id: 'acc1' }); }) &&
+         _calls595.some(function(x) { return x === 'koyomiru_capsule_admin_access_delete:' + JSON.stringify({ p_id: 'acc2' }); }) && _b.querySelectorAll('[data-adm-acc-row]').length === 0;
        _b.remove();
        var _pp = document.getElementById('legalSecPrivacy'), _pt = _pp ? _pp.textContent.replace(/\s+/g, '') : '';
        _r595.policy = /不正なアクセスの疑いがあるときに限り/.test(_pt) && /接続元の情報（IPアドレス・ブラウザの種類など）/.test(_pt) && /そのために必要な期間保存します/.test(_pt) && !/IPアドレスやブラウザの種類は保存していません/.test(_pt);
        var _src595 = Array.prototype.map.call(document.scripts, function(sc) { return sc.textContent; }).join('');
-       _r595.hidden = ['grant' + '_role', 'export' + '_all', 'exec' + '_sql', 'note' + '_access', 'access' + '_notes', 'admin' + '_roster', 'decoy' + '_roster', 'private' + '_settings', '攻撃の' + '疑い'].every(function(w) { return _src595.indexOf(w) === -1; });
+       _r595.hidden = ['grant' + '_role', 'export' + '_all', 'exec' + '_sql', 'note' + '_access', 'access' + '_notes', 'admin' + '_roster', 'decoy' + '_roster', 'private' + '_settings', 'list' + '_accounts', 'koyomiru' + '_private', '攻撃の' + '疑い'].every(function(w) { return _src595.indexOf(w) === -1; });
      } catch(e) { _e595 = e; } finally { window._capsuleRpc = _rpc595; }
      if (_e595) ng('ST-595: 例外', _e595.message);
      else {
@@ -89698,6 +89726,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r595.list ? ok('ST-595·②: 開いたときだけ読み、見た印を付ける。日時・窓口・アカウントの有無・接続元・ブラウザ。試しは薄く') : ng('ST-595·②: 一覧が違う', '');
        _r595.policy ? ok('ST-595·③: プライバシーポリシーに、安全の確保のための記録（90日で削除）') : ng('ST-595·③: ポリシーの文が違う', '');
        _r595.hidden ? ok('ST-595·④: ファイルに置かない名前の確かめ') : ng('ST-595·④: ファイルに置かない名前が残っている', '');
+       _r595.del ? ok('ST-595·⑤: 行ごとに消せる（2回押し・本物は念を押す）') : ng('ST-595·⑤: 行の消し方が違う', '');
      }
      })();
      });
