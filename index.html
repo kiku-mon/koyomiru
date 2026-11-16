@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.73';
+    const APP_VERSION = 'v0.76.74';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14283,7 +14283,7 @@ document.addEventListener('click', function(ev) {
   if (!b) return;
   var r = window._koyomiPrintLetters[b.getAttribute('data-print-id') || ''];
   if (!r) return;
-  koyomiLetterPrint({ body: r.body, k: r.sealed_koyomi || {}, from: r.sender_name === '自分' ? '' : r.sender_name, to: (typeof koyomiCapsuleToNameOf === 'function' ? koyomiCapsuleToNameOf(r) : ''), title: '手紙' }, b.getAttribute('data-letter-print'));
+  koyomiLetterPrint({ body: r.body, k: r.sealed_koyomi || {}, from: r.sender_name === '自分' ? '' : r.sender_name, to: (typeof koyomiCapsuleToNameOf === 'function' ? koyomiCapsuleToNameOf(r, koyomiCapsuleMyName()) : ''), title: '手紙' }, b.getAttribute('data-letter-print'));
 });
 // ===== END v0.76.72 =====
 // v0.76.73: 元日のチップ（11月・12月だけ）と、その日時（次の1月1日 朝7時）
@@ -14435,10 +14435,22 @@ function koyomiEnvelopeFrontHtml(envId, k, toName, fromName, esc) {
 window.koyomiEnvelopeFrontHtml = koyomiEnvelopeFrontHtml;
 
 // 宛名：本文の「拝啓　○○様」から読む（書く型で必ず入っている）。読めなければ「あなた」
-function koyomiCapsuleToNameOf(r) {
-  var m = /^\s*拝啓[\s　]*(.{1,24}?)[\s　]*様/.exec(String((r && r.body) || ''));
-  return m ? m[1] : 'あなた';
+// v0.76.74: 【権威】2026-11-17「おゆちこさんからは、きくモン様なのに、他の人はあなた様になってるの？」
+//   宛名は手紙の1行目「拝啓　○○様」から読む。拝啓の形が決まる前の手紙や、「○○さんへ」で始まる手紙は読めず「あなた」になっていた。
+//   拝啓の次の行の宛名・さん／ちゃん／くん／殿も読み、それでも読めないときは、受け取った手紙なら自分の名前（fallback）を出す
+function koyomiCapsuleToNameOf(r, fallback) {
+  var lines = String((r && r.body) || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean).slice(0, 2), m = null;
+  var reSal = /^(?:拝啓[\s　]*)?(.{1,16}?)[\s　]*(?:様|さま|さん|ちゃん|くん|君|殿)[\s　]*(?:へ)?[\s　]*[、,。！!]?$/;
+  if (lines[0]) m = reSal.exec(lines[0]);
+  if (!m && lines[0] && /^拝啓[\s　]*$/.test(lines[0]) && lines[1]) m = reSal.exec(lines[1]);
+  var nm = m && m[1] ? m[1].replace(/^拝啓[\s　]*/, '') : '';
+  if (/^(みな|皆|みんな|皆様|各位)$/.test(nm)) nm = '';   // 「みなさんへ」は宛名にしない
+  return nm || fallback || 'あなた';
 }
+function koyomiCapsuleMyName() {
+  try { var prof = (window.allSettings && allSettings.profile) || {}; return String(prof.name || window._cloudUserName || '').slice(0, 24); } catch (e) { return ''; }
+}
+window.koyomiCapsuleMyName = koyomiCapsuleMyName;
 window.koyomiCapsuleToNameOf = koyomiCapsuleToNameOf;
 // 封をしたときの動き：便箋が封筒に入る → ふたが閉じて封蝋 → 表に返る → 切手 → 消印。押すと飛ばせる
 function koyomiCapsuleSealFx(envId, k, toName, done) {
@@ -14736,7 +14748,7 @@ function _capsuleRenderReceived(body, e) {
         '<div style="font-size:0.78em;color:#8a7f6a;margin-top:2px;">到着：' + _capsuleYmd(r.open_at) + '</div>';
       // v0.76.67: 封を切った手紙は、届いた封筒の表のまま文箱にしまう。押すと便箋が出る（もう一度押すとしまう）
       var stage = isOpen ? '<div data-cap-fubako style="text-align:center;"><div data-cap-fubako-env style="position:relative;width:240px;height:150px;margin:0 auto;cursor:pointer;">' +
-            koyomiEnvelopeFrontHtml((r.sealed_koyomi && r.sealed_koyomi.env) || 'kinari', r.sealed_koyomi, koyomiCapsuleToNameOf(r), r.sender_name, e) + '</div>' +
+            koyomiEnvelopeFrontHtml((r.sealed_koyomi && r.sealed_koyomi.env) || 'kinari', r.sealed_koyomi, koyomiCapsuleToNameOf(r, koyomiCapsuleMyName()), r.sender_name, e) + '</div>' +
             '<div data-cap-fubako-hint style="font-size:0.78em;color:#7a3b1e;margin-top:6px;">押して、読む</div></div>' +
             '<div data-cap-fubako-letter style="display:none;margin-top:10px;">' + _capsuleLetterHtml(r, e) + '</div>'
         : '<div data-cap-closed=""' + e(r.id) + '" style="text-align:center;padding:14px 0 6px;cursor:pointer;">' + _capsuleBigIconSvg() + '<div style="font-size:0.82em;color:#2c4f78;margin-top:6px;">押して、カプセルを開ける</div></div>';
@@ -14789,7 +14801,7 @@ function _capsuleRenderReceived(body, e) {
           stageEl.innerHTML = '<div style="padding:10px 0 4px;' + (reduce ? '' : 'animation:capEnvDrop 0.8s cubic-bezier(.2,.8,.3,1);') + '">' +
             '<div data-cap-env style="position:relative;width:240px;height:150px;margin:0 auto;cursor:pointer;perspective:900px;">' +
               '<div data-cap-flip style="position:absolute;inset:0;transform-style:preserve-3d;transition:transform 0.65s ease;">' +
-                '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;">' + koyomiEnvelopeFrontHtml(_envId, r.sealed_koyomi, koyomiCapsuleToNameOf(r), r.sender_name, e) + '</div>' +
+                '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;">' + koyomiEnvelopeFrontHtml(_envId, r.sealed_koyomi, koyomiCapsuleToNameOf(r, koyomiCapsuleMyName()), r.sender_name, e) + '</div>' +
                 '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;transform:rotateY(180deg);">' + _capsuleEnvelopeHtml(_envId, true) + '</div>' +
               '</div></div>' +
             '<div style="text-align:center;font-size:0.82em;color:#7a3b1e;margin-top:8px;">押して、封を切る</div></div>';
@@ -60494,6 +60506,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.74', date: '2026-11-17',
+    items: [
+      { icon:'✉️', t:'届いた封筒の宛名を直しました',
+        before:'手紙の書き出しによっては、届いた封筒の宛名が「あなた様」になっていました',
+        after:'「○○さんへ」で始まる手紙や、拝啓の次の行に宛名がある手紙も、宛名を読めるようにしました。読めないときは、あなたの名前が宛名に入ります' }
+    ]
+  },
+  {
     ver: 'v0.76.73', date: '2026-11-17',
     items: [
       { icon:'🎍', t:'部屋の仲間に、元日に開ける手紙を',
@@ -91353,7 +91373,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _d608.innerHTML = '<div style="position:relative;width:240px;height:150px;">' + koyomiEnvelopeFrontHtml('"><i id=st608e>', { date: '2026-11-16', sekki: '立冬' }, '"><i id=st608x>', '<b id=st608y>', null) + '</div>';
        _r608.front = !_d608.querySelector('#st608x') && !_d608.querySelector('#st608y') && !_d608.querySelector('#st608e') && !!_d608.querySelector('[data-koyomi-stamp="立冬"]') && !!_d608.querySelector('[data-koyomi-postmark]') &&
          _d608.querySelector('[data-cap-env-front]').getAttribute('data-cap-env-front') === 'kinari';
-       _r608.toName = koyomiCapsuleToNameOf({ body: '拝啓　千秋様\n元気？\n敬具' }) === '千秋' && koyomiCapsuleToNameOf({ body: 'こんにちは' }) === 'あなた';
+       _r608.toName = koyomiCapsuleToNameOf({ body: '拝啓　千秋様\n元気？\n敬具' }) === '千秋' && koyomiCapsuleToNameOf({ body: 'こんにちは' }) === 'あなた' &&
+         koyomiCapsuleToNameOf({ body: 'こんにちは' }, 'きくモン') === 'きくモン' && koyomiCapsuleToNameOf({ body: 'きくモンさんへ\n元気？' }) === 'きくモン' &&
+         koyomiCapsuleToNameOf({ body: '拝啓\nきくモン様\n元気？\n敬具' }) === 'きくモン' && koyomiCapsuleToNameOf({ body: '今日はいい天気ですね、お元気ですか。' }, 'X') === 'X';
        var _w608 = _capsuleRenderWrite.toString();
        _r608.write = _w608.indexOf('data-cap-env-pick') !== -1 && _w608.indexOf('{ env: _env }') !== -1 && _w608.indexOf('koyomiCapsuleSealFx(') !== -1;
        var _done608 = false; koyomiCapsuleSealFx('sakura', { date: '2026-11-16', sekki: '立冬' }, '千秋', function() { _done608 = true; });
