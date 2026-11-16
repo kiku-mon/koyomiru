@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.52';
+    const APP_VERSION = 'v0.76.53';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -56502,6 +56502,7 @@ function _buildVisitOverview(detailRows, summaryRows, currentVersion, todayYmd) 
     newThisWeek: newThisWeek.length, returning: returning,
     returningRate: thisWeekKeys.length ? Math.round(returning * 100 / thisWeekKeys.length) : 0,
     days: days, sources: sources, machineVisits: machineVisits, people: all.length,
+    peopleBack: all.filter(function(pr) { return pr.visits >= 2; }).length,   // 今まで来た人のうち2回以上（v0.76.53〜）
     lapsed: lapsed, outdated: outdated, newcomers: newcomers, nameOf: nameOf
   };
 }
@@ -56518,7 +56519,7 @@ function _renderVisitOverviewHtml(o, opts) {
   var esc = function(s) { return (typeof escAttr === 'function') ? escAttr(String(s)) : String(s); };
   var diff = o.thisWeek - o.prevWeek;
   var card = function(label, value, sub) {
-    return '<div style="flex:1;min-width:90px;background:#1b2233;border:1px solid #2c3650;border-radius:10px;padding:10px 8px;text-align:center;">' +
+    return '<div style="flex:1;min-width:120px;background:#1b2233;border:1px solid #2c3650;border-radius:10px;padding:10px 8px;text-align:center;">' +
       '<div style="font-size:0.72em;color:#9aa6b8;">' + label + '</div>' +
       '<div style="font-size:1.6em;font-weight:700;color:#e6edf7;line-height:1.3;">' + value + '</div>' +
       '<div style="font-size:0.7em;color:#7a8494;">' + sub + '</div></div>';
@@ -56572,6 +56573,7 @@ function _renderVisitOverviewHtml(o, opts) {
     dayList('🗓 昨日来た' + M, o.yesterday) +
     '<div style="margin:4px 0 8px;padding-top:8px;border-top:1px solid #2c3650;font-size:0.9em;font-weight:700;color:#8ec5ff;">📈 今週のようす</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      card('今まで来た' + M, o.people + '人' + (o.peopleCapped ? '以上' : ''), '2回以上 ' + (o.peopleBack || 0) + '人') +
       card('今週来た' + M, o.thisWeek + '人', '先週 ' + o.prevWeek + '人（' + (diff >= 0 ? '+' : '') + diff + '）') +
       card('新しく来た' + M, o.newThisWeek + '人', showMachine ? '今週はじめて（ログインしていない人は端末ごと）' : '今週はじめて') +
       card('戻ってきた' + M, o.returningRate + '%', '今週来た' + M + 'のうち') +
@@ -56972,6 +56974,7 @@ async function loadAdminVisitStats() {
         var _today = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0') + '-' + String(_now.getDate()).padStart(2, '0');
         var _ov = _buildVisitOverview(window._visitDetailRows || [], window._visitorSummary || [],
           (typeof APP_VERSION !== 'undefined') ? APP_VERSION : '', _today);
+        _ov.peopleCapped = (window._visitorSummary || []).length >= _sumLimit;   // 取り出しの上限に当たったら「以上」
         var _ovBox = document.createElement('div');
         _ovBox.innerHTML = _renderVisitOverviewHtml(_ov);
         var _details = document.createElement('details');
@@ -59354,6 +59357,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.53', date: '2026-11-16',
+    items: [
+      { icon:'📈', t:'来た人の記録の頭に「今まで来た人」を足しました',
+        before:'今まで来た人の合計は、詳しい記録を開かないと見えませんでした',
+        after:'まとめの頭に「今まで来た人 ○人（2回以上 ○人）」が出ます' }
+    ]
+  },
   {
     ver: 'v0.76.52', date: '2026-11-16',
     items: [
@@ -89972,6 +89983,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        window._moneyGlowAt = _st600.glow;
        try { renderMonthlyMoneyLine(); } catch (e4) {}
      }
+     // ===== ST-601: 訪問のまとめの頭に「今まで来た人」（v0.76.53〜） =====
+     try {
+       var _o601 = _buildVisitOverview([], [
+         { uid: 'u601a', visitor: 'd601a', visits: 3, days_since: 1, first_at: '2026-01-01', last_at: '2026-01-05' },
+         { uid: 'u601a', visitor: 'd601b', visits: 1, days_since: 2, first_at: '2026-01-02', last_at: '2026-01-02' },
+         { uid: null, visitor: 'd601c', visits: 1, days_since: 3, first_at: '2026-01-03', last_at: '2026-01-03' },
+         { uid: null, visitor: 'v-bot601', visits: 5, days_since: 1, first_at: '2026-01-03', last_at: '2026-01-03' }
+       ], 'v0.0.1', '2026-01-10');
+       var _h601 = _renderVisitOverviewHtml(_o601);
+       var _c601 = _h601.indexOf('今まで来た人'), _w601 = _h601.indexOf('今週来た人');
+       (_o601.people === 2 && _o601.peopleBack === 1 && _c601 !== -1 && _c601 < _w601 && /今まで来た人[^]*?2人[^]*?2回以上 1人/.test(_h601))
+         ? ok('ST-601·①: まとめの頭に「今まで来た人」（同じ人は1人・機械は除く・2回以上の数）')
+         : ng('ST-601·①: 今まで来た人が違う', _o601.people + '/' + _o601.peopleBack);
+       _o601.peopleCapped = true;
+       /今まで来た人[^]*?2人以上/.test(_renderVisitOverviewHtml(_o601))
+         ? ok('ST-601·②: 取り出しの上限に当たったら「○人以上」') : ng('ST-601·②: 上限のときに「以上」が出ない');
+     } catch(e) { ng('ST-601: 例外', e.message); }
      if (_e600) ng('ST-600: 例外', _e600.message);
      else {
        _r600.btn ? ok('ST-600·①: 来月の行の差のすぐ隣に「畳む」') : ng('ST-600·①: 来月の行に畳むが無い・差の隣でない');
