@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.62';
+    const APP_VERSION = 'v0.76.64';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -43668,8 +43668,8 @@ window.unshareCalendar = unshareCalendar;
     ];
     function _invwHoursText(h) { return h === 168 ? '1週間' : h + '時間'; }   // 選んだときの言葉のまま
 
-    async function inviteToCalendar(idx) {
-      var cal = calendars[idx];
+    async function inviteToCalendar(idx, _calObj) {
+      var cal = _calObj || calendars[idx];
       if (!cal) return;
       if (!window._cloudIsLoggedIn) {
         if (typeof showToast === 'function') showToast('招待するには、まずログインしてください');
@@ -43709,6 +43709,13 @@ window.unshareCalendar = unshareCalendar;
         _shareOrCopyInviteUrl(url, name, hours, max);
         close();
       };
+      var qr = function(url) {
+        var box = ov.querySelector('[data-invw-qrbox]');
+        if (!box) return;
+        if (box.innerHTML) { box.innerHTML = ''; return; }
+        box.innerHTML = '<div class="koyomiru-qr-slot" data-qr="' + e(url) + '"></div><div style="font-size:0.75em;color:#8e8e8e;margin-top:4px;">その場で読み取ってもらう</div>';
+        if (typeof qrFillSlots === 'function') qrFillSlots(box);
+      };
       var copy = function(url) {
         try {
           navigator.clipboard.writeText(url).then(function() { if (typeof showToast === 'function') showToast('✅ 招待リンクを写しました'); close(); },
@@ -43722,9 +43729,11 @@ window.unshareCalendar = unshareCalendar;
         frame('alive', '今使える招待リンクがある',
           '<div style="font-size:0.85em;color:#555;margin-top:4px;">' + e(left) + (left ? '・' : '') + e(seats) + '</div>' +
           '<button type="button" data-invw-sendalive style="' + MAIN + '">このリンクを送る</button>' +
+          '<button type="button" data-invw-qr style="' + SUBB + '">QRコードを出す</button><div data-invw-qrbox style="text-align:center;margin-top:8px;"></div>' +
           (st.owner ? '<button type="button" data-invw-new style="' + SUBB + '">新しく作る<br><span style="font-size:0.85em;color:#c0392b;">今のリンクは使えなくなる</span></button>' : ''));
         var url = location.origin + location.pathname + '?join=' + encodeURIComponent(a.invite_code);
         ov.querySelector('[data-invw-sendalive]').onclick = function() { share(url); };
+        ov.querySelector('[data-invw-qr]').onclick = function() { qr(url); };
         var n = ov.querySelector('[data-invw-new]'); if (n) n.onclick = stepWho;
       };
       stepWho = function() {
@@ -43754,9 +43763,11 @@ window.unshareCalendar = unshareCalendar;
           '<div style="font-size:0.88em;color:#555;margin-top:4px;">' + e(who ? who.label : '') + '（' + (st.max ? st.max + '人まで' : '人数の上限なし') + '）・' + e(_invwHoursText(st.hours)) + '使える</div>' +
           (st.max === null ? '<div data-invw-warn style="font-size:0.8em;color:#c0392b;margin-top:8px;">誰でも入れるリンク。広く人が見る場所には貼らない</div>' : '') +
           (navigator.share ? '<button type="button" data-invw-send style="' + MAIN + '">LINEなどで送る</button>' : '') +
-          '<button type="button" data-invw-copy style="' + (navigator.share ? SUBB : MAIN) + '">リンクを写す</button>', null);
+          '<button type="button" data-invw-copy style="' + (navigator.share ? SUBB : MAIN) + '">リンクを写す</button>' +
+          '<button type="button" data-invw-qr style="' + SUBB + '">QRコードを出す</button><div data-invw-qrbox style="text-align:center;margin-top:8px;"></div>', null);
         var sb = ov.querySelector('[data-invw-send]'); if (sb) sb.onclick = function() { share(st.url, st.hours, st.max); };
         ov.querySelector('[data-invw-copy]').onclick = function() { copy(st.url); };
+        ov.querySelector('[data-invw-qr]').onclick = function() { qr(st.url); };
       };
       // はじまり：共有済みなら、今のリンクと部屋主かどうかを確かめる
       if (cal.cloudCalendarId) {
@@ -43786,6 +43797,14 @@ window.unshareCalendar = unshareCalendar;
       }
     }
     window.inviteToCalendar = inviteToCalendar;
+    // v0.76.63: 【権威】2026-11-16「アカウント配下の共有カレンダーのところから招待したら、古いリンクで招待切れのやつが届いた」
+    //   原因：一覧の「招待する」は、ウィザードを通らず、その時点の合言葉をそのまま送っていた。→ 同じウィザードを開く
+    function koyomiInviteByCloudId(cloudId, name, isOwner) {
+      var idx = (calendars || []).findIndex(function(c) { return c && c.cloudCalendarId === cloudId; });
+      if (idx >= 0) return inviteToCalendar(idx);
+      return inviteToCalendar(-1, { name: name || '共有カレンダー', cloudCalendarId: cloudId, sharedOwner: isOwner !== false });
+    }
+    window.koyomiInviteByCloudId = koyomiInviteByCloudId;
     function updateCalendarField(idx, field, value) {
       if (calendars[idx]) {
         calendars[idx][field] = value;
@@ -59721,6 +59740,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.64', date: '2026-11-16',
+    items: [
+      { icon:'💌', t:'招待の入口を「招待する」1つにまとめました',
+        before:'共有カレンダーの一覧に、「招待する」と、人数や長さを決めて作り直す欄の2つがあって、迷いやすくなっていました',
+        after:'招待は「招待する」から、誰を呼ぶか・いつまで使えるかを選んで送ります。QRコードも、送る画面から出せます。一覧には今の招待リンクの様子だけを出します' }
+    ]
+  },
+  {
+    ver: 'v0.76.63', date: '2026-11-16',
+    items: [
+      { icon:'🔗', t:'共有カレンダーの一覧からの招待でも、切れたリンクが届いていた不具合を直しました',
+        before:'アカウントの共有カレンダーの一覧にある「招待する」から送ると、期限の切れた招待リンクが届くことがありました',
+        after:'どこから招待しても、同じ「誰を呼ぶ？」「いつまで使える？」の順に聞いてから送ります' }
+    ]
+  },
+  {
     ver: 'v0.76.62', date: '2026-11-16',
     items: [
       { icon:'💌', t:'招待ボタンを、ひとつずつ聞いて送る形にしました',
@@ -65111,80 +65146,16 @@ async function refreshSharedCalendarList() {
                 '<button onclick="renameSharedCalendarFromModal(\'' + c.id + '\', \'' + safeId + '\')" style="padding:8px 14px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;white-space:nowrap;">変更</button>' +
               '</div>' +
             '</div>' : '') +
-          '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">招待リンク</div>' +
-          '<div id="' + safeId + '_invwrap">' +
-          // v0.45.2019: 【権威】2026-09-03、リンクを作っていないのにタイマーが出るのは変、との指摘。
-          // カレンダーを作った時点で合言葉が自動で発行されるため、
-          // 誰にも配っていないカレンダーにも生きた合言葉と期限が付いていた。
-          // 画面は、存在しないリンクの残り時間を数えていた。
-          // 配っていないのに「いま配ってあるリンクは…」と書くのは嘘である。
-          // 作った覚えがあるものだけを、リンクとして扱う。
-          (!_issued
-            ? '<div style="font-size:0.8em;color:#8e8e8e;line-height:1.7;margin-bottom:10px;">' +
-                'まだ招待リンクを作っていません。<br>下から作ると、使える長さを選んでリンクができます。</div>'
-            : '<div style="font-size:0.8em;line-height:1.7;margin-bottom:' + (_remain.expired ? '10px' : '8px') + ';color:' +
-                (_remain.expired ? '#b3261e' : (_remain.minutes < 10 ? '#c07a2a' : '#3a7a3a')) + ';font-weight:600;">' +
-                (_remain.expired
-                  ? 'いま配ってあるリンクは期限が切れています'
-                  : 'いま配ってあるリンクは、あと' + escAttr(_remain.text.replace(/^あと/, '')) + 'で切れます') +
-                (_seatText ? '<br><span style="color:#8e8e8e;font-weight:400;">この招待で入れるのは' + escAttr(_seatText) + '</span>' : '') +
-              '</div>') +
-          (!_issued || _remain.expired
-            ? (_remain.expired && _issued
-                ? '<div style="font-size:0.74em;color:#b3261e;line-height:1.7;margin-bottom:10px;">' +
-                    'このリンクはもう使えません。下から作り直してください。</div>'
-                : '')
-            : '<div style="display:flex;gap:14px;margin-bottom:14px;">' +
-                '<a onclick="copySharedCalendarInvite(\'' + inviteUrl + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクをコピー</a>' +
-                '<a onclick="var q=document.getElementById(\'' + safeId + '_qr\'); q.style.display = q.style.display === \'none\' ? \'block\' : \'none\';" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">QRコードを表示</a>' +
-                    // v0.45.2064: 渡す前に、生きているか自分で確かめられるようにする。
-                    // 押しても参加はしないし、人数の枠も減らない。
-                    '<a onclick="window.checkSharedCalendarInvite(\'' + escAttr(c.invite_code || '') + '\', \'' + safeId + '\')" style="font-size:0.76em;color:#0b5bb0;cursor:pointer;text-decoration:underline;">リンクを確かめる</a>' +
-                  '</div>' +
-                  '<div id="' + safeId + '_linkcheck" style="font-size:0.74em;line-height:1.7;margin-bottom:10px;min-height:1.2em;"></div>') +
-          '<div id="' + safeId + '_qr" style="display:none;text-align:center;margin-bottom:14px;">' +
-            // v0.45.2067: 外部に招待リンクを渡さない。この場で描く。
-              '<div class="koyomiru-qr-slot" data-qr="' + escAttr(inviteUrl) + '"></div>' +
-            '<div style="font-size:0.68em;color:#aaa;margin-top:4px;">' +
-              (_remain.expired ? 'このQRは期限が切れています'
-                               : 'このQRは、あと' + escAttr(_remain.text.replace(/^あと/, '')) + 'で使えなくなります') + '</div>' +
+          // v0.76.64: 【権威】2026-11-16「招待のUIが2つある。親切じゃない」→ 招待はウィザード1本（上の「招待する」）。
+          //   ここには今の招待リンクの様子だけを一行で出す。人数・長さ・QRコードはウィザードで選ぶ・出す
+          '<div data-invite-status style="font-size:0.78em;line-height:1.7;margin-bottom:14px;color:' +
+            (!_issued || _remain.expired ? '#8e8e8e' : (_remain.minutes < 10 ? '#c07a2a' : '#3a7a3a')) + ';">' +
+            '<span style="color:#8e8e8e;">招待リンク：</span>' +
+            (!_issued ? 'まだ作っていない'
+              : (_remain.expired ? '期限が切れている'
+                : escAttr(_remain.text) + (_seatText ? '・' + escAttr(_seatText) : ''))) +
+            '<span style="color:#aaa;">（「招待する」から送る）</span>' +
           '</div>' +
-          '</div>' +
-          // v0.45.2014: 作り直しは持ち主だけ。押した瞬間、前のリンクは死ぬ。
-          (_isOwner ?
-            '<div style="background:#f7f8fa;border-radius:10px;padding:12px;margin-bottom:14px;">' +
-              '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:7px;">' + (_issued ? '新しい招待リンクを作る' : '招待リンクを作る') + '</div>' +
-              '<div style="display:flex;gap:6px;margin-bottom:7px;">' +
-                '<select id="' + safeId + '_maxmode" onchange="var n=document.getElementById(\'' + safeId + '_maxnum\'); n.style.display = this.value===\'num\' ? \'block\' : \'none\';" ' +
-                  'style="flex:1;min-width:0;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;background:#fff;">' +
-                  // v0.76.61: 【権威】2026-11-16「人数の上限はデフォルトで設けた方がいい。何百人も集まる会など特別なときだけ外す」→ 既定は5人
-                  '<option value="num" selected>人数を決める</option>' +
-                  '<option value="one">1人だけ</option>' +
-                  '<option value="none">人数の上限なし（大きな会のときだけ）</option>' +
-                '</select>' +
-                '<input id="' + safeId + '_maxnum" type="number" min="1" max="100" placeholder="人数" value="5" ' +
-                  'style="display:block;width:80px;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;">' +
-                  '</div>' +
-                  // v0.45.2073: 【権威】2026-09-04、24時間で必ず切れるのか、
-                  // 伸ばせないのか、との問い。明日2人を誘う予定がある。
-                  // 相手が今日中に開くとは限らない。土日を挟めば24時間では足りない。
-                  // 「短い方が安全」は作る側の理屈で、誘えなければ意味がない。
-                  // 長さを選べるようにする。既定は24時間のまま。
-                  '<div style="font-size:0.72em;color:#8e8e8e;margin-bottom:5px;">使える長さ</div>' +
-                  '<select id="' + safeId + '_valid" ' +
-                    'style="width:100%;padding:8px;border:1px solid #dcdcdc;border-radius:8px;font-size:0.82em;font-family:inherit;margin-bottom:7px;">' +
-                    '<option value="1">1時間（その場で来てもらう）</option>' +
-                    '<option value="24" selected>24時間</option>' +
-                    '<option value="72">3日</option>' +
-                    '<option value="168">7日</option>' +
-                  '</select>' +
-              '<button onclick="regenerateSharedCalendarInvite(\'' + c.id + '\', \'' + safeId + '\')" ' +
-                'style="width:100%;padding:9px;border:1px solid #0b6bcb;border-radius:8px;background:#fff;color:#0b5bb0;font-size:0.8em;font-weight:600;cursor:pointer;font-family:inherit;">' +
-                (_issued ? 'リンクを作り直す' : 'リンクを作る') + '</button>' +
-              '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">' +
-                (_issued ? '上で選んだ長さだけ使えるリンクができます。前に送ったリンクは、その場で使えなくなります。'
-                         : '上で選んだ長さだけ使えるリンクができます。') + '</div>' +
-            '</div>' : '') +
           (_isOwner ?
             '<button onclick="deleteSharedCalendarFromModal(\'' + c.id + '\', \'' + _safeName + '\', this)" style="width:100%;padding:9px;border:1px solid #f0c9c7;border-radius:8px;background:#fff;color:#b3261e;font-size:0.8em;font-weight:600;cursor:pointer;">このカレンダーを削除する</button>' +
             '<div style="font-size:0.68em;color:#aaa;margin-top:5px;line-height:1.5;">参加している全員の画面から消えます。取り消せません。</div>' +
@@ -65236,7 +65207,7 @@ async function refreshSharedCalendarList() {
         '<div style="font-size:0.95em;font-weight:700;color:#262626;word-break:break-all;">' + escAttr(c.name || '(無題)') + '</div>' +
       '</div>' +
       _memberHtml +
-      '<button onclick="shareSharedCalendarInvite(\'' + inviteUrl + '\', \'' + _safeName + '\')" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">招待する</button>' +
+      '<button data-invite-open="' + escAttr(c.id) + '" onclick="koyomiInviteByCloudId(\'' + c.id + '\', \'' + _safeName + '\', ' + (_isOwner ? 'true' : 'false') + ')" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:10px;background:#0b6bcb;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(11,107,203,0.25);">招待する</button>' +
       // v0.45.1827: そのカレンダーの予定だけを縦に並べて見る入口。
       // 「相手が何を入れたか」を確かめるのが共有の主目的なので、参加者の並びの
       // すぐ下に置く。月間で絞り込むより手数が少なく、誰が入れたかも一目で分かる。
@@ -90512,6 +90483,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _ok604 ? ok('ST-604·①: 部屋の名前と、よその部屋の部屋主。空の部屋は下に畳む') : ng('ST-604·①: 部屋の名前・空の部屋の出し方が違う');
        _okx604 ? ok('ST-604·②: 書き出しには部屋の名前も部屋主の名前も入らない') : ng('ST-604·②: 書き出しに名前が入っている（重大）');
      } catch(e) { ng('ST-604: 例外', e.message); }
+     // ===== ST-607: 共有カレンダー一覧の「招待する」もウィザードを通る（v0.76.63〜） =====
+     try {
+       var _src607 = _stAllSrc();
+       var _bad607 = /onclick="shareSharedCalendarInvite\(/.test(_src607.replace(/\/\/[^\n]*/g, ''));
+       var _ok607 = _src607.indexOf('koyomiInviteByCloudId(\\\'') !== -1 && typeof window.koyomiInviteByCloudId === 'function';
+       (!_bad607 && _ok607) ? ok('ST-607·①: 一覧の「招待する」は古いリンクを直接送らず、ウィザードを開く') : ng('ST-607·①: 一覧の招待が古いリンクを直接送る（重大）');
+       var _list607 = _stFnSrc('async function renderSharedCalendarList') || _src607;
+       var _one607 = _src607.indexOf("'_maxmode\" onchange") === -1 && _src607.indexOf("onclick=\"regenerateSharedCalendarInvite(") === -1 && _src607.indexOf('data-invite-status') !== -1;
+       _one607 ? ok('ST-607·②: 招待はウィザード1本（一覧には今のリンクの一行だけ）') : ng('ST-607·②: 一覧に招待の作り直しの欄が残っている');
+     } catch(e) { ng('ST-607: 例外', e.message); }
      // ===== ST-606: 招待はウィザード（誰を呼ぶ？→いつまで？→送る）（v0.76.60〜・v0.76.62でウィザードに） =====
      enqueueSmokeAsyncTest('ST-606', function() {
      return (async function() {
@@ -90557,6 +90538,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        document.querySelectorAll('#koyomiInviteWizard [data-invw-who]')[3].click(); await _w();
        document.querySelectorAll('#koyomiInviteWizard [data-invw-when]')[0].click(); await _w(); await _w();
        _r606.big = _upd606.length === 2 && _upd606[1].invite_max_uses === null && !!document.querySelector('#koyomiInviteWizard [data-invw-warn]');
+       document.querySelector('#koyomiInviteWizard [data-invw-qr]').click();
+       _r606.qr = !!document.querySelector('#koyomiInviteWizard [data-invw-qrbox] canvas');
        document.querySelector('#koyomiInviteWizard [data-invw-close]').click();
        // ③ まだ使えるリンクがある → 最初に「このリンクを送る／新しく作る」。送れば作り直さない
        window.listMySharedCalendars = function() { return Promise.resolve({ data: [{ id: 'st606-room', owner_id: 'st606-me', invite_code: 'alivecode12', invite_issued_at: new Date().toISOString(), invite_code_expires_at: new Date(_f).toISOString(), invite_max_uses: 5, invite_used_count: 1 }] }); };
@@ -90583,6 +90566,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r606.made ? ok('ST-606·③: 選んだ人数と長さで、新しいリンクを作る') : ng('ST-606·③: 選んだとおりにリンクができない（重大）');
        _r606.sent ? ok('ST-606·④: 送るで、新しいリンクを送る（古い合言葉は送らない）') : ng('ST-606·④: 送るリンクが違う（重大）', JSON.stringify(_sent606));
        _r606.big ? ok('ST-606·⑤: 大きな会（上限なし）は、誰でも入れる注意を出す') : ng('ST-606·⑤: 上限なしの注意が無い');
+       _r606.qr ? ok('ST-606·⑧: 送る画面で、QRコードをこの場で描いて出せる') : ng('ST-606·⑧: QRコードが出ない');
        (_r606.aliveStep && _r606.reuse) ? ok('ST-606·⑥: まだ使えるリンクがあれば「このリンクを送る」（作り直さない）') : ng('ST-606·⑥: 使えるリンクの扱いが違う');
        _r606.notOwner ? ok('ST-606·⑦: 部屋主でなく使えるリンクも無ければ、作れないことを伝える') : ng('ST-606·⑦: 部屋主でないときの扱いが違う');
      }
@@ -93719,7 +93703,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ③ RLS修正SQLが実行済みという前提のもと、実際の作成フロー自体はネットワーク
        // 依存のため、ここではガード・関数構造のみ確認する
        // v0.76.62: 共有にする処理は _ensureSharedForInvite に移った（招待はウィザードに）
-       var _st284fnSrc = _stFnSrc('async function inviteToCalendar(idx)') + _stFnSrc('async function _ensureSharedForInvite(cal)');
+       var _st284fnSrc = _stFnSrc('async function inviteToCalendar(idx, _calObj)') + _stFnSrc('async function _ensureSharedForInvite(cal)');
        _st284fnSrc.indexOf('createSharedCalendar(') !== -1 && _st284fnSrc.indexOf('cloudCalendarId') !== -1 && _st284fnSrc.indexOf('_ensureSharedForInvite(cal)') !== -1
          ? ok('ST-284·③: 未共有カレンダーの自動アップグレード処理確認')
          : ng('ST-284·③: アップグレード処理が見つからない', '');
@@ -93857,7 +93841,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        var _st289scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
        // v0.76.62: ウィザードでは、作れなかった理由（サーバーの答え）を画面にそのまま出す
-       var _st289inviteSrc = _stFnSrc('async function inviteToCalendar(idx)') + _stFnSrc('async function _ensureSharedForInvite(cal)');
+       var _st289inviteSrc = _stFnSrc('async function inviteToCalendar(idx, _calObj)') + _stFnSrc('async function _ensureSharedForInvite(cal)');
        (_st289inviteSrc.indexOf('r.error.message') !== -1 && _st289inviteSrc.indexOf('e(c.error.message)') !== -1 && _st289inviteSrc.indexOf('e(f.error.message)') !== -1)
          ? ok('ST-289·①: 招待エラーメッセージの詳細化確認')
          : ng('ST-289·①: 詳細化されていない', '');
@@ -93877,7 +93861,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 更新にリアルタイムで気づけない恐れがあったため、対称に修正した。
      try {
        var _st290scriptTexts = _stAllSrc();   // v0.45.1783: 毎回作り直さず使い回す
-       var _st290src = _stFnSrc('async function inviteToCalendar(idx)') + _stFnSrc('async function _ensureSharedForInvite(cal)');
+       var _st290src = _stFnSrc('async function inviteToCalendar(idx, _calObj)') + _stFnSrc('async function _ensureSharedForInvite(cal)');
        _st290src.indexOf('unifiedRefreshMyCalendarIds()') !== -1
          ? ok('ST-290·①: 招待作成側の即時カレンダー一覧更新確認')
          : ng('ST-290·①: 更新処理が見つからない', '');
