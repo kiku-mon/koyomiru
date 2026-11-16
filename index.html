@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.53';
+    const APP_VERSION = 'v0.76.54';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10116,6 +10116,11 @@ function _showInviteWelcome() {
   </label>
   <div style="font-size:0.75em;color:#9aa6b8;margin-top:4px;line-height:1.6;">日次のマトリクスと魚の目に、登記の案件（ボックス番号・金消・決済・完了予定・工程）を出します。管理者モードのときだけ出ます。</div>
 </div>
+<div id="adminGrowthArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+          <div style="font-size:0.82em;font-weight:700;color:#8ec5ff;margin-bottom:8px;">🏠 部屋のようす（生きている部屋）</div>
+          <button id="adminGrowthBtn" onclick="loadAdminGrowth()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;font-size:0.94em;cursor:pointer;margin-bottom:8px;">🔄 部屋のようすを読み込む</button>
+          <div id="adminGrowthList" style="font-size:0.9em;color:#ccc;line-height:1.7;"></div>
+        </div>
 <div id="adminVisitStatsArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
           <div style="font-size:0.82em;font-weight:700;color:#8ec5ff;margin-bottom:8px;">📊 訪問統計（直近14日）</div>
           <button id="adminVisitStatsBtn" onclick="loadAdminVisitStats()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;font-size:0.94em;cursor:pointer;margin-bottom:8px;">🔄 訪問統計を読み込む</button>
@@ -53690,6 +53695,8 @@ function _getVisitSource() {
     // 起動最初期に立てた印（window._entryWasViewOnlyLink）を見る。
     // 一番確実な判定なので、standalone判定より先に見る。
     if (window._entryWasViewOnlyLink) return 'viewonly';
+    // 招待リンク（?join=）から来た人は「招待」。部屋が人を呼んだ数を測る（v0.76.54〜）
+    if (window._koyomiruEntryMode === 'join') return 'invite';
     // v0.45.1502: 【権威】2026-08-04、ホーム画面に追加した人の起動を独立して数える。
     // これを最優先で判定しないと、?from=mailmagazine 付きのリンクから追加した人は
     // 毎回の起動が mailmagazine として記録され、新規の流入と常連の起動が混ざる。
@@ -56462,7 +56469,7 @@ function _buildVisitOverview(detailRows, summaryRows, currentVersion, todayYmd) 
                      .sort(function(a, b) { return String(b.firstAt).localeCompare(String(a.firstAt)); });
   // v0.49.8: 【権威】2026-10-01、週ごとの数字より先に、まず「今日来た人」を、誰が・どの経路で・何時に、
   // ひと目で見たい、との要望。今日と昨日の訪問を、新しい順に1件ずつ並べる（自分と機械は除き、件数を添える）。
-  var SOURCE_LABELS = { direct: '直接', line: 'LINE', homescreen: 'ホーム画面', x: 'X', discord: 'Discord',
+  var SOURCE_LABELS = { invite: '招待', viewonly: '見るだけ', direct: '直接', line: 'LINE', homescreen: 'ホーム画面', x: 'X', discord: 'Discord',
     mailmagazine: 'メルマガ', note: 'note', blog: 'ブログ', 'chatgpt.com': 'ChatGPT', other: 'その他' };
   var timeOf = function(x) {
     if (x.visit_time) return String(x.visit_time).slice(0, 5);
@@ -56543,7 +56550,7 @@ function _renderVisitOverviewHtml(o, opts) {
   var srcLine = Object.keys(o.sources).sort(function(a, b) { return o.sources[b] - o.sources[a]; })
     .map(function(k) {
       // v0.50.2: 経路は日本語で（今日・昨日の一覧と同じ呼び方にそろえる）
-      var JA = { direct: '直接', line: 'LINE', homescreen: 'ホーム画面', x: 'X', discord: 'Discord', mailmagazine: 'メルマガ',
+      var JA = { invite: '招待', viewonly: '見るだけ', direct: '直接', line: 'LINE', homescreen: 'ホーム画面', x: 'X', discord: 'Discord', mailmagazine: 'メルマガ',
                  note: 'note', blog: 'ブログ', 'chatgpt.com': 'ChatGPT', other: 'その他' };
       return esc(JA[k] || k) + ' ' + Math.round(o.sources[k] * 100 / srcTotal) + '%';
     }).join('・');
@@ -56994,6 +57001,137 @@ async function loadAdminVisitStats() {
   if (btn) { btn.disabled = false; btn.textContent = '🔄 訪問統計を読み込む'; }
 }
 window.loadAdminVisitStats = loadAdminVisitStats;
+
+// ===== 部屋のようす（v0.76.54〜） =====
+// 伸びを測る芯は「人」ではなく「部屋」。直近7日にメンバー2人以上が開いた共有カレンダーを「生きている部屋」と数える。
+// 集計はサーバー側（管理者だけ）。名前は受け取らず、部屋と部屋主は記号（R1・P1）で扱う。
+function _renderGrowthHtml(g) {
+  var n = function(v) { return Number(v) || 0; };
+  var e = function(v) { return _escapeHtml(String(v == null ? '' : v)); };
+  var wk = Array.isArray(g && g.weekly) ? g.weekly : [];
+  var f = (g && g.funnel) || {};
+  var rooms = Array.isArray(g && g.rooms) ? g.rooms : [];
+  var cur = wk[0] || {}, prev = wk[1] || {};
+  var card = function(label, value, sub) {
+    return '<div style="flex:1;min-width:120px;background:#1b2233;border:1px solid #2c3650;border-radius:10px;padding:10px 8px;text-align:center;">' +
+      '<div style="font-size:0.72em;color:#9aa6b8;">' + label + '</div>' +
+      '<div style="font-size:1.6em;font-weight:700;color:#e6edf7;line-height:1.3;">' + value + '</div>' +
+      '<div style="font-size:0.7em;color:#7a8494;">' + sub + '</div></div>';
+  };
+  var d = n(cur.live_rooms) - n(prev.live_rooms);
+  var html = '<div data-growth-cards style="display:flex;gap:6px;flex-wrap:wrap;">' +
+    card('生きている部屋', n(cur.live_rooms), '先週 ' + n(prev.live_rooms) + '（' + (d >= 0 ? '+' : '') + d + '）') +
+    card('開いた人（ログイン）', n(cur.active_users), '先週 ' + n(prev.active_users)) +
+    card('新しい部屋', n(cur.new_rooms), '今週できた部屋') +
+    card('招待で入った人', n(cur.joins), '今週') +
+  '</div>';
+  // 週ごとの生きている部屋（古い週が左）
+  var max = Math.max.apply(null, wk.map(function(w) { return n(w.live_rooms); }).concat([1]));
+  html += '<div style="margin-top:12px;font-size:0.75em;color:#9aa6b8;">生きている部屋の移り変わり（1週ずつ）</div>' +
+    '<div style="display:flex;align-items:flex-end;height:70px;gap:4px;margin-top:4px;">' +
+    wk.slice().reverse().map(function(w) {
+      var h = Math.round(n(w.live_rooms) * 52 / max);
+      return '<div title="' + e(w.from) + '〜' + e(w.to) + '　' + n(w.live_rooms) + '部屋" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px;">' +
+        '<div style="font-size:0.65em;color:#c9d3e3;">' + n(w.live_rooms) + '</div>' +
+        (h ? '<div style="width:70%;height:' + h + 'px;background:#7ee0a1;border-radius:2px;"></div>' : '') +
+        '<div style="font-size:0.6em;color:#7a8494;">' + e(String(w.to || '').slice(5).replace('-', '/')) + '</div></div>';
+    }).join('') + '</div>';
+  // 段階（どこで抜けているか）
+  var steps = [
+    ['来た（端末）', f.visitors], ['ログインした', f.logged_in], ['部屋に入っている', f.in_a_room],
+    ['部屋を作った', f.room_owners], ['招待リンクを作った', f.owners_who_invited], ['仲間が入った部屋主', f.owners_with_guest]
+  ];
+  html += '<div style="margin-top:12px;padding-top:8px;border-top:1px solid #2c3650;font-size:0.9em;font-weight:700;color:#8ec5ff;">🪜 部屋主になるまでの段階（今まで）</div>' +
+    steps.map(function(st, i) {
+      var p = i > 0 && n(steps[i - 1][1]) > 0 ? Math.round(n(st[1]) * 100 / n(steps[i - 1][1])) + '%' : '';
+      return '<div data-growth-step style="display:flex;gap:8px;font-size:0.82em;padding:2px 0;">' +
+        '<span style="flex:1;color:#c9d3e3;">' + (i + 1) + '. ' + st[0] + '</span>' +
+        '<span style="color:#e6edf7;font-weight:700;min-width:3em;text-align:right;">' + n(st[1]) + '人</span>' +
+        '<span style="color:#7a8494;min-width:3.2em;text-align:right;">' + (p ? '← ' + p : '') + '</span></div>';
+    }).join('') +
+    '<div style="font-size:0.75em;color:#9aa6b8;margin-top:2px;">2週以上にわたって来た人 ' + n(f.came_back_another_week) + '人・仲間として入っている人 ' + n(f.guests) + '人</div>';
+  // 部屋ごとの表（今週動いた順）
+  var sorted = rooms.slice().sort(function(a, b) {
+    return n(b.active_7d) - n(a.active_7d) || String(b.last_activity || '').localeCompare(String(a.last_activity || ''));
+  });
+  html += '<div style="margin-top:12px;padding-top:8px;border-top:1px solid #2c3650;font-size:0.9em;font-weight:700;color:#8ec5ff;">🗂 部屋ごと（' + rooms.length + '部屋・今週動いた順）</div>' +
+    '<div style="font-size:0.72em;color:#7a8494;margin-bottom:4px;">人数（仲間）・今週開いた人・予定（今週動いた）・コメント（今週）・最後に動いた日。★は自分の部屋</div>' +
+    sorted.map(function(r) {
+      var live = n(r.active_7d) >= 2;
+      return '<div data-growth-room style="display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;padding:3px 0;border-bottom:1px solid #222b3d;font-size:0.8em;' + (live ? '' : 'opacity:.62;') + '">' +
+        '<span style="min-width:3.6em;color:' + (live ? '#7ee0a1' : '#9aa6b8') + ';font-weight:700;">' + e(r.code) + (r.mine ? ' ★' : '') + '</span>' +
+        '<span style="color:#c9d3e3;">' + n(r.members) + '人（' + n(r.guests) + '）</span>' +
+        '<span style="color:' + (live ? '#7ee0a1' : '#c9d3e3') + ';">今週 ' + n(r.active_7d) + '人</span>' +
+        '<span style="color:#c9d3e3;">予定 ' + n(r.tasks) + '（' + n(r.tasks_7d) + '）</span>' +
+        '<span style="color:#c9d3e3;">💬 ' + n(r.comments) + '（' + n(r.comments_7d) + '）</span>' +
+        '<span style="color:#7a8494;">' + (r.last_activity ? e(String(r.last_activity).slice(5).replace('-', '/')) : '—') + '</span>' +
+        (r.invited ? '' : '<span style="color:#e0a458;">招待なし</span>') +
+      '</div>';
+    }).join('');
+  html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">' +
+    '<button onclick="downloadAdminGrowth()" style="flex:1;min-width:140px;padding:8px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;cursor:pointer;">📤 分析用に書き出す</button>' +
+    '<button onclick="copyAdminGrowth()" style="flex:1;min-width:140px;padding:8px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;cursor:pointer;">📋 写して貼る</button>' +
+  '</div>' +
+  '<div style="font-size:0.72em;color:#7a8494;margin-top:4px;">名前は入りません。部屋と部屋主は記号（R1・P1）です。集計 ' + e(g && g.generated_at) + '</div>';
+  return html;
+}
+window._renderGrowthHtml = _renderGrowthHtml;
+
+// 書き出す中身。サーバーの答えから名前が入りうる項目を念のため落とす
+function _growthExportText(g) {
+  var drop = /^(name|display_name|email|uid|user_id|owner_id|id|visitor_id|body)$/;
+  var clean = function(v) {
+    if (Array.isArray(v)) return v.map(clean);
+    if (v && typeof v === 'object') { var o = {}; Object.keys(v).forEach(function(k) { if (!drop.test(k)) o[k] = clean(v[k]); }); return o; }
+    return v;
+  };
+  return JSON.stringify({ kind: 'koyomiru-growth', app_version: (typeof APP_VERSION !== 'undefined') ? APP_VERSION : '', data: clean(g || {}) }, null, 1);
+}
+window._growthExportText = _growthExportText;
+
+async function loadAdminGrowth() {
+  var listEl = document.getElementById('adminGrowthList');
+  var btn = document.getElementById('adminGrowthBtn');
+  if (!listEl) return;
+  if (!window.supabaseClient || !window._cloudUserId) { listEl.textContent = '⚠️ ログインしていません'; return; }
+  if (btn) { btn.disabled = true; btn.textContent = '読み込み中…'; }
+  try {
+    var r = await rpcWithTimeout('koyomiru_admin_growth', { p_weeks: 8 });
+    if (r.error || !r.data) {
+      listEl.innerHTML = '<span style="color:#ff9a9a;">取得できませんでした。</span>';
+    } else {
+      window._growthData = r.data;
+      listEl.innerHTML = _renderGrowthHtml(r.data);
+    }
+  } catch (e) {
+    listEl.innerHTML = '<span style="color:#ff9a9a;">取得に失敗しました</span>';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 部屋のようすを読み込む'; }
+}
+window.loadAdminGrowth = loadAdminGrowth;
+
+function downloadAdminGrowth() {
+  if (!window._growthData) return;
+  try {
+    var blob = new Blob([_growthExportText(window._growthData)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'koyomiru-growth-' + getLocalDateStr(new Date()) + '.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function() { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 1000);
+  } catch (e) { if (typeof showToast === 'function') showToast('書き出せませんでした'); }
+}
+window.downloadAdminGrowth = downloadAdminGrowth;
+
+function copyAdminGrowth() {
+  if (!window._growthData) return;
+  var t = _growthExportText(window._growthData);
+  try {
+    navigator.clipboard.writeText(t).then(function() { if (typeof showToast === 'function') showToast('📋 写しました。そのまま貼れます'); })
+      .catch(function() { if (typeof showToast === 'function') showToast('写せませんでした。書き出しを使ってください'); });
+  } catch (e) { if (typeof showToast === 'function') showToast('写せませんでした。書き出しを使ってください'); }
+}
+window.copyAdminGrowth = copyAdminGrowth;
 
 // v0.45.1408: 【権威】2026-07-25、開発者（管理者パネル）専用。自分がオーナーの
 // 共有カレンダーごとに、参加者の表示名・参加日時を一覧表示する。参加者側のUIには
@@ -59357,6 +59495,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.54', date: '2026-11-16',
+    items: [
+      { icon:'🏠', t:'運営の画面を整えました',
+        before:'共有カレンダーの使われ方を、まとめて見る場所がありませんでした',
+        after:'整えました。使い方は変わりません' }
+    ]
+  },
   {
     ver: 'v0.76.53', date: '2026-11-16',
     items: [
@@ -90000,6 +90146,37 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        /今まで来た人[^]*?2人以上/.test(_renderVisitOverviewHtml(_o601))
          ? ok('ST-601·②: 取り出しの上限に当たったら「○人以上」') : ng('ST-601·②: 上限のときに「以上」が出ない');
      } catch(e) { ng('ST-601: 例外', e.message); }
+     // ===== ST-602: 部屋のようす（v0.76.54〜） =====
+     try {
+       var _g602 = {
+         generated_at: '2026-11-16 12:00',
+         weekly: [ { from: '2026-11-10', to: '2026-11-16', live_rooms: 3, active_users: 9, visitors: 15, new_rooms: 1, joins: 2, comments: 4, tasks_touched: 7 },
+                   { from: '2026-11-03', to: '2026-11-09', live_rooms: 2, active_users: 8, visitors: 22, new_rooms: 0, joins: 0, comments: 1, tasks_touched: 3 } ],
+         funnel: { visitors: 155, logged_in: 40, in_a_room: 30, room_owners: 12, owners_who_invited: 8, owners_with_guest: 5, guests: 18, came_back_another_week: 25 },
+         rooms: [ { code: 'R1', mine: true, owner: 'P1', members: 8, guests: 7, active_7d: 5, tasks: 40, tasks_7d: 6, comments: 9, comments_7d: 2, invited: true, last_activity: '2026-11-16', name: '"><i id=st602x>' },
+                  { code: '"><i id=st602y>', mine: false, owner: 'P2', members: 1, guests: 0, active_7d: 1, tasks: 0, tasks_7d: 0, comments: 0, comments_7d: 0, invited: false, last_activity: null } ]
+       };
+       var _h602 = _renderGrowthHtml(_g602);
+       var _box602 = document.createElement('div'); _box602.innerHTML = _h602;
+       var _c602 = _box602.querySelector('[data-growth-cards]');
+       (_c602 && /生きている部屋\s*3\s*先週 2（\+1）/.test(_c602.textContent)) ? ok('ST-602·①: 生きている部屋（今週・先週・増減）') : ng('ST-602·①: 生きている部屋の数が違う', _c602 ? _c602.textContent.slice(0, 60) : '');
+       var _st602 = _box602.querySelectorAll('[data-growth-step]');
+       (_st602.length === 6 && /155人/.test(_st602[0].textContent) && /40人[^]*26%/.test(_st602[1].textContent)) ? ok('ST-602·②: 部屋主になるまでの段階（6段・前の段からの割合）') : ng('ST-602·②: 段階が違う');
+       var _rm602 = _box602.querySelectorAll('[data-growth-room]');
+       (_rm602.length === 2 && /R1 ★/.test(_rm602[0].textContent) && /招待なし/.test(_rm602[1].textContent)) ? ok('ST-602·③: 部屋ごとの表（今週動いた順・自分の部屋・招待なし）') : ng('ST-602·③: 部屋ごとの表が違う');
+       (!_box602.querySelector('#st602x') && !_box602.querySelector('#st602y')) ? ok('ST-602·④: 部屋のようすの表示の安全') : ng('ST-602·④: 部屋のようすの表示の安全が違う（重大）');
+       var _x602 = JSON.parse(_growthExportText(_g602));
+       (_x602.kind === 'koyomiru-growth' && _x602.data.rooms[0].name === undefined && _x602.data.rooms[0].code === 'R1' && _x602.data.funnel.visitors === 155)
+         ? ok('ST-602·⑤: 書き出しは名前を落とし、数はそのまま') : ng('ST-602·⑤: 書き出しの中身が違う');
+       var _em602 = window._koyomiruEntryMode, _vo602 = window._entryWasViewOnlyLink;
+       window._entryWasViewOnlyLink = false; window._koyomiruEntryMode = 'join';
+       var _s602 = _getVisitSource();
+       window._koyomiruEntryMode = _em602; window._entryWasViewOnlyLink = _vo602;
+       (_s602 === 'invite') ? ok('ST-602·⑥: 招待リンクから来た人は「招待」と記録') : ng('ST-602·⑥: 招待から来ても招待にならない', _s602);
+       var _ga602 = document.getElementById('adminGrowthArea');
+       (!!_ga602 && !!_ga602.nextElementSibling && _ga602.nextElementSibling.id === 'adminVisitStatsArea')
+         ? ok('ST-602·⑦: 部屋のようすは管理者の画面（訪問統計のすぐ上）にある') : ng('ST-602·⑦: 部屋のようすの置き場所が違う');
+     } catch(e) { ng('ST-602: 例外', e.message); }
      if (_e600) ng('ST-600: 例外', _e600.message);
      else {
        _r600.btn ? ok('ST-600·①: 来月の行の差のすぐ隣に「畳む」') : ng('ST-600·①: 来月の行に畳むが無い・差の隣でない');
