@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.56';
+    const APP_VERSION = 'v0.76.57';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -56205,12 +56205,43 @@ function _koyomiCalRemovalInfo(calId) {
   if (!dest) dest = calendars.filter(function(c) { return c.id !== calId; })[0] || null;
   return { cal: cal, mode: mode, count: n, dest: dest };
 }
+// v0.76.57: 【権威】2026-11-16「サメ丸カレンダーはもう無いはずだよ」→ B：自分が部屋主で、ほかに誰もいない部屋は、✕でサーバーの部屋ごと消す。
+//   仲間がいる部屋は今までどおり手元から外すだけ。サーバーに聞けない・自分が部屋主でないときは、消さない側に倒す
+async function _koyomiRoomIsMineAlone(cloudId) {
+  try {
+    var sb = window.supabaseClient, me = window._cloudUserId;
+    if (!sb || !me || !cloudId) return false;
+    if (window._personalCalendarId && cloudId === window._personalCalendarId) return false;
+    var c = await sb.from('koyomiru_shared_calendars').select('owner_id, is_personal').eq('id', cloudId).maybeSingle();
+    if (!c || c.error || !c.data || c.data.owner_id !== me || c.data.is_personal) return false;
+    var m = await sb.from('koyomiru_shared_calendar_members').select('user_id').eq('calendar_id', cloudId);
+    if (!m || m.error || !Array.isArray(m.data)) return false;
+    return m.data.filter(function(x) { return x && x.user_id !== me; }).length === 0;
+  } catch (e) { return false; }
+}
+window._koyomiRoomIsMineAlone = _koyomiRoomIsMineAlone;
+// 部屋ごと消す（サーバー→手元）。消せなければ何も外さない
+async function _koyomiPurgeRoom(cloudId, calId) {
+  if (typeof forceDeleteSharedCalendar !== 'function') return { error: { message: '消せませんでした' } };
+  var r = await forceDeleteSharedCalendar(cloudId);
+  if (!r || r.error) return r || { error: { message: '消せませんでした' } };
+  try { if (typeof koyomiCalTombAdd === 'function' && koyomiCalTombAdd(cloudId)) saveAllSettings(); } catch (e1) {}
+  try { if (calId && (calendars || []).some(function(c) { return c && c.id === calId; }) && calendars.length > 1) removeCalendar(calId); } catch (e2) {}
+  try {
+    if (typeof loadCalendarSettingsUI === 'function') loadCalendarSettingsUI();
+    if (typeof renderCalendarFilter === 'function') { renderCalendarFilter('monthlyCalendarFilter', renderMonthlyView); renderCalendarFilter('weeklyCalendarFilter', renderWeeklyView); }
+    if (typeof renderMonthlyView === 'function') renderMonthlyView();
+  } catch (e3) {}
+  return r;
+}
+window._koyomiPurgeRoom = _koyomiPurgeRoom;
 // 実際に消す（確認の画面のあと）。choice：'move'＝予定をメイン（行き先）に移して残す／'delete'＝一緒に消す。戻り値に元に戻す道具
 function koyomiApplyCalendarRemoval(calId, choice) {
   var info = _koyomiCalRemovalInfo(calId);
   if (!info) return { done: false };
   if (calendars.length <= 1 && info.mode !== 'leave') { if (typeof showToast === 'function') showToast('最後のカレンダーは削除できません', { type: 'warn' }); return { done: false }; }
   if (info.mode === 'leave') { if (typeof unshareCalendar === 'function') unshareCalendar(calId); return { done: true, mode: 'leave' }; }
+  if (choice === 'purge' && info.cal.cloudCalendarId) return { done: true, mode: 'purge', promise: _koyomiPurgeRoom(info.cal.cloudCalendarId, calId) };
   if (info.mode === 'delete' && choice === 'move' && info.count > 0 && info.dest) {
     var calIdx = calendars.indexOf(info.cal), calCopy = JSON.parse(JSON.stringify(info.cal));
     var oldMain = (allSettings && allSettings.calendar && allSettings.calendar.mainId) || null;
@@ -56243,14 +56274,23 @@ function koyomiApplyCalendarRemoval(calId, choice) {
   return { done: true, mode: info.mode, moved: 0 };
 }
 window.koyomiApplyCalendarRemoval = koyomiApplyCalendarRemoval;
-function koyomiConfirmCalendarRemoval(calId) {
+function koyomiConfirmCalendarRemoval(calId, _checked) {
   var info = _koyomiCalRemovalInfo(calId);
   if (!info) return;
+  if (info.mode === 'detach' && !_checked) {
+    Promise.resolve(window._koyomiRoomIsMineAlone(info.cal.cloudCalendarId)).then(function(alone) {
+      koyomiConfirmCalendarRemoval(calId, alone ? 'alone' : 'shared');
+    });
+    return;
+  }
+  if (info.mode === 'detach' && _checked === 'alone') info.mode = 'purge';
   var e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
   var name = info.cal.name || 'このカレンダー', destName = info.dest ? (info.dest.name || 'メイン') : '';
   var title = info.mode === 'leave' ? '「' + name + '」から抜けますか？' : (info.mode === 'detach' ? '「' + name + '」を手元から外しますか？' : '「' + name + '」を消しますか？');
+  if (info.mode === 'purge') title = '「' + name + '」を消しますか？';
   var body = '';
   if (info.mode === 'leave') body = '参加をやめます。これまでの予定は、あなたの手元に残ります。';
+ else if (info.mode === 'purge') body = 'この部屋にはあなたしかいないので、サーバーの部屋ごと消します。' + (info.count ? '<br><b style="color:#c0392b;">予定 ' + info.count + '件も一緒に消え、ほかの端末からも消えます。</b>' : '') + '<br>元には戻せません。';
   else if (info.mode === 'detach') body = 'あなたの手元から外します。共有カレンダーと予定は、参加者のカレンダーには残ります。共有そのものを畳むときは、共有の画面からどうぞ。' + (info.count ? '<br>この手元の予定 ' + info.count + '件も、手元からは見えなくなります。' : '');
   else body = 'このカレンダーの予定：<b>' + info.count + '件</b>' + (info.count && info.dest ?
     '<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">' +
@@ -56277,10 +56317,17 @@ function koyomiConfirmCalendarRemoval(calId) {
   ov.querySelector('[data-calrm="cancel"]').onclick = close;
   ov.querySelector('[data-calrm="ok"]').onclick = function() {
     var r = ov.querySelector('input[name="koyomiCalRm"]:checked');
-    var choice = r ? r.value : (info.count ? 'delete' : 'delete');
+    var choice = info.mode === 'purge' ? 'purge' : (r ? r.value : 'delete');
     close();
     var res = koyomiApplyCalendarRemoval(calId, choice);
     if (!res.done || typeof showToast !== 'function') return;
+    if (res.mode === 'purge') {
+      res.promise.then(function(x) {
+        if (x && x.error) showToast('消せませんでした：' + (x.error.message || ''), { type: 'warn' });
+        else showToast('「' + name + '」を消しました（サーバーからも）', { type: 'info' });
+      });
+      return;
+    }
     if (res.mode === 'delete' && res.moved > 0 && res.undo) showToast('「' + name + '」を消し、予定' + res.moved + '件を「' + (res.dest.name || 'メイン') + '」に移しました', { type: 'info', duration: 10000, action: { label: '元に戻す', fn: res.undo } });
     else if (res.mode === 'delete') showToast('「' + name + '」を消しました', { type: 'info' });
     else if (res.mode === 'detach') showToast('「' + name + '」を手元から外しました', { type: 'info' });
@@ -57102,10 +57149,12 @@ function _renderGrowthHtml(g) {
         '<span style="color:#c9d3e3;">💬 ' + n(r.comments) + '（' + n(r.comments_7d) + '）</span>' +
         '<span style="color:#7a8494;">' + (r.last_activity ? e(String(r.last_activity).slice(5).replace('-', '/')) : '—') + '</span>' +
         (r.invited ? '' : '<span style="color:#e0a458;">招待なし</span>') +
+        ((r.id && r.mine && !n(r.guests)) ? '<button type="button" data-growth-del="' + e(r.id) + '" style="margin-left:auto;padding:1px 10px;border-radius:8px;border:1px solid #6b5050;background:transparent;color:#e6a0a0;font-size:0.95em;cursor:pointer;">消す</button>' : '') +
       '</div>';
     }).join('') +
     (empties.length ? '<details data-growth-empty style="margin-top:6px;font-size:0.78em;color:#7a8494;"><summary style="cursor:pointer;">空の部屋（予定0・仲間0）' + empties.length + '部屋</summary>' +
-      empties.map(function(r) { return '<div style="padding:2px 0;">' + e(r.code) + (r.mine ? ' ★' : '') + ' ' + roomLabel(r) + '　作った日 ' + e(String(r.created_day || '').slice(5).replace('-', '/')) + '</div>'; }).join('') +
+      empties.map(function(r) { return '<div data-growth-room-empty style="padding:2px 0;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">' + e(r.code) + (r.mine ? ' ★' : '') + ' ' + roomLabel(r) + '　作った日 ' + e(String(r.created_day || '').slice(5).replace('-', '/')) +
+        ((r.id && r.mine && !n(r.guests)) ? '<button type="button" data-growth-del="' + e(r.id) + '" style="margin-left:auto;padding:1px 10px;border-radius:8px;border:1px solid #6b5050;background:transparent;color:#e6a0a0;font-size:0.95em;cursor:pointer;">消す</button>' : '') + '</div>'; }).join('') +
     '</details>' : '');
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">' +
     '<button onclick="downloadAdminGrowth()" style="flex:1;min-width:140px;padding:8px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;cursor:pointer;">📤 分析用に書き出す</button>' +
@@ -57141,6 +57190,7 @@ async function loadAdminGrowth() {
     } else {
       window._growthData = r.data;
       listEl.innerHTML = _renderGrowthHtml(r.data);
+      _growthWireDelete(listEl);
     }
   } catch (e) {
     listEl.innerHTML = '<span style="color:#ff9a9a;">取得に失敗しました</span>';
@@ -57148,6 +57198,30 @@ async function loadAdminGrowth() {
   if (btn) { btn.disabled = false; btn.textContent = '🔄 部屋のようすを読み込む'; }
 }
 window.loadAdminGrowth = loadAdminGrowth;
+
+// 自分の・仲間のいない部屋を、部屋のようすから消す（2回押し。v0.76.57〜）
+function _growthWireDelete(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-growth-del]').forEach(function(btn) {
+    btn.onclick = function() {
+      var id = btn.getAttribute('data-growth-del');
+      _capsuleTwoClick(btn, '予定ごと消える。本当に消す？', function() {
+        btn.disabled = true; btn.textContent = '消している…';
+        Promise.resolve(window._koyomiRoomIsMineAlone(id)).then(function(alone) {
+          if (!alone) { btn.textContent = '仲間がいるので消さない'; return null; }
+          var cal = (calendars || []).filter(function(c) { return c && c.cloudCalendarId === id; })[0];
+          return _koyomiPurgeRoom(id, cal ? cal.id : null);
+        }).then(function(x) {
+          if (x === null || x === undefined) return;
+          if (x.error) { btn.disabled = false; btn.textContent = '消せなかった'; if (typeof showToast === 'function') showToast('消せませんでした：' + (x.error.message || ''), { type: 'warn' }); return; }
+          var row = btn.closest('[data-growth-room],[data-growth-room-empty]'); if (row) row.remove();
+          if (typeof showToast === 'function') showToast('部屋を消しました（サーバーからも）', { type: 'info' });
+        });
+      });
+    };
+  });
+}
+window._growthWireDelete = _growthWireDelete;
 
 function downloadAdminGrowth() {
   if (!window._growthData) return;
@@ -59534,6 +59608,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.57', date: '2026-11-16',
+    items: [
+      { icon:'🗑', t:'自分しかいない共有カレンダーは、✕で本当に消えるようにしました',
+        before:'✕で手元から外しても、共有カレンダーの部屋そのものは残っていました',
+        after:'自分が作って、ほかに誰もいない共有カレンダーは、✕で部屋ごと消えます（確かめの画面で、予定も消えることを伝えます）。仲間がいるカレンダーは、今までどおり手元から外すだけです' }
+    ]
+  },
   {
     ver: 'v0.76.56', date: '2026-11-16',
     items: [
@@ -90249,6 +90331,75 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _ok604 ? ok('ST-604·①: 部屋の名前と、よその部屋の部屋主。空の部屋は下に畳む') : ng('ST-604·①: 部屋の名前・空の部屋の出し方が違う');
        _okx604 ? ok('ST-604·②: 書き出しには部屋の名前も部屋主の名前も入らない') : ng('ST-604·②: 書き出しに名前が入っている（重大）');
      } catch(e) { ng('ST-604: 例外', e.message); }
+     // ===== ST-605: ひとりの部屋は✕でサーバーごと消す（v0.76.57〜） =====
+     enqueueSmokeAsyncTest('ST-605', function() {
+     return (async function() {
+     var _sb605 = window.supabaseClient, _me605 = window._cloudUserId, _al605 = window._koyomiRoomIsMineAlone, _pg605 = window._koyomiPurgeRoom;
+     var _cals605 = calendars.slice(), _r605 = {}, _e605 = null;
+     try {
+       var _mk605 = function(owner, members, err) {
+         return { from: function(tb) {
+           var q = { _tb: tb, select: function() { return q; }, eq: function() { return q; },
+             maybeSingle: function() { return Promise.resolve(err ? { error: { message: 'x' } } : { data: { owner_id: owner, is_personal: false } }); },
+             then: function(res) { return Promise.resolve(err ? { error: { message: 'x' } } : { data: members.map(function(u) { return { user_id: u }; }) }).then(res); } };
+           return q; } };
+       };
+       window._cloudUserId = 'st605-me';
+       window.supabaseClient = _mk605('st605-me', ['st605-me']); _r605.alone = await _al605('st605-room') === true;
+       window.supabaseClient = _mk605('st605-me', ['st605-me', 'st605-you']); _r605.withMate = await _al605('st605-room') === false;
+       window.supabaseClient = _mk605('st605-other', ['st605-other']); _r605.notOwner = await _al605('st605-room') === false;
+       window.supabaseClient = _mk605('st605-me', [], true); _r605.err = await _al605('st605-room') === false;
+       // 確かめの窓：ひとりの部屋なら「消しますか」＋サーバーごと・予定の件数
+       calendars.push({ id: 'st605-cal', name: 'ST605の部屋', color: '#888', visible: true, cloudCalendarId: 'st605-room' });
+       window._koyomiRoomIsMineAlone = function() { return Promise.resolve(true); };
+       koyomiConfirmCalendarRemoval('st605-cal');
+       await new Promise(function(r) { setTimeout(r, 30); });
+       var _ov = document.getElementById('koyomiCalRmOverlay');
+       _r605.dlgAlone = !!_ov && /「ST605の部屋」を消しますか/.test(_ov.textContent) && /サーバーの部屋ごと消します/.test(_ov.textContent) && /元には戻せません/.test(_ov.textContent);
+       if (_ov) _ov.remove();
+       window._koyomiRoomIsMineAlone = function() { return Promise.resolve(false); };
+       koyomiConfirmCalendarRemoval('st605-cal');
+       await new Promise(function(r) { setTimeout(r, 30); });
+       _ov = document.getElementById('koyomiCalRmOverlay');
+       _r605.dlgShared = !!_ov && /手元から外しますか/.test(_ov.textContent) && !/サーバーの部屋ごと/.test(_ov.textContent);
+       if (_ov) _ov.remove();
+       // 押すと部屋ごと消す道へ
+       var _purged605 = null;
+       window._koyomiRoomIsMineAlone = function() { return Promise.resolve(true); };
+       window._koyomiPurgeRoom = function(cid, lid) { _purged605 = cid + '/' + lid; return Promise.resolve({ data: { deleted: true } }); };
+       koyomiConfirmCalendarRemoval('st605-cal');
+       await new Promise(function(r) { setTimeout(r, 30); });
+       _ov = document.getElementById('koyomiCalRmOverlay');
+       if (_ov) _ov.querySelector('[data-calrm="ok"]').click();
+       await new Promise(function(r) { setTimeout(r, 30); });
+       _r605.purge = _purged605 === 'st605-room/st605-cal';
+       // 部屋のようす：自分の・仲間のいない部屋だけに「消す」
+       var _b605 = document.createElement('div');
+       _b605.innerHTML = _renderGrowthHtml({ weekly: [], funnel: {}, rooms: [
+         { code: 'R1', id: 'id-a', mine: true, guests: 0, members: 1, tasks: 3, active_7d: 1, empty: false },
+         { code: 'R2', id: 'id-b', mine: true, guests: 2, members: 3, tasks: 3, active_7d: 2, empty: false },
+         { code: 'R3', id: 'id-c', mine: false, guests: 0, members: 1, tasks: 0, active_7d: 0, empty: true },
+         { code: 'R4', id: '"><i id=st605x>', mine: true, guests: 0, members: 1, tasks: 0, active_7d: 0, empty: true } ] });
+       var _dels605 = Array.prototype.map.call(_b605.querySelectorAll('[data-growth-del]'), function(b) { return b.getAttribute('data-growth-del'); });
+       _r605.btn = _dels605.length === 2 && _dels605[0] === 'id-a' && _dels605[1] === '"><i id=st605x>' && !_b605.querySelector('#st605x');
+       var _x605 = JSON.parse(_growthExportText({ rooms: [{ code: 'R1', id: 'id-a' }] })).data.rooms[0];
+       _r605.noId = _x605.id === undefined && _x605.code === 'R1';
+     } catch(e) { _e605 = e; }
+     finally {
+       window.supabaseClient = _sb605; window._cloudUserId = _me605; window._koyomiRoomIsMineAlone = _al605; window._koyomiPurgeRoom = _pg605;
+       calendars.length = 0; Array.prototype.push.apply(calendars, _cals605);
+       var _o2 = document.getElementById('koyomiCalRmOverlay'); if (_o2) _o2.remove();
+     }
+     if (_e605) ng('ST-605: 例外', _e605.message);
+     else {
+       (_r605.alone && _r605.withMate && _r605.notOwner && _r605.err) ? ok('ST-605·①: ひとりの部屋かどうか（部屋主で・ほかに誰もいない。聞けなければ消さない側）') : ng('ST-605·①: ひとりの部屋の見分けが違う', JSON.stringify(_r605));
+       _r605.dlgAlone ? ok('ST-605·②: ひとりの部屋の✕は「消しますか」（サーバーごと・元に戻せない）') : ng('ST-605·②: ひとりの部屋の確かめが違う');
+       _r605.dlgShared ? ok('ST-605·③: 仲間がいる部屋の✕は、今までどおり手元から外すだけ') : ng('ST-605·③: 仲間がいる部屋の確かめが違う（重大）');
+       _r605.purge ? ok('ST-605·④: 押すと部屋ごと消す') : ng('ST-605·④: 押しても部屋ごと消す道に行かない');
+       (_r605.btn && _r605.noId) ? ok('ST-605·⑤: 部屋のようすの「消す」は自分の・仲間のいない部屋だけ。書き出しに部屋のIDは入らない') : ng('ST-605·⑤: 消すの出し方が違う');
+     }
+     })();
+     });
      // ===== ST-603: 管理者の画面の守り（v0.76.55〜） =====
      enqueueSmokeAsyncTest('ST-603', function() {
      return (async function() {
