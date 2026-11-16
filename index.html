@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.55';
+    const APP_VERSION = 'v0.76.56';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -57058,7 +57058,7 @@ function _renderGrowthHtml(g) {
   // 週ごとの生きている部屋（古い週が左）
   var max = Math.max.apply(null, wk.map(function(w) { return n(w.live_rooms); }).concat([1]));
   html += '<div style="margin-top:12px;font-size:0.75em;color:#9aa6b8;">生きている部屋の移り変わり（1週ずつ）</div>' +
-    '<div style="display:flex;align-items:flex-end;height:70px;gap:4px;margin-top:4px;">' +
+    '<div style="display:flex;align-items:flex-end;height:84px;gap:4px;margin-top:4px;">' +
     wk.slice().reverse().map(function(w) {
       var h = Math.round(n(w.live_rooms) * 52 / max);
       return '<div title="' + e(w.from) + '〜' + e(w.to) + '　' + n(w.live_rooms) + '部屋" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px;">' +
@@ -57081,15 +57081,21 @@ function _renderGrowthHtml(g) {
     }).join('') +
     '<div style="font-size:0.75em;color:#9aa6b8;margin-top:2px;">2週以上にわたって来た人 ' + n(f.came_back_another_week) + '人・仲間として入っている人 ' + n(f.guests) + '人</div>';
   // 部屋ごとの表（今週動いた順）
-  var sorted = rooms.slice().sort(function(a, b) {
+  // 空の部屋（予定0・仲間0）は下にまとめて畳む（v0.76.56〜）
+  var sorted = rooms.filter(function(r) { return !r.empty; }).sort(function(a, b) {
     return n(b.active_7d) - n(a.active_7d) || String(b.last_activity || '').localeCompare(String(a.last_activity || ''));
   });
-  html += '<div style="margin-top:12px;padding-top:8px;border-top:1px solid #2c3650;font-size:0.9em;font-weight:700;color:#8ec5ff;">🗂 部屋ごと（' + rooms.length + '部屋・今週動いた順）</div>' +
+  var empties = rooms.filter(function(r) { return r.empty; });
+  var roomLabel = function(r) {
+    return (r.name ? '<span data-growth-room-name style="color:#e6edf7;">' + e(r.name) + '</span>' : '') +
+      ((!r.mine && r.owner_name) ? '<span style="color:#9aa6b8;">（部屋主：' + e(r.owner_name) + '）</span>' : '');
+  };
+  html += '<div style="margin-top:12px;padding-top:8px;border-top:1px solid #2c3650;font-size:0.9em;font-weight:700;color:#8ec5ff;">🗂 部屋ごと（' + sorted.length + '部屋・今週動いた順）</div>' +
     '<div style="font-size:0.72em;color:#7a8494;margin-bottom:4px;">人数（仲間）・今週開いた人・予定（今週動いた）・コメント（今週）・最後に動いた日。★は自分の部屋</div>' +
     sorted.map(function(r) {
       var live = n(r.active_7d) >= 2;
       return '<div data-growth-room style="display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;padding:3px 0;border-bottom:1px solid #222b3d;font-size:0.8em;' + (live ? '' : 'opacity:.62;') + '">' +
-        '<span style="min-width:3.6em;color:' + (live ? '#7ee0a1' : '#9aa6b8') + ';font-weight:700;">' + e(r.code) + (r.mine ? ' ★' : '') + '</span>' +
+        '<span data-growth-room-label style="flex-basis:100%;"><span style="color:' + (live ? '#7ee0a1' : '#9aa6b8') + ';font-weight:700;">' + e(r.code) + (r.mine ? ' ★' : '') + '</span> ' + roomLabel(r) + '</span>' +
         '<span style="color:#c9d3e3;">' + n(r.members) + '人（' + n(r.guests) + '）</span>' +
         '<span style="color:' + (live ? '#7ee0a1' : '#c9d3e3') + ';">今週 ' + n(r.active_7d) + '人</span>' +
         '<span style="color:#c9d3e3;">予定 ' + n(r.tasks) + '（' + n(r.tasks_7d) + '）</span>' +
@@ -57097,19 +57103,22 @@ function _renderGrowthHtml(g) {
         '<span style="color:#7a8494;">' + (r.last_activity ? e(String(r.last_activity).slice(5).replace('-', '/')) : '—') + '</span>' +
         (r.invited ? '' : '<span style="color:#e0a458;">招待なし</span>') +
       '</div>';
-    }).join('');
+    }).join('') +
+    (empties.length ? '<details data-growth-empty style="margin-top:6px;font-size:0.78em;color:#7a8494;"><summary style="cursor:pointer;">空の部屋（予定0・仲間0）' + empties.length + '部屋</summary>' +
+      empties.map(function(r) { return '<div style="padding:2px 0;">' + e(r.code) + (r.mine ? ' ★' : '') + ' ' + roomLabel(r) + '　作った日 ' + e(String(r.created_day || '').slice(5).replace('-', '/')) + '</div>'; }).join('') +
+    '</details>' : '');
   html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">' +
     '<button onclick="downloadAdminGrowth()" style="flex:1;min-width:140px;padding:8px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;cursor:pointer;">📤 分析用に書き出す</button>' +
     '<button onclick="copyAdminGrowth()" style="flex:1;min-width:140px;padding:8px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;cursor:pointer;">📋 写して貼る</button>' +
   '</div>' +
-  '<div style="font-size:0.72em;color:#7a8494;margin-top:4px;">名前は入りません。部屋と部屋主は記号（R1・P1）です。集計 ' + e(g && g.generated_at) + '</div>';
+  '<div style="font-size:0.72em;color:#7a8494;margin-top:4px;">書き出しと写しには名前が入りません（部屋はR＝Room、部屋主はP＝Person の記号。数字は作られた順）。集計 ' + e(g && g.generated_at) + '</div>';
   return html;
 }
 window._renderGrowthHtml = _renderGrowthHtml;
 
 // 書き出す中身。サーバーの答えから名前が入りうる項目を念のため落とす
 function _growthExportText(g) {
-  var drop = /^(name|display_name|email|uid|user_id|owner_id|id|visitor_id|body)$/;
+  var drop = /^(name|owner_name|display_name|email|uid|user_id|owner_id|id|visitor_id|body)$/;
   var clean = function(v) {
     if (Array.isArray(v)) return v.map(clean);
     if (v && typeof v === 'object') { var o = {}; Object.keys(v).forEach(function(k) { if (!drop.test(k)) o[k] = clean(v[k]); }); return o; }
@@ -59525,6 +59534,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.56', date: '2026-11-16',
+    items: [
+      { icon:'🧹', t:'運営の画面を整えました',
+        before:'運営の画面の一部が、読みにくくなっていました',
+        after:'整えました。使い方は変わりません' }
+    ]
+  },
   {
     ver: 'v0.76.55', date: '2026-11-16',
     items: [
@@ -90215,6 +90232,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (!!_ga602 && !!_ga602.nextElementSibling && _ga602.nextElementSibling.id === 'adminVisitStatsArea')
          ? ok('ST-602·⑦: 部屋のようすは管理者の画面（訪問統計のすぐ上）にある') : ng('ST-602·⑦: 部屋のようすの置き場所が違う');
      } catch(e) { ng('ST-602: 例外', e.message); }
+     // ===== ST-604: 部屋のようすに名前（画面だけ）・空の部屋は畳む（v0.76.56〜） =====
+     try {
+       var _g604 = { generated_at: '2026-11-16 13:50', weekly: [], funnel: {},
+         rooms: [ { code: 'R1', name: 'ST604部屋', mine: true, owner_name: 'ST604自分', members: 5, guests: 4, active_7d: 3, tasks: 9, tasks_7d: 1, comments: 0, comments_7d: 0, invited: true, last_activity: '2026-11-15', empty: false },
+                  { code: 'R2', name: 'ST604よその部屋', mine: false, owner_name: '"><i id=st604x>', members: 2, guests: 1, active_7d: 1, tasks: 3, tasks_7d: 0, comments: 0, comments_7d: 0, invited: true, last_activity: '2026-11-10', empty: false },
+                  { code: 'R3', name: 'ST604空', mine: true, owner_name: 'ST604自分', members: 1, guests: 0, active_7d: 1, tasks: 0, tasks_7d: 0, comments: 0, comments_7d: 0, invited: false, last_activity: null, empty: true, created_day: '2026-09-14' } ] };
+       var _b604 = document.createElement('div'); _b604.innerHTML = _renderGrowthHtml(_g604);
+       var _rows604 = _b604.querySelectorAll('[data-growth-room]');
+       var _emp604 = _b604.querySelector('[data-growth-empty]');
+       var _ok604 = _rows604.length === 2 && /ST604部屋/.test(_rows604[0].textContent) && !/部屋主：ST604自分/.test(_rows604[0].textContent) &&
+         /ST604よその部屋/.test(_rows604[1].textContent) && /部屋主：/.test(_rows604[1].textContent) && !_b604.querySelector('#st604x') &&
+         !!_emp604 && !_emp604.open && /空の部屋[^]*1部屋/.test(_emp604.textContent) && /R3/.test(_emp604.textContent) && /09\/14/.test(_emp604.textContent);
+       var _x604 = JSON.parse(_growthExportText(_g604)).data.rooms;
+       var _okx604 = _x604.length === 3 && _x604.every(function(r) { return r.name === undefined && r.owner_name === undefined && /^R\d$/.test(r.code); }) && _x604[2].empty === true;
+       _ok604 ? ok('ST-604·①: 部屋の名前と、よその部屋の部屋主。空の部屋は下に畳む') : ng('ST-604·①: 部屋の名前・空の部屋の出し方が違う');
+       _okx604 ? ok('ST-604·②: 書き出しには部屋の名前も部屋主の名前も入らない') : ng('ST-604·②: 書き出しに名前が入っている（重大）');
+     } catch(e) { ng('ST-604: 例外', e.message); }
      // ===== ST-603: 管理者の画面の守り（v0.76.55〜） =====
      enqueueSmokeAsyncTest('ST-603', function() {
      return (async function() {
