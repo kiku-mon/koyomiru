@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.64';
+    const APP_VERSION = 'v0.76.65';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13654,6 +13654,13 @@ function _capsuleRenderWrite(body, e) {
           '<span style="display:inline-block;width:22px;height:16px;border-radius:3px;' + koyomiStationeryStyle(k[0], (koyomiTodayData(new Date()) || {}).sekki).replace(/padding:[^;]+;|line-height:[^;]+;|font-size:[^;]+;/g, '') + 'background-size:auto;"></span>' + k[1] + '</button>';
       }).join('') + '</div>' +
       '<div style="font-size:0.74em;color:#8a7f6a;margin-bottom:8px;">季節の便箋は、封をした日の季節の色で届く。</div>' +
+      // v0.76.65: 封筒を選ぶ（相手にはこの封筒で届く）。切手と消印は、封をした日の節気で貼られる
+      '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">封筒</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;">' + KOYOMI_ENVELOPES.map(function(ev) {
+        return '<button type="button" data-cap-env-pick="' + ev.id + '" style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:10px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-size:0.84em;cursor:pointer;">' +
+          '<span style="display:inline-block;width:30px;height:20px;border-radius:3px;border:1px solid ' + ev.edge + ';background-image:' + (ev.pat ? koyomiEnvelopePattern(ev.pat) + ',' : '') + 'linear-gradient(170deg,' + ev.base + ',' + ev.base2 + ');background-size:' + (ev.pat ? '18px 18px,auto' : 'auto') + ';"></span>' + ev.name + '</button>';
+      }).join('') + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;font-size:0.74em;color:#8a7f6a;margin-bottom:8px;"><span style="flex-shrink:0;">' + koyomiStampSvg((koyomiTodayData(new Date()) || {}).sekki, 26) + '</span>相手にはこの封筒で届く。切手と消印は、封をした日の節気（今日なら' + e((koyomiTodayData(new Date()) || {}).sekki || '') + '）。</div>' +
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">📝 手紙</div>' +
       '<textarea data-cap="body" rows="9" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
       koyomiLetterChipsHtml(e) +   // v0.76.4
@@ -13670,6 +13677,12 @@ function _capsuleRenderWrite(body, e) {
     var _rc = body.querySelector('[data-cap-replycancel]'); if (_rc) _rc.onclick = function() { _capsuleReplyTo = null; renderCapsuleView(); };
     // v0.73.4: 便箋を選ぶ
     var _paper = 'ruled';
+    // v0.76.65: 封筒。前に選んだものを覚えておく（この端末だけ）
+    var _env = 'kinari';
+    try { var _envSaved = localStorage.getItem('koyomiCapsuleEnv'); if (_envSaved && koyomiEnvelopeOf(_envSaved).id === _envSaved) _env = _envSaved; } catch (eEnv) {}
+    var _pickEnv = function(id) { _env = koyomiEnvelopeOf(id).id; try { localStorage.setItem('koyomiCapsuleEnv', _env); } catch (eS) {} body.querySelectorAll('[data-cap-env-pick]').forEach(function(b) { b.style.border = b.getAttribute('data-cap-env-pick') === _env ? '2px solid #7a3b1e' : '1px solid #d9c9a6'; }); };
+    body.querySelectorAll('[data-cap-env-pick]').forEach(function(b) { b.onclick = function() { _pickEnv(b.getAttribute('data-cap-env-pick')); }; });
+    _pickEnv(_env);
     var _pickPaper = function(k) { _paper = k; body.querySelectorAll('[data-cap-paper-pick]').forEach(function(b) { b.style.border = b.getAttribute('data-cap-paper-pick') === k ? '2px solid #7a3b1e' : '1px solid #d9c9a6'; }); koyomiApplyPaperToTextarea(body.querySelector('[data-cap="body"]'), k); };   // v0.76.3: 書く欄も便箋に
     // v0.76.3: 拝啓 ○○様 … 敬具 の型をはじめから入れ、宛先を変えたら宛名も変える
     (function() {
@@ -13752,11 +13765,14 @@ function _capsuleRenderWrite(body, e) {
       koyomiCapsuleSealConfirm({ openAt: openAt, toName: _capsuleReplyTo ? (_capsuleReplyTo.name || '') : (_toOpt1 ? _toOpt1.textContent : '自分'), onBack: function() { msg.style.color = '#8a7f6a'; msg.textContent = '届く日時を直してから、もう一度「封をする」を押してほしい。'; try { _dIn.focus(); _dIn.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (eB) {} } }, function() {
       msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…';
       var _doSeal = function() {
-      var _sealArgs = { p_recipient: (_capsuleReplyTo ? _capsuleReplyTo.to : to), p_body: txt, p_open_at: openAt.toISOString(), p_sealed_koyomi: koyomiCapsuleSealedKoyomi(new Date()) };
+      var _sealK = Object.assign(koyomiCapsuleSealedKoyomi(new Date()), { env: _env });   // v0.76.65: 選んだ封筒も一緒に
+      var _sealArgs = { p_recipient: (_capsuleReplyTo ? _capsuleReplyTo.to : to), p_body: txt, p_open_at: openAt.toISOString(), p_sealed_koyomi: _sealK };
       if (_capsuleReplyTo) _sealArgs.p_reply_to = _capsuleReplyTo.id;   // v0.73.5: 返事
       _capsuleRpc('koyomiru_capsule_seal', Object.assign({ p_stationery: _paper }, _sealArgs)).catch(function(err0) {
         var m0 = String((err0 && (err0.message || err0.details || err0.hint)) || '');
         if (!_sealArgs.p_reply_to && /p_stationery|function .*does not exist|Could not find the function|PGRST202/i.test(m0)) return _capsuleRpc('koyomiru_capsule_seal', _sealArgs);   // ⑥のSQLの前のサーバー（返事は⑦が要るので送り直さない）
+        // v0.76.65: 暦の記録の大きさの決まりに封筒の印が引っかかったら、封筒の印を外してもう一度（封筒は生成りで届く）
+        if (/sealed_koyomi|check constraint|violates/i.test(m0) && _sealArgs.p_sealed_koyomi && _sealArgs.p_sealed_koyomi.env) { delete _sealArgs.p_sealed_koyomi.env; return _capsuleRpc('koyomiru_capsule_seal', Object.assign({ p_stationery: _paper }, _sealArgs)); }
         throw err0;
       })
         .then(function(_newCapId) {
@@ -13765,8 +13781,11 @@ function _capsuleRenderWrite(body, e) {
           var _toName = (function() { var sel = body.querySelector('[data-cap="to"]'); var o = sel && sel.options[sel.selectedIndex]; return _capsuleReplyTo ? _capsuleReplyTo.name : (o ? o.textContent : ''); })();
           try { koyomiCapsuleEventFor(typeof _newCapId === 'string' ? _newCapId : null, _toName, new Date().toISOString(), openAt.toISOString()); if (typeof saveAllTasks === 'function') saveAllTasks(); } catch (eEv) {}
           _capsuleReplyTo = null;
-          if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く。カレンダーのその日に、予定を入れた', { type: 'success' });
-          _capsuleTab = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? 'sealed' : 'write'; renderCapsuleView();
+          // v0.76.65: 封をする動き（便箋が封筒に入り、切手が貼られ、消印が押される）のあとに知らせる
+          koyomiCapsuleSealFx(_env, _sealK, koyomiCapsuleToNameOf({ body: txt }), function() {
+            if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く。カレンダーのその日に、予定を入れた', { type: 'success' });
+            _capsuleTab = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? 'sealed' : 'write'; renderCapsuleView();
+          });
         })
         .catch(function(err) {
         if (/pledge_required/.test(String((err && err.message) || err))) { msg.textContent = ''; koyomiCapsulePledgeModal(function() { msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…'; _doSeal(); }); return; }   // v0.74.0
@@ -13834,11 +13853,315 @@ function _capsuleBigIconSvg() {
       '<path d="M32 34 Q42 22 58 20" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.7"/></g>' +
   '</svg>';
 }
-function _capsuleEnvelopeHtml() {
-  return '<div data-cap-env style="position:relative;width:220px;height:136px;margin:0 auto;cursor:pointer;perspective:600px;">' +
-    '<div style="position:absolute;inset:0;background:#f6ecd8;border:1px solid #d9c9a6;border-radius:6px;box-shadow:0 4px 14px rgba(90,70,40,0.15);"></div>' +
-    '<div style="position:absolute;left:0;right:0;bottom:0;height:70%;background:linear-gradient(160deg,#efe2c8,#f6ecd8);clip-path:polygon(0 100%,0 15%,50% 60%,100% 15%,100% 100%);border-radius:0 0 6px 6px;"></div>' +
-    '<div data-cap-flap style="position:absolute;left:0;right:0;top:0;height:62%;background:#efe0c2;clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top center;transition:transform 0.6s ease;border-top:1px solid #d9c9a6;"></div>' +
+// ===== v0.76.65: 二十四節気の切手・消印・封筒 =====
+// 【権威】2026-11-16「封筒を選べて、相手に届く封筒も選べたら可愛い」「切手は本物の記念切手を参考に、本物っぽく。女の子が欲しい、可愛いと思うように」
+//   「全部無料でいい」「封の口をなぞって開いてもいいが、タイムカプセルが開くアニメーションは消さないで」
+//   切手は本物の郵便の切手に見せかけない（国名・料金を入れない）。「こよみる郵便」と節気の名前
+var _STAMP_FLOWER = function(cx, cy, r, n, col, mid, rot) {
+  var s = '';
+  for (var i = 0; i < n; i++) {
+    var a = (rot || 0) + i * 360 / n, rad = a * Math.PI / 180;
+    s += '<ellipse cx="' + (cx + Math.cos(rad) * r * 0.62).toFixed(2) + '" cy="' + (cy + Math.sin(rad) * r * 0.62).toFixed(2) + '" rx="' + (r * 0.5).toFixed(2) + '" ry="' + (r * 0.38).toFixed(2) + '" transform="rotate(' + a + ' ' + (cx + Math.cos(rad) * r * 0.62).toFixed(2) + ' ' + (cy + Math.sin(rad) * r * 0.62).toFixed(2) + ')" fill="' + col + '"/>';
+  }
+  return s + '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.26).toFixed(2) + '" fill="' + (mid || '#f6d36b') + '"/>';
+};
+var _STAMP_SAKURA = function(cx, cy, r, col, rot) {   // 桜は花びらの先に切れ込み
+  var s = '<g transform="rotate(' + (rot || 0) + ' ' + cx + ' ' + cy + ')">';
+  for (var i = 0; i < 5; i++) {
+    s += '<path transform="rotate(' + (i * 72) + ' ' + cx + ' ' + cy + ')" d="M' + cx + ' ' + cy + ' C' + (cx - r * 0.55) + ' ' + (cy - r * 0.35) + ' ' + (cx - r * 0.42) + ' ' + (cy - r * 1.02) + ' ' + (cx - r * 0.12) + ' ' + (cy - r * 0.98) +
+      ' L' + cx + ' ' + (cy - r * 0.82) + ' L' + (cx + r * 0.12) + ' ' + (cy - r * 0.98) + ' C' + (cx + r * 0.42) + ' ' + (cy - r * 1.02) + ' ' + (cx + r * 0.55) + ' ' + (cy - r * 0.35) + ' ' + cx + ' ' + cy + 'Z" fill="' + col + '"/>';
+  }
+  return s + '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.16) + '" fill="#e46f8a"/></g>';
+};
+var _STAMP_LEAF = function(cx, cy, len, ang, col) {
+  return '<path transform="rotate(' + ang + ' ' + cx + ' ' + cy + ')" d="M' + cx + ' ' + cy + ' Q' + (cx + len * 0.5) + ' ' + (cy - len * 0.42) + ' ' + (cx + len) + ' ' + cy + ' Q' + (cx + len * 0.5) + ' ' + (cy + len * 0.42) + ' ' + cx + ' ' + cy + 'Z" fill="' + col + '"/>' +
+    '<path transform="rotate(' + ang + ' ' + cx + ' ' + cy + ')" d="M' + cx + ' ' + cy + ' L' + (cx + len * 0.9) + ' ' + cy + '" stroke="rgba(255,255,255,0.5)" stroke-width="0.6"/>';
+};
+var _STAMP_DROP = function(cx, cy, s, col) {
+  return '<path d="M' + cx + ' ' + (cy - s) + ' C' + (cx + s * 0.9) + ' ' + (cy - s * 0.1) + ' ' + (cx + s * 0.7) + ' ' + (cy + s * 0.8) + ' ' + cx + ' ' + (cy + s * 0.8) + ' C' + (cx - s * 0.7) + ' ' + (cy + s * 0.8) + ' ' + (cx - s * 0.9) + ' ' + (cy - s * 0.1) + ' ' + cx + ' ' + (cy - s) + 'Z" fill="' + col + '"/>' +
+    '<circle cx="' + (cx - s * 0.25) + '" cy="' + (cy + s * 0.15) + '" r="' + (s * 0.16) + '" fill="rgba(255,255,255,0.7)"/>';
+};
+var _STAMP_SNOW = function(cx, cy, r, col) {
+  var s = '';
+  for (var i = 0; i < 6; i++) {
+    var a = i * 60 * Math.PI / 180, x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    s += '<line x1="' + cx + '" y1="' + cy + '" x2="' + x.toFixed(2) + '" y2="' + y.toFixed(2) + '" stroke="' + col + '" stroke-width="' + (r * 0.16).toFixed(2) + '" stroke-linecap="round"/>';
+    var bx = cx + Math.cos(a) * r * 0.6, by = cy + Math.sin(a) * r * 0.6;
+    [-1, 1].forEach(function(sg) { var b = a + sg * 0.7; s += '<line x1="' + bx.toFixed(2) + '" y1="' + by.toFixed(2) + '" x2="' + (bx + Math.cos(b) * r * 0.3).toFixed(2) + '" y2="' + (by + Math.sin(b) * r * 0.3).toFixed(2) + '" stroke="' + col + '" stroke-width="' + (r * 0.12).toFixed(2) + '" stroke-linecap="round"/>'; });
+  }
+  return s;
+};
+var _STAMP_SPROUT = function(cx, cy, s, col) {
+  return '<path d="M' + cx + ' ' + cy + ' L' + cx + ' ' + (cy - s) + '" stroke="' + col + '" stroke-width="' + (s * 0.12) + '" stroke-linecap="round"/>' +
+    _STAMP_LEAF(cx, cy - s, s * 0.8, -150, col) + _STAMP_LEAF(cx, cy - s, s * 0.8, -30, col);
+};
+var _STAMP_DOTS = function(arr, col, r) { return arr.map(function(p) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + (p[2] || r) + '" fill="' + col + '"/>'; }).join(''); };
+
+// 24の図柄。絵の枠は 0〜40 × 0〜44（切手の内側）。bg は上から下への2色
+var KOYOMI_STAMP_ART = {
+  '立春': { bg: ['#fff4e8', '#fde3d3'], ink: '#9b3b45', art: function() {
+    return '<path d="M4 36 Q14 30 20 22 T36 8" stroke="#6b4a3a" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M20 22 Q26 24 30 30" stroke="#6b4a3a" stroke-width="1.2" fill="none" stroke-linecap="round"/>' +
+      _STAMP_FLOWER(14, 28, 6, 5, '#e8566f', '#ffd76a', -18) + _STAMP_FLOWER(29, 12, 5, 5, '#f07a8c', '#ffd76a', 10) + _STAMP_FLOWER(30, 31, 3.6, 5, '#f3a0ae', '#ffe38f', 30) + _STAMP_DOTS([[23, 18], [9, 35]], '#e8566f', 1.4); } },
+  '雨水': { bg: ['#eef7f8', '#d6ecef'], ink: '#2f6b78', art: function() {
+    return _STAMP_DROP(10, 10, 4, '#7fc4d6') + _STAMP_DROP(27, 7, 3.2, '#9fd4e2') + _STAMP_DROP(33, 20, 3.6, '#7fc4d6') + _STAMP_DROP(17, 21, 2.8, '#b5dfe9') +
+      '<path d="M2 40 Q20 34 38 40 L38 44 L2 44Z" fill="#c9a77d"/>' + _STAMP_SPROUT(20, 38, 9, '#7bb661'); } },
+  '啓蟄': { bg: ['#f2f8e8', '#dcedc8'], ink: '#4c7a2c', art: function() {
+    return '<path d="M2 40 Q20 35 38 40 L38 44 L2 44Z" fill="#b98c5f"/>' + _STAMP_SPROUT(9, 38, 8, '#7bb661') + _STAMP_SPROUT(32, 38, 6, '#8cc46f') +
+      '<ellipse cx="21" cy="22" rx="9" ry="8" fill="#e8453c"/><path d="M21 14 L21 30" stroke="#2b2b2b" stroke-width="1"/><circle cx="21" cy="13" r="3.4" fill="#2b2b2b"/>' +
+      _STAMP_DOTS([[17, 19], [25, 19], [16.5, 25], [25.5, 25]], '#2b2b2b', 1.5) + _STAMP_DOTS([[19.6, 12.2], [22.4, 12.2]], '#fff', 0.7); } },
+  '春分': { bg: ['#fff0f4', '#fbd8e2'], ink: '#b23a5b', art: function() {
+    return _STAMP_SAKURA(13, 15, 9, '#f6a9bd', 8) + _STAMP_SAKURA(29, 27, 7.5, '#f8bccb', -12) + _STAMP_SAKURA(12, 34, 5, '#fbcbd7', 20) +
+      '<path d="M30 9 q2 -1 3 1 q-2 1 -3 -1Z" fill="#f6a9bd"/><path d="M33 39 q2 -1 3 1 q-2 1 -3 -1Z" fill="#f8bccb"/>'; } },
+  '清明': { bg: ['#ecf6fc', '#d2e9f7'], ink: '#2c5f86', art: function() {
+    return '<path d="M30 0 Q28 18 34 44" stroke="#8bbf6a" stroke-width="1" fill="none"/>' + _STAMP_LEAF(31, 14, 5, 100, '#8bbf6a') + _STAMP_LEAF(32, 24, 5, 80, '#9ccc7c') + _STAMP_LEAF(33, 34, 5, 100, '#8bbf6a') +
+      '<path d="M6 22 Q12 18 17 21 Q21 15 26 13 Q22 19 23 23 Q17 26 12 25 L6 30 L9 24Z" fill="#2c3e5c"/><path d="M12 24 Q17 25 21 23 Q17 27 12 25Z" fill="#fff"/><circle cx="23.6" cy="15.6" r="0.9" fill="#fff"/>' +
+      '<path d="M22 21 Q24 22 25 21" stroke="#e8453c" stroke-width="1.2" fill="none"/>'; } },
+  '穀雨': { bg: ['#eff7ee', '#d7ebd3'], ink: '#3f7a43', art: function() {
+    return _STAMP_DROP(9, 8, 2.6, '#8fc8d8') + _STAMP_DROP(20, 5, 2.2, '#a6d5e2') + _STAMP_DROP(31, 9, 2.6, '#8fc8d8') +
+      '<rect x="2" y="34" width="36" height="10" fill="#9fcde0"/><path d="M2 36 q4 -2 8 0 t8 0 t8 0 t8 0 t6 0" stroke="#fff" stroke-width="0.8" fill="none"/>' +
+      [8, 16, 24, 32].map(function(x) { return '<path d="M' + x + ' 36 L' + x + ' 22" stroke="#6aab55" stroke-width="1.3"/>' + _STAMP_LEAF(x, 28, 7, -130, '#7bb661') + _STAMP_LEAF(x, 25, 7, -50, '#8cc46f'); }).join(''); } },
+  '立夏': { bg: ['#eaf4fd', '#cfe5fa'], ink: '#2a5d9c', art: function() {
+    return '<path d="M5 2 L5 44" stroke="#8a6a4a" stroke-width="1.6"/><circle cx="5" cy="3" r="1.8" fill="#f2c14e"/>' +
+      '<path d="M6 8 L32 8 Q38 11 32 14 L36 17 L6 17Z" fill="#e8453c"/><circle cx="12" cy="11.5" r="2.4" fill="#fff"/><circle cx="12" cy="11.5" r="1.2" fill="#222"/><path d="M17 10 q2 2 0 4 M21 10 q2 2 0 4 M25 10 q2 2 0 4" stroke="#fff" stroke-width="0.8" fill="none"/>' +
+      '<path d="M6 21 L28 21 Q33 24 28 27 L31 30 L6 30Z" fill="#3c7bd6"/><circle cx="11" cy="24.8" r="2" fill="#fff"/><circle cx="11" cy="24.8" r="1" fill="#222"/>' +
+      '<path d="M6 34 L22 34 Q26 36 22 38 L24 41 L6 41Z" fill="#f08bb0"/><circle cx="10" cy="37" r="1.5" fill="#fff"/>'; } },
+  '小満': { bg: ['#fdf8e3', '#f6ebbe'], ink: '#8a6a1d', art: function() {
+    var s = '';
+    [[12, 40, -8], [20, 42, 0], [28, 40, 8]].forEach(function(p) {
+      s += '<path d="M' + p[0] + ' ' + p[1] + ' Q' + (p[0] + p[2] * 0.3) + ' 24 ' + (p[0] + p[2] * 0.6) + ' 10" stroke="#c9a53a" stroke-width="1.2" fill="none"/>';
+      for (var i = 0; i < 5; i++) { var y = 10 + i * 3.2, x = p[0] + p[2] * 0.6 - i * p[2] * 0.06; s += '<ellipse cx="' + (x - 1.6) + '" cy="' + y + '" rx="1.7" ry="1" fill="#e8c35a" transform="rotate(-30 ' + (x - 1.6) + ' ' + y + ')"/><ellipse cx="' + (x + 1.6) + '" cy="' + y + '" rx="1.7" ry="1" fill="#e2b843" transform="rotate(30 ' + (x + 1.6) + ' ' + y + ')"/>'; }
+    });
+    return s; } },
+  '芒種': { bg: ['#ecf7f0', '#cfe9d8'], ink: '#2f7552', art: function() {
+    return '<rect x="0" y="22" width="40" height="22" fill="#a7d3e3"/><path d="M0 26 q5 -2 10 0 t10 0 t10 0 t10 0 M0 34 q5 -2 10 0 t10 0 t10 0 t10 0" stroke="#fff" stroke-width="0.7" fill="none"/>' +
+      [[6, 30], [14, 30], [22, 30], [30, 30], [10, 39], [18, 39], [26, 39], [34, 39]].map(function(p) { return _STAMP_SPROUT(p[0], p[1], 5, '#5fa74a'); }).join('') +
+      '<circle cx="31" cy="9" r="5" fill="#fff2b8"/>'; } },
+  '夏至': { bg: ['#fff7da', '#ffe7a3'], ink: '#b0661a', art: function() {
+    var s = '';
+    for (var i = 0; i < 12; i++) { var a = i * 30 * Math.PI / 180; s += '<line x1="' + (20 + Math.cos(a) * 11).toFixed(1) + '" y1="' + (20 + Math.sin(a) * 11).toFixed(1) + '" x2="' + (20 + Math.cos(a) * 16).toFixed(1) + '" y2="' + (20 + Math.sin(a) * 16).toFixed(1) + '" stroke="#f5a623" stroke-width="2" stroke-linecap="round"/>'; }
+    return s + '<circle cx="20" cy="20" r="9" fill="#ffc83d"/><circle cx="17" cy="19" r="1" fill="#8a5a1a"/><circle cx="23" cy="19" r="1" fill="#8a5a1a"/><path d="M17 23 q3 2.4 6 0" stroke="#8a5a1a" stroke-width="1" fill="none" stroke-linecap="round"/>' +
+      '<circle cx="14.5" cy="22" r="1.4" fill="#ff9e7a" opacity="0.6"/><circle cx="25.5" cy="22" r="1.4" fill="#ff9e7a" opacity="0.6"/>'; } },
+  '小暑': { bg: ['#eef0fd', '#d8ddfa'], ink: '#4a4fa8', art: function() {
+    var fl = function(cx, cy, r, c) { return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + c + '"/><circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.36) + '" fill="#fff"/>' +
+      [0, 72, 144, 216, 288].map(function(a) { var rad = (a - 90) * Math.PI / 180; return '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + Math.cos(rad) * r * 0.95).toFixed(1) + '" y2="' + (cy + Math.sin(rad) * r * 0.95).toFixed(1) + '" stroke="rgba(255,255,255,0.7)" stroke-width="0.8"/>'; }).join(''); };
+    return '<path d="M8 44 Q4 30 12 24 Q20 18 18 8 Q26 14 30 24" stroke="#5fa74a" stroke-width="1.2" fill="none"/>' + _STAMP_LEAF(14, 30, 7, 200, '#6ab055') + _STAMP_LEAF(24, 18, 6, -20, '#7bb661') +
+      fl(14, 14, 7, '#5b6ee1') + fl(28, 30, 6.5, '#a35bd6') + fl(30, 10, 4, '#e66aa8'); } },
+  '大暑': { bg: ['#fff0ec', '#fdd5cb'], ink: '#b33a2e', art: function() {
+    return '<path d="M4 18 A16 16 0 0 0 36 18Z" fill="#3f9b4a"/><path d="M6 18 A14 14 0 0 0 34 18Z" fill="#e8f5d6"/><path d="M7.5 18 A12.5 12.5 0 0 0 32.5 18Z" fill="#f2554a"/>' +
+      _STAMP_DOTS([[14, 22], [20, 26], [26, 22], [17, 28.5], [23, 28.5], [20, 21]], '#2b2b2b', 0.9) +
+      '<path d="M8 38 q4 -3 8 0 t8 0 t8 0" stroke="#7fc4d6" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M10 42 q4 -3 8 0 t8 0" stroke="#a6d5e2" stroke-width="1.2" fill="none" stroke-linecap="round"/>'; } },
+  '立秋': { bg: ['#f6f2e4', '#ebe2c4'], ink: '#7a5a22', art: function() {
+    return '<circle cx="30" cy="10" r="6" fill="#fff4c4"/><circle cx="32.5" cy="8.5" r="5" fill="#ebe2c4"/>' +
+      '<path d="M4 40 Q14 36 20 42" stroke="#a88a4a" stroke-width="1" fill="none"/>' + _STAMP_LEAF(4, 40, 9, -60, '#c9b26a') +
+      '<g transform="rotate(-20 18 24)"><rect x="17" y="18" width="2.6" height="16" rx="1.3" fill="#e2683c"/><circle cx="18.3" cy="17.4" r="2.4" fill="#e2683c"/>' +
+      '<ellipse cx="12.5" cy="20" rx="6" ry="1.9" fill="rgba(200,230,245,0.9)" stroke="#9cc8de" stroke-width="0.4"/><ellipse cx="24.1" cy="20" rx="6" ry="1.9" fill="rgba(200,230,245,0.9)" stroke="#9cc8de" stroke-width="0.4"/>' +
+      '<ellipse cx="13" cy="23.4" rx="5" ry="1.6" fill="rgba(200,230,245,0.9)" stroke="#9cc8de" stroke-width="0.4"/><ellipse cx="23.6" cy="23.4" rx="5" ry="1.6" fill="rgba(200,230,245,0.9)" stroke="#9cc8de" stroke-width="0.4"/></g>'; } },
+  '処暑': { bg: ['#eaf5f7', '#d0e9ee'], ink: '#2f6b78', art: function() {
+    return '<path d="M20 0 L20 8" stroke="#8a6a4a" stroke-width="0.8"/><path d="M11 20 Q11 8 20 8 Q29 8 29 20Z" fill="rgba(170,215,230,0.85)" stroke="#7fb8cc" stroke-width="0.6"/>' +
+      '<path d="M13 15 q3 -3 6 0 t6 0" stroke="#f08bb0" stroke-width="1" fill="none"/><circle cx="16" cy="12" r="1.2" fill="#f2c14e"/>' +
+      '<path d="M20 20 L20 27" stroke="#8a6a4a" stroke-width="0.6"/><rect x="16" y="27" width="8" height="13" rx="1" fill="#fff" stroke="#d9c9a6" stroke-width="0.5"/><path d="M18 30 L22 30 M18 33 L22 33" stroke="#7fb8cc" stroke-width="0.6"/>' +
+      '<path d="M2 32 q4 -2 8 0 M30 26 q4 -2 8 0" stroke="#9fcfdc" stroke-width="0.9" fill="none" stroke-linecap="round"/>'; } },
+  '白露': { bg: ['#eff6f0', '#d8eadb'], ink: '#3f7a52', art: function() {
+    return _STAMP_LEAF(4, 34, 34, -32, '#7bb661') + '<path d="M6 33 Q20 26 33 15" stroke="#5c9a48" stroke-width="0.8" fill="none"/>' +
+      _STAMP_DROP(17, 22, 3.6, 'rgba(210,238,248,0.95)') + _STAMP_DROP(27, 17, 2.6, 'rgba(210,238,248,0.95)') + _STAMP_DROP(11, 30, 2.2, 'rgba(210,238,248,0.95)') +
+      '<circle cx="31" cy="34" r="1.2" fill="#fff"/><circle cx="8" cy="12" r="1.4" fill="#fff"/><circle cx="34" cy="6" r="1" fill="#fff"/>'; } },
+  '秋分': { bg: ['#fdeeeb', '#f8d3cc'], ink: '#b03a2e', art: function() {
+    var s = '<path d="M20 44 L20 22" stroke="#5c9a48" stroke-width="1.4"/>';
+    for (var i = 0; i < 7; i++) {
+      var a = (-170 + i * 26) * Math.PI / 180, x = 20 + Math.cos(a) * 13, y = 20 + Math.sin(a) * 11;
+      s += '<path d="M20 21 Q' + (20 + Math.cos(a) * 6).toFixed(1) + ' ' + (20 + Math.sin(a) * 9).toFixed(1) + ' ' + x.toFixed(1) + ' ' + y.toFixed(1) + '" stroke="#e23b2e" stroke-width="1.6" fill="none" stroke-linecap="round"/>' +
+        '<path d="M' + (20 + Math.cos(a) * 7).toFixed(1) + ' ' + (20 + Math.sin(a) * 6).toFixed(1) + ' L' + (20 + Math.cos(a) * 15.5).toFixed(1) + ' ' + (20 + Math.sin(a) * 13).toFixed(1) + '" stroke="#ff7a6a" stroke-width="0.5"/>' +
+        '<circle cx="' + (20 + Math.cos(a) * 15.5).toFixed(1) + '" cy="' + (20 + Math.sin(a) * 13).toFixed(1) + '" r="0.8" fill="#ffd76a"/>';
+    }
+    return s + '<circle cx="20" cy="21" r="2.4" fill="#c42a1f"/>'; } },
+  '寒露': { bg: ['#fbf3e1', '#f3e1b8'], ink: '#9a6a12', art: function() {
+    var s = '';
+    for (var k = 0; k < 2; k++) { var r = k ? 8 : 13, n = k ? 14 : 20; for (var i = 0; i < n; i++) { var a = (i * 360 / n + k * 9) * Math.PI / 180; s += '<ellipse cx="' + (20 + Math.cos(a) * r * 0.6).toFixed(1) + '" cy="' + (19 + Math.sin(a) * r * 0.6).toFixed(1) + '" rx="' + (r * 0.42).toFixed(1) + '" ry="1.3" transform="rotate(' + (i * 360 / n + k * 9) + ' ' + (20 + Math.cos(a) * r * 0.6).toFixed(1) + ' ' + (19 + Math.sin(a) * r * 0.6).toFixed(1) + ')" fill="' + (k ? '#ffd24a' : '#f5b81d') + '"/>'; } }
+    return s + '<circle cx="20" cy="19" r="3" fill="#e2951a"/>' + _STAMP_LEAF(20, 36, 9, -150, '#6ab055') + _STAMP_LEAF(20, 38, 9, -20, '#7bb661') + '<path d="M20 28 L20 44" stroke="#5c9a48" stroke-width="1.2"/>'; } },
+  '霜降': { bg: ['#fdf0e6', '#f7d9c2'], ink: '#a8461f', art: function() {
+    var mj = function(cx, cy, r, c, rot) { var s = '<g transform="rotate(' + rot + ' ' + cx + ' ' + cy + ')">'; [-90, -45, -135, 0, 180, -20, -160].forEach(function(a, i) { var l = [r, r * 0.8, r * 0.8, r * 0.55, r * 0.55, r * 0.7, r * 0.7][i]; s += _STAMP_LEAF(cx, cy, l, a, c); }); return s + '<path d="M' + cx + ' ' + cy + ' L' + cx + ' ' + (cy + r * 0.5) + '" stroke="' + c + '" stroke-width="0.8"/></g>'; };
+    return mj(14, 16, 10, '#e2512b', -10) + mj(28, 29, 9, '#f08a24', 18) + mj(12, 36, 6, '#d9352a', 30) + '<circle cx="33" cy="9" r="1" fill="#fff"/><circle cx="6" cy="26" r="0.8" fill="#fff"/>'; } },
+  '立冬': { bg: ['#fbeef3', '#f2d6e0'], ink: '#a33a63', art: function() {
+    return _STAMP_LEAF(10, 30, 12, 160, '#3f8a4a') + _STAMP_LEAF(28, 30, 12, 20, '#4a9a55') + _STAMP_LEAF(20, 33, 11, 90, '#3f8a4a') +
+      _STAMP_FLOWER(20, 20, 13, 5, '#f07aa0', '#ffd24a', -90) + _STAMP_FLOWER(20, 20, 7, 5, '#f6a3bf', '#ffd24a', -54) + _STAMP_DOTS([[18, 18], [22, 18], [20, 22.4], [17.6, 21.4], [22.4, 21.4]], '#f5b81d', 0.8); } },
+  '小雪': { bg: ['#eef2f8', '#d9e2ef'], ink: '#3d5a86', art: function() {
+    return '<circle cx="20" cy="28" r="10" fill="#f59a2c"/><circle cx="16.5" cy="24.5" r="2.4" fill="#ffc06b" opacity="0.7"/>' + _STAMP_LEAF(20, 18.5, 7, -40, '#4a9a55') + '<path d="M20 18 L20 20" stroke="#5c7a3a" stroke-width="1"/>' +
+      _STAMP_DOTS([[6, 6], [14, 10, 1.4], [30, 5], [35, 14, 1.4], [8, 18, 1.2], [33, 24, 1.1], [4, 30, 1.3], [26, 9, 1.2]], '#fff', 1.7); } },
+  '大雪': { bg: ['#e9f0f9', '#cfdcee'], ink: '#2f4f86', art: function() {
+    return '<path d="M0 40 Q20 34 40 40 L40 44 L0 44Z" fill="#fff"/><circle cx="20" cy="31" r="9" fill="#fff" stroke="#c7d3e6" stroke-width="0.6"/><circle cx="20" cy="17" r="6.4" fill="#fff" stroke="#c7d3e6" stroke-width="0.6"/>' +
+      '<path d="M13 12 Q20 4 27 12Z" fill="#e8453c"/><circle cx="20" cy="6.6" r="1.6" fill="#fff"/><circle cx="17.8" cy="16.4" r="0.9" fill="#333"/><circle cx="22.2" cy="16.4" r="0.9" fill="#333"/><path d="M20 18 L23.5 19 L20 19.6Z" fill="#f59a2c"/>' +
+      '<path d="M12 23 Q20 26 28 23 L28 25.5 Q20 28.5 12 25.5Z" fill="#3c7bd6"/>' + _STAMP_SNOW(7, 8, 3.6, '#fff') + _STAMP_SNOW(34, 12, 3, '#fff') + _STAMP_SNOW(33, 30, 2.4, '#fff'); } },
+  '冬至': { bg: ['#fdf8e1', '#f5ebb5'], ink: '#8a6a12', art: function() {
+    return '<rect x="0" y="30" width="40" height="14" fill="#b9dff0"/><path d="M0 32 q5 -2 10 0 t10 0 t10 0 t10 0" stroke="#fff" stroke-width="0.8" fill="none"/>' +
+      '<circle cx="14" cy="28" r="7.5" fill="#ffd23a"/><circle cx="27" cy="31" r="6.5" fill="#ffc81d"/><circle cx="12" cy="26" r="1.6" fill="#fff2a8" opacity="0.8"/>' + _STAMP_LEAF(14, 20.6, 6, -60, '#4a9a55') + _STAMP_LEAF(27, 24.6, 5, -120, '#4a9a55') +
+      '<path d="M10 14 q-2 -3 0 -6 q2 -3 0 -6 M18 13 q-2 -3 0 -6 q2 -3 0 -6 M26 15 q-2 -3 0 -6 q2 -3 0 -6" stroke="#e0d2a2" stroke-width="1" fill="none" stroke-linecap="round"/>'; } },
+  '小寒': { bg: ['#fbefef', '#f1d3d3'], ink: '#9a2a2a', art: function() {
+    return _STAMP_LEAF(8, 26, 13, 200, '#2f7a3f') + _STAMP_LEAF(30, 28, 12, -20, '#357f45') + _STAMP_LEAF(22, 34, 11, 70, '#2f7a3f') +
+      _STAMP_FLOWER(19, 20, 12, 5, '#d82a3a', '#ffe08a', -90) + '<circle cx="19" cy="20" r="3.6" fill="#ffe08a"/>' + _STAMP_DOTS([[19, 18.6], [17.6, 20.4], [20.4, 20.4]], '#f5b81d', 0.7) +
+      _STAMP_DOTS([[6, 8, 1.2], [33, 6, 1.4], [36, 16, 1]], '#fff', 1); } },
+  '大寒': { bg: ['#edf2f8', '#d4dfee'], ink: '#33507e', art: function() {
+    return '<path d="M0 38 Q20 33 40 38 L40 44 L0 44Z" fill="#fff"/><ellipse cx="20" cy="30" rx="12" ry="8.5" fill="#fff" stroke="#c7d3e6" stroke-width="0.7"/>' +
+      _STAMP_LEAF(15, 22.5, 9, -115, '#4a9a55') + _STAMP_LEAF(21, 22.5, 9, -65, '#5aa865') +
+      '<circle cx="14" cy="28.5" r="1.4" fill="#e23b3b"/><circle cx="22" cy="28.5" r="1.4" fill="#e23b3b"/><circle cx="12" cy="31" r="1.6" fill="#ffb3c1" opacity="0.6"/><circle cx="24" cy="31" r="1.6" fill="#ffb3c1" opacity="0.6"/>' +
+      _STAMP_SNOW(32, 8, 3.4, '#fff') + _STAMP_SNOW(8, 10, 2.6, '#fff') + _STAMP_DOTS([[30, 20], [5, 22]], '#fff', 1.1); } }
+};
+window.KOYOMI_STAMP_ART = KOYOMI_STAMP_ART;
+
+var _koyomiStampSeq = 0;
+// 切手。w は横幅（px）。縦は横の1.2倍。sekki が分からなければ季節の草花の切手
+function koyomiStampSvg(sekki, w) {
+  var a = KOYOMI_STAMP_ART[sekki] || KOYOMI_STAMP_ART['春分'];
+  var name = KOYOMI_STAMP_ART[sekki] ? sekki : 'こよみ';
+  var id = 'kst' + (++_koyomiStampSeq), W = 50, H = 60, hole = 1.7, step = 5;
+  var holes = '';
+  for (var x = step / 2; x < W; x += step) holes += '<circle cx="' + x + '" cy="0" r="' + hole + '"/><circle cx="' + x + '" cy="' + H + '" r="' + hole + '"/>';
+  for (var y = step / 2; y < H; y += step) holes += '<circle cx="0" cy="' + y + '" r="' + hole + '"/><circle cx="' + W + '" cy="' + y + '" r="' + hole + '"/>';
+  var chars = name.split('').map(function(c, i) { return '<text x="45.2" y="' + (12 + i * 7.6) + '" font-size="6.6" text-anchor="middle" fill="' + a.ink + '" font-family="\'Hiragino Mincho ProN\',\'Yu Mincho\',\'Noto Serif JP\',serif" font-weight="700">' + c + '</text>'; }).join('');
+  return '<svg data-koyomi-stamp="' + name + '" xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ' + (W + 2) + ' ' + (H + 2) + '" width="' + (w || 50) + '" height="' + Math.round((w || 50) * 1.2) + '" style="display:block;filter:drop-shadow(0 1px 1.5px rgba(60,40,20,0.28));">' +
+    '<defs><mask id="' + id + 'm"><rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#fff"/><g fill="#000">' + holes + '</g></mask>' +
+    '<linearGradient id="' + id + 'g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + a.bg[0] + '"/><stop offset="1" stop-color="' + a.bg[1] + '"/></linearGradient>' +
+    '<clipPath id="' + id + 'c"><rect x="4" y="4" width="' + (W - 8) + '" height="' + (H - 8) + '" rx="1"/></clipPath></defs>' +
+    '<g mask="url(#' + id + 'm)"><rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#fffdf8"/>' +
+    '<rect x="4" y="4" width="' + (W - 8) + '" height="' + (H - 8) + '" fill="url(#' + id + 'g)" rx="1"/>' +
+    '<g clip-path="url(#' + id + 'c)"><g transform="translate(4.5 6) scale(0.86)">' + a.art() + '</g>' +
+    // 紙の目（ほんの少しの細い線）
+    '<path d="M4 ' + (H - 13) + ' L' + (W - 4) + ' ' + (H - 13) + '" stroke="' + a.ink + '" stroke-opacity="0.18" stroke-width="0.4"/></g>' +
+    '<rect x="4" y="4" width="' + (W - 8) + '" height="' + (H - 8) + '" fill="none" stroke="' + a.ink + '" stroke-opacity="0.35" stroke-width="0.5" rx="1"/>' +
+    '<rect x="39.6" y="5.4" width="8" height="' + (name.length * 7.6 + 3) + '" rx="1.2" fill="#fffdf8" fill-opacity="0.82"/>' + chars +
+    '<text x="22" y="' + (H - 6.6) + '" font-size="4.3" text-anchor="middle" fill="' + a.ink + '" font-family="\'Hiragino Mincho ProN\',\'Yu Mincho\',serif" letter-spacing="0.4">こよみる郵便</text></g></svg>';
+}
+window.koyomiStampSvg = koyomiStampSvg;
+
+// 消印。k は封をした日の暦（koyomiCapsuleSealedKoyomi の形）。令和の年.月.日 と節気
+function koyomiPostmarkSvg(k, w, inkColor) {
+  k = k || {};
+  var p = String(k.date || '').split('-').map(Number), dt = '';
+  if (p.length === 3 && p[0]) dt = (p[0] >= 2019 ? 'R' + (p[0] - 2018) : String(p[0])) + '.' + p[1] + '.' + p[2];
+  var sek = (k.sekki && KOYOMI_STAMP_ART[k.sekki]) ? k.sekki : '';
+  var e = function(x) { return String(x).replace(/[&<>"']/g, ''); };
+  var ink = inkColor || '#4b4e63';
+  return '<svg data-koyomi-postmark xmlns="http://www.w3.org/2000/svg" viewBox="0 0 92 46" width="' + (w || 92) + '" height="' + Math.round((w || 92) / 2) + '" style="display:block;opacity:0.78;">' +
+    '<g fill="none" stroke="' + ink + '" stroke-width="1.1">' +
+      '<path d="M2 15 q5 -3 10 0 t10 0 t10 0 t10 0"/><path d="M2 23 q5 -3 10 0 t10 0 t10 0 t10 0"/><path d="M2 31 q5 -3 10 0 t10 0 t10 0 t10 0"/>' +
+      '<circle cx="68" cy="23" r="20"/><circle cx="68" cy="23" r="17.4" stroke-width="0.6"/>' +
+      '<line x1="49.6" y1="17.4" x2="86.4" y2="17.4" stroke-width="0.7"/><line x1="49.6" y1="28.6" x2="86.4" y2="28.6" stroke-width="0.7"/></g>' +
+    '<g fill="' + ink + '" font-family="\'Hiragino Sans\',\'Noto Sans JP\',sans-serif" text-anchor="middle">' +
+      '<text x="68" y="13.6" font-size="5.6" font-weight="700">こよみる</text>' +
+      '<text x="68" y="25.6" font-size="7.4" font-weight="700" letter-spacing="0.2">' + e(dt) + '</text>' +
+      '<text x="68" y="37.4" font-size="5.8" font-weight="700">' + e(sek) + '</text></g></svg>';
+}
+window.koyomiPostmarkSvg = koyomiPostmarkSvg;
+
+// 封筒。id は sealed_koyomi.env に入れる。知らない id は生成り
+var KOYOMI_ENVELOPES = [
+  { id: 'kinari', name: '生成りの和封筒', base: '#f6ecd8', base2: '#efe2c8', edge: '#d9c9a6', flap: '#efe0c2', ink: '#5a4630' },
+  { id: 'yo',     name: '白い洋封筒',     base: '#fcfcf9', base2: '#f2f2ec', edge: '#dcdcd2', flap: '#f4f4ee', ink: '#3d3d3d', border: true },
+  { id: 'ai',     name: '藍染め',         base: '#2f4b74', base2: '#26405f', edge: '#1d3352', flap: '#2a4568', ink: '#f6f1e4', pat: 'asanoha', mark: '#e9e2cf' },
+  { id: 'sakura', name: '桜',             base: '#fde9ee', base2: '#f9dbe3', edge: '#efc3cf', flap: '#fadde5', ink: '#8a3a55', pat: 'sakura' },
+  { id: 'momiji', name: '紅葉',           base: '#f8eada', base2: '#f2dcc2', edge: '#e2bf95', flap: '#f4e0c8', ink: '#7a3b1e', pat: 'momiji' },
+  { id: 'yuki',   name: '雪景色',         base: '#edf3f9', base2: '#dfe9f4', edge: '#c6d4e4', flap: '#e4edf6', ink: '#33507e', pat: 'yuki' }
+];
+window.KOYOMI_ENVELOPES = KOYOMI_ENVELOPES;
+function koyomiEnvelopeOf(id) {
+  for (var i = 0; i < KOYOMI_ENVELOPES.length; i++) if (KOYOMI_ENVELOPES[i].id === id) return KOYOMI_ENVELOPES[i];
+  return KOYOMI_ENVELOPES[0];
+}
+window.koyomiEnvelopeOf = koyomiEnvelopeOf;
+// 封筒の柄（小さな絵の繰り返し）。CSS の背景に置く
+function koyomiEnvelopePattern(pat) {
+  var svg = '';
+  if (pat === 'asanoha') svg = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="48" viewBox="0 0 28 48"><g stroke="rgba(255,255,255,0.085)" stroke-width="0.8" fill="none"><path d="M14 0 L14 48 M0 8 L28 40 M28 8 L0 40 M0 8 L14 16 L28 8 M0 40 L14 32 L28 40 M14 16 L0 24 L14 32 L28 24 L14 16"/></g></svg>';
+  else if (pat === 'sakura') svg = '<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 46 46"><g fill="#f4b3c4" opacity="0.55"><path d="M10 8 c-3 -4 2 -7 3 -3 c1 -4 6 -1 3 3 c4 1 2 6 -2 4 c0 4 -6 4 -5 0 c-4 1 -5 -4 1 -4z"/><path d="M33 30 c-2 -3 1.6 -5.4 2.4 -2.4 c0.8 -3 4.6 -0.8 2.4 2.4 c3 0.8 1.6 4.6 -1.6 3 c0 3 -4.6 3 -3.8 0 c-3 0.8 -3.8 -3 0.6 -3z"/><ellipse cx="34" cy="10" rx="2.4" ry="1.2" transform="rotate(30 34 10)"/><ellipse cx="12" cy="36" rx="2" ry="1" transform="rotate(-20 12 36)"/></g></svg>';
+  else if (pat === 'momiji') {
+    var mj = function(cx, cy, r, c, rot) { var g = '<g transform="rotate(' + rot + ' ' + cx + ' ' + cy + ')">'; [-90, -45, -135, -5, -175].forEach(function(a, i) { g += _STAMP_LEAF(cx, cy, [r, r * 0.82, r * 0.82, r * 0.56, r * 0.56][i], a, c); }); return g + '<path d="M' + cx + ' ' + cy + ' L' + cx + ' ' + (cy + r * 0.5) + '" stroke="' + c + '" stroke-width="0.8"/></g>'; };
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60"><g opacity="0.42">' + mj(14, 16, 8, '#e2722b', -12) + mj(44, 42, 7, '#d8452a', 20) + '</g></svg>';
+  }
+  else if (pat === 'yuki') svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><g fill="#ffffff" opacity="0.95"><circle cx="6" cy="8" r="1.6"/><circle cx="26" cy="5" r="1.1"/><circle cx="18" cy="20" r="2"/><circle cx="34" cy="24" r="1.4"/><circle cx="8" cy="32" r="1.2"/><circle cx="28" cy="36" r="1.8"/></g></svg>';
+  if (!svg) return '';
+  return 'url(&quot;data:image/svg+xml,' + encodeURIComponent(svg).replace(/'/g, '%27') + '&quot;)';
+}
+window.koyomiEnvelopePattern = koyomiEnvelopePattern;
+// 届いた封筒の表（宛名・差出人・切手・消印）。toName / fromName は表示用の名前（必ず消毒する）
+function koyomiEnvelopeFrontHtml(envId, k, toName, fromName, esc) {
+  var ev = koyomiEnvelopeOf(envId), e = esc || function(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var sek = (k && k.sekki) || '';
+  return '<div data-cap-env-front="' + e(ev.id) + '" style="position:absolute;inset:0;border-radius:6px;background-image:' + (ev.pat ? koyomiEnvelopePattern(ev.pat) + ',' : '') + 'linear-gradient(170deg,' + ev.base + ',' + ev.base2 + ');' +
+      'border:1px solid ' + ev.edge + ';box-shadow:0 4px 14px rgba(60,40,20,0.18);overflow:hidden;' + (ev.border ? 'outline:3px solid transparent;' : '') + '">' +
+    (ev.border ? '<div style="position:absolute;inset:5px;border:2px dashed rgba(200,70,70,0.0);border-image:repeating-linear-gradient(45deg,#d9534f 0 6px,#fcfcf9 6px 10px,#2f6fed 10px 16px,#fcfcf9 16px 20px) 4;"></div>' : '') +
+    '<div data-cap-stamp-at style="position:absolute;right:12px;top:10px;transform:rotate(3deg);">' + koyomiStampSvg(sek, 46) + '</div>' +
+    '<div data-cap-postmark-at style="position:absolute;right:38px;top:38px;transform:rotate(-12deg);">' + koyomiPostmarkSvg(k, 76, ev.mark) + '</div>' +
+    '<div style="position:absolute;left:18px;right:70px;top:62px;font-family:\'Hiragino Mincho ProN\',\'Yu Mincho\',\'Noto Serif JP\',serif;color:' + ev.ink + ';">' +
+      '<div style="font-size:17px;font-weight:700;letter-spacing:0.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + e(toName || 'あなた') + '<span style="font-size:13px;margin-left:6px;">様</span></div>' +
+      '<div style="height:1px;background:' + ev.ink + ';opacity:0.25;margin-top:4px;"></div></div>' +
+    (fromName ? '<div style="position:absolute;left:18px;bottom:10px;font-size:11px;color:' + ev.ink + ';opacity:0.8;font-family:\'Hiragino Mincho ProN\',\'Yu Mincho\',serif;">' + e(fromName) + 'より</div>' : '') +
+  '</div>';
+}
+window.koyomiEnvelopeFrontHtml = koyomiEnvelopeFrontHtml;
+
+// 宛名：本文の「拝啓　○○様」から読む（書く型で必ず入っている）。読めなければ「あなた」
+function koyomiCapsuleToNameOf(r) {
+  var m = /^\s*拝啓[\s　]*(.{1,24}?)[\s　]*様/.exec(String((r && r.body) || ''));
+  return m ? m[1] : 'あなた';
+}
+window.koyomiCapsuleToNameOf = koyomiCapsuleToNameOf;
+// 封をしたときの動き：便箋が封筒に入る → ふたが閉じて封蝋 → 表に返る → 切手 → 消印。押すと飛ばせる
+function koyomiCapsuleSealFx(envId, k, toName, done) {
+  var fin = function() { try { if (typeof done === 'function') done(); } catch (eD) {} };
+  var reduce = false; try { reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (eR) {}
+  if (reduce || window._smokeTestRunning) { fin(); return; }
+  var ev = koyomiEnvelopeOf(envId), e = (typeof _escapeHtml === 'function') ? _escapeHtml : function(x) { return String(x); };
+  if (!document.getElementById('capSealFxStyle')) {
+    var st = document.createElement('style'); st.id = 'capSealFxStyle';
+    st.textContent = '@keyframes capStampOn{0%{opacity:0;transform:translateY(-26px) rotate(-18deg) scale(1.5)}70%{opacity:1;transform:rotate(5deg) scale(0.96)}100%{opacity:1;transform:rotate(3deg) scale(1)}}' +
+      '@keyframes capMarkOn{0%{opacity:0;transform:rotate(-12deg) scale(1.7)}55%{opacity:1;transform:rotate(-12deg) scale(0.94)}100%{opacity:1;transform:rotate(-12deg) scale(1)}}' +
+      '@keyframes capSealPop{0%{transform:scale(0)}70%{transform:scale(1.18)}100%{transform:scale(1)}}';
+    document.head.appendChild(st);
+  }
+  var ov = document.createElement('div');
+  ov.id = 'koyomiCapsuleSealFx';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(40,30,20,0.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;cursor:pointer;';
+  var bg = 'background-image:' + (ev.pat ? koyomiEnvelopePattern(ev.pat) + ',' : '') + 'linear-gradient(170deg,' + ev.base + ',' + ev.base2 + ');';
+  ov.innerHTML = '<div style="position:relative;width:240px;height:150px;perspective:900px;">' +
+      '<div data-fx-flip style="position:absolute;inset:0;transform-style:preserve-3d;transition:transform 0.7s ease;">' +
+        // 裏：便箋が入る
+        '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;">' +
+          '<div style="position:absolute;inset:0;border-radius:6px;border:1px solid ' + ev.edge + ';' + bg + '"></div>' +
+          '<div data-fx-paper style="position:absolute;left:22px;right:22px;top:-96px;height:120px;background:#fffdf7;border:1px solid #e6d8bd;border-radius:3px;background-image:repeating-linear-gradient(transparent 0 13px,#efe3cc 13px 14px);transition:transform 0.8s ease;"></div>' +
+          '<div style="position:absolute;left:0;right:0;bottom:0;height:72%;border-radius:0 0 6px 6px;' + bg + 'clip-path:polygon(0 100%,0 12%,50% 58%,100% 12%,100% 100%);"></div>' +
+          '<div data-fx-flap style="position:absolute;left:0;right:0;top:0;height:60%;background:' + ev.flap + ';clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top center;transform:rotateX(180deg);transition:transform 0.5s ease;border-top:1px solid ' + ev.edge + ';"></div>' +
+          '<div data-fx-seal style="position:absolute;left:50%;top:52%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#d0645a,#a63a31);box-shadow:0 1px 3px rgba(0,0,0,0.3);transform:scale(0);"></div>' +
+        '</div>' +
+        // 表：宛名・切手・消印
+        '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;transform:rotateY(180deg);">' + koyomiEnvelopeFrontHtml(envId, k, toName, '', e) + '</div>' +
+      '</div></div>' +
+    '<div data-fx-text style="color:#fff;font-size:0.95em;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,0.4);min-height:1.4em;">便箋を封筒に入れて…</div>' +
+    '<div style="color:rgba(255,255,255,0.7);font-size:0.75em;">押すと先へ進む</div>';
+  document.body.appendChild(ov);
+  var q = function(s) { return ov.querySelector(s); }, ts = [], ended = false;
+  var end = function() { if (ended) return; ended = true; ts.forEach(clearTimeout); ov.remove(); fin(); };
+  ov.addEventListener('click', end);
+  // 表の切手と消印は、表に返ってから押す
+  var stampEl = q('[data-cap-stamp-at]'), markEl = q('[data-cap-postmark-at]');
+  if (stampEl) stampEl.style.opacity = '0';
+  if (markEl) markEl.style.opacity = '0';
+  var at = function(ms, fn) { ts.push(setTimeout(function() { if (!ended) fn(); }, ms)); };
+  at(60, function() { q('[data-fx-paper]').style.transform = 'translateY(100px)'; });
+  at(950, function() { q('[data-fx-flap]').style.transform = 'rotateX(0deg)'; q('[data-fx-text]').textContent = '封をして…'; });
+  at(1400, function() { q('[data-fx-seal]').style.animation = 'capSealPop 0.35s ease forwards'; });
+  at(1900, function() { q('[data-fx-flip]').style.transform = 'rotateY(180deg)'; q('[data-fx-text]').textContent = '切手を貼って…'; });
+  at(2650, function() { if (stampEl) stampEl.style.animation = 'capStampOn 0.45s ease forwards'; });
+  at(3200, function() { if (markEl) markEl.style.animation = 'capMarkOn 0.35s ease forwards'; q('[data-fx-text]').textContent = '封をした。届く日まで、手を離れる。'; });
+  at(4600, end);
+}
+window.koyomiCapsuleSealFx = koyomiCapsuleSealFx;
+
+// 封筒の裏（ふたと封蝋）。envId で封筒の色と柄。inner のときは外の入れ物いっぱいに広がる（表から裏返す形の中で使う）
+function _capsuleEnvelopeHtml(envId, inner) {
+  var ev = koyomiEnvelopeOf(envId), bg = 'background-image:' + (ev.pat ? koyomiEnvelopePattern(ev.pat) + ',' : '') + 'linear-gradient(160deg,' + ev.base2 + ',' + ev.base + ');';
+  return '<div ' + (inner ? 'data-cap-env-back style="position:absolute;inset:0;' : 'data-cap-env style="position:relative;width:220px;height:136px;margin:0 auto;cursor:pointer;') + 'perspective:600px;">' +
+    '<div style="position:absolute;inset:0;border:1px solid ' + ev.edge + ';border-radius:6px;box-shadow:0 4px 14px rgba(90,70,40,0.15);' + bg + '"></div>' +
+    '<div style="position:absolute;left:0;right:0;bottom:0;height:70%;' + bg + 'clip-path:polygon(0 100%,0 15%,50% 60%,100% 15%,100% 100%);border-radius:0 0 6px 6px;filter:brightness(0.97);"></div>' +
+    '<div data-cap-flap style="position:absolute;left:0;right:0;top:0;height:62%;background:' + ev.flap + ';clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top center;transition:transform 0.6s ease;border-top:1px solid ' + ev.edge + ';"></div>' +
     '<div data-cap-seal style="position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#d0645a,#a63a31);box-shadow:0 1px 3px rgba(0,0,0,0.25);transition:transform 0.4s ease, opacity 0.4s ease;"></div></div>';
 }
 // ===== v0.73.4: 便箋を選べる =====
@@ -14023,7 +14346,8 @@ function _capsuleRenderReceived(body, e) {
     rows = rows || [];
     koyomiCapsuleMarkSeen(rows.map(function(r) { return r.id; }));   // v0.72.2: 到着に気づいた印（🟢を消す）。開封の印は、封を切った時に付ける
     if (!rows.length) { body.innerHTML = '<div style="' + _CAP_BOX + 'color:#8a7f6a;">受け取った手紙は、まだない。</div>'; return; }
-    if (!document.getElementById('capOpenFxStyle')) { var st0 = document.createElement('style'); st0.id = 'capOpenFxStyle'; st0.textContent = '@keyframes capLetterIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes capEnvIn{from{opacity:0;transform:translateY(16px) scale(0.92)}to{opacity:1;transform:none}}'; document.head.appendChild(st0); }
+    if (!document.getElementById('capOpenFxStyle')) { var st0 = document.createElement('style'); st0.id = 'capOpenFxStyle'; st0.textContent = '@keyframes capLetterIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes capEnvIn{from{opacity:0;transform:translateY(16px) scale(0.92)}to{opacity:1;transform:none}}' +
+      '@keyframes capEnvDrop{0%{opacity:0;transform:translateY(-80px) rotate(-9deg)}55%{opacity:1;transform:translateY(8px) rotate(2deg)}75%{transform:translateY(-3px) rotate(-1deg)}100%{opacity:1;transform:none}}'; document.head.appendChild(st0); }
     var reduce = false; try { reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (eRm) {}
     var opened = {}; try { (JSON.parse(localStorage.getItem('koyomiCapsuleOpenedIds') || '[]') || []).forEach(function(id) { opened[id] = 1; }); } catch (eOp) {}
     body.innerHTML = rows.map(function(r) {
@@ -14071,11 +14395,19 @@ function _capsuleRenderReceived(body, e) {
         closed.onclick = null;
         var stageEl = card.querySelector('[data-cap-stage]'), top = closed.querySelector('[data-cap-top]');
         var showEnvelope = function() {
-          stageEl.innerHTML = '<div style="padding:10px 0 4px;' + (reduce ? '' : 'animation:capEnvIn 0.5s ease;') + '">' + _capsuleEnvelopeHtml() + '<div style="text-align:center;font-size:0.82em;color:#7a3b1e;margin-top:8px;">押して、封を切る</div></div>';
+          // v0.76.65: 封筒は表（宛名・切手・消印）で、上からすっと届く。押すと裏返って、封蝋とふた
+          var _envId = (r.sealed_koyomi && r.sealed_koyomi.env) || 'kinari';
+          stageEl.innerHTML = '<div style="padding:10px 0 4px;' + (reduce ? '' : 'animation:capEnvDrop 0.8s cubic-bezier(.2,.8,.3,1);') + '">' +
+            '<div data-cap-env style="position:relative;width:240px;height:150px;margin:0 auto;cursor:pointer;perspective:900px;">' +
+              '<div data-cap-flip style="position:absolute;inset:0;transform-style:preserve-3d;transition:transform 0.65s ease;">' +
+                '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;">' + koyomiEnvelopeFrontHtml(_envId, r.sealed_koyomi, koyomiCapsuleToNameOf(r), r.sender_name, e) + '</div>' +
+                '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;transform:rotateY(180deg);">' + _capsuleEnvelopeHtml(_envId, true) + '</div>' +
+              '</div></div>' +
+            '<div style="text-align:center;font-size:0.82em;color:#7a3b1e;margin-top:8px;">押して、封を切る</div></div>';
           var env = stageEl.querySelector('[data-cap-env]');
           env.onclick = function() {
             env.onclick = null;
-            var flap = env.querySelector('[data-cap-flap]'), seal = env.querySelector('[data-cap-seal]');
+            var flap = env.querySelector('[data-cap-flap]'), seal = env.querySelector('[data-cap-seal]'), flipEl = env.querySelector('[data-cap-flip]');
             var showLetter = function() {
               stageEl.innerHTML = _capsuleLetterHtml(r, e); wire(card, r);
               // 開封の印：封を切ったこの時に（この端末にも覚え、サーバーへ）
@@ -14083,9 +14415,10 @@ function _capsuleRenderReceived(body, e) {
               if (!r.opened_at) _capsuleRpc('koyomiru_capsule_mark_opened', { p_ids: [r.id] }).catch(function() {});
             };
             if (reduce) { showLetter(); return; }
-            seal.style.transform = 'scale(0.4)'; seal.style.opacity = '0';
-            setTimeout(function() { flap.style.transform = 'rotateX(180deg)'; }, 250);
-            setTimeout(showLetter, 900);
+            if (flipEl) flipEl.style.transform = 'rotateY(180deg)';
+            setTimeout(function() { seal.style.transform = 'scale(0.4)'; seal.style.opacity = '0'; }, 700);
+            setTimeout(function() { flap.style.transform = 'rotateX(180deg)'; }, 950);
+            setTimeout(showLetter, 1600);
           };
         };
         if (reduce || !top) { showEnvelope(); return; }
@@ -59740,6 +60073,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.65', date: '2026-11-16',
+    items: [
+      { icon:'💌', t:'タイムカプセルの手紙に、封筒と季節の切手が付きました',
+        before:'手紙は、いつも同じ封筒で届いていました',
+        after:'封筒を6種（生成りの和封筒・白い洋封筒・藍染め・桜・紅葉・雪景色）から選べます。相手にはその封筒で届きます。封をした日の二十四節気の切手が貼られ、「こよみる」の消印が押されます。切手は24種類。封をするときと、届いた封筒を開けるときに、ちょっとした動きがあります' }
+    ]
+  },
+  {
     ver: 'v0.76.64', date: '2026-11-16',
     items: [
       { icon:'💌', t:'招待の入口を「招待する」1つにまとめました',
@@ -90483,6 +90824,67 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _ok604 ? ok('ST-604·①: 部屋の名前と、よその部屋の部屋主。空の部屋は下に畳む') : ng('ST-604·①: 部屋の名前・空の部屋の出し方が違う');
        _okx604 ? ok('ST-604·②: 書き出しには部屋の名前も部屋主の名前も入らない') : ng('ST-604·②: 書き出しに名前が入っている（重大）');
      } catch(e) { ng('ST-604: 例外', e.message); }
+     // ===== ST-608: 封筒・二十四節気の切手・消印（v0.76.65〜） =====
+     enqueueSmokeAsyncTest('ST-608', function() {
+     return (async function() {
+     var _rpc608 = window._capsuleRpc, _op608 = localStorage.getItem('koyomiCapsuleOpenedIds'), _r608 = {}, _e608 = null;
+     var _host608 = null;
+     try {
+       var _S = ['立春','雨水','啓蟄','春分','清明','穀雨','立夏','小満','芒種','夏至','小暑','大暑','立秋','処暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至','小寒','大寒'];
+       var _all = _S.every(function(n) { var v = koyomiStampSvg(n, 40); return !!KOYOMI_STAMP_ART[n] && v.indexOf('data-koyomi-stamp="' + n + '"') !== -1 && v.indexOf('こよみる郵便') !== -1 && !/NIPPON|円/.test(v); });
+       _r608.stamps = _all && Object.keys(KOYOMI_STAMP_ART).length === 24 && /data-koyomi-stamp="こよみ"/.test(koyomiStampSvg('"><i>', 40));
+       var _pm = koyomiPostmarkSvg({ date: '2026-11-16', sekki: '立冬' }), _pm2 = koyomiPostmarkSvg({ date: '2026-11-16', sekki: '"><i id=st608p>' });
+       _r608.postmark = /R8\.11\.16/.test(_pm) && /立冬/.test(_pm) && _pm2.indexOf('st608p') === -1;
+       _r608.envs = KOYOMI_ENVELOPES.length === 6 && koyomiEnvelopeOf('nope').id === 'kinari' && koyomiEnvelopeOf('sakura').id === 'sakura';
+       var _d608 = document.createElement('div');
+       _d608.innerHTML = '<div style="position:relative;width:240px;height:150px;">' + koyomiEnvelopeFrontHtml('"><i id=st608e>', { date: '2026-11-16', sekki: '立冬' }, '"><i id=st608x>', '<b id=st608y>', null) + '</div>';
+       _r608.front = !_d608.querySelector('#st608x') && !_d608.querySelector('#st608y') && !_d608.querySelector('#st608e') && !!_d608.querySelector('[data-koyomi-stamp="立冬"]') && !!_d608.querySelector('[data-koyomi-postmark]') &&
+         _d608.querySelector('[data-cap-env-front]').getAttribute('data-cap-env-front') === 'kinari';
+       _r608.toName = koyomiCapsuleToNameOf({ body: '拝啓　千秋様\n元気？\n敬具' }) === '千秋' && koyomiCapsuleToNameOf({ body: 'こんにちは' }) === 'あなた';
+       var _w608 = _capsuleRenderWrite.toString();
+       _r608.write = _w608.indexOf('data-cap-env-pick') !== -1 && _w608.indexOf('{ env: _env }') !== -1 && _w608.indexOf('koyomiCapsuleSealFx(') !== -1;
+       var _done608 = false; koyomiCapsuleSealFx('sakura', { date: '2026-11-16', sekki: '立冬' }, '千秋', function() { _done608 = true; });
+       _r608.fxTest = _done608 && !document.getElementById('koyomiCapsuleSealFx');
+       // 受け取り：カプセル → 表（選んだ封筒・切手・消印・宛名）→ 押すと便箋
+       localStorage.removeItem('koyomiCapsuleOpenedIds');
+       window._capsuleRpc = function(name) {
+         if (name === 'koyomiru_capsule_list_received') return Promise.resolve([{ id: 'st608c', sender_id: 'st608s', sender_name: 'ST608の人', body: '拝啓　ST608様\nたのしみ\n敬具', sealed_at: '2026-11-16T03:00:00Z', open_at: '2026-11-16T04:00:00Z',
+           opened_at: '2026-11-16T05:00:00Z', stationery: 'ruled', sealed_koyomi: { date: '2026-11-16', sekki: '立冬', env: 'sakura' } }]);
+         return Promise.resolve([]);
+       };
+       localStorage.setItem('koyomiCapsuleOpenedIds', '[]');
+       _host608 = document.createElement('div'); document.body.appendChild(_host608);
+       // 開いたことのない手紙として見せる（opened_at を外す）
+       var _orig608 = window._capsuleRpc;
+       window._capsuleRpc = function(name) { return _orig608(name).then(function(rows) { if (name === 'koyomiru_capsule_list_received') rows[0].opened_at = null; return rows; }); };
+       _capsuleRenderReceived(_host608, _escapeHtml);
+       await new Promise(function(r) { setTimeout(r, 60); });
+       var _cl608 = _host608.querySelector('[data-cap-closed]');
+       if (_cl608) _cl608.click();
+       await new Promise(function(r) { setTimeout(r, 1000); });
+       var _fr608 = _host608.querySelector('[data-cap-env-front]');
+       _r608.arrive = !!_fr608 && _fr608.getAttribute('data-cap-env-front') === 'sakura' && !!_host608.querySelector('[data-cap-env] [data-koyomi-stamp="立冬"]') && /ST608\s*様/.test(_fr608.textContent) && /ST608の人より/.test(_fr608.textContent);
+       var _env608 = _host608.querySelector('[data-cap-env]'); if (_env608) _env608.click();
+       await new Promise(function(r) { setTimeout(r, 1900); });
+       _r608.letter = !!_host608.querySelector('[data-cap-letter]') && !_host608.querySelector('[data-cap-env]');
+     } catch(e) { _e608 = e; }
+     finally {
+       window._capsuleRpc = _rpc608;
+       try { if (_op608 === null) localStorage.removeItem('koyomiCapsuleOpenedIds'); else localStorage.setItem('koyomiCapsuleOpenedIds', _op608); } catch (eR) {}
+       if (_host608) _host608.remove();
+     }
+     if (_e608) ng('ST-608: 例外', _e608.message);
+     else {
+       _r608.stamps ? ok('ST-608·①: 二十四節気の切手24枚（こよみる郵便・国名や料金は入れない）') : ng('ST-608·①: 切手が違う');
+       _r608.postmark ? ok('ST-608·②: 消印（令和の年月日と節気・おかしな節気は入れない）') : ng('ST-608·②: 消印が違う');
+       (_r608.envs && _r608.front) ? ok('ST-608·③: 封筒6種・知らない封筒は生成り・宛名と差出人は消毒') : ng('ST-608·③: 封筒の表が違う（重大）');
+       _r608.toName ? ok('ST-608·④: 宛名は「拝啓　○○様」から') : ng('ST-608·④: 宛名の読み方が違う');
+       (_r608.write && _r608.fxTest) ? ok('ST-608·⑤: 書く画面で封筒を選び、封をすると動き（試しの間は飛ばす）') : ng('ST-608·⑤: 封筒を選ぶ・封をする動きが違う');
+       _r608.arrive ? ok('ST-608·⑥: カプセルを開けると、選んだ封筒の表（切手・消印・宛名）で届く') : ng('ST-608·⑥: 届いた封筒が違う');
+       _r608.letter ? ok('ST-608·⑦: 封筒を押すと、裏返って封を切り、便箋が出る') : ng('ST-608·⑦: 封を切っても便箋が出ない');
+     }
+     })();
+     });
      // ===== ST-607: 共有カレンダー一覧の「招待する」もウィザードを通る（v0.76.63〜） =====
      try {
        var _src607 = _stAllSrc();
