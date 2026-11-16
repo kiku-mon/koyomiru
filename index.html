@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.70';
+    const APP_VERSION = 'v0.76.73';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13425,7 +13425,7 @@ var KOYOMI_JIKOU = {
   10: ['秋晴れの候、', '秋も深まってまいりました。'], 11: ['晩秋の候、', '朝晩の冷え込みが増してまいりました。'], 12: ['師走の候、', '今年も残りわずかとなりました。']
 };
 var KOYOMI_LETTER_CHIPS = [
-  { key: 'jikou', label: '時候のあいさつ', where: 'top' },
+  { key: 'jikou', label: '季節のひとことから始めると、手紙らしくなる', where: 'top' },   // v0.76.72: 「時候のあいさつ」は難しく見えるので言い換え
   { key: 'anpi', label: '安否のあいさつ', where: 'top', items: ['いかがお過ごしでしょうか。', 'お元気ですか。', 'こちらは元気にしています。'] },
   { key: 'kakidashi', label: '本文の書き出し', where: 'top', items: ['さて、', '今日は、未来のあなたに伝えたいことがあって、筆をとりました。', 'この手紙を開くころ、あなたはどうしているでしょう。'] },
   // v0.76.66: 【権威】2026-11-17「結びの言葉が3個ぐらいしかないから、もう少し増やしたら」→ 14に
@@ -13483,12 +13483,58 @@ var KOYOMI_LETTER_THEMES = [
 ];
 window.KOYOMI_LETTER_THEMES = KOYOMI_LETTER_THEMES;
 function _koyomiAllBodyChipTexts() { var a = []; KOYOMI_LETTER_THEMES.forEach(function(g) { g.themes.forEach(function(t) { a = a.concat(t.items); }); }); return a; }
-function koyomiLetterChipItems(group, d) {
-  if (group.key !== 'jikou') return group.items;
-  var dd = d || new Date(), list = (KOYOMI_JIKOU[dd.getMonth() + 1] || []).slice();
-  try { var sk = (koyomiTodayData(dd) || {}).sekki; if (sk) list.push(sk + 'を迎え、'); } catch (e) {}
+// v0.76.71: 【権威】2026-11-17「二十四節気も出して72候も出してあげて、で選べるようにしてあげたい」「入れ込むのは保留して選ばして」
+//   時候のあいさつは季節を一度だけ言うのが作法なので、節気と候は別々の候補にして、どちらか1つを選んでもらう。
+//   月の候（晩秋の候など）は節気とずれる（11月7日から立冬＝冬なのに「晩秋」）ので、言い切りの形は節気に任せ、月からはやわらかい一文だけ残す
+// v0.76.71: 【権威】2026-11-17 最高峰会議「節気が変わった日に一言。この季節の切手は今だけ」→ おすすめで、と任された
+//   今の節気の切手で送れる最後の日と、残りの日数（節気の初めの3日は「今日から」と出す）。節気の変わり目は暦の計算で探す
+function koyomiStampWindow(d) {
+  try {
+    var dd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12), v = koyomiTodayData(dd) || {}, sk = v.sekki;
+    if (!sk) return null;
+    var last = new Date(dd.getTime());
+    for (var i = 1; i <= 20; i++) { var n = new Date(dd.getFullYear(), dd.getMonth(), dd.getDate() + i, 12); if ((koyomiTodayData(n) || {}).sekki !== sk) break; last = n; }
+    var left = Math.round((last - dd) / 86400000);
+    return { sekki: sk, last: last, daysLeft: left, isNew: (v.sekkiDay || 99) <= 3, lastLabel: (last.getMonth() + 1) + '月' + last.getDate() + '日' };
+  } catch (e) { return null; }
+}
+window.koyomiStampWindow = koyomiStampWindow;
+// v0.76.71: 【権威】2026-11-17「管理者はボツにした写しを撮るっていうのもありにして、自分がやってみて、いる・いらないを試してみてもいい」
+//   管理者が封をした手紙だけ、この端末に写しを残す（サーバーには何も足さない。ほかの利用者には関係ない）。出した手紙の一覧で読める
+function koyomiCapsuleAdminCopies() { try { var a = JSON.parse(localStorage.getItem('koyomiCapsuleAdminCopies') || '{}'); return (a && typeof a === 'object' && !Array.isArray(a)) ? a : {}; } catch (e) { return {}; } }
+function koyomiCapsuleAdminCopySave(id, c) {
+  try {
+    if (!id || typeof id !== 'string' || !(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())) return false;
+    var a = koyomiCapsuleAdminCopies(); a[id] = { to: String(c.to || '').slice(0, 60), body: String(c.body || '').slice(0, 20000), sealedAt: c.sealedAt || new Date().toISOString(), env: c.env || '' };
+    var ks = Object.keys(a); if (ks.length > 200) ks.sort(function(x, y) { return String(a[x].sealedAt).localeCompare(String(a[y].sealedAt)); }).slice(0, ks.length - 200).forEach(function(k) { delete a[k]; });
+    localStorage.setItem('koyomiCapsuleAdminCopies', JSON.stringify(a)); return true;
+  } catch (e) { return false; }
+}
+window.koyomiCapsuleAdminCopies = koyomiCapsuleAdminCopies; window.koyomiCapsuleAdminCopySave = koyomiCapsuleAdminCopySave;
+var KOYOMI_KOU_LETTER = { '鴻雁北': '雁が北へ帰っていく頃', '半夏生': '半夏生の頃', '乃東枯': '夏枯草が枯れる頃', '乃東生': '夏枯草が芽を出し始める頃' };
+// v0.76.72: 【権威】2026-11-17「改まった手紙に二十四節気、だと難しく感じる。若者はこんなのに慣れてない。ポンポン気軽に押せるのがチップの良さ」
+//   →「その見せ方でいい。普段→普段使い」。見出しに暦の言葉を出さず、チップに小さな札（きちんと／やわらか／普段使い）。正式名称と読みは下に小さく一行
+function _koyomiJikouList(dd) {
+  var list = [];
+  try {
+    var v = koyomiTodayData(dd) || {};
+    if (v.sekki) list.push({ t: v.sekki + 'の候、いかがお過ごしでしょうか。', tag: 'きちんと' });
+    var kd = KOYOMI_KOU_LETTER[v.kou] || v.kouDesc || '';
+    if (kd && /頃$/.test(kd)) list.push({ t: kd + 'となりました。いかがお過ごしでしょうか。', tag: 'やわらか' });
+  } catch (e) {}
+  var m = KOYOMI_JIKOU[dd.getMonth() + 1] || [];
+  if (m[1]) list.push({ t: m[1], tag: '普段使い' });
   return list;
 }
+function koyomiLetterChipItems(group, d) {
+  if (group.key !== 'jikou') return group.items;
+  return _koyomiJikouList(d || new Date()).map(function(x) { return x.t; });
+}
+function koyomiLetterChipTag(text, d) { var hit = _koyomiJikouList(d || new Date()).filter(function(x) { return x.t === text; })[0]; return hit ? hit.tag : ''; }
+function koyomiLetterKoyomiLine(d) {
+  try { var v = koyomiTodayData(d || new Date()) || {}; if (!v.sekki) return ''; return '今日の暦：' + v.sekki + (v.sekkiReading ? '（' + v.sekkiReading + '）' : '') + (v.kou ? '・' + v.kou + (v.kouReading ? '（' + v.kouReading + '）' : '') : ''); } catch (e) { return ''; }
+}
+window.koyomiLetterChipTag = koyomiLetterChipTag; window.koyomiLetterKoyomiLine = koyomiLetterKoyomiLine;
 function _koyomiAllTopChipTexts(d) { var a = []; KOYOMI_LETTER_CHIPS.forEach(function(g) { if (g.where === 'top') a = a.concat(koyomiLetterChipItems(g, d)); }); return a; }
 // 型に沿って1行入れる（拝啓の下に積む／敬具の上へ）。型が崩れていたら、末尾の敬具の前に入れる
 function koyomiLetterInsert(text, phrase, where, d) {
@@ -13504,10 +13550,35 @@ function koyomiLetterInsert(text, phrase, where, d) {
   }
   // 前のあいさつ：拝啓の下で、すでに入っている型の行のあとへ（本文のきっかけより上）
   // v0.76.14: 本文のきっかけ（where='body'）は、前のあいさつと、すでに入れたきっかけのあと＝本文の頭へ
-  var tops = _koyomiAllTopChipTexts(d), k = head + 1;
-  if (where === 'body') tops = tops.concat(_koyomiAllBodyChipTexts());
-  while (k < lines.length && tops.indexOf(lines[k]) !== -1) k++;
-  lines.splice(k, 0, phrase);
+  // v0.76.71: 【権威】2026-11-17「さての隣にすぐ手紙チップで入れて、うまくつながるように」
+  //   「、」で終わる言葉（さて、／立冬の候、など）のあとは改行せず、次の言葉を同じ行に続ける。
+  //   拝啓の下の型の行を言葉の並びに分け、手紙の順（時候→安否→書き出し→本文のきっかけ）に差し込んでから、行に組み直す
+  var rank = {};
+  KOYOMI_LETTER_CHIPS.forEach(function(g, gi) { if (g.where === 'top') koyomiLetterChipItems(g, d).forEach(function(t) { if (rank[t] === undefined) rank[t] = gi; }); });
+  _koyomiAllBodyChipTexts().forEach(function(t) { if (rank[t] === undefined) rank[t] = 90; });
+  var known = Object.keys(rank).sort(function(a, b) { return b.length - a.length; });
+  var split = function(line) {
+    var out = [], rest = line;
+    while (rest.length) {
+      var hit = null;
+      for (var j = 0; j < known.length; j++) { if (rest.indexOf(known[j]) === 0) { hit = known[j]; break; } }
+      if (!hit) return null;
+      out.push(hit); rest = rest.slice(hit.length);
+    }
+    return out.length ? out : null;
+  };
+  var k = head + 1, pieces = [], sp;
+  while (k < lines.length && (sp = split(lines[k]))) { pieces = pieces.concat(sp); k++; }
+  // v0.76.72: 同じ言葉を二重に入れない（「〇〇の候、いかがお過ごしでしょうか。」のあとに安否の「いかがお過ごしでしょうか。」を押しても入れない）。
+  //   逆に、先に入っている安否を含む時候を押したら、時候に置き換える
+  if (pieces.some(function(x) { return x.indexOf(phrase) !== -1; })) return lines.join('\n');
+  pieces = pieces.filter(function(x) { return phrase.indexOf(x) === -1; });
+  var r = rank[phrase] !== undefined ? rank[phrase] : (where === 'body' ? 90 : 0), pos = 0;
+  pieces.forEach(function(x, i) { if ((rank[x] !== undefined ? rank[x] : 0) <= r) pos = i + 1; });
+  pieces.splice(pos, 0, phrase);
+  var block = [];
+  pieces.forEach(function(x) { if (block.length && /、$/.test(block[block.length - 1])) block[block.length - 1] += x; else block.push(x); });
+  lines.splice.apply(lines, [head + 1, k - (head + 1)].concat(block));
   return lines.join('\n');
 }
 window.koyomiLetterInsert = koyomiLetterInsert;
@@ -13515,7 +13586,9 @@ function koyomiLetterChipsHtml(e) {
   var d = new Date();
   var grp = function(g) {
     return '<div style="margin-bottom:6px;"><div style="font-size:0.74em;color:#8a7f6a;margin-bottom:3px;">' + e(g.label) + '</div><div style="display:flex;flex-wrap:wrap;gap:5px;">' +
-      koyomiLetterChipItems(g, d).map(function(t) { return '<button type="button" data-letter-chip="' + e(g.where) + '" data-letter-text="' + e(t) + '" style="padding:4px 10px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-size:0.8em;cursor:pointer;text-align:left;">' + e(t) + '</button>'; }).join('') + '</div></div>';
+      koyomiLetterChipItems(g, d).map(function(t) { var tg = g.key === 'jikou' ? koyomiLetterChipTag(t, d) : ''; return '<button type="button" data-letter-chip="' + e(g.where) + '" data-letter-text="' + e(t) + '"' + (tg ? ' data-letter-tag="' + e(tg) + '"' : '') + ' style="padding:4px 10px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-size:0.8em;cursor:pointer;text-align:left;">' + e(t) +
+        (tg ? '<span style="display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:#f3ead8;color:#8a6a3a;font-size:0.82em;vertical-align:1px;">' + e(tg) + '</span>' : '') + '</button>'; }).join('') + '</div>' +
+      (g.key === 'jikou' && koyomiLetterKoyomiLine(d) ? '<div data-letter-koyomi-line style="font-size:0.7em;color:#a08d66;margin-top:4px;">' + e(koyomiLetterKoyomiLine(d)) + '</div>' : '') + '</div>';
   };
   // v0.76.14: 手紙の順に並べる。v0.76.22 から：前のあいさつ → 結び → 本文のきっかけ（長いので最後）
   return '<div data-letter-chips style="margin:8px 0 2px;">' +
@@ -13644,7 +13717,8 @@ function _capsuleRenderWrite(body, e) {
       // 開く日と時刻を指定する。チップ：1時間後・明日の朝・1年後・3年後・5年後・10年後・20年後・30年後
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">開く日と時刻</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' +
-        [['m1', '1分後'], ['h1', '1時間後'], ['tm', '明日の朝'], ['y1', '1年後'], ['y3', '3年後'], ['y5', '5年後'], ['y10', '10年後'], ['y20', '20年後'], ['y30', '30年後']].map(function(c) {
+        // v0.76.73: 【権威】2026-11-17 最高峰会議「元日に開ける手紙」→ 11月と12月だけ「元日に」（次の1月1日 朝7時）
+        [['m1', '1分後'], ['h1', '1時間後'], ['tm', '明日の朝']].concat(koyomiCapsuleNewYearChipOn(new Date()) ? [['ny', '🎍 元日に']] : []).concat([['y1', '1年後'], ['y3', '3年後'], ['y5', '5年後'], ['y10', '10年後'], ['y20', '20年後'], ['y30', '30年後']]).map(function(c) {
           return '<button type="button" data-cap-chip="' + c[0] + '" style="padding:6px 11px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#7a3b1e;font-size:0.85em;cursor:pointer;">' + c[1] + '</button>';
         }).join('') + '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
@@ -13675,10 +13749,12 @@ function _capsuleRenderWrite(body, e) {
             '<div style="font-weight:700;color:#7a3b1e;font-size:0.85em;">' + e(sk) + '（' + e(NIJUSHISEKKI_READING[sk] || '') + '）の切手</div>' +
             '<div data-stamp-title="' + e(koyomiStampTitleText(sk)) + '" style="font-weight:800;color:#7a3b1e;font-size:1.1em;font-family:\'Hiragino Mincho ProN\',\'Yu Mincho\',serif;white-space:nowrap;">' + e(koyomiStampMotifText(sk)) + '</div>' +
             '<div style="font-size:0.78em;">' + e(nt[1]) + '</div>' +
+            (function() { var w = koyomiStampWindow(new Date()); if (!w) return ''; return '<div data-stamp-window style="font-size:0.76em;color:#7a3b1e;font-weight:700;margin-top:2px;">' + (w.isNew ? '🆕 今日から' + e(sk) + '。' : '') + 'この切手で送れるのは' + e(w.lastLabel) + 'まで' + (w.daysLeft > 0 ? '（あと' + w.daysLeft + '日）' : '（今日まで）') + '</div>'; })() +
             '<div style="font-size:0.7em;color:#a08d66;">切手を押すと、大きく見られる。節気が変わると、切手も変わる。</div></div></div>'; })() +
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">📝 手紙</div>' +
       '<textarea data-cap="body" rows="9" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
       koyomiLetterChipsHtml(e) +   // v0.76.4
+      '<div data-cap-print-draft style="display:flex;gap:6px;justify-content:flex-end;margin:6px 0 0;flex-wrap:wrap;align-items:center;"><span style="font-size:0.74em;color:#8a7f6a;">紙に書き写すときに</span>' + koyomiLetterPrintButtons('data-cap-print') + '</div>' +   // v0.76.72
       '<div style="font-size:0.74em;color:#8a7f6a;margin-top:10px;line-height:1.6;">封をしたら、取り消せない。30年後まで選べるが、届けられるのは、こよみるが続いている限り。もしこよみるを終えるときは、できる限り前もって知らせ、封をした手紙を開けられるようにする。</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap;"><button type="button" data-cap="draft" style="padding:10px 14px;border-radius:12px;border:1px solid #4a3f6b;background:#f4f1fa;color:#4a3f6b;font-weight:700;cursor:pointer;" title="この端末に置いておき、翌朝5時から封ができる">🌙 一晩置く</button>' +
       '<button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
@@ -13705,6 +13781,12 @@ function _capsuleRenderWrite(body, e) {
     var _pickEnv = function(id, quiet) { _env = koyomiEnvelopeOf(id).id; try { localStorage.setItem('koyomiCapsuleEnv', _env); } catch (eS) {} body.querySelectorAll('[data-cap-env-pick]').forEach(function(b) { b.style.border = b.getAttribute('data-cap-env-pick') === _env ? '2px solid #7a3b1e' : '1px solid #d9c9a6'; }); _drawEnvPreview(!quiet); };
     // 宛名は手紙の「拝啓　○○様」から。書きかえたら封筒の宛名も変わる
     (function() { var ta1 = body.querySelector('[data-cap="body"]'); if (ta1) ta1.addEventListener('input', function() { _drawEnvPreview(false); }); })();
+    // v0.76.72: 書いている手紙を紙に（下書きとして）
+    body.querySelectorAll('[data-cap-print]').forEach(function(pb) { pb.onclick = function() {
+      var t2 = String((body.querySelector('[data-cap="body"]') || {}).value || '').trim();
+      if (!t2) { if (typeof showToast === 'function') showToast('手紙が空。', { type: 'warn' }); return; }
+      koyomiLetterPrint({ body: t2, k: Object.assign(koyomiCapsuleSealedKoyomi(new Date()), { env: _env }), to: koyomiCapsuleToNameOf({ body: t2 }), draft: true, title: '手紙（下書き）' }, pb.getAttribute('data-cap-print'));
+    }; });
     body.querySelectorAll('[data-cap-env-pick]').forEach(function(b) { b.onclick = function() { _pickEnv(b.getAttribute('data-cap-env-pick')); }; });
     _pickEnv(_env, true);
     setTimeout(function() { _drawEnvPreview(false); }, 0);   // 拝啓の宛名が入ったあとに描き直す
@@ -13768,6 +13850,7 @@ function _capsuleRenderWrite(body, e) {
         if (k === 'm1') { d = new Date(n0.getTime() + 60000); if (d.getSeconds() > 0) d = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes() + 1, 0); }   // v0.73.1: 【権威】2026-11-04「1分後に送れるようにしとけ」。分までしか選べないので、次の分へ
         else if (k === 'h1') d = new Date(n0.getTime() + 3600000);
         else if (k === 'tm') d = new Date(n0.getFullYear(), n0.getMonth(), n0.getDate() + 1, 7, 0);
+        else if (k === 'ny') d = koyomiCapsuleNewYearAt(n0);
         else { var yy = Number(k.slice(1)); d = new Date(n0.getFullYear() + yy, n0.getMonth(), n0.getDate(), yy === 30 ? 0 : 9, 0); }
         _setAt(d);
       };
@@ -13806,6 +13889,7 @@ function _capsuleRenderWrite(body, e) {
           // v0.75.4: 届く日を、自分のカレンダーの予定に入れる（v0.75.5: どの手紙の予定かの印を付ける）
           var _toName = (function() { var sel = body.querySelector('[data-cap="to"]'); var o = sel && sel.options[sel.selectedIndex]; return _capsuleReplyTo ? _capsuleReplyTo.name : (o ? o.textContent : ''); })();
           try { koyomiCapsuleEventFor(typeof _newCapId === 'string' ? _newCapId : null, _toName, new Date().toISOString(), openAt.toISOString()); if (typeof saveAllTasks === 'function') saveAllTasks(); } catch (eEv) {}
+          koyomiCapsuleAdminCopySave(typeof _newCapId === 'string' ? _newCapId : null, { to: _toName, body: txt, env: _env });   // v0.76.71: 管理者の写し（試し）
           _capsuleReplyTo = null;
           // v0.76.65: 封をする動き（便箋が封筒に入り、切手が貼られ、消印が押される）のあとに知らせる
           koyomiCapsuleSealFx(_env, _sealK, koyomiCapsuleToNameOf({ body: txt }), function() {
@@ -13827,9 +13911,12 @@ function _capsuleRenderSealed(body, e) {
   _capsuleRpc('koyomiru_capsule_list_sent').then(function(rows) {
     rows = (rows || []).filter(function(r) { return !r.canceled_at; });
     if (!rows.length) { body.innerHTML = KOYOMI_ADMIN_ONLY_BADGE + '<div style="' + _CAP_BOX + 'color:#8a7f6a;">出した手紙は、まだない。</div>'; return; }
+    var _copies = koyomiCapsuleAdminCopies();   // v0.76.71: 管理者の写し（試し）
     body.innerHTML = KOYOMI_ADMIN_ONLY_BADGE + rows.map(function(r) {
-      var delivered = r.delivered;
+      var delivered = r.delivered, _cp = _copies[r.id];
       return '<div style="' + _CAP_BOX + 'margin-bottom:10px;">' +
+        (_cp ? '<details data-cap-copy="' + e(r.id) + '" style="margin-bottom:6px;"><summary style="cursor:pointer;font-size:0.82em;color:#7a3b1e;font-weight:700;">📄 写しを読む（管理者の試し・この端末だけ）</summary>' +
+          '<div style="margin-top:6px;padding:10px 12px;background:#fffdf7;border:1px solid #e6d8bd;border-radius:10px;white-space:pre-wrap;font-size:0.86em;line-height:1.8;color:#3d2e1e;font-family:\'Hiragino Mincho ProN\',\'Yu Mincho\',serif;">' + e(_cp.body) + '</div></details>' : '') +
         // v0.72.7: 【権威】2026-11-04、「届いたが分からない。相手方が開封したフラグを立てたい」「相手が名前を変えたらどうするの？」との指摘
         '<div style="font-weight:700;color:#5a4630;">' + (!delivered ? '🔏 到着待ち' : (r.opened_at ? '✅ 開封済み' : '📭 相手に到着・未開封'))   /* v0.73.0: 【権威】2026-11-04「送った・届いたが状態なのか動詞なのか。意味を二重に取らせない工夫を」→ タブは置き場所の名詞、状態は「〜中・〜済み」 */ + '　宛先：' + e(r.recipient_name) + ((r.recipient_label && r.recipient_label !== r.recipient_name) ? '<span style="font-weight:400;font-size:0.85em;color:#8a7f6a;">（封をしたときは「' + e(r.recipient_label) + '」）</span>' : '') + '</div>' +
         (delivered && r.opened_at ? '<div style="font-size:0.84em;color:#2e7d4f;margin-top:4px;">開封：' + _capsuleYmd(r.opened_at) + ' ' + String(new Date(r.opened_at).getHours()).padStart(2, '0') + ':' + String(new Date(r.opened_at).getMinutes()).padStart(2, '0') + '</div>' : '') +
@@ -14093,6 +14180,116 @@ document.addEventListener('click', function(ev) {
     koyomiStampZoom(sk);
   } catch (eZ) {}
 }, true);
+// ===== v0.76.72 手紙を印刷する（A4・縦書き／横書き） =====
+// 【権威】2026-11-17「これ印刷したら本当に実物ができて便利なんじゃないか。A4とかで」「印刷の機能はスコープの問題で散々苦しんだ」「両方できるなら選べるように。ちゃんと収まるかが心配」
+//   アプリの画面を印刷用に切り替えるのではなく、手紙だけの紙を裏の小窓（iframe）に別に組んで、それだけを印刷する。アプリの見た目・既存の印刷には触れない。
+//   折り返しはブラウザに任せず、ここで1行ずつ組む（収まりを確かめられるように）。入りきらなければ文字を小さくし、それでも入らなければ次の紙へ続ける
+var KOYOMI_PRINT = { boxW: 180, boxH: 214, fsMax: 5.4, fsMin: 3.8, gap: 1.95 };   // mm
+function _koyomiPrintCharW(c) { return /[ -~｡-ﾟ]/.test(c) ? 0.56 : 1; }
+var _KOYOMI_KINSOKU = '、。，．・：；？！ー」』）】〕〉》ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ々';
+// 本文を行（縦書きなら列）に分ける。perLine は1行に入る全角の字数
+function koyomiPrintWrap(text, perLine) {
+  var out = [], blank = 0;
+  String(text || '').replace(/\r/g, '').split('\n').forEach(function(para) {
+    if (!para.trim()) { if (out.length && blank < 1) out.push(''); blank++; return; }
+    blank = 0;
+    var row = '', w = 0, chars = Array.from(para);
+    chars.forEach(function(c) {
+      var cw = _koyomiPrintCharW(c);
+      if (w + cw > perLine + 0.01 && row) {
+        if (_KOYOMI_KINSOKU.indexOf(c) !== -1 && w + cw <= perLine + 1.01) { row += c; w += cw; return; }   // 句読点は行の頭に来ないよう、行の終わりにぶら下げる
+        out.push(row); row = ''; w = 0;
+      }
+      row += c; w += cw;
+    });
+    if (row) out.push(row);
+  });
+  while (out.length && out[out.length - 1] === '') out.pop();
+  return out;
+}
+window.koyomiPrintWrap = koyomiPrintWrap;
+// 大きさを決めて、紙ごとの行に分ける
+function koyomiPrintLayout(text, mode) {
+  var P = KOYOMI_PRINT, along = mode === 'v' ? P.boxH : P.boxW, across = mode === 'v' ? P.boxW : P.boxH, fs, rows, per, cap;
+  for (fs = P.fsMax; fs >= P.fsMin - 0.001; fs = Math.round((fs - 0.2) * 10) / 10) {
+    per = Math.floor(along / fs); cap = Math.floor(across / (fs * P.gap));
+    rows = koyomiPrintWrap(text, per);
+    if (rows.length <= cap) return { fs: fs, per: per, cap: cap, pages: [rows] };
+  }
+  fs = P.fsMin; per = Math.floor(along / fs); cap = Math.floor(across / (fs * P.gap));
+  rows = koyomiPrintWrap(text, per);
+  var pages = []; for (var i = 0; i < rows.length; i += cap) pages.push(rows.slice(i, i + cap));
+  return { fs: fs, per: per, cap: cap, pages: pages.length ? pages : [[]] };
+}
+window.koyomiPrintLayout = koyomiPrintLayout;
+function koyomiLetterPrintHtml(o, mode) {
+  var esc = function(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+  mode = mode === 'v' ? 'v' : 'h';
+  var P = KOYOMI_PRINT, k = o.k || {}, L = koyomiPrintLayout(o.body, mode), lh = Math.round(L.fs * P.gap * 100) / 100;
+  var sk = (k.sekki && KOYOMI_STAMP_ART[k.sekki]) ? k.sekki : '';
+  var env = (typeof koyomiEnvelopeOf === 'function') ? koyomiEnvelopeOf(k.env) : null;
+  var foot = (o.draft ? '下書き　' : '') + ((typeof koyomiCapsuleKoyomiText === 'function' ? koyomiCapsuleKoyomiText(k) : '') || '') + (o.draft ? '' : 'に封をした手紙');
+  var head = '<div class="hd"><div class="who">' + (o.to ? esc(o.to) + ' へ' : '') + (o.from ? '<br>' + esc(o.from) + ' より' : '') + '</div>' +
+    '<div class="mk">' + (sk ? koyomiPostmarkSvg(k, 104, env && env.id === 'ai' ? '#3d4f7a' : null) : '') + (sk ? '<div class="st">' + koyomiStampSvg(sk, 62) + '</div>' : '') + '</div></div>';
+  var pages = L.pages.map(function(rows, pi) {
+    var body = rows.map(function(r) { return '<div class="r">' + (r ? esc(r) : '&nbsp;') + '</div>'; }).join('');
+    var pad = ''; for (var i = rows.length; i < L.cap; i++) pad += '<div class="r">&nbsp;</div>';   // 罫線を紙の終わりまで
+    return '<section class="pg">' + (pi === 0 ? head : '<div class="hd hd2"></div>') + '<div class="bx ' + mode + '">' + body + pad + '</div>' +
+      '<div class="ft">' + esc(foot) + (L.pages.length > 1 ? '　' + (pi + 1) + ' / ' + L.pages.length : '') + '</div></section>';
+  }).join('');
+  var css = '@page{size:A4 portrait;margin:15mm}*{box-sizing:border-box;margin:0;padding:0}html,body{background:#fff;color:#2b2016;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    'body{font-family:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP","MS Mincho",serif}' +
+    '.pg{width:' + P.boxW + 'mm;height:265mm;position:relative;page-break-after:always;break-after:page;overflow:hidden}.pg:last-child{page-break-after:auto;break-after:auto}' +
+    '.hd{height:36mm;display:flex;justify-content:space-between;align-items:flex-start}.hd2{height:36mm}.who{font-size:4.2mm;line-height:1.7;color:#5a4630;padding-top:2mm}' +
+    '.mk{display:flex;align-items:flex-start;gap:2mm}.mk svg{display:block}.st{transform:rotate(2deg)}' +
+    '.bx{width:' + P.boxW + 'mm;height:' + P.boxH + 'mm;font-size:' + L.fs + 'mm;overflow:hidden}' +
+    '.bx.h .r{height:' + lh + 'mm;line-height:' + lh + 'mm;border-bottom:0.25mm solid #e2d3b4;white-space:pre;overflow:hidden;padding-left:1mm}' +
+    '.bx.v{writing-mode:vertical-rl;-webkit-writing-mode:vertical-rl}' +
+    '.bx.v .r{width:' + lh + 'mm;height:' + P.boxH + 'mm;line-height:' + lh + 'mm;border-left:0.25mm solid #e2d3b4;white-space:pre;overflow:hidden;padding-top:1mm;text-orientation:mixed}' +
+    '.ft{position:absolute;left:0;right:0;bottom:0;height:9mm;line-height:9mm;font-size:3mm;color:#8a7f6a;text-align:right;border-top:0.2mm dashed #d9c9a6}' +
+    '@media screen{body{background:#eee;padding:10mm}.pg{background:#fff;margin:0 auto 10mm;box-shadow:0 2px 12px rgba(0,0,0,.15);padding:0}}';
+  return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>' + esc(o.title || '手紙') + '</title><style>' + css + '</style></head><body>' + pages + '</body></html>';
+}
+window.koyomiLetterPrintHtml = koyomiLetterPrintHtml;
+// 裏の小窓に組んで、印刷の画面を開く（スマホでは「プリント」から PDF にも保存できる）
+function koyomiLetterPrint(o, mode) {
+  try {
+    var html = koyomiLetterPrintHtml(o, mode);
+    if (window._smokeTestRunning || window._isTesting) { window._koyomiLastPrintHtml = html; return true; }
+    var old = document.getElementById('koyomiLetterPrintFrame'); if (old) old.remove();
+    var f = document.createElement('iframe'); f.id = 'koyomiLetterPrintFrame'; f.setAttribute('aria-hidden', 'true');
+    f.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;';
+    f.onload = function() {
+      setTimeout(function() {
+        try { f.contentWindow.focus(); f.contentWindow.print(); }
+        catch (e1) { try { var w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write(html); w.document.close(); setTimeout(function() { w.print(); }, 400); } } catch (e2) {} }
+      }, 250);
+    };
+    f.srcdoc = html;
+    document.body.appendChild(f);
+    return true;
+  } catch (e) { return false; }
+}
+window.koyomiLetterPrint = koyomiLetterPrint;
+function koyomiLetterPrintButtons(attr, id) {
+  var b = function(m, label) { return '<button type="button" ' + attr + '="' + m + '"' + (id ? ' data-print-id="' + String(id).replace(/[^A-Za-z0-9_-]/g, '') + '"' : '') + ' style="padding:5px 12px;border-radius:999px;border:1px solid #8a7f6a;background:#fff;color:#5a4630;font-size:0.8em;cursor:pointer;">' + label + '</button>'; };
+  return b('v', '🖨 縦書きで印刷') + b('h', '横書きで印刷');
+}
+window.koyomiLetterPrintButtons = koyomiLetterPrintButtons;
+// 届いた手紙の印刷：押されたボタンの手紙を、覚えておいた中身から組む
+window._koyomiPrintLetters = window._koyomiPrintLetters || {};
+document.addEventListener('click', function(ev) {
+  var b = ev.target && ev.target.closest && ev.target.closest('[data-letter-print]');
+  if (!b) return;
+  var r = window._koyomiPrintLetters[b.getAttribute('data-print-id') || ''];
+  if (!r) return;
+  koyomiLetterPrint({ body: r.body, k: r.sealed_koyomi || {}, from: r.sender_name === '自分' ? '' : r.sender_name, to: (typeof koyomiCapsuleToNameOf === 'function' ? koyomiCapsuleToNameOf(r) : ''), title: '手紙' }, b.getAttribute('data-letter-print'));
+});
+// ===== END v0.76.72 =====
+// v0.76.73: 元日のチップ（11月・12月だけ）と、その日時（次の1月1日 朝7時）
+function koyomiCapsuleNewYearChipOn(d) { var m = d.getMonth() + 1; return m === 11 || m === 12; }
+function koyomiCapsuleNewYearAt(d) { return new Date(d.getFullYear() + 1, 0, 1, 7, 0, 0); }
+window.koyomiCapsuleNewYearChipOn = koyomiCapsuleNewYearChipOn; window.koyomiCapsuleNewYearAt = koyomiCapsuleNewYearAt;
 // ===== 切手帳と文箱 =====
 // 【権威】2026-11-17「切手帳まで作ってもらっていい」「届いた手紙の封筒のコレクションもあった方が良くない？」→ 封筒は種類の台紙でなく、届いた封筒をしまう文箱（ふばこ）に
 //   切手帳は、受け取った手紙（自分から自分への手紙は除く）の切手を、封を切ったときに台紙に貼る
@@ -14369,6 +14566,8 @@ function _capsuleLetterHtml(r, e) {
       (canReply ? (canWrite ? '<button type="button" data-cap-reply="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #2c4f78;background:#eef4fb;color:#2c4f78;font-size:0.82em;font-weight:700;cursor:pointer;">✉️ 返信をしたためる</button>'
         : '') : '') +
       '<button type="button" data-cap-journal="' + e(r.id) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;font-size:0.82em;cursor:pointer;">日誌に残す</button></div>' +
+    // v0.76.72: 届いた手紙を、紙に（A4・縦書き／横書き）
+    (function() { if (!r.id) return ''; window._koyomiPrintLetters[String(r.id).replace(/[^A-Za-z0-9_-]/g, '')] = r; return '<div data-cap-print-row style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap;">' + koyomiLetterPrintButtons('data-letter-print', r.id) + '</div>'; })() +
     // v0.76.67: 読み終わったあとに、切手に気づく一行
     (function() { var sk = (r.sealed_koyomi || {}).sekki; if (!KOYOMI_STAMP_ART[sk]) return ''; return '<div data-cap-stamp-line style="display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed #e6d8bd;font-size:0.78em;color:#8a7f6a;">' +
       '<span style="flex-shrink:0;cursor:zoom-in;">' + koyomiStampSvg(sk, 30) + '</span><span>この手紙には、' + e(sk) + 'の' + e(koyomiStampMotifText(sk)) + 'の切手が貼られていた</span></div>'; })() +
@@ -60295,6 +60494,39 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.73', date: '2026-11-17',
+    items: [
+      { icon:'🎍', t:'部屋の仲間に、元日に開ける手紙を',
+        before:'年賀状のように元日に届けたいときは、日付と時刻を自分で選ぶ必要がありました',
+        after:'タイムカプセルの届く日に「🎍 元日に」を足しました（11月と12月だけ出ます）。押すと、1月1日の朝7時に届く手紙になります。手紙は、こよみるの部屋の仲間に届きます' }
+    ]
+  },
+  {
+    ver: 'v0.76.72', date: '2026-11-17',
+    items: [
+      { icon:'🖨', t:'手紙を、A4の紙に印刷できるようにしました',
+        before:'タイムカプセルの手紙は、画面で読むだけでした',
+        after:'届いた手紙の下と、書いている手紙の下に「縦書きで印刷」「横書きで印刷」を付けました。罫線の便箋に、切手と消印、封をした日の暦が入ります。スマホでは、プリントの画面からPDFにも保存できます' },
+      { icon:'✉️', t:'手紙の書き出しの言葉を、選びやすくしました',
+        before:'「時候のあいさつ」という見出しで、どれを選べばいいか迷うことがありました',
+        after:'「立冬の候、いかがお過ごしでしょうか。」に「きちんと」、「水仙の花が咲く頃となりました。いかがお過ごしでしょうか。」に「やわらか」の札を付けました。下に、今日の暦の名前と読みを小さく出します' }
+    ]
+  },
+  {
+    ver: 'v0.76.71', date: '2026-11-17',
+    items: [
+      { icon:'✉️', t:'時候のあいさつを、二十四節気と七十二候から選べるようにしました',
+        before:'時候のあいさつは、月ごとの決まった言い方でした。11月は立冬を過ぎても「晩秋の候」でした',
+        after:'「立冬の候、」（二十四節気）と「山茶花が咲き始める頃となりました。」（七十二候）のどちらかを選べます。季節を一度だけ言うのが手紙の作法なので、どちらか一つを選んでください' },
+      { icon:'🪶', t:'「さて、」のあとが、同じ行に続くようにしました',
+        before:'「さて、」を押したあとに本文のきっかけを押すと、「さて、」だけの行ができていました',
+        after:'「さて、あのときは、本当にありがとう。」のように、一つの文につながります。「立冬の候、いかがお過ごしでしょうか。」も同じです' },
+      { icon:'🌸', t:'今の季節の切手で送れる日が分かるようにしました',
+        before:'切手が季節ごとに変わることは書いてありましたが、いつまでかは分かりませんでした',
+        after:'「この切手で送れるのは11月21日まで（あと4日）」と出ます。節気の初めの3日は「今日から」と出ます' }
+    ]
+  },
+  {
     ver: 'v0.76.70', date: '2026-11-17',
     items: [
       { icon:'📷', t:'ほかの端末で上げた写真も、小さな見本で見られるようにしました',
@@ -90017,13 +90249,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        var _d = new Date(2026, 10, 7, 9, 0);
        var _t = koyomiLetterTemplate('仲間D');
-       _t = koyomiLetterInsert(_t, '晩秋の候、', 'top', _d);
+       _t = koyomiLetterInsert(_t, '立冬の候、いかがお過ごしでしょうか。', 'top', _d);
        _t = koyomiLetterInsert(_t, 'お元気ですか。', 'top', _d);
        _t = koyomiLetterInsert(_t, 'また会える日を楽しみにしています。', 'bottom', _d);
        var _lines = _t.split('\n');
        var _jk = koyomiLetterChipItems(KOYOMI_LETTER_CHIPS[0], _d);
-       (_lines[0] === '拝啓　仲間D様' && _lines[1] === '晩秋の候、' && _lines[2] === 'お元気ですか。' && /また会える日を楽しみにしています。\n\n敬具$/.test(_t) && koyomiLetterFormError(_t) === '' &&
-        _jk.indexOf('晩秋の候、') !== -1 && _jk.some(function(x) { return /を迎え、$/.test(x); }) && /koyomiWireLetterChips\(body, ta0\)/.test(_capsuleRenderWrite.toString()) && !/koyomiWireLetterChips/.test(_capsuleRenderCeremony.toString()))
+       (_lines[0] === '拝啓　仲間D様' && _lines[1] === '立冬の候、いかがお過ごしでしょうか。' && _lines[2] === 'お元気ですか。' && /また会える日を楽しみにしています。\n\n敬具$/.test(_t) && koyomiLetterFormError(_t) === '' &&
+        _jk.indexOf('立冬の候、いかがお過ごしでしょうか。') !== -1 && _jk.indexOf('山茶花が咲き始める頃となりました。いかがお過ごしでしょうか。') !== -1 && koyomiLetterChipTag(_jk[0], _d) === 'きちんと' && koyomiLetterChipTag(_jk[1], _d) === 'やわらか' && /koyomiWireLetterChips\(body, ta0\)/.test(_capsuleRenderWrite.toString()) && !/koyomiWireLetterChips/.test(_capsuleRenderCeremony.toString()))
          ? ok('ST-569·①: 手紙の型のチップ（時候は今の月と今日の節気・安否・書き出し・結び）。前のあいさつは拝啓の下に順に積み、結びは敬具の上へ。書くところは「書く」だけ')
          : ng('ST-569·①: 手紙のチップが違う', JSON.stringify(_t));
      } catch(e) {
@@ -90305,11 +90537,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 本文のきっかけ → 時候 の順に押しても、時候が上・きっかけが下
        var _t = koyomiLetterTemplate('仲間D');
        _t = koyomiLetterInsert(_t, '実は、あなたにだけ話したいことがあります。', 'body', _d577);
-       _t = koyomiLetterInsert(_t, '晩秋の候、', 'top', _d577);
+       _t = koyomiLetterInsert(_t, '立冬の候、いかがお過ごしでしょうか。', 'top', _d577);
        _t = koyomiLetterInsert(_t, 'お元気ですか。', 'top', _d577);
        _t = koyomiLetterInsert(_t, 'あのときは、本当にありがとう。', 'body', _d577);
        var _L = _t.split('\n');
-       var _order = _L[0] === '拝啓　仲間D様' && _L[1] === '晩秋の候、' && _L[2] === 'お元気ですか。' && _L[3] === '実は、あなたにだけ話したいことがあります。' && _L[4] === 'あのときは、本当にありがとう。' && /\n敬具$/.test(_t) && koyomiLetterFormError(_t) === '';
+       var _order = _L[0] === '拝啓　仲間D様' && _L[1] === '立冬の候、いかがお過ごしでしょうか。' && _L[2] === 'お元気ですか。' && _L[3] === '実は、あなたにだけ話したいことがあります。' && _L[4] === 'あのときは、本当にありがとう。' && /\n敬具$/.test(_t) && koyomiLetterFormError(_t) === '';
        // 画面：テーマを選ぶとチップが並び、押すと本文の頭へ
        var _h577 = document.createElement('div'); _h577.innerHTML = '<textarea></textarea>' + koyomiLetterChipsHtml(function(x) { return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); });
        var _ta577 = _h577.querySelector('textarea'); _ta577.value = koyomiLetterTemplate('自分');
@@ -91181,6 +91413,116 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      })();
      });
      // ===== ST-609: 切手の名前・押すと大きく・切手帳・文箱（v0.76.67〜） =====
+     // ===== ST-614: 元日のチップ（11月・12月だけ・次の1月1日 朝7時）（v0.76.73） =====
+     try {
+       var _ny1 = koyomiCapsuleNewYearAt(new Date(2026, 10, 17)), _ny2 = koyomiCapsuleNewYearAt(new Date(2026, 11, 31, 23, 0));
+       (koyomiCapsuleNewYearChipOn(new Date(2026, 10, 1)) && koyomiCapsuleNewYearChipOn(new Date(2026, 11, 31)) && !koyomiCapsuleNewYearChipOn(new Date(2026, 9, 31)) && !koyomiCapsuleNewYearChipOn(new Date(2027, 0, 1)) &&
+        _ny1.getFullYear() === 2027 && _ny1.getMonth() === 0 && _ny1.getDate() === 1 && _ny1.getHours() === 7 && _ny2.getFullYear() === 2027 &&
+        /\['ny', '🎍 元日に'\]/.test(_capsuleRenderWrite.toString()) && /k === 'ny'/.test(_capsuleRenderWrite.toString()))
+         ? ok('ST-614: 届く日のチップ「元日に」は11月・12月だけ、次の1月1日 朝7時')
+         : ng('ST-614: 元日のチップが違う');
+     } catch (e) { ng('ST-614: 例外', e.message); }
+     enqueueSmokeAsyncTest('ST-613', function() {
+     return (async function() {
+     var _r = {}, _e = null, _f = null, _host = null, _last = window._koyomiLastPrintHtml;
+     try {
+       // ① 折り返し：句読点を行の頭にしない（行の終わりにぶら下げる）。英数字は半分の幅
+       var w1 = koyomiPrintWrap('あいうえおかきくけこ。さしすせそ', 10), w2 = koyomiPrintWrap('abcdefghijklmnopqrst', 10), w3 = koyomiPrintWrap('一\n\n\n\n二', 10);
+       _r.wrap = w1[0] === 'あいうえおかきくけこ。' && w1[1] === 'さしすせそ' && w2.length === 2 && w2[0].length === 17 && w3.join('|') === '一||二';
+       // ② 大きさ：短い手紙は大きな字で1枚。長い手紙は字を小さくして1枚に。とても長いときは次の紙へ（どの紙も行が収まる）
+       var shortL = koyomiPrintLayout('拝啓\nこんにちは\n敬具', 'h'), mid = koyomiPrintLayout(Array(1200).join('あ'), 'v'), big = koyomiPrintLayout(Array(6000).join('あ'), 'h');
+       _r.layout = shortL.fs === KOYOMI_PRINT.fsMax && shortL.pages.length === 1 && mid.pages.length === 1 && mid.fs < KOYOMI_PRINT.fsMax &&
+         big.pages.length >= 2 && big.fs === KOYOMI_PRINT.fsMin && big.pages.every(function(p) { return p.length <= big.cap; });
+       // ③ 紙の中身：A4・縦書き／横書き・切手と消印・封をした日の暦。中身はすべて文字として
+       var k = { date: '2026-11-17', sekki: '立冬', sekkiDay: 11, env: 'kinari' };
+       var hv = koyomiLetterPrintHtml({ body: '拝啓　ST613様\n<img src=x onerror=1>\n敬具', k: k, from: '<b>送り手</b>', to: 'ST613' }, 'v');
+       var hh = koyomiLetterPrintHtml({ body: '拝啓\nx\n敬具', k: k, draft: true }, 'h');
+       _r.html = /@page\{size:A4 portrait/.test(hv) && /vertical-rl/.test(hv) && hv.indexOf('<img') === -1 && hv.indexOf('&lt;img') !== -1 && hv.indexOf('<b>送り手') === -1 &&
+         /data-koyomi-stamp="立冬"/.test(hv) && /data-koyomi-postmark/.test(hv) && /に封をした手紙/.test(hv) && /下書き/.test(hh) && !/class="bx v"/.test(hh);
+       // ④ 本当に収まるか：紙を組んで、はみ出す行が無いことを測る（縦書き・横書き、長い手紙も）
+       var longBody = '拝啓　ST613様\n' + Array(30).join('今日は、いつもありがとう。あのときの言葉に、何度も救われました。ABC 123 も混ぜて。\n') + '敬具';
+       var measure = async function(mode) {
+         _f = document.createElement('iframe'); _f.style.cssText = 'position:fixed;left:-3000px;top:0;width:900px;height:1400px;border:0;';
+         document.body.appendChild(_f);
+         await new Promise(function(res) { _f.onload = res; _f.srcdoc = koyomiLetterPrintHtml({ body: longBody, k: k }, mode); });
+         await new Promise(function(res) { setTimeout(res, 50); });
+         var doc = _f.contentDocument, rows = Array.from(doc.querySelectorAll('.r')), over = rows.filter(function(r) { return mode === 'v' ? r.scrollHeight > r.clientHeight + 1 : r.scrollWidth > r.clientWidth + 1; }).length;
+         var boxOver = Array.from(doc.querySelectorAll('.bx')).filter(function(b) { return mode === 'v' ? b.scrollWidth > b.clientWidth + 1 : b.scrollHeight > b.clientHeight + 1; }).length;
+         var n = doc.querySelectorAll('.pg').length; _f.remove(); _f = null;
+         return { over: over, boxOver: boxOver, pages: n, rows: rows.length };
+       };
+       var mv = await measure('v'), mh = await measure('h');
+       _r.fit = mv.over === 0 && mv.boxOver === 0 && mh.over === 0 && mh.boxOver === 0 && mv.rows > 0 && mh.rows > 0;
+       _r.fitInfo = JSON.stringify([mv, mh]);
+       // ⑤ ボタン：届いた手紙・書く画面に「縦書きで印刷」「横書きで印刷」。押すと、その手紙の紙を組む
+       _host = document.createElement('div'); document.body.appendChild(_host);
+       _host.innerHTML = _capsuleLetterHtml({ id: 'st613-L', sender_name: 'ST613の人', body: '拝啓　ST613様\nとどいた\n敬具', sealed_at: '2026-11-17T00:00:00Z', sealed_koyomi: k, stationery: 'ruled' }, _escapeHtml);
+       window._koyomiLastPrintHtml = '';
+       _host.querySelector('[data-letter-print="v"]').click();
+       _r.btn = /とどいた/.test(window._koyomiLastPrintHtml) && /vertical-rl/.test(window._koyomiLastPrintHtml) && /ST613の人 より/.test(window._koyomiLastPrintHtml) &&
+         !!_host.querySelector('[data-letter-print="h"]') && /data-cap-print/.test(_capsuleRenderWrite.toString());
+     } catch (e) { _e = e; }
+     finally { if (_f) _f.remove(); if (_host) _host.remove(); window._koyomiLastPrintHtml = _last; delete window._koyomiPrintLetters['st613-L']; }
+     if (_e) ng('ST-613: 例外', _e.message);
+     else {
+       _r.wrap ? ok('ST-613·①: 折り返しは句読点を行の頭にしない・英数字は半分の幅') : ng('ST-613·①: 折り返しが違う');
+       _r.layout ? ok('ST-613·②: 短い手紙は大きな字で1枚、長い手紙は字を小さく、とても長ければ次の紙へ') : ng('ST-613·②: 紙の割り付けが違う');
+       _r.html ? ok('ST-613·③: A4の紙（縦書き／横書き・切手と消印・封をした日の暦）。中身は文字として') : ng('ST-613·③: 紙の中身が違う');
+       _r.fit ? ok('ST-613·④: 組んだ紙に、はみ出す行が無い（縦書き・横書き）') : ng('ST-613·④: 紙からはみ出す', _r.fitInfo);
+       _r.btn ? ok('ST-613·⑤: 届いた手紙・書く画面に印刷のボタン。押すとその手紙の紙を組む') : ng('ST-613·⑤: 印刷のボタンが違う');
+     }
+     })();
+     });
+     enqueueSmokeAsyncTest('ST-612', function() {
+     return (async function() {
+     var _r = {}, _e = null, _cpBk = localStorage.getItem('koyomiCapsuleAdminCopies'), _admBk = window.isKoyomiruAdminMode, _rpcBk = window._capsuleRpc, _host = null;
+     try {
+       // ① 時候の候補：節気（〇〇の候、）と七十二候（〜頃となりました。）を別々に。月の「晩秋の候」は出さない
+       var d = new Date(2026, 10, 17, 9, 0), v = koyomiTodayData(d), it = koyomiLetterChipItems(KOYOMI_LETTER_CHIPS[0], d);
+       _r.jikou = it[0] === v.sekki + 'の候、いかがお過ごしでしょうか。' && /頃となりました。いかがお過ごしでしょうか。$/.test(it[1]) && it.indexOf('晩秋の候、') === -1 &&
+         !it.some(function(x) { return /の候、/.test(x) && /頃/.test(x); }) && koyomiLetterChipItems(KOYOMI_LETTER_CHIPS[0], new Date(2026, 3, 12)).indexOf('雁が北へ帰っていく頃となりました。いかがお過ごしでしょうか。') !== -1 &&
+         koyomiLetterChipTag(it[0], d) === 'きちんと' && koyomiLetterChipTag(it[1], d) === 'やわらか' && koyomiLetterChipTag(it[2], d) === '普段使い' &&
+         /^今日の暦：立冬（りっとう）・金盞香（/.test(koyomiLetterKoyomiLine(d)) && KOYOMI_LETTER_CHIPS[0].label.indexOf('時候') === -1;
+       // ② 「、」で終わる言葉のあとは、同じ行に続ける（どちらの順で押しても）
+       var T = koyomiLetterTemplate('仲間E');
+       var a1 = koyomiLetterInsert(koyomiLetterInsert(T, 'さて、', 'top', d), 'あのときは、本当にありがとう。', 'body', d).split('\n');
+       var a2 = koyomiLetterInsert(koyomiLetterInsert(T, 'あのときは、本当にありがとう。', 'body', d), 'さて、', 'top', d).split('\n');
+       var a3 = T; [['いかがお過ごしでしょうか。', 'top'], [it[0], 'top'], ['いかがお過ごしでしょうか。', 'top'], ['さて、', 'top'], ['あのときは、本当にありがとう。', 'body'], ['ずっと謝りたいと思っていました。', 'body']].forEach(function(x) { a3 = koyomiLetterInsert(a3, x[0], x[1], d); });
+       var L3 = a3.split('\n');
+       var a4 = koyomiLetterInsert(koyomiLetterInsert(T, it[1], 'top', d), 'お元気ですか。', 'top', d).split('\n');
+       _r.join = a1[1] === 'さて、あのときは、本当にありがとう。' && a2[1] === 'さて、あのときは、本当にありがとう。' &&
+         L3[1] === it[0] && L3[2] === 'さて、あのときは、本当にありがとう。' && L3[3] === 'ずっと謝りたいと思っていました。' && L3[4] === '' && koyomiLetterFormError(a3) === '' &&
+         a4[1] === it[1] && a4[2] === 'お元気ですか。';
+       // ③ この切手で送れる最後の日と残りの日数
+       var w = koyomiStampWindow(d), nx = new Date(w.last.getFullYear(), w.last.getMonth(), w.last.getDate() + 1, 12);
+       _r.window = w.sekki === v.sekki && (koyomiTodayData(w.last) || {}).sekki === v.sekki && (koyomiTodayData(nx) || {}).sekki !== v.sekki &&
+         w.daysLeft === Math.round((w.last - new Date(2026, 10, 17, 12)) / 86400000) && /^\d+月\d+日$/.test(w.lastLabel) && w.isNew === ((v.sekkiDay || 99) <= 3);
+       // ④ 管理者の写し：管理者のときだけ残し、出した手紙の一覧で読める（中身は文字として）
+       localStorage.removeItem('koyomiCapsuleAdminCopies');
+       window.isKoyomiruAdminMode = function() { return false; };
+       var s1 = koyomiCapsuleAdminCopySave('st612-a', { to: 'x', body: 'y' });
+       window.isKoyomiruAdminMode = function() { return true; };
+       var s2 = koyomiCapsuleAdminCopySave('st612-b', { to: 'ST612', body: '拝啓\n<b>写し</b>\n敬具' });
+       window._capsuleRpc = function(n) { if (n === 'koyomiru_capsule_list_sent') return Promise.resolve([{ id: 'st612-b', sealed_at: '2026-11-17T00:00:00Z', open_at: '2026-12-01T00:00:00Z', delivered: false }]); return Promise.resolve([]); };
+       _host = document.createElement('div'); document.body.appendChild(_host);
+       _capsuleRenderSealed(_host, _escapeHtml);
+       await new Promise(function(r) { setTimeout(r, 60); });
+       var dt = _host.querySelector('[data-cap-copy="st612-b"]');
+       _r.copy = !s1 && s2 && !koyomiCapsuleAdminCopies()['st612-a'] && !!dt && /<b>写し<\/b>/.test(dt.textContent) && !dt.querySelector('b');
+     } catch (e) { _e = e; }
+     finally {
+       window.isKoyomiruAdminMode = _admBk; window._capsuleRpc = _rpcBk; if (_host) _host.remove();
+       try { if (_cpBk === null) localStorage.removeItem('koyomiCapsuleAdminCopies'); else localStorage.setItem('koyomiCapsuleAdminCopies', _cpBk); } catch (eC) {}
+     }
+     if (_e) ng('ST-612: 例外', _e.message);
+     else {
+       _r.jikou ? ok('ST-612·①: 時候は節気（〇〇の候）と七十二候（〜頃となりました）を別々の候補に') : ng('ST-612·①: 時候の候補が違う');
+       _r.join ? ok('ST-612·②: 「、」で終わる言葉のあとは同じ行に続ける（さて、＋きっかけ／〇〇の候、＋安否）') : ng('ST-612·②: 言葉がつながらない');
+       _r.window ? ok('ST-612·③: この切手で送れる最後の日と残りの日数') : ng('ST-612·③: 切手の期限が違う');
+       _r.copy ? ok('ST-612·④: 管理者が封をした手紙だけ写しを残し、一覧で読める') : ng('ST-612·④: 写しが違う');
+     }
+     })();
+     });
      enqueueSmokeAsyncTest('ST-611', function() {
      return (async function() {
      var _r = {}, _e = null, _bk = { tasks: allTasks.slice(), imgs: Object.assign({}, _photoImages), th: Object.assign({}, _photoThumbs), li: window._cloudIsLoggedIn, uid: window._cloudUserId };
