@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.75';
+    const APP_VERSION = 'v0.76.76';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14724,15 +14724,95 @@ function _capsuleOpenableEnvHtml(envId, k, toName, fromName, e) {
       '<div style="position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;transform:rotateY(180deg);">' + _capsuleEnvelopeHtml(envId, true) + '</div>' +
     '</div></div>';
 }
+// ===== v0.76.76 タイムカプセルの儀式（ゆっくり開け、そっと取り出す） =====
+// 【権威】2026-11-17「タイムカプセル委員会はタイムカプセル。カプセルのアニメーションはまた見たい」「封筒だけの動きは早い。手紙はバッと開けてザッと出すものではない。
+//   ゆっくり開けて、優しく取り出す。効率と真逆の不便益がコンセプト」→ 文箱から読み返すときも、カプセルに戻ってから開ける。一つひとつをゆっくり、間を置いて。押せば最後まで飛ばせる
+function _capT(el, trans, styles, instant) {
+  if (!el) return;
+  el.style.transition = instant ? 'none' : trans;
+  Object.keys(styles).forEach(function(k) { el.style[k] = styles[k]; });
+}
+// steps: [[開始ms, fn(instant)], ...]。押されたら残りを一度に終わらせる
+function _capRun(stage, steps, endAt, done) {
+  var fin = function() { try { if (typeof done === 'function') done(); } catch (eD) {} };
+  if (window._smokeTestRunning || !stage) { steps.forEach(function(s) { try { s[1](true); } catch (e1) {} }); fin(); return; }
+  var timers = [], next = 0, over = false;
+  var finish = function() {
+    if (over) return; over = true;
+    timers.forEach(clearTimeout);
+    for (; next < steps.length; next++) { try { steps[next][1](true); } catch (e2) {} }
+    stage.removeEventListener('click', skip, true);
+    fin();
+  };
+  var skip = function(ev) { ev.stopPropagation(); ev.preventDefault(); finish(); };
+  stage.addEventListener('click', skip, true);
+  steps.forEach(function(s, idx) { timers.push(setTimeout(function() { if (over) return; next = idx + 1; try { s[1](false); } catch (e3) {} }, s[0])); });
+  timers.push(setTimeout(finish, endAt));
+}
+var _CAP_SINK = 'translateY(71px) scale(0.28)';
+function _capRitualHtml(envId, k, toName, fromName, e) {
+  return '<div data-cap-ritual style="position:relative;width:260px;height:330px;margin:0 auto;">' +
+    '<div data-cap-ritual-cap style="position:absolute;left:74px;top:212px;width:112px;height:112px;">' + _capsuleBigIconSvg() + '</div>' +
+    '<div data-cap-ritual-env style="position:absolute;left:10px;top:122px;width:240px;height:150px;transform-origin:50% 50%;">' + _capsuleOpenableEnvHtml(envId, k, toName, fromName, e) + '</div>' +
+  '</div>';
+}
+function _capParts(stage) {
+  return { cap: stage.querySelector('[data-cap-ritual-cap]'), lid: stage.querySelector('[data-cap-top]'), env: stage.querySelector('[data-cap-ritual-env]'),
+    flip: stage.querySelector('[data-cap-flip]'), seal: stage.querySelector('[data-cap-seal]'), flap: stage.querySelector('[data-cap-flap]'), paper: stage.querySelector('[data-cap-paper-out]') };
+}
+var _CAP_LID_OFF = { transform: 'translate(18px,-34px) rotate(28deg)', opacity: '0' }, _CAP_LID_ON = { transform: 'none', opacity: '1' };
+// 封を切って便箋を引き出す（t0 から）
+function _capOpenSteps(P, t0) {
+  return [
+    [t0, function(i) { _capT(P.flip, 'transform 1s ease-in-out', { transform: 'rotateY(180deg)' }, i); }],
+    [t0 + 1200, function(i) { _capT(P.seal, 'transform 0.7s ease, opacity 0.7s ease', { transform: 'scale(0.4)', opacity: '0' }, i); }],
+    [t0 + 1900, function(i) { _capT(P.flap, 'transform 1s ease-in-out', { transform: 'rotateX(180deg)' }, i); }],
+    [t0 + 3100, function(i) { _capT(P.paper, 'transform 1.6s cubic-bezier(.25,.6,.3,1)', { transform: 'translateY(-104px)' }, i); }]
+  ];
+}
+var _CAP_OPEN_LEN = 4800;
+// 文箱から読み返す：カプセルに戻り、ふたが閉まり、また開いて、封筒がせり上がり、封を切って便箋を引き出す
+function koyomiCapsuleRereadFx(stage, done) {
+  var P = _capParts(stage);
+  _capT(P.cap, '', { opacity: '0' }, true); _capT(P.lid, '', _CAP_LID_OFF, true);
+  var steps = [
+    [0, function(i) { _capT(P.cap, 'opacity 0.5s ease', { opacity: '1' }, i); }],
+    [300, function(i) { _capT(P.env, 'transform 0.9s cubic-bezier(.5,0,.7,.4), opacity 0.9s ease-in', { transform: _CAP_SINK, opacity: '0' }, i); }],
+    [1300, function(i) { _capT(P.lid, 'transform 0.7s cubic-bezier(.3,.7,.3,1), opacity 0.5s ease', _CAP_LID_ON, i); }],
+    [2300, function(i) { _capT(P.lid, 'transform 1s ease-in-out, opacity 1s ease-in-out', _CAP_LID_OFF, i); }],
+    [3300, function(i) { _capT(P.env, 'transform 1.3s cubic-bezier(.2,.7,.3,1), opacity 0.8s ease-out', { transform: 'none', opacity: '1' }, i); }]
+  ].concat(_capOpenSteps(P, 5100));
+  _capRun(stage, steps, 5100 + _CAP_OPEN_LEN, done);
+}
+// はじめて：ふたが外れ、封筒がせり上がる（封を切るのは自分で押す）
+function koyomiCapsuleFirstRiseFx(stage, done) {
+  var P = _capParts(stage);
+  _capT(P.lid, '', _CAP_LID_ON, true); _capT(P.env, '', { transform: _CAP_SINK, opacity: '0' }, true);
+  _capRun(stage, [
+    [300, function(i) { _capT(P.lid, 'transform 1s ease-in-out, opacity 1s ease-in-out', _CAP_LID_OFF, i); }],
+    [1300, function(i) { _capT(P.env, 'transform 1.3s cubic-bezier(.2,.7,.3,1), opacity 0.8s ease-out', { transform: 'none', opacity: '1' }, i); }]
+  ], 2700, done);
+}
+// しまう：便箋が戻り、ふたが閉じ、表に返り、カプセルに入って、ふたが閉まる
+function koyomiCapsuleCloseFx(stage, done) {
+  var P = _capParts(stage);
+  _capT(P.lid, '', _CAP_LID_OFF, true); _capT(P.flip, '', { transform: 'rotateY(180deg)' }, true); _capT(P.seal, '', { transform: 'scale(0.4)', opacity: '0' }, true);
+  _capT(P.flap, '', { transform: 'rotateX(180deg)' }, true); _capT(P.paper, '', { transform: 'translateY(-104px)' }, true);
+  _capRun(stage, [
+    [100, function(i) { _capT(P.paper, 'transform 0.9s ease-in-out', { transform: 'none' }, i); }],
+    [1000, function(i) { _capT(P.flap, 'transform 0.7s ease-in-out', { transform: 'none' }, i); }],
+    [1600, function(i) { _capT(P.seal, 'transform 0.4s ease, opacity 0.4s ease', { transform: 'none', opacity: '1' }, i); }],
+    [1900, function(i) { _capT(P.flip, 'transform 0.8s ease-in-out', { transform: 'none' }, i); }],
+    [2800, function(i) { _capT(P.env, 'transform 0.8s cubic-bezier(.5,0,.7,.4), opacity 0.8s ease-in', { transform: _CAP_SINK, opacity: '0' }, i); }],
+    [3600, function(i) { _capT(P.lid, 'transform 0.6s cubic-bezier(.3,.7,.3,1), opacity 0.4s ease', _CAP_LID_ON, i); }]
+  ], 4400, done);
+}
+window.koyomiCapsuleRereadFx = koyomiCapsuleRereadFx; window.koyomiCapsuleFirstRiseFx = koyomiCapsuleFirstRiseFx; window.koyomiCapsuleCloseFx = koyomiCapsuleCloseFx;
 function koyomiEnvelopeOpenFx(envEl, done) {
   var fin = function() { try { if (typeof done === 'function') done(); } catch (eD) {} };
   if (!envEl || window._smokeTestRunning) { fin(); return; }
-  var flipEl = envEl.querySelector('[data-cap-flip]'), seal = envEl.querySelector('[data-cap-seal]'), flap = envEl.querySelector('[data-cap-flap]'), paper = envEl.querySelector('[data-cap-paper-out]');
-  if (flipEl) flipEl.style.transform = 'rotateY(180deg)';
-  setTimeout(function() { if (seal) { seal.style.transform = 'scale(0.4)'; seal.style.opacity = '0'; } }, 700);
-  setTimeout(function() { if (flap) flap.style.transform = 'rotateX(180deg)'; }, 950);
-  setTimeout(function() { if (paper) paper.style.transform = 'translateY(-104px)'; }, 1400);
-  setTimeout(fin, 2250);
+  // v0.76.76: ゆっくり、間を置いて（押せば最後まで飛ばせる）
+  _capRun(envEl, _capOpenSteps(_capParts(envEl), 0), _CAP_OPEN_LEN, fin);
 }
 window.koyomiEnvelopeOpenFx = koyomiEnvelopeOpenFx;
 function _capsuleRenderReceived(body, e) {
@@ -14813,22 +14893,21 @@ function _capsuleRenderReceived(body, e) {
         fbEnv.onclick = function() {
           if (_fbBusy) return;
           var lt = card.querySelector('[data-cap-fubako-letter]'), hint = card.querySelector('[data-cap-fubako-hint]'), wrap = card.querySelector('[data-cap-fubako]'), show = lt.style.display === 'none';
+          // v0.76.76: 舞台（カプセルと封筒）を一覧の封筒の場所に出して、儀式を流す。終わったら一覧の封筒に戻す
+          var _front = function(dim) { fbEnv.style.width = '240px'; fbEnv.style.height = '150px'; fbEnv.innerHTML = '<div style="position:absolute;inset:0;' + (dim ? 'opacity:0.55;' : '') + '">' + koyomiEnvelopeFrontHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e) + '</div>'; };
+          var _stage = function() { fbEnv.style.width = '260px'; fbEnv.style.height = '330px'; fbEnv.innerHTML = _capRitualHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e); return fbEnv.querySelector('[data-cap-ritual]'); };
+          _fbBusy = true;
           if (!show) {
-            lt.style.display = 'none'; if (hint) hint.textContent = '押して、読む';
-            if (wrap) wrap.style.paddingTop = '';
-            fbEnv.innerHTML = '<div style="position:absolute;inset:0;' + (window._smokeTestRunning ? '' : 'animation:capEnvDrop 0.6s cubic-bezier(.2,.8,.3,1);') + '">' + koyomiEnvelopeFrontHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e) + '</div>';
+            lt.style.display = 'none'; if (hint) hint.textContent = '';
+            koyomiCapsuleCloseFx(_stage(), function() { _fbBusy = false; _front(false); if (hint) hint.textContent = '押して、読む'; });
             return;
           }
-          _fbBusy = true;
-          if (wrap && !window._smokeTestRunning) wrap.style.paddingTop = '118px';   // 便箋が引き出される分の空き
-          fbEnv.innerHTML = _capsuleOpenableEnvHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e);
           if (hint) hint.textContent = '';
-          koyomiEnvelopeOpenFx(fbEnv.querySelector('[data-cap-env]'), function() {
+          koyomiCapsuleRereadFx(_stage(), function() {
             _fbBusy = false;
-            if (wrap) wrap.style.paddingTop = '';
-            fbEnv.innerHTML = '<div style="position:absolute;inset:0;opacity:0.55;">' + koyomiEnvelopeFrontHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e) + '</div>';
+            _front(true);
             lt.style.display = ''; if (hint) hint.textContent = '押して、しまう';
-            if (!window._smokeTestRunning) lt.style.animation = 'capLetterIn 0.6s ease';
+            if (!window._smokeTestRunning) lt.style.animation = 'capLetterIn 0.9s ease';
           });
         };
       }
@@ -14839,11 +14918,13 @@ function _capsuleRenderReceived(body, e) {
         var showEnvelope = function() {
           // v0.76.65: 封筒は表（宛名・切手・消印）で、上からすっと届く。押すと裏返って、封蝋とふた
           var _envId = (r.sealed_koyomi && r.sealed_koyomi.env) || 'kinari';
-          stageEl.innerHTML = '<div style="padding:120px 0 4px;' + (reduce ? '' : 'animation:capEnvDrop 0.8s cubic-bezier(.2,.8,.3,1);') + '">' +
-            _capsuleOpenableEnvHtml(_envId, r.sealed_koyomi, koyomiCapsuleToNameOf(r, koyomiCapsuleMyName()), r.sender_name, e) +
-            '<div style="text-align:center;font-size:0.82em;color:#7a3b1e;margin-top:8px;">押して、封を切る</div></div>';
-          var env = stageEl.querySelector('[data-cap-env]');
+          // v0.76.76: カプセルのふたがゆっくり外れ、封筒がカプセルからせり上がる。封を切るのは自分で押す
+          stageEl.innerHTML = '<div style="padding:4px 0;">' + _capRitualHtml(_envId, r.sealed_koyomi, koyomiCapsuleToNameOf(r, koyomiCapsuleMyName()), r.sender_name, e) +
+            '<div data-cap-cut-hint style="text-align:center;font-size:0.82em;color:#7a3b1e;margin-top:4px;visibility:hidden;">押して、封を切る</div></div>';
+          var env = stageEl.querySelector('[data-cap-env]'), _rit = stageEl.querySelector('[data-cap-ritual]'), _rising = true;
+          koyomiCapsuleFirstRiseFx(_rit, function() { _rising = false; var hh = stageEl.querySelector('[data-cap-cut-hint]'); if (hh) hh.style.visibility = 'visible'; });
           env.onclick = function() {
+            if (_rising) return;
             env.onclick = null;
             var flap = env.querySelector('[data-cap-flap]'), seal = env.querySelector('[data-cap-seal]'), flipEl = env.querySelector('[data-cap-flip]');
             var showLetter = function() {
@@ -14858,9 +14939,7 @@ function _capsuleRenderReceived(body, e) {
             koyomiEnvelopeOpenFx(env, showLetter);   // v0.76.75: 便箋が封筒の口から引き出されてから、開く
           };
         };
-        if (!top) { showEnvelope(); return; }
-        top.style.transform = 'translate(18px,-34px) rotate(28deg)'; top.style.opacity = '0';
-        setTimeout(showEnvelope, 750);
+        showEnvelope();   // v0.76.76: ふたが外れる動きは、封筒がせり上がる舞台の中でゆっくり
       };
     });
   }).catch(function(err) { body.innerHTML = '<div style="color:#c0392b;">' + e(_capsuleErr(err)) + '</div>'; });
@@ -60538,6 +60617,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.76', date: '2026-11-17',
+    items: [
+      { icon:'🫙', t:'読み返すときも、タイムカプセルから開けるようにしました',
+        before:'文箱の手紙を読み返すときは、封筒を開ける動きだけでした。動きも早めでした',
+        after:'封筒がいったんカプセルに戻り、ふたが閉まり、またゆっくり開いて、封筒がせり上がります。封筒が裏返り、封蝋が外れ、ふたが開いて、便箋をそっと引き出します。しまうときは逆の順に、カプセルへ戻ります。途中で押すと、最後まで飛ばせます' }
+    ]
+  },
   {
     ver: 'v0.76.75', date: '2026-11-17',
     items: [
