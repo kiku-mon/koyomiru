@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.54';
+    const APP_VERSION = 'v0.76.55';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10116,6 +10116,10 @@ function _showInviteWelcome() {
   </label>
   <div style="font-size:0.75em;color:#9aa6b8;margin-top:4px;line-height:1.6;">日次のマトリクスと魚の目に、登記の案件（ボックス番号・金消・決済・完了予定・工程）を出します。管理者モードのときだけ出ます。</div>
 </div>
+<div id="adminSafetyArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+          <div style="font-size:0.82em;font-weight:700;color:#8ec5ff;margin-bottom:8px;">🛡 守り</div>
+          <div id="adminSafetyBody"></div>
+        </div>
 <div id="adminGrowthArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
           <div style="font-size:0.82em;font-weight:700;color:#8ec5ff;margin-bottom:8px;">🏠 部屋のようす（生きている部屋）</div>
           <button id="adminGrowthBtn" onclick="loadAdminGrowth()" style="width:100%;padding:9px;background:transparent;border:1px solid #4a7fb5;border-radius:8px;color:#8ec5ff;font-size:0.94em;cursor:pointer;margin-bottom:8px;">🔄 部屋のようすを読み込む</button>
@@ -14093,67 +14097,20 @@ function _capsuleRenderReceived(body, e) {
 }
 // ===== v0.74.4: 管理者の審査の画面 =====
 // 【権威】2026-11-04、最高峰会議で決定。管理者は通報された手紙だけ読める。決めるのは人（自動では決めない）。措置の重さはサーバーが表のとおりに当てはめる。したことは記録に残る
-function _capsuleRenderAdmin(body, e) {
-  if (!(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())) { body.innerHTML = ''; return; }
-  _capsuleRpc('koyomiru_capsule_admin_list_reports', { p_status: 'open' }).then(function(rows) {
-    rows = rows || [];
-    var cats = KOYOMI_REPORT_CATEGORIES.filter(function(c) { return c[0] !== 'other'; });
-    var html = KOYOMI_ADMIN_ONLY_BADGE + (rows.length ? '' : '<div style="' + _CAP_BOX + 'color:#8a7f6a;">まだ決めていない通報は、ない。</div>');
-    html += rows.map(function(r) {
-      var heavy = /^(dating|illegal|stalking)$/.test(r.category);
-      return '<div data-adm-card="' + e(r.id) + '" style="' + _CAP_BOX + 'margin-bottom:12px;' + (heavy ? 'border-color:#e3a59d;background:#fff6f5;' : '') + '">' +
-        '<div style="font-weight:800;color:' + (heavy ? '#b0443a' : '#7a3b1e') + ';">' + (heavy ? '🔴 ' : '') + e(_KOYOMI_CAT_LABEL[r.category] || r.category) + '</div>' +
-        '<div style="font-size:0.84em;color:#6b4f2a;line-height:1.8;margin-top:4px;">通報された人：<b>' + e(r.reported_name) + '</b>（品性値 ' + e(String(r.reported_hinsei)) + '・これまでの措置 ' + e(String(r.reported_penalties)) + '件・未決の通報 ' + e(String(r.reported_open_reports)) + '件）<br>' +
-          '通報した人：' + e(r.reporter_name) + '　' + _capsuleFmtDT(r.created_at) + (r.detail ? '<br>くわしく：' + e(r.detail) : '') + '</div>' +
-        '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:0.84em;color:#7a3b1e;">' + (/^【/.test(r.body_snapshot || '') ? '写しを読む（通報された備考・式の写し）' : '手紙を読む（通報された手紙の写し）') + '</summary><div style="white-space:pre-wrap;font-size:0.92em;line-height:1.8;background:#fffdf7;border:1px solid #efe3cc;border-radius:8px;padding:8px 10px;margin-top:6px;">' + e(r.body_snapshot || '（写しなし）') + '</div></details>' +
-        '<div style="font-size:0.84em;font-weight:700;margin:10px 0 6px;">カテゴリー</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' + cats.map(function(c) {
-          var on = c[0] === r.category;
-          return '<button type="button" data-adm-cat="' + c[0] + '" style="padding:5px 10px;border-radius:999px;font-size:0.82em;cursor:pointer;border:' + (on ? '2px solid #b0443a' : '1px solid #d9c9a6') + ';background:#fff;color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + c[1] + '</button>';
-        }).join('') + '</div>' +
-        '<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.82em;color:#6b4f2a;"><input type="checkbox" data-adm-cancel' + (/^(dating|illegal)$/.test(r.category) ? ' checked' : '') + '>この人の到着待ちの手紙も取り消す</label>' +
-        // v0.76.25: 安全のための見直し（くわしい経緯は運営の手元の記録にある）
-        (/^【出欠の備考】/.test(r.body_snapshot || '') ? '<div data-adm-note-info style="font-size:0.8em;color:#8a7f6a;margin-top:6px;">違反とすると、この備考は消える（出欠の答えは残る）。</div>' : '') +
-        (/^【式の名前・場所】/.test(r.body_snapshot || '') ? '<div data-adm-cer style="margin-top:8px;font-size:0.82em;color:#6b4f2a;"><div style="font-weight:700;margin-bottom:4px;">違反のとき、この式は</div>' +
-          [['mask', '名前を伏せる（式と出欠は残る）'], ['cancel', '式ごと取りやめ']].map(function(a) { return '<label style="display:flex;align-items:center;gap:6px;margin:2px 0;"><input type="radio" name="admcer-' + e(r.id) + '" value="' + a[0] + '" data-adm-cer-act>' + a[1] + '</label>'; }).join('') + '</div>' : '') +
-        '<div data-adm-msg style="font-size:0.84em;margin-top:6px;"></div>' +
-        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" data-adm-ok style="padding:7px 14px;border-radius:10px;border:1px solid #2e7d4f;background:#fff;color:#2e7d4f;cursor:pointer;">問題なし</button>' +
-          '<button type="button" data-adm-violate style="padding:7px 14px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">違反として措置</button></div></div>';
-    }).join('');
-    // v0.75.3: 【権威】2026-11-05「管理者は安全管理のため、全員の手紙の流れを見られるようにする」。中身は出さない。開いたときだけ聞きに行き、見たことはサーバーの記録に残る
-    html += '<details data-adm-flowbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">手紙の流れ（中身は出ない）</summary>' +
-      '<div style="display:flex;gap:6px;margin-top:8px;"><input data-adm-flowq placeholder="名前で絞り込む" style="flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid #d9c9a6;font-size:0.95em;"><button type="button" data-adm-flowgo style="padding:6px 12px;border-radius:8px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">探す</button></div>' +
-      '<div data-adm-flow style="margin-top:8px;color:#6b4f2a;"></div></details>';
-    html += '<details data-adm-statbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">送った人ごとの数（この30日）</summary><div data-adm-stats style="margin-top:6px;color:#6b4f2a;"></div></details>';
-    // v0.76.27: 安全のための見直し（くわしい経緯は運営の手元の記録にある）
-    html += '<details data-adm-checkbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">🔧 サーバー点検</summary>' +
-      '<div style="color:#8a7f6a;margin:6px 0;">サーバーの決まり（上限・返信・ブロック・備考・鍵など）が今も入っているかを、読むだけで確かめる。何も書き換えない。</div>' +
-      '<button type="button" data-adm-checkgo style="padding:6px 14px;border-radius:8px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">点検する</button>' +
-      '<div data-adm-check style="margin-top:8px;color:#6b4f2a;"></div></details>';
-    // v0.76.43: アクセスの記録（読むだけ・管理者だけ）
-    html += '<details data-adm-acc style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;"><span data-adm-acc-title>👀 見慣れない呼び出し</span><span data-adm-acc-badge></span></summary>' +
-      '<div data-adm-acc-list style="margin-top:8px;color:#6b4f2a;">開くと読み込む</div></details>';
-    html += '<details style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">管理者の記録</summary><div data-adm-log style="margin-top:6px;color:#6b4f2a;">読み込んでいる…</div></details>';
-    body.innerHTML = html;
-    rows.forEach(function(r) {
-      var card = body.querySelector('[data-adm-card="' + r.id + '"]'); if (!card) return;
-      var cat = r.category === 'other' ? null : r.category, msg = card.querySelector('[data-adm-msg]');
-      card.querySelectorAll('[data-adm-cat]').forEach(function(b) { b.onclick = function() { cat = b.getAttribute('data-adm-cat'); card.querySelectorAll('[data-adm-cat]').forEach(function(x) { var on = x === b; x.style.border = on ? '2px solid #b0443a' : '1px solid #d9c9a6'; x.style.fontWeight = on ? '700' : '400'; }); }; });
-      var go = function(violated, btn) {
-        if (violated && !cat) { msg.style.color = '#c0392b'; msg.textContent = 'カテゴリーを選んでほしい。'; return; }
-        var _cerPick = card.querySelector('[data-adm-cer-act]:checked'), _cerAct = _cerPick ? _cerPick.value : null;
-        if (violated && card.querySelector('[data-adm-cer]') && !_cerAct) { msg.style.color = '#c0392b'; msg.textContent = 'この式を「名前を伏せる」か「式ごと取りやめ」か選んでほしい。'; return; }
-        _capsuleTwoClick(btn, violated ? '本当に措置する？' : '本当に問題なし？', function() {
-          _capsuleRpc('koyomiru_capsule_admin_resolve', { p_report: r.id, p_violated: violated, p_category: cat, p_cancel_pending: violated && card.querySelector('[data-adm-cancel]').checked, p_cer_action: violated ? _cerAct : null })
-            .then(function(res) {
-              var t = res === 'no_violation' ? '問題なしとした' : (res === 'forever' ? '期限なしの措置をした' : (res === 'warning' ? '注意とした' : '措置をした（' + String(res).replace('until ', '') + 'まで）'));
-              if (typeof showToast === 'function') showToast('🛡 ' + t + '。通報した人に結果が届く', { type: 'success' });
-              renderCapsuleView();
-            }).catch(function(err) { msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
-        });
-      };
-      card.querySelector('[data-adm-ok]').onclick = function() { go(false, this); };
-      card.querySelector('[data-adm-violate]').onclick = function() { go(true, this); };
-    });
+function _capsuleAdminToolsHtml() {   // サーバー点検・アクセスの記録（タイムカプセルの通報と、管理者の画面の両方で使う。v0.76.55〜）
+  var html = '';
+  html += '<details data-adm-checkbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">🔧 サーバー点検</summary>' +
+    '<div style="color:#8a7f6a;margin:6px 0;">サーバーの決まり（上限・返信・ブロック・備考・鍵など）が今も入っているかを、読むだけで確かめる。何も書き換えない。</div>' +
+    '<button type="button" data-adm-checkgo style="padding:6px 14px;border-radius:8px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">点検する</button>' +
+    '<div data-adm-check style="margin-top:8px;color:#6b4f2a;"></div></details>';
+  // v0.76.43: アクセスの記録（読むだけ・管理者だけ）
+  html += '<details data-adm-acc style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;"><span data-adm-acc-title>👀 見慣れない呼び出し</span><span data-adm-acc-badge></span></summary>' +
+    '<div data-adm-acc-list style="margin-top:8px;color:#6b4f2a;">開くと読み込む</div></details>';
+  return html;
+}
+window._capsuleAdminToolsHtml = _capsuleAdminToolsHtml;
+
+function _capsuleMountAdminTools(body, e) {
     var _ckGo = body.querySelector('[data-adm-checkgo]'), _ckOut = body.querySelector('[data-adm-check]');
     if (_ckGo) _ckGo.onclick = function() {
       _ckGo.disabled = true; _ckOut.textContent = '点検している…';
@@ -14203,6 +14160,75 @@ function _capsuleRenderAdmin(body, e) {
         });
       }).catch(function(err) { _accList.textContent = _capsuleErr(err); });
     });
+}
+window._capsuleMountAdminTools = _capsuleMountAdminTools;
+
+function koyomiruMountAdminSafety() {
+  var box = document.getElementById('adminSafetyBody');
+  if (!box) return;
+  if (!(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())) { box.innerHTML = ''; return; }
+  var e = function(x) { return _escapeHtml(String(x == null ? '' : x)); };
+  box.innerHTML = _capsuleAdminToolsHtml();   // 開くたびに組み直す（まだ見ていない数を取り直す）
+  _capsuleMountAdminTools(box, e);
+}
+window.koyomiruMountAdminSafety = koyomiruMountAdminSafety;
+
+function _capsuleRenderAdmin(body, e) {
+  if (!(typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())) { body.innerHTML = ''; return; }
+  _capsuleRpc('koyomiru_capsule_admin_list_reports', { p_status: 'open' }).then(function(rows) {
+    rows = rows || [];
+    var cats = KOYOMI_REPORT_CATEGORIES.filter(function(c) { return c[0] !== 'other'; });
+    var html = KOYOMI_ADMIN_ONLY_BADGE + (rows.length ? '' : '<div style="' + _CAP_BOX + 'color:#8a7f6a;">まだ決めていない通報は、ない。</div>');
+    html += rows.map(function(r) {
+      var heavy = /^(dating|illegal|stalking)$/.test(r.category);
+      return '<div data-adm-card="' + e(r.id) + '" style="' + _CAP_BOX + 'margin-bottom:12px;' + (heavy ? 'border-color:#e3a59d;background:#fff6f5;' : '') + '">' +
+        '<div style="font-weight:800;color:' + (heavy ? '#b0443a' : '#7a3b1e') + ';">' + (heavy ? '🔴 ' : '') + e(_KOYOMI_CAT_LABEL[r.category] || r.category) + '</div>' +
+        '<div style="font-size:0.84em;color:#6b4f2a;line-height:1.8;margin-top:4px;">通報された人：<b>' + e(r.reported_name) + '</b>（品性値 ' + e(String(r.reported_hinsei)) + '・これまでの措置 ' + e(String(r.reported_penalties)) + '件・未決の通報 ' + e(String(r.reported_open_reports)) + '件）<br>' +
+          '通報した人：' + e(r.reporter_name) + '　' + _capsuleFmtDT(r.created_at) + (r.detail ? '<br>くわしく：' + e(r.detail) : '') + '</div>' +
+        '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:0.84em;color:#7a3b1e;">' + (/^【/.test(r.body_snapshot || '') ? '写しを読む（通報された備考・式の写し）' : '手紙を読む（通報された手紙の写し）') + '</summary><div style="white-space:pre-wrap;font-size:0.92em;line-height:1.8;background:#fffdf7;border:1px solid #efe3cc;border-radius:8px;padding:8px 10px;margin-top:6px;">' + e(r.body_snapshot || '（写しなし）') + '</div></details>' +
+        '<div style="font-size:0.84em;font-weight:700;margin:10px 0 6px;">カテゴリー</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' + cats.map(function(c) {
+          var on = c[0] === r.category;
+          return '<button type="button" data-adm-cat="' + c[0] + '" style="padding:5px 10px;border-radius:999px;font-size:0.82em;cursor:pointer;border:' + (on ? '2px solid #b0443a' : '1px solid #d9c9a6') + ';background:#fff;color:#5a4630;font-weight:' + (on ? '700' : '400') + ';">' + c[1] + '</button>';
+        }).join('') + '</div>' +
+        '<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.82em;color:#6b4f2a;"><input type="checkbox" data-adm-cancel' + (/^(dating|illegal)$/.test(r.category) ? ' checked' : '') + '>この人の到着待ちの手紙も取り消す</label>' +
+        // v0.76.25: 安全のための見直し（くわしい経緯は運営の手元の記録にある）
+        (/^【出欠の備考】/.test(r.body_snapshot || '') ? '<div data-adm-note-info style="font-size:0.8em;color:#8a7f6a;margin-top:6px;">違反とすると、この備考は消える（出欠の答えは残る）。</div>' : '') +
+        (/^【式の名前・場所】/.test(r.body_snapshot || '') ? '<div data-adm-cer style="margin-top:8px;font-size:0.82em;color:#6b4f2a;"><div style="font-weight:700;margin-bottom:4px;">違反のとき、この式は</div>' +
+          [['mask', '名前を伏せる（式と出欠は残る）'], ['cancel', '式ごと取りやめ']].map(function(a) { return '<label style="display:flex;align-items:center;gap:6px;margin:2px 0;"><input type="radio" name="admcer-' + e(r.id) + '" value="' + a[0] + '" data-adm-cer-act>' + a[1] + '</label>'; }).join('') + '</div>' : '') +
+        '<div data-adm-msg style="font-size:0.84em;margin-top:6px;"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" data-adm-ok style="padding:7px 14px;border-radius:10px;border:1px solid #2e7d4f;background:#fff;color:#2e7d4f;cursor:pointer;">問題なし</button>' +
+          '<button type="button" data-adm-violate style="padding:7px 14px;border-radius:10px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">違反として措置</button></div></div>';
+    }).join('');
+    // v0.75.3: 【権威】2026-11-05「管理者は安全管理のため、全員の手紙の流れを見られるようにする」。中身は出さない。開いたときだけ聞きに行き、見たことはサーバーの記録に残る
+    html += '<details data-adm-flowbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">手紙の流れ（中身は出ない）</summary>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;"><input data-adm-flowq placeholder="名前で絞り込む" style="flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid #d9c9a6;font-size:0.95em;"><button type="button" data-adm-flowgo style="padding:6px 12px;border-radius:8px;border:1px solid #7a3b1e;background:#fff;color:#7a3b1e;cursor:pointer;">探す</button></div>' +
+      '<div data-adm-flow style="margin-top:8px;color:#6b4f2a;"></div></details>';
+    html += '<details data-adm-statbox style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">送った人ごとの数（この30日）</summary><div data-adm-stats style="margin-top:6px;color:#6b4f2a;"></div></details>';
+    // v0.76.27: 安全のための見直し（くわしい経緯は運営の手元の記録にある）
+    html += _capsuleAdminToolsHtml();
+    html += '<details style="' + _CAP_BOX + 'margin-top:8px;font-size:0.84em;"><summary style="cursor:pointer;color:#7a3b1e;font-weight:700;">管理者の記録</summary><div data-adm-log style="margin-top:6px;color:#6b4f2a;">読み込んでいる…</div></details>';
+    body.innerHTML = html;
+    rows.forEach(function(r) {
+      var card = body.querySelector('[data-adm-card="' + r.id + '"]'); if (!card) return;
+      var cat = r.category === 'other' ? null : r.category, msg = card.querySelector('[data-adm-msg]');
+      card.querySelectorAll('[data-adm-cat]').forEach(function(b) { b.onclick = function() { cat = b.getAttribute('data-adm-cat'); card.querySelectorAll('[data-adm-cat]').forEach(function(x) { var on = x === b; x.style.border = on ? '2px solid #b0443a' : '1px solid #d9c9a6'; x.style.fontWeight = on ? '700' : '400'; }); }; });
+      var go = function(violated, btn) {
+        if (violated && !cat) { msg.style.color = '#c0392b'; msg.textContent = 'カテゴリーを選んでほしい。'; return; }
+        var _cerPick = card.querySelector('[data-adm-cer-act]:checked'), _cerAct = _cerPick ? _cerPick.value : null;
+        if (violated && card.querySelector('[data-adm-cer]') && !_cerAct) { msg.style.color = '#c0392b'; msg.textContent = 'この式を「名前を伏せる」か「式ごと取りやめ」か選んでほしい。'; return; }
+        _capsuleTwoClick(btn, violated ? '本当に措置する？' : '本当に問題なし？', function() {
+          _capsuleRpc('koyomiru_capsule_admin_resolve', { p_report: r.id, p_violated: violated, p_category: cat, p_cancel_pending: violated && card.querySelector('[data-adm-cancel]').checked, p_cer_action: violated ? _cerAct : null })
+            .then(function(res) {
+              var t = res === 'no_violation' ? '問題なしとした' : (res === 'forever' ? '期限なしの措置をした' : (res === 'warning' ? '注意とした' : '措置をした（' + String(res).replace('until ', '') + 'まで）'));
+              if (typeof showToast === 'function') showToast('🛡 ' + t + '。通報した人に結果が届く', { type: 'success' });
+              renderCapsuleView();
+            }).catch(function(err) { msg.style.color = '#c0392b'; msg.textContent = _capsuleErr(err); });
+        });
+      };
+      card.querySelector('[data-adm-ok]').onclick = function() { go(false, this); };
+      card.querySelector('[data-adm-violate]').onclick = function() { go(true, this); };
+    });
+    _capsuleMountAdminTools(body, e);
     // v0.75.3: 手紙の流れ・送った人ごとの数（開いたときだけ）
     var loadFlow = function() {
       var el = body.querySelector('[data-adm-flow]'), q = String((body.querySelector('[data-adm-flowq]') || {}).value || '').trim(); if (!el) return;
@@ -44856,6 +44882,10 @@ function applySettingsGroups() {
       try { localStorage.setItem('setGroupOpen', ''); } catch (e) {}
     }
     // 開いている分類だけ見せる
+    // 管理者の節を開いたら、守りの道具を組み立てる（本人だけ。v0.76.55〜）
+    if (_open === 'admin' && _isAdmin && typeof window.koyomiruMountAdminSafety === 'function') {
+      try { window.koyomiruMountAdminSafety(); } catch (eSaf) {}
+    }
     SET_GROUPS.forEach(function(g) {
       // 管理者の節は、本人でなければ何があっても開かない。
       var _show = (_open === g.key) && !(g.key === 'admin' && !_isAdmin);
@@ -59495,6 +59525,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.55', date: '2026-11-16',
+    items: [
+      { icon:'🧹', t:'運営の画面を整えました',
+        before:'運営の道具が、画面ごとに分かれていました',
+        after:'整えました。使い方は変わりません' }
+    ]
+  },
   {
     ver: 'v0.76.54', date: '2026-11-16',
     items: [
@@ -90177,6 +90215,36 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (!!_ga602 && !!_ga602.nextElementSibling && _ga602.nextElementSibling.id === 'adminVisitStatsArea')
          ? ok('ST-602·⑦: 部屋のようすは管理者の画面（訪問統計のすぐ上）にある') : ng('ST-602·⑦: 部屋のようすの置き場所が違う');
      } catch(e) { ng('ST-602: 例外', e.message); }
+     // ===== ST-603: 管理者の画面の守り（v0.76.55〜） =====
+     enqueueSmokeAsyncTest('ST-603', function() {
+     return (async function() {
+     var _rpc603 = window._capsuleRpc, _adm603 = window.isKoyomiruAdminMode, _r603 = {}, _e603 = null;
+     var _box603 = document.getElementById('adminSafetyBody'), _keep603 = _box603 ? _box603.innerHTML : '';
+     try {
+       window._capsuleRpc = function(name) {
+         if (name === 'koyomiru_capsule_admin_access_summary') return Promise.resolve([{ n: 3, title: '見出しT' }]);
+         return Promise.resolve([]);
+       };
+       var _area603 = document.getElementById('adminSafetyArea'), _growth603 = document.getElementById('adminGrowthArea');
+       _r603.place = !!_area603 && !!_box603 && !!_growth603 && !!(_area603.compareDocumentPosition(_growth603) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+         !!_area603.closest('#adminMenuSection');
+       koyomiruMountAdminSafety();
+       await new Promise(function(r) { setTimeout(r, 60); });
+       _r603.mount = !!_box603.querySelector('[data-adm-acc]') && !!_box603.querySelector('[data-adm-checkgo]') &&
+         /3/.test(_box603.querySelector('[data-adm-acc-badge]').textContent) && _box603.querySelector('[data-adm-acc-title]').textContent === '見出しT';
+       window.isKoyomiruAdminMode = function() { return false; };
+       koyomiruMountAdminSafety();
+       _r603.notAdmin = _box603.innerHTML === '';
+     } catch(e) { _e603 = e; }
+     finally { window._capsuleRpc = _rpc603; window.isKoyomiruAdminMode = _adm603; if (_box603) _box603.innerHTML = _keep603; }
+     if (_e603) ng('ST-603: 例外', _e603.message);
+     else {
+       _r603.place ? ok('ST-603·①: 管理者の画面に守りの置き場（部屋のようすの上）') : ng('ST-603·①: 守りの置き場が無い');
+       _r603.mount ? ok('ST-603·②: 管理者の画面にも、サーバー点検と記録（見出しと、まだ見ていない数）') : ng('ST-603·②: 守りの道具が出ない');
+       _r603.notAdmin ? ok('ST-603·③: 管理者でなければ何も組み立てない') : ng('ST-603·③: 管理者でないのに出た（重大）');
+     }
+     })();
+     });
      if (_e600) ng('ST-600: 例外', _e600.message);
      else {
        _r600.btn ? ok('ST-600·①: 来月の行の差のすぐ隣に「畳む」') : ng('ST-600·①: 来月の行に畳むが無い・差の隣でない');
