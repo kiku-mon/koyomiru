@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.50';
+    const APP_VERSION = 'v0.76.52';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -45014,8 +45014,14 @@ function renderMonthlyMoneyLine() {
           }
           _todayUp = _inNow - _base.v;
         } catch (eT) { _todayUp = 0; }
+        var _nextOpen = true;   // 来月の行だけ畳める（v0.76.51〜）
+        try { _nextOpen = localStorage.getItem('moneyNextOpen') !== '0'; } catch (eNo) {}
         var _row = function(label, sm, k, first) {
           var d = sm['in'] - sm.out;
+          if (k === 'next' && !_nextOpen) {
+            return '<div data-money-row="next" data-money-next-folded style="' + (first ? '' : 'margin-top:1px;') + '">' +
+              '<span onclick="toggleMoneyNextOpen()" style="cursor:pointer;color:' + GRAY + ';white-space:nowrap;">' + label + ' <span style="color:#2f6fed;">▸</span></span></div>';
+          }
           var g = (_glow[k] !== undefined) ? ' class="money-in-glow" style="animation-delay:-' + _glow[k] + 'ms;' : ' style="';
           return '<div data-money-row="' + k + '" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:0 12px;' + (first ? '' : 'margin-top:1px;') + '">' +
             '<span style="color:' + GRAY + ';white-space:nowrap;">' + label + '</span>' +
@@ -45023,6 +45029,7 @@ function renderMonthlyMoneyLine() {
             '<span style="white-space:nowrap;color:' + GREEN + ';font-weight:700;">▽ 入る <span data-money-in="' + k + '"' + g + 'padding:0 2px;font-size:1em;">' + y(sm['in']) + '</span></span>' +
             '<span style="white-space:nowrap;color:' + (d < 0 ? RED : GREEN) + ';">差 ' + sg(d) + '</span>' +
             ((first && _todayUp > 0) ? '<span data-money-today style="white-space:nowrap;color:' + GREEN + ';font-weight:700;">今日 +' + y(_todayUp) + '</span>' : '') +
+            (k === 'next' ? '<span data-money-next-fold onclick="toggleMoneyNextOpen()" style="cursor:pointer;color:#2f6fed;white-space:nowrap;">▾ 畳む</span>' : '') +
           '</div>';
         };
         var _rowsHtml = '';
@@ -45037,7 +45044,7 @@ function renderMonthlyMoneyLine() {
           var _parts = ['<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">手持ち</span> <span style="color:' + GREEN + ';font-weight:700;">' + y(_pt.total) + '</span></span>'];
           if (_fore !== null) {
             _parts.push('<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">→ ' + _m + '月末</span> <span style="color:' + (_fore < 0 ? RED : GREEN) + ';font-weight:700;">' + y(_fore) + '</span>' + _plusTo(_fore) + '</span>');
-            if (_sum.next.out || _sum.next['in']) {
+            if ((_sum.next.out || _sum.next['in']) && _nextOpen) {   // 来月を畳んだら来月末も隠す
               var _f2 = _fore + _sum.next['in'] - _sum.next.out;
               _parts.push('<span style="white-space:nowrap;"><span style="color:' + GRAY + ';">→ ' + _nm + '月末</span> <span style="color:' + (_f2 < 0 ? RED : GREEN) + ';font-weight:700;">' + y(_f2) + '</span>' + _plusTo(_f2) + '</span>');
             }
@@ -45101,6 +45108,15 @@ function renderMonthlyMoneyLine() {
       renderMonthlyMoneyLine();
     }
     window.toggleMoneyLineOpen = toggleMoneyLineOpen;
+
+    // 来月の行だけを畳む・開く（v0.76.51〜）。覚えておく
+    function toggleMoneyNextOpen() {
+      var open = true;
+      try { open = localStorage.getItem('moneyNextOpen') !== '0'; } catch (e) {}
+      try { localStorage.setItem('moneyNextOpen', open ? '0' : '1'); } catch (e) {}
+      renderMonthlyMoneyLine();
+    }
+    window.toggleMoneyNextOpen = toggleMoneyNextOpen;
 
     // プロフィール即時保存
     function saveProfileQuick() {
@@ -59338,6 +59354,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.76.52', date: '2026-11-16',
+    items: [
+      { icon:'💰', t:'来月を畳むと、来月末の見込みも隠れるようにしました',
+        before:'来月の行を畳んでも、手持ちの行に「→ 来月末」が出ていました',
+        after:'来月を畳むと「→ 来月末」も隠れます。開くとまた出ます' }
+    ]
+  },
+  {
+    ver: 'v0.76.51', date: '2026-11-16',
+    items: [
+      { icon:'💰', t:'お金の欄の来月の行だけを、畳めるようにしました',
+        before:'来月の ▲出る ▽入る 差 は、いつも出ていました',
+        after:'来月の行の差のすぐ隣の「▾ 畳む」で、その行だけ畳めます。畳んだ形は覚えておき、「12月 ▸」を押すとまた開きます' }
+    ]
+  },
   {
     ver: 'v0.76.50', date: '2026-11-16',
     items: [
@@ -89907,6 +89939,45 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        try { if (_st599.seen === null) localStorage.removeItem('moneyInSeen'); else localStorage.setItem('moneyInSeen', _st599.seen); } catch (e3) {}
        window._moneyGlowAt = _st599.glow;
        try { renderMonthlyMoneyLine(); } catch (e4) {}
+     }
+     // ===== ST-600: 来月の行だけ畳める（v0.76.51〜） =====
+     var _st600 = { tasks: allTasks.slice(), open: localStorage.getItem('moneyLineOpen'), nx: localStorage.getItem('moneyNextOpen'), base: localStorage.getItem('moneyInDayBase'), seen: localStorage.getItem('moneyInSeen'), glow: window._moneyGlowAt }, _r600 = {}, _e600 = null;
+     try {
+       var _t600 = getLocalDateStr(new Date()), _n600 = new Date(); _n600 = new Date(_n600.getFullYear(), _n600.getMonth() + 1, 5);
+       allTasks = allTasks.filter(function(x) { return x && x.kind !== 'money' && !(x.kind === 'task' && x.text && /[▲▽△▼]/.test(x.text)); });
+       allTasks.push({ id: 'st600p', kind: 'money', name: 'ST600の財布', amount: 50000, order: 0 });
+       allTasks.push({ id: 'st600a', kind: 'task', text: '▲5,000 ST600カード', date: _t600 });
+       allTasks.push({ id: 'st600b', kind: 'task', text: '▲27,894 ST600携帯', date: getLocalDateStr(_n600) });
+       localStorage.setItem('moneyLineOpen', '1'); localStorage.removeItem('moneyNextOpen');
+       var _el600 = document.getElementById('monthlyMoneyLine'), _prev600 = _el600.style.display;
+       renderMonthlyMoneyLine();
+       var _nr600 = _el600.querySelector('[data-money-row="next"]');
+       var _fb600 = _el600.querySelector('[data-money-next-fold]');
+       _r600.btn = !!_nr600 && !!_fb600 && _nr600.contains(_fb600) && /27,894/.test(_nr600.textContent) &&
+         (function() { var sp = Array.prototype.slice.call(_nr600.children); var di = -1; sp.forEach(function(c, i) { if (/^差/.test(c.textContent)) di = i; }); return di >= 0 && sp[di + 1] === _fb600; })();
+       toggleMoneyNextOpen();
+       _nr600 = _el600.querySelector('[data-money-row="next"]');
+       _r600.hideEnd = !/月末\s*-?[0-9,]+[^]*月末/.test((_el600.querySelector('[data-money-rest]') || {}).textContent || 'x月末 1 月末');
+       _r600.folded = !!_nr600 && _nr600.hasAttribute('data-money-next-folded') && !/27,894/.test(_nr600.textContent) && localStorage.getItem('moneyNextOpen') === '0' &&
+         /▲ 出る\s*5,000/.test(_el600.querySelector('[data-money-row="cur"]').textContent);
+       toggleMoneyNextOpen();
+       _r600.reopen = /27,894/.test(_el600.querySelector('[data-money-row="next"]').textContent) &&
+         /月末[^]*月末\s*17,106/.test((_el600.querySelector('[data-money-rest]') || {}).textContent || '');
+       _el600.style.display = _prev600;
+     } catch(e) { _e600 = e; }
+     finally {
+       allTasks = _st600.tasks;
+       var _rs600 = function(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e1) {} };
+       _rs600('moneyLineOpen', _st600.open); _rs600('moneyNextOpen', _st600.nx); _rs600('moneyInDayBase', _st600.base); _rs600('moneyInSeen', _st600.seen);
+       window._moneyGlowAt = _st600.glow;
+       try { renderMonthlyMoneyLine(); } catch (e4) {}
+     }
+     if (_e600) ng('ST-600: 例外', _e600.message);
+     else {
+       _r600.btn ? ok('ST-600·①: 来月の行の差のすぐ隣に「畳む」') : ng('ST-600·①: 来月の行に畳むが無い・差の隣でない');
+       _r600.folded ? ok('ST-600·②: 押すと来月の行だけ畳む（今月はそのまま・覚える）') : ng('ST-600·②: 来月の行が畳めない');
+       _r600.reopen ? ok('ST-600·③: もう一度押すと開く（来月末も戻る）') : ng('ST-600·③: 開き直せない');
+       _r600.hideEnd ? ok('ST-600·④: 来月を畳むと、手持ちの行の来月末も隠す') : ng('ST-600·④: 畳んでも来月末が出ている');
      }
      if (_e599) ng('ST-599: 例外', _e599.message);
      else {
