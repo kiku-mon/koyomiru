@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.99';
+    const APP_VERSION = 'v0.77.0';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13390,18 +13390,20 @@ window.koyomiRenderCeremonyNotice = koyomiRenderCeremonyNotice;
 // 【権威】2026-11-06「テスト運用したが、ろくなことに使わない。拝啓 ○○様、敬具と必ずこう書かせろ」「便箋を選べるのに、書く所は切り替わらない。変。切り替えろ」。
 // サーバーにも決まり（⑯：本文は「拝啓」で始まり「敬具」で終わる）を入れた。画面は、はじめから型を入れ、宛先を変えれば宛名も変える
 function koyomiLetterSalute(name) { return (!name || name === '自分') ? '未来の自分' : name; }
-function koyomiLetterTemplate(name) { return '拝啓　' + koyomiLetterSalute(name) + '様\n\n\n\n敬具'; }
+// v0.77.0: 【権威】2026-11-18「返信には返信の型がある。返信の返信なのか状態を把握して、型を整えて出す」→ 返信は頭語を「拝復」に（結語は敬具のまま）
+function koyomiLetterTemplate(name, reply) { return (reply ? '拝復' : '拝啓') + '　' + koyomiLetterSalute(name) + '様\n\n\n\n敬具'; }
 // 宛先を変えたら、1行目の宛名だけ書き換える（中身は触らない）
 function koyomiLetterRename(text, name) {
   var t = String(text || '');
   if (!t.trim()) return koyomiLetterTemplate(name);
-  return /^\s*拝啓[^\n]*/.test(t) ? t.replace(/^\s*拝啓[^\n]*/, '拝啓　' + koyomiLetterSalute(name) + '様') : t;
+  var hm = /^\s*(拝[啓復])[^\n]*/.exec(t);
+  return hm ? t.replace(/^\s*拝[啓復][^\n]*/, hm[1] + '　' + koyomiLetterSalute(name) + '様') : t;
 }
 // 形の確かめ：拝啓で始まり、敬具で終わり、そのあいだに中身があること
 function koyomiLetterFormError(text) {
   var t = String(text || '').trim();
-  if (!/^拝啓/.test(t) || !/敬具$/.test(t)) return '手紙は「拝啓　○○様」で始めて、「敬具」で結んでほしい。';
-  var inner = t.replace(/^拝啓[^\n]*\n?/, '').replace(/敬具$/, '').trim();
+  if (!/^拝[啓復]/.test(t) || !/敬具$/.test(t)) return '手紙は「拝啓　○○様」で始めて、「敬具」で結んでほしい。';
+  var inner = t.replace(/^拝[啓復][^\n]*\n?/, '').replace(/敬具$/, '').trim();
   if (!inner) return '「拝啓」と「敬具」のあいだに、手紙を書いてほしい。';
   return '';
 }
@@ -13427,6 +13429,8 @@ var KOYOMI_JIKOU = {
 var KOYOMI_LETTER_CHIPS = [
   { key: 'jikou', label: '季節のひとことから始めると、手紙らしくなる', where: 'top' },   // v0.76.72: 「時候のあいさつ」は難しく見えるので言い換え
   { key: 'anpi', label: '安否のあいさつ', where: 'top', items: ['いかがお過ごしでしょうか。', 'お元気ですか。', 'こちらは元気にしています。'] },
+  // v0.77.0: 返信のときだけ出す、受け取ったお礼（安否のあと・書き出しの前）。はじめての返信は「お手紙」、返信への返信は「お返事」
+  { key: 'henshin', label: '返信のお礼', where: 'top', reply: true, items: ['お手紙、ありがとうございました。', 'お手紙、うれしく読みました。', 'お返事、ありがとうございました。', 'お返事、うれしく読みました。'] },
   { key: 'kakidashi', label: '本文の書き出し', where: 'top', items: ['さて、', '今日は、未来のあなたに伝えたいことがあって、筆をとりました。', 'この手紙を開くころ、あなたはどうしているでしょう。'] },
   // v0.76.66: 【権威】2026-11-17「結びの言葉が3個ぐらいしかないから、もう少し増やしたら」→ 14に
   { key: 'musubi', label: '結びのあいさつ', where: 'bottom', items: ['季節の変わり目、どうかご自愛ください。', 'くれぐれもお体を大切に。', '寒さ厳しき折、どうぞ温かくしてお過ごしください。', '暑さ厳しき折、どうぞご無理なさらずに。',
@@ -13553,6 +13557,64 @@ var KOYOMI_LETTER_THEMES = [
   ] }
 ];
 window.KOYOMI_LETTER_THEMES = KOYOMI_LETTER_THEMES;
+// ===== v0.77.0: 返信の型と、返信に合う言葉の案内 =====
+// 【権威】2026-11-18 最高峰会議（アーキテクト・デザイナー・CXO・女性の利用者）
+//   返信を押したら、何への返信か（はじめての返信／返信への返信）で型を出し分ける：頭語は拝復、受け取ったお礼のチップ、
+//   届いた手紙に使われたテーマから、返信に合うテーマへ飛ぶ1行（言葉は自動では入れない）。
+//   「形だけ断って、本心は誘ってほしい」こともあるので、申し込み直しは一度まで。同じ相手から二度断られたら、
+//   または「距離を置く」と言われたら、その人に書くときは、追いかける言葉を出さない（返信でも、新しい手紙でも）
+function _koyomiThemeByKey(k) { var hit = null; KOYOMI_LETTER_THEMES.forEach(function(g) { g.themes.forEach(function(t) { if (t.key === k) hit = t; }); }); return hit; }
+var KOYOMI_LETTER_REPLY_MAP = {
+  koi_suki: ['koi_hai', 'koi_gomen'], koi_hikare: ['koi_hai', 'koi_gomen'], koi_kataomoi: ['koi_hai', 'koi_gomen'], koi_moushikomi: ['koi_hai', 'koi_gomen'],
+  koi_propose: ['koi_hai', 'koi_gomen'], koi_mouichido: ['koi_hai', 'koi_gomen'],
+  koi_gomen: ['koi_uketoru', 'koi_mouichido'], koi_hai: ['koi_mirai', 'koi_ai'],
+  kansha: ['kansha'], ayamaru: ['nakanaori', 'kansha'], uchiake: ['hagemasu'], mimai: ['kansha'], iwau: ['kansha'], hagemasu: ['kansha'],
+  hisashiburi: ['hisashiburi'], nakanaori: ['nakanaori'], tanjobi: ['kansha'], kekkon: ['kansha'], shussan: ['kansha'], sotsugyo: ['kansha'], taishoku: ['kansha'],
+  nenga: ['nenga'], kanchu: ['kanchu'], shochu: ['shochu'], isame: ['ayamaru', 'kansha'], kyori: ['ayamaru']
+};
+// 届いた手紙に使われたテーマ（チップの言葉がそのまま入っているもの）
+function koyomiLetterThemesIn(body) {
+  var b = String(body || ''), out = [];
+  KOYOMI_LETTER_THEMES.forEach(function(g) { g.themes.forEach(function(t) { if (t.items.some(function(x) { return x.length >= 8 && b.indexOf(x) !== -1; })) out.push(t.key); }); });
+  return out;
+}
+var _KOYOMI_REFUSE_RE = /お断り(させて|いたし|します|申し上げ)|お受け(することは)?できません|見送らせて|お気持ちに(は)?(お)?応えられ|お付き合い(すること)?はできません|お付き合いすることはできません/;
+function koyomiLetterIsRefusal(body) {
+  var b = String(body || ''), g = _koyomiThemeByKey('koi_gomen');
+  if (_KOYOMI_REFUSE_RE.test(b)) return true;
+  if (!g || !g.steps) return false;
+  var from = g.steps[0][1] + g.steps[1][1], ans = g.items.slice(from, from + g.steps[2][1]);
+  return ans.some(function(x) { return x.length >= 8 && b.indexOf(x) !== -1; });   // 「けれど、」のような短いつなぎは数えない
+}
+function koyomiLetterIsKyori(body) {
+  var b = String(body || ''), k = _koyomiThemeByKey('kyori');
+  return !!(k && k.items.some(function(x) { return x.length >= 8 && b.indexOf(x) !== -1; }));   // 断りの手紙の「しばらく距離を」は数えない（申し込み直しは一度まで許す）
+}
+// この人に書くとき、追いかける言葉を控えるか（届いた手紙の一覧から）
+function koyomiLetterHushFor(uid, rows) {
+  if (!uid) return false;
+  var mine = (rows || []).filter(function(r) { return r && r.sender_id === uid && r.body; });
+  return mine.filter(function(r) { return koyomiLetterIsRefusal(r.body); }).length >= 2 || mine.some(function(r) { return koyomiLetterIsKyori(r.body); });
+}
+var KOYOMI_LETTER_HUSH = {
+  keepThemes: ['koi_uketoru'], themes: ['yakusoku', 'valentine'],
+  chips: ['また会える日を楽しみにしています。', 'またお便りします。', 'また、近いうちにお話しできたらうれしいです。', 'また、前のように話せたらうれしいです。', '今度、またゆっくり会おう。',
+    '元気になったら、また話を聞かせてください。', '帰る場所は、いつでもここにあります。', 'さよならではなく、またね、と書きます。', '夏の思い出を、また聞かせてください。',
+    'また穏やかに話せる日が来たら、そのときはよろしくお願いします。', 'これからも、今までどおり話しかけてもらえたらうれしいです。',
+    '次にお会いできる日を、楽しみにしております。', 'ご不明な点がありましたら、いつでもお気軽にお声がけください。', 'いただいたお話をもとに、もう一度よく考えてみます。',
+    'もし状況が変わることがありましたら、いつでもご相談ください。', 'またどこかでご縁がありましたら、うれしく思います。', '気になることがあれば、どんな小さなことでもご連絡ください。']
+};
+function koyomiLetterHushTheme(g, t) { return (g.love && KOYOMI_LETTER_HUSH.keepThemes.indexOf(t.key) === -1) || KOYOMI_LETTER_HUSH.themes.indexOf(t.key) !== -1; }
+// 返信に合うテーマ（多くて3つ）。控えるときは、控えるテーマを出さない
+function koyomiLetterReplyGuide(body, hush) {
+  var out = [];
+  koyomiLetterThemesIn(body).forEach(function(k) { (KOYOMI_LETTER_REPLY_MAP[k] || []).forEach(function(x) { if (out.indexOf(x) === -1) out.push(x); }); });
+  if (out.indexOf('koi_uketoru') !== -1) out = out.filter(function(x) { return x !== 'koi_hai' && x !== 'koi_gomen'; });   // 断りの手紙を受けた側には、受け取る言葉を先に
+  if (hush) out = out.filter(function(k) { var g = KOYOMI_LETTER_THEMES.filter(function(gg) { return gg.themes.some(function(t) { return t.key === k; }); })[0]; return g && !koyomiLetterHushTheme(g, _koyomiThemeByKey(k)); });
+  return out.slice(0, 3);
+}
+window.koyomiLetterThemesIn = koyomiLetterThemesIn; window.koyomiLetterIsRefusal = koyomiLetterIsRefusal; window.koyomiLetterHushFor = koyomiLetterHushFor; window.koyomiLetterReplyGuide = koyomiLetterReplyGuide;
+// ===== END v0.77.0 =====
 function _koyomiAllBodyChipTexts() { var a = []; KOYOMI_LETTER_THEMES.forEach(function(g) { g.themes.forEach(function(t) { a = a.concat(t.items); }); }); return a; }
 // v0.76.71: 【権威】2026-11-17「二十四節気も出して72候も出してあげて、で選べるようにしてあげたい」「入れ込むのは保留して選ばして」
 //   時候のあいさつは季節を一度だけ言うのが作法なので、節気と候は別々の候補にして、どちらか1つを選んでもらう。
@@ -13612,7 +13674,7 @@ function _koyomiAllTopChipTexts(d) { var a = []; KOYOMI_LETTER_CHIPS.forEach(fun
 // 型に沿って1行入れる（拝啓の下に積む／敬具の上へ）。型が崩れていたら、末尾の敬具の前に入れる
 function koyomiLetterInsert(text, phrase, where, d) {
   var lines = String(text || '').split('\n');
-  var head = lines.findIndex(function(l) { return /^\s*拝啓/.test(l); });
+  var head = lines.findIndex(function(l) { return /^\s*拝[啓復]/.test(l); });
   var foot = -1; for (var i = lines.length - 1; i >= 0; i--) { if (/^\s*敬具\s*$/.test(lines[i])) { foot = i; break; } }
   if (where === 'bottom' || head === -1) {
     var at = foot === -1 ? lines.length : foot;
@@ -13707,11 +13769,15 @@ function koyomiKimeFx(phrase, fromName) {
   ov.addEventListener('click', function() { ov.style.transition = 'opacity 0.6s ease'; ov.style.opacity = '0'; setTimeout(function() { ov.remove(); }, 650); });
 }
 window.koyomiKimeFx = koyomiKimeFx;
-function koyomiLetterChipsHtml(e) {
+function koyomiLetterChipsHtml(e, ctx) {
   var d = new Date();
+  ctx = ctx || {};
+  var hushChip = function(t) { return ctx.hush && KOYOMI_LETTER_HUSH.chips.indexOf(t) !== -1; };
   var grp = function(g) {
-    return '<div style="margin-bottom:8px;"><div style="font-size:0.9em;color:#8a7f6a;margin-bottom:4px;">' + e(g.label) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
-      koyomiLetterChipItems(g, d).map(function(t) { var tg = g.key === 'jikou' ? koyomiLetterChipTag(t, d) : ''; return '<button type="button" data-letter-chip="' + e(g.where) + '" data-letter-text="' + e(t) + '"' + (tg ? ' data-letter-tag="' + e(tg) + '"' : '') + ' style="padding:4px 10px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-size:0.8em;cursor:pointer;text-align:left;">' + e(t) +
+    if (g.reply && !ctx.reply) return '';
+    var its = koyomiLetterChipItems(g, d).filter(function(t) { return !hushChip(t) && (!g.reply || (ctx.reply === 'rere' ? /^お返事/ : /^お手紙/).test(t)); });
+    return '<div' + (g.reply ? ' data-letter-reply-thanks' : '') + ' style="margin-bottom:8px;"><div style="font-size:0.9em;color:#8a7f6a;margin-bottom:4px;">' + e(g.label) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+      its.map(function(t) { var tg = g.key === 'jikou' ? koyomiLetterChipTag(t, d) : ''; return '<button type="button" data-letter-chip="' + e(g.where) + '" data-letter-text="' + e(t) + '"' + (tg ? ' data-letter-tag="' + e(tg) + '"' : '') + ' style="padding:4px 10px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#5a4630;font-size:0.8em;cursor:pointer;text-align:left;">' + e(t) +
         (tg ? '<span style="display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:#f3ead8;color:#8a6a3a;font-size:0.82em;vertical-align:1px;">' + e(tg) + '</span>' : '') + '</button>'; }).join('') + '</div>' +
       (g.key === 'jikou' && koyomiLetterKoyomiLine(d) ? '<div data-letter-koyomi-line style="font-size:0.84em;color:#a08d66;margin-top:5px;">' + e(koyomiLetterKoyomiLine(d)) + '</div>' : '') + '</div>';
   };
@@ -13722,6 +13788,9 @@ function koyomiLetterChipsHtml(e) {
   //   文字 約11px→15px、チップの高さ 約30→40pt（押しやすさの目安 44pt に近づける）。見出しも同じ割合で
   return '<style data-letter-chips-style>[data-letter-chips] button[data-letter-chip]{font-size:15px !important;padding:8px 14px !important;min-height:40px;line-height:1.45;}[data-letter-chips] [data-letter-chip] [data-letter-tag-pill]{font-size:12px;}</style>' +
     '<div data-letter-chips style="margin:8px 0 2px;">' +
+    // v0.77.0: 返信のとき、届いた手紙に合うテーマへ飛ぶ1行（押すとそのテーマまで飛ぶ。言葉は入れない）
+    (ctx.guide && ctx.guide.length ? '<div data-letter-guide style="margin-bottom:10px;padding:8px 10px;border-radius:12px;background:#eef4fb;border:1px solid #b8cde6;"><div style="font-size:0.88em;font-weight:700;color:#2c4f78;margin-bottom:6px;">✉️ この手紙への返信に合う言葉</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+      ctx.guide.map(function(k) { var t = _koyomiThemeByKey(k); return t ? '<button type="button" data-letter-goto="' + e(k) + '" style="padding:8px 14px;min-height:40px;border-radius:999px;border:1px solid #2c4f78;background:#fff;color:#2c4f78;font-size:15px;font-weight:700;cursor:pointer;">' + e(t.label) + '</button>' : ''; }).join('') + '</div></div>' : '') +
     KOYOMI_LETTER_CHIPS.filter(function(g) { return g.where !== 'bottom'; }).map(grp).join('') +
     // v0.76.22: 【権威】2026-11-09「結びの語まで行くのに時間がかかる」→ 結びを、長い本文のきっかけより上へ（手紙の中で入る場所は今どおり敬具の上）
     KOYOMI_LETTER_CHIPS.filter(function(g) { return g.where === 'bottom'; }).map(grp).join('') +
@@ -13729,12 +13798,15 @@ function koyomiLetterChipsHtml(e) {
     //   → 32テーマの言葉を、まとまりとテーマの見出し付きで全部そのまま並べる。押すのは言葉だけ
     '<div data-letter-theme-box style="margin:4px 0 8px;padding:8px 0 2px;border-top:1px dashed #e6d8bd;border-bottom:1px dashed #e6d8bd;"><div style="font-size:0.74em;color:#8a7f6a;margin-bottom:4px;">本文のきっかけ（' + KOYOMI_LETTER_THEMES.reduce(function(n, g) { return n + g.themes.length; }, 0) + 'テーマ）</div>' +
     KOYOMI_LETTER_THEMES.map(function(g) {
-      return '<div style="margin:12px 0 4px;font-size:0.98em;font-weight:800;color:#7a3b1e;">' + e(g.group) + (g.love ? '<span style="font-weight:400;font-size:0.92em;color:#a08d66;">　押すと「✨ 特別な手紙」に（ごめんなさいのお返事は除く）</span>' : '') + '</div>' + g.themes.map(function(t) {
+      var ths = g.themes.filter(function(t) { return !(ctx.hush && koyomiLetterHushTheme(g, t)); });
+      if (!ths.length) return '';
+      return '<div style="margin:12px 0 4px;font-size:0.98em;font-weight:800;color:#7a3b1e;">' + e(g.group) + (g.love ? '<span style="font-weight:400;font-size:0.92em;color:#a08d66;">　押すと「✨ 特別な手紙」に（ごめんなさいのお返事は除く）</span>' : '') + '</div>' + ths.map(function(t) {
         return '<div data-letter-theme="' + e(t.key) + '" style="margin-bottom:8px;"><div style="font-size:0.88em;color:#a08d66;margin-bottom:4px;">' + e(t.label) + '</div><div style="display:flex;flex-wrap:wrap;gap:6px;">' +
           t.items.map(function(x, xi) {
             // v0.76.85: 型の見出し（ごめんなさいのお返事）。行をまたいで、その見出しの言葉の頭に置く
             var stepHead = '';
-            if (t.steps) { var acc = 0; t.steps.forEach(function(st) { if (xi === acc) stepHead = '<div data-letter-step style="flex-basis:100%;font-size:0.84em;font-weight:700;color:#8a6a3a;margin:' + (xi ? '4px' : '0') + ' 0 0;">' + e(st[0]) + '</div>'; acc += st[1]; }); }
+            if (t.steps) { var acc = 0; t.steps.forEach(function(st) { if (xi === acc && t.items.slice(acc, acc + st[1]).some(function(y) { return !hushChip(y); })) stepHead = '<div data-letter-step style="flex-basis:100%;font-size:0.84em;font-weight:700;color:#8a6a3a;margin:' + (xi ? '4px' : '0') + ' 0 0;">' + e(st[0]) + '</div>'; acc += st[1]; }); }
+            if (hushChip(x)) return stepHead;
             if (KOYOMI_KIME.indexOf(x) !== -1) return stepHead + '<button type="button" data-letter-chip="body" data-letter-kime="1"' + (g.love && !t.noKira ? ' data-letter-love="1"' : '') + ' data-letter-text="' + e(x) + '" style="padding:4px 10px;border-radius:999px;border:1px solid #d4a93c;background:#fffaf0;color:#7a5410;font-size:0.82em;font-weight:700;cursor:pointer;text-align:left;">' + e(x) + '</button>';
             return stepHead + '<button type="button" data-letter-chip="body"' + (g.love && !t.noKira ? ' data-letter-love="1"' : '') + ' data-letter-text="' + e(x) + '" style="padding:4px 10px;border-radius:999px;border:1px solid #d9c9a6;background:#fffaf0;color:#5a4630;font-size:0.8em;cursor:pointer;text-align:left;">' + e(x) + '</button>'; }).join('') + '</div></div>';
       }).join('');
@@ -13749,6 +13821,22 @@ function koyomiWireLetterChips(root, ta) {
   root.querySelectorAll('[data-letter-chip]').forEach(wire);   // v0.76.15: 本文のきっかけも最初から全部並んでいる
 }
 window.koyomiLetterChipsHtml = koyomiLetterChipsHtml; window.koyomiWireLetterChips = koyomiWireLetterChips;
+// v0.77.0: 書くときの出し分け（返信の種類・相手・返信に合うテーマ）
+function _capsuleWriteCtx(uid) {
+  var hush = koyomiLetterHushFor(uid, window._capsuleRecvRows || []);
+  var rp = (typeof _capsuleReplyTo !== 'undefined') ? _capsuleReplyTo : null;
+  return { reply: rp ? (rp.replyTo ? 'rere' : 'first') : '', hush: hush, guide: rp ? koyomiLetterReplyGuide(rp.body, hush) : [] };
+}
+function koyomiWireLetterGoto(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-letter-goto]').forEach(function(b) { b.onclick = function() {
+    var box = root.querySelector('[data-letter-theme="' + b.getAttribute('data-letter-goto') + '"]'); if (!box) return;
+    try { box.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (eS) { box.scrollIntoView(); }
+    box.style.transition = 'background 0.4s ease'; box.style.borderRadius = '12px'; box.style.background = '#fdf1d6';
+    setTimeout(function() { box.style.background = ''; }, 1600);
+  }; });
+}
+window._capsuleWriteCtx = _capsuleWriteCtx; window.koyomiWireLetterGoto = koyomiWireLetterGoto;
 // ===== END v0.76.4 =====
 // ===== v0.75.5: 届く日の予定（前に封をした手紙の分も） =====
 // 【権威】2026-11-05「1はやる」。出した手紙のタブをなくしたので、v0.75.4より前に封をした到着待ちの手紙が見えなくなっていた（穴）。
@@ -13841,7 +13929,7 @@ function _capsuleRenderWrite(body, e) {
     // v0.73.5: 返事のとき、宛先を差出人に決め、上に帯を出す（いまは同じ共有カレンダーにいなくても、手紙をくれた人には返せる）
     if (_capsuleReplyTo && !list.some(function(p) { return p.user_id === _capsuleReplyTo.to; })) list = list.concat([{ user_id: _capsuleReplyTo.to, name: _capsuleReplyTo.name }]);
     var replyBand = _capsuleReplyTo ? '<div data-cap-replyband style="' + _CAP_BOX + 'margin-bottom:12px;background:#eef4fb;border-color:#b8cde6;color:#2c4f78;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-      '<div style="font-weight:700;">✉️ ' + e(_capsuleReplyTo.name) + 'さんへの返信<div style="font-weight:400;font-size:0.8em;margin-top:2px;">' + _capsuleYmd(_capsuleReplyTo.sealedAt) + 'に書かれた手紙に</div></div>' +
+      '<div style="font-weight:700;">✉️ ' + e(_capsuleReplyTo.name) + 'さんへの返信' + (_capsuleReplyTo.replyTo ? '<span data-cap-rere style="font-weight:400;">（返信への返信）</span>' : '') + '<div style="font-weight:400;font-size:0.8em;margin-top:2px;">' + _capsuleYmd(_capsuleReplyTo.sealedAt) + 'に書かれた手紙に</div></div>' +
       '<button type="button" data-cap-replycancel style="flex-shrink:0;border:none;background:none;color:#2c4f78;text-decoration:underline;font-size:0.8em;cursor:pointer;">返信をやめる</button></div>' : '';
     body.innerHTML = replyBand + draftHtml + '<div style="' + _CAP_BOX + '">' +
       '<div style="font-weight:700;color:#5a4630;margin-bottom:6px;">宛先</div>' +
@@ -13870,7 +13958,7 @@ function _capsuleRenderWrite(body, e) {
       '<div style="font-size:0.74em;color:#8a7f6a;margin-bottom:8px;">季節の便箋は、封をした日の季節の色で届く。</div>' +
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">📝 手紙</div>' +
       '<textarea data-cap="body" rows="9" maxlength="2000" placeholder="未来のその日に、届けたいことを。" style="width:100%;box-sizing:border-box;padding:6px 12px;border-radius:12px;border:1px solid #d9c9a6;font-size:15px;line-height:28px;background:#fffdf7;background-image:repeating-linear-gradient(transparent, transparent 27px, #efe3cc 27px, #efe3cc 28px);background-position:0 6px;background-attachment:local;"></textarea>' +
-      koyomiLetterChipsHtml(e) +   // v0.76.4
+      '<div data-letter-chips-wrap>' + koyomiLetterChipsHtml(e, _capsuleWriteCtx(_capsuleReplyTo ? _capsuleReplyTo.to : (list[0] && list[0].user_id))) + '</div>' +   // v0.76.4 / v0.77.0: 返信の型・相手ごとの出し分け
       // v0.76.75: 【権威】2026-11-17「手紙はすぐに書き始める、という今までの仕様は崩したくない」「説明文でチップが下に追いやられ、気軽に書けなくなった」
       //   → 封筒と切手は、手紙のあと（封をする前）に小さくまとめる。説明文は置かず、見本と一行だけ
       '<div data-cap-envstamp style="margin-top:12px;padding-top:10px;border-top:1px dashed #e6d8bd;display:flex;gap:12px;align-items:center;">' +
@@ -13936,11 +14024,12 @@ function _capsuleRenderWrite(body, e) {
     body.querySelectorAll('[data-cap-cap-pick]').forEach(function(b) { b.onclick = function() { _pickCap(b.getAttribute('data-cap-cap-pick')); }; });
     _pickCap(_cap);
     // v0.76.78: 【権威】2026-11-17「ラブレターボタンがあったんだったらキラにしてあげる、という遊び心」→ 恋文の言葉を押したら、キラのカプセル（特別な手紙）に
-    body.querySelectorAll('[data-letter-love]').forEach(function(b) { b.addEventListener('click', function() {
+    var _wireLove = function(root) { root.querySelectorAll('[data-letter-love]').forEach(function(b) { b.addEventListener('click', function() {
       if (_cap === 'kira') return;
       _pickCap('kira');
       if (typeof showToast === 'function') showToast('✨ 恋文なので、キラのカプセルで届く手紙にした（下で色を変えられる）', { type: 'success' });
-    }); });
+    }); }); };
+    _wireLove(body);
     setTimeout(function() { _drawEnvPreview(false); }, 0);   // 拝啓の宛名が入ったあとに描き直す
     (function() { var to1 = body.querySelector('[data-cap="to"]'); if (to1) to1.addEventListener('change', function() { setTimeout(function() { _drawEnvPreview(false); }, 0); }); })();
     var _pickPaper = function(k) { _paper = k; body.querySelectorAll('[data-cap-paper-pick]').forEach(function(b) { b.style.border = b.getAttribute('data-cap-paper-pick') === k ? '2px solid #7a3b1e' : '1px solid #d9c9a6'; }); koyomiApplyPaperToTextarea(body.querySelector('[data-cap="body"]'), k); };   // v0.76.3: 書く欄も便箋に
@@ -13948,10 +14037,15 @@ function _capsuleRenderWrite(body, e) {
     (function() {
       var ta0 = body.querySelector('[data-cap="body"]'), sel0 = body.querySelector('[data-cap="to"]');
       var nm0 = function() { var o = sel0 && sel0.options[sel0.selectedIndex]; return _capsuleReplyTo ? _capsuleReplyTo.name : (o ? o.textContent : '自分'); };
-      if (ta0 && !String(ta0.value || '').trim()) ta0.value = koyomiLetterTemplate(nm0());
-      if (sel0) sel0.addEventListener('change', function() { ta0.value = koyomiLetterRename(ta0.value, nm0()); });
+      if (ta0 && !String(ta0.value || '').trim()) ta0.value = koyomiLetterTemplate(nm0(), !!_capsuleReplyTo);   // v0.77.0: 返信は拝復
       koyomiApplyPaperToTextarea(ta0, 'ruled');
       koyomiWireLetterChips(body, ta0);   // v0.76.4
+      // v0.77.0: 返信に合うテーマへ飛ぶ。宛先を変えたら、その人に合わせてチップを並べ直す
+      var uid0 = function() { return _capsuleReplyTo ? _capsuleReplyTo.to : (sel0 ? sel0.value : null); };
+      var refresh0 = function() { var w = body.querySelector('[data-letter-chips-wrap]'); if (!w) return; w.innerHTML = koyomiLetterChipsHtml(e, _capsuleWriteCtx(uid0())); koyomiWireLetterChips(w, ta0); _wireLove(w); koyomiWireLetterGoto(w); };
+      koyomiWireLetterGoto(body);
+      if (sel0) sel0.addEventListener('change', function() { ta0.value = koyomiLetterRename(ta0.value, nm0()); refresh0(); });
+      if (!window._capsuleRecvRows && !window._smokeTestRunning) _capsuleRpc('koyomiru_capsule_list_received').then(function(rows) { window._capsuleRecvRows = rows || []; refresh0(); }, function() {});
     })();
     body.querySelectorAll('[data-cap-paper-pick]').forEach(function(b) { b.onclick = function() { _pickPaper(b.getAttribute('data-cap-paper-pick')); }; });
     // v0.73.3: 一晩置く
@@ -14032,6 +14126,8 @@ function _capsuleRenderWrite(body, e) {
       if (_capsuleReplyTo) _sealArgs.p_reply_to = _capsuleReplyTo.id;   // v0.73.5: 返事
       _capsuleRpc('koyomiru_capsule_seal', Object.assign({ p_stationery: _paper }, _sealArgs)).catch(function(err0) {
         var m0 = String((err0 && (err0.message || err0.details || err0.hint)) || '');
+        // v0.77.0: 拝復をまだ受け付けないサーバーなら、頭語を拝啓にして送り直す
+        if (/letter_form/.test(m0) && /^拝復/.test(_sealArgs.p_body)) { _sealArgs.p_body = _sealArgs.p_body.replace(/^拝復/, '拝啓'); return _capsuleRpc('koyomiru_capsule_seal', Object.assign({ p_stationery: _paper }, _sealArgs)); }
         if (!_sealArgs.p_reply_to && /p_stationery|function .*does not exist|Could not find the function|PGRST202/i.test(m0)) return _capsuleRpc('koyomiru_capsule_seal', _sealArgs);   // ⑥のSQLの前のサーバー（返事は⑦が要るので送り直さない）
         // v0.76.65: 暦の記録の大きさの決まりに封筒の印が引っかかったら、封筒の印を外してもう一度（封筒は生成りで届く）
         if (/sealed_koyomi|check constraint|violates/i.test(m0) && _sealArgs.p_sealed_koyomi && (_sealArgs.p_sealed_koyomi.env || _sealArgs.p_sealed_koyomi.cap)) { delete _sealArgs.p_sealed_koyomi.env; delete _sealArgs.p_sealed_koyomi.cap; return _capsuleRpc('koyomiru_capsule_seal', Object.assign({ p_stationery: _paper }, _sealArgs)); }
@@ -14652,10 +14748,10 @@ window.koyomiEnvelopeFrontHtml = koyomiEnvelopeFrontHtml;
 //   拝啓の次の行の宛名・さん／ちゃん／くん／殿も読み、それでも読めないときは、受け取った手紙なら自分の名前（fallback）を出す
 function koyomiCapsuleToNameOf(r, fallback) {
   var lines = String((r && r.body) || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean).slice(0, 2), m = null;
-  var reSal = /^(?:拝啓[\s　]*)?(.{1,16}?)[\s　]*(?:様|さま|さん|ちゃん|くん|君|殿)[\s　]*(?:へ)?[\s　]*[、,。！!]?$/;
+  var reSal = /^(?:拝[啓復][\s　]*)?(.{1,16}?)[\s　]*(?:様|さま|さん|ちゃん|くん|君|殿)[\s　]*(?:へ)?[\s　]*[、,。！!]?$/;
   if (lines[0]) m = reSal.exec(lines[0]);
-  if (!m && lines[0] && /^拝啓[\s　]*$/.test(lines[0]) && lines[1]) m = reSal.exec(lines[1]);
-  var nm = m && m[1] ? m[1].replace(/^拝啓[\s　]*/, '') : '';
+  if (!m && lines[0] && /^拝[啓復][\s　]*$/.test(lines[0]) && lines[1]) m = reSal.exec(lines[1]);
+  var nm = m && m[1] ? m[1].replace(/^拝[啓復][\s　]*/, '') : '';
   if (/^(みな|皆|みんな|皆様|各位)$/.test(nm)) nm = '';   // 「みなさんへ」は宛名にしない
   return nm || fallback || 'あなた';
 }
@@ -15045,6 +15141,7 @@ function _capsuleRenderReceived(body, e) {
   _capsuleRpc('koyomiru_capsule_reply_rights').then(function(rr) { var m = {}; (rr || []).forEach(function(x) { m[x.capsule_id] = x; }); window._capsuleReplyRights = m; }, function() { window._capsuleReplyRights = null; })
   .then(function() { return _capsuleRpc('koyomiru_capsule_list_received'); }).then(function(rows) {
     rows = rows || [];
+    window._capsuleRecvRows = rows;   // v0.77.0: 書くとき、相手ごとの言葉の出し分けに使う
     koyomiCapsuleMarkSeen(rows.map(function(r) { return r.id; }));   // v0.72.2: 到着に気づいた印（🟢を消す）。開封の印は、封を切った時に付ける
     // v0.76.67: 文箱（届いた封筒をしまう箱）と切手帳の切り替え
     var _openedIds0 = {}; try { (JSON.parse(localStorage.getItem('koyomiCapsuleOpenedIds') || '[]') || []).forEach(function(id) { _openedIds0[id] = 1; }); } catch (eO0) {}
@@ -15100,7 +15197,7 @@ function _capsuleRenderReceived(body, e) {
         };
       });
       card.querySelectorAll('[data-cap-reply]').forEach(function(b) {
-        b.onclick = function() { _capsuleReplyTo = { id: r.id, to: r.sender_id, name: r.sender_name, sealedAt: r.sealed_at }; _capsuleTab = 'write'; renderCapsuleView(); };
+        b.onclick = function() { _capsuleReplyTo = { id: r.id, to: r.sender_id, name: r.sender_name, sealedAt: r.sealed_at, replyTo: r.reply_to || null, body: r.body || '' }; _capsuleTab = 'write'; renderCapsuleView(); };
       });
       card.querySelectorAll('[data-cap-del]').forEach(function(b) {
         b.onclick = function() {
@@ -60856,6 +60953,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.77.0', date: '2026-11-18',
+    items: [
+      { icon:'✉️', t:'返信を書くときは、返信の型から始まるようにしました',
+        before:'返信を押しても、新しい手紙と同じ型から書き始めていました',
+        after:'返信は「拝復」から始まり、「お手紙、ありがとうございました。」のような受け取ったお礼の言葉が出ます。返信への返信なら「お返事、ありがとうございました。」です。いちばん上に、届いた手紙に合う言葉のテーマが出て、押すとそこまで飛べます' }
+    ]
+  },
+  {
     ver: 'v0.76.99', date: '2026-11-17',
     items: [
       { icon:'✉️', t:'季節のあいさつと、相手の様子を聞くあいさつが重ならないようにしました',
@@ -92051,6 +92156,50 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-620: 諫める手紙は5段の型（大切だから→見たこと→私の気持ち→お願いはひとつ→受け取るかはあなた次第）。人柄の決めつけは入れない')
          : ng('ST-620: 諫める手紙が違う', JSON.stringify(_bad620));
      } catch (e) { ng('ST-620: 例外', e.message); }
+     // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
+     try {
+       var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
+       var G = _koyomiThemeByKey('koi_gomen'), Mo = _koyomiThemeByKey('koi_mouichido'), Kk = _koyomiThemeByKey('kyori');
+       var gomenBody = '拝復　仲間F様\n' + G.items[0] + '\nけれど、' + G.items[11] + '\n\n敬具';
+       // ① 拝復の型：形の確かめ・宛名の書き換え・チップを差し込む場所・封筒の宛名
+       var T = koyomiLetterTemplate('仲間F', true);
+       var T2 = koyomiLetterInsert(koyomiLetterInsert(koyomiLetterInsert(T, '立冬の候、', 'top', _d623), 'いかがお過ごしでしょうか。', 'top', _d623), 'お返事、ありがとうございました。', 'top', _d623);
+       T2 = koyomiLetterInsert(T2, 'あなたの答えを、大切に受け止めます。', 'body', _d623);
+       var L = T2.split('\n');
+       _r623.form = /^拝復　仲間F様/.test(T) && koyomiLetterTemplate('仲間F').indexOf('拝啓') === 0 && /^拝復　仲間G様/.test(koyomiLetterRename(T, '仲間G')) &&
+         L[1] === '立冬の候、いかがお過ごしでしょうか。' && L[2] === 'お返事、ありがとうございました。' && L[3] === 'あなたの答えを、大切に受け止めます。' && koyomiLetterFormError(T2) === '' &&
+         koyomiCapsuleToNameOf({ body: T2 }) === '仲間F';
+       // ② 何への返信かで、お礼の言葉を出し分ける（新しく書くときは出さない）
+       var h0 = document.createElement('div'); h0.innerHTML = koyomiLetterChipsHtml(_escapeHtml);
+       var h1 = document.createElement('div'); h1.innerHTML = koyomiLetterChipsHtml(_escapeHtml, { reply: 'first' });
+       var h2 = document.createElement('div'); h2.innerHTML = koyomiLetterChipsHtml(_escapeHtml, { reply: 'rere' });
+       var th = function(h) { var b = h.querySelector('[data-letter-reply-thanks]'); return b ? [].map.call(b.querySelectorAll('[data-letter-chip]'), function(x) { return x.getAttribute('data-letter-text'); }).join('|') : ''; };
+       _r623.thanks = th(h0) === '' && th(h1) === 'お手紙、ありがとうございました。|お手紙、うれしく読みました。' && th(h2) === 'お返事、ありがとうございました。|お返事、うれしく読みました。';
+       // ③ 返信に合うテーマ：断りの手紙には、受け取る言葉を先に
+       _r623.guide = koyomiLetterReplyGuide(gomenBody, false).join() === 'koi_uketoru,koi_mouichido' &&
+         koyomiLetterReplyGuide('拝啓\n' + _koyomiThemeByKey('koi_moushikomi').items[0] + '\n敬具', false).join() === 'koi_hai,koi_gomen' && koyomiLetterReplyGuide('拝啓\nこんにちは。\n敬具', false).length === 0;
+       var hg = document.createElement('div'); hg.innerHTML = koyomiLetterChipsHtml(_escapeHtml, { reply: 'rere', guide: ['koi_uketoru', 'koi_mouichido'] });
+       _r623.gotoUi = [].map.call(hg.querySelectorAll('[data-letter-guide] [data-letter-goto]'), function(b) { return b.getAttribute('data-letter-goto'); }).join() === 'koi_uketoru,koi_mouichido' && hg.querySelectorAll('[data-letter-guide] [data-letter-chip]').length === 0;
+       // ④ 一度断られただけなら、申し込み直しはできる。二度目の断り・距離を置く手紙のあとは、追いかける言葉を出さない
+       var rows1 = [{ sender_id: 'u-f', body: gomenBody }], rows2 = rows1.concat([{ sender_id: 'u-f', body: '拝復\n' + G.items[13] + '\n敬具' }]), rowsK = [{ sender_id: 'u-k', body: '拝啓\n' + Kk.items[4] + '\n敬具' }];
+       var rowsShort = [{ sender_id: 'u-s', body: '拝啓\nけれど、元気です。\n敬具' }, { sender_id: 'u-s', body: '拝啓\nですが、楽しかった。\n敬具' }];
+       _r623.hushRule = !koyomiLetterHushFor('u-f', rows1) && koyomiLetterHushFor('u-f', rows2) && !koyomiLetterHushFor('u-x', rows2) && koyomiLetterHushFor('u-k', rowsK) && !koyomiLetterHushFor('u-s', rowsShort) &&
+         koyomiLetterReplyGuide(gomenBody, true).join() === 'koi_uketoru';
+       var hh = document.createElement('div'); hh.innerHTML = koyomiLetterChipsHtml(_escapeHtml, { hush: true });
+       var txt = [].map.call(hh.querySelectorAll('[data-letter-chip]'), function(x) { return x.getAttribute('data-letter-text'); });
+       _r623.hushUi = !hh.querySelector('[data-letter-theme="koi_mouichido"]') && !hh.querySelector('[data-letter-theme="koi_moushikomi"]') && !hh.querySelector('[data-letter-theme="yakusoku"]') &&
+         !!hh.querySelector('[data-letter-theme="koi_uketoru"]') && !!hh.querySelector('[data-letter-theme="kansha"]') && !hh.querySelector('[data-letter-love]') &&
+         KOYOMI_LETTER_HUSH.chips.every(function(c) { return txt.indexOf(c) === -1; }) && txt.indexOf('あなたの答えを、大切に受け止めます。') !== -1 &&
+         [].every.call(hh.querySelectorAll('[data-letter-theme]'), function(th1) { var kids = [].slice.call(th1.querySelectorAll('[data-letter-step]')); return kids.every(function(st) { var n = st.nextElementSibling; return n && n.hasAttribute('data-letter-chip'); }); }) &&
+         !/控え|隠し|二度|断られ/.test(hh.textContent);
+       // ⑤ 書く画面：返信を押すと拝復で始まり、帯に「返信への返信」、上に案内の1行
+       _r623.write = /_capsuleWriteCtx\(/.test(_capsuleRenderWrite.toString()) && /koyomiLetterTemplate\(nm0\(\), !!_capsuleReplyTo\)/.test(_capsuleRenderWrite.toString()) && /replyTo: r\.reply_to/.test(_capsuleRenderReceived.toString()) &&
+         (function() { window._capsuleRecvRows = rows2; _capsuleReplyTo = { id: 'c1', to: 'u-f', name: '仲間F', replyTo: 'c0', body: gomenBody }; var c = _capsuleWriteCtx('u-f'); _capsuleReplyTo = null; var c2 = _capsuleWriteCtx('u-f'); return c.reply === 'rere' && c.hush && c.guide.join() === 'koi_uketoru' && c2.reply === '' && c2.guide.length === 0; })();
+       window._capsuleRecvRows = _bk623; _capsuleReplyTo = _rp623;
+       var _bad623 = Object.keys(_r623).filter(function(k) { return !_r623[k]; });
+       !_bad623.length ? ok('ST-623: 返信は拝復で始まり、何への返信かでお礼の言葉を出し分け、合うテーマへ飛べる。二度断られた相手・距離を置くと言われた相手には、追いかける言葉を出さない')
+         : ng('ST-623: 返信の型が違う', _bad623.join(','));
+     } catch (e) { window._capsuleRecvRows = _bk623; _capsuleReplyTo = _rp623; ng('ST-623: 例外', e.message); }
      // ===== ST-622: お仕事向けの手紙（v0.76.98） =====
      try {
        var _gs622 = KOYOMI_LETTER_THEMES, _w622 = _gs622[_gs622.length - 1], _ks622 = _w622.themes.map(function(t) { return t.key; });
