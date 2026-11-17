@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.80';
+    const APP_VERSION = 'v0.76.82';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13600,6 +13600,55 @@ function koyomiLetterInsert(text, phrase, where, d) {
   return lines.join('\n');
 }
 window.koyomiLetterInsert = koyomiLetterInsert;
+// ===== v0.76.81 決め台詞「あなたがいてよかった」 =====
+// 【権威】2026-11-17「人間の全ての行動は、未来へのタイムカプセル。心のこもった言葉が未来を変える。あなたがいてよかったと気づいてもらうのが一番の体験」
+//   「あなたがいてよかった、あなたがいてくれてよかった…言い換えも何個か」「演出は毎回（B）」→ 金のチップで手紙の終わりに入れられる。
+//   届いた手紙にこの言葉があれば、読むたびに、その一言が浮かび上がる。作品の見た目や言葉は借りず、手紙と暦で同じ心の動きを作る
+//   v0.76.82: 【権威】2026-11-17 最後の言葉はきくモンさんの言葉どおり「あなたの心のこもった言葉や行動は未来の誰かへのタイムカプセル。それを紡ぐあなたの存在そのものが、
+//   心のこもった言葉や行動のあたたかさそのもの。あなたがいてくれて、本当によかった。」（行動と存在を並べてつなぐ。「だから」は付けない。「あたたかさ」はひらがな。最後は「本当に」で強く）
+var KOYOMI_KIME = ['あなたがいてよかった。', 'あなたがいてくれてよかった。', 'あなたがいてくれて、本当によかった。', 'あなたに出会えて、よかった。', 'あなたがいてくれたから、今の私がいます。', 'あなたがいてくれて、ありがとう。'];
+var KOYOMI_KIME_RE = /あなたが\s*いて(?:くれて)?[、,]?\s*(?:本当に|ほんとうに)?\s*よかった|あなたに出会えて[、,]?\s*よかった|あなたがいてくれたから|あなたがいてくれて[、,]?\s*ありがとう/;
+// 手紙の中の決め台詞（無ければ ''）。チップの言葉そのものがあればそれを、無ければ見つかった言い方に「。」を足す
+function koyomiLetterKimeOf(body) {
+  var b = String(body || '');
+  for (var i = 0; i < KOYOMI_KIME.length; i++) if (b.indexOf(KOYOMI_KIME[i]) !== -1) return KOYOMI_KIME[i];
+  var m = KOYOMI_KIME_RE.exec(b);
+  return m ? m[0].replace(/\s+/g, '') + '。' : '';
+}
+window.KOYOMI_KIME = KOYOMI_KIME; window.koyomiLetterKimeOf = koyomiLetterKimeOf;
+function koyomiKimeChipsHtml(e) {
+  return '<div data-letter-kime-box style="margin-bottom:8px;padding:8px 10px;border-radius:12px;background:linear-gradient(135deg,#fff8e6,#fdeec6);border:1px solid #e3c77a;">' +
+    '<div style="font-size:0.76em;font-weight:800;color:#8a6414;margin-bottom:5px;">✨ 決め台詞　<span style="font-weight:400;color:#a08d66;">手紙の終わりに入る</span></div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:5px;">' + KOYOMI_KIME.map(function(t) {
+      return '<button type="button" data-letter-chip="bottom" data-letter-kime="1" data-letter-text="' + e(t) + '" style="padding:5px 12px;border-radius:999px;border:1px solid #d4a93c;background:#fffdf5;color:#7a5410;font-size:0.82em;font-weight:700;cursor:pointer;text-align:left;">' + e(t) + '</button>';
+    }).join('') + '</div></div>';
+}
+// 届いた手紙に決め台詞があれば、読むたびに：画面が静かに暗くなり、その一言が浮かび上がり、光の粒が舞い、最後に一言
+function koyomiKimeFx(phrase, fromName) {
+  if (!phrase) return;
+  window._koyomiLastKime = { phrase: phrase, from: fromName || '' };
+  if (window._smokeTestRunning) return;
+  var old = document.getElementById('koyomiKimeFx'); if (old) old.remove();
+  if (!document.getElementById('koyomiKimeFxStyle')) {
+    var st = document.createElement('style'); st.id = 'koyomiKimeFxStyle';
+    st.textContent = '@keyframes kimeRise{0%{opacity:0;transform:translateY(18px);filter:blur(6px)}100%{opacity:1;transform:none;filter:none}}' +
+      '@keyframes kimeFloat{0%{opacity:0;transform:translateY(0) scale(.6)}20%{opacity:1}100%{opacity:0;transform:translateY(-160px) scale(1)}}';
+    document.head.appendChild(st);
+  }
+  var esc = function(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+  var ov = document.createElement('div'); ov.id = 'koyomiKimeFx';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483001;background:rgba(18,14,10,0);transition:background 1.2s ease;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;cursor:pointer;overflow:hidden;font-family:"Hiragino Mincho ProN","Yu Mincho",serif;';
+  var dots = ''; for (var i = 0; i < 18; i++) dots += '<span style="position:absolute;left:' + (8 + Math.round(Math.random() * 84)) + '%;top:' + (45 + Math.round(Math.random() * 45)) + '%;width:' + (3 + Math.round(Math.random() * 4)) + 'px;height:' + (3 + Math.round(Math.random() * 4)) + 'px;border-radius:50%;background:#ffe7a6;box-shadow:0 0 8px #ffd56b;opacity:0;animation:kimeFloat ' + (3.5 + Math.random() * 3).toFixed(1) + 's ease-out ' + (1.4 + Math.random() * 4).toFixed(1) + 's infinite;"></span>';
+  ov.innerHTML = dots +
+    '<div style="position:relative;color:#fff7e0;font-size:clamp(1.5em,7vw,2.3em);font-weight:700;letter-spacing:0.08em;text-align:center;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere;text-shadow:0 0 18px rgba(255,214,120,0.55);opacity:0;animation:kimeRise 1.6s ease-out 1s forwards;">' + esc(phrase) + '</div>' +
+    (fromName ? '<div style="position:relative;color:rgba(255,240,210,0.85);font-size:0.95em;margin-top:10px;opacity:0;animation:kimeRise 1.2s ease-out 2.4s forwards;">― ' + esc(fromName) + ' より</div>' : '') +
+    '<div style="position:relative;margin-top:44px;color:rgba(255,244,220,0.92);font-size:0.92em;line-height:2;text-align:center;word-break:keep-all;opacity:0;animation:kimeRise 1.6s ease-out 4.2s forwards;">あなたの心のこもった言葉や行動は、<br>未来の誰かへのタイムカプセル。<br><br>それを紡ぐあなたの存在そのものが、<br>心のこもった言葉や行動の<br>あたたかさそのもの。<br><br>あなたがいてくれて、本当によかった。</div>' +
+    '<div style="position:relative;margin-top:30px;color:rgba(255,255,255,0.5);font-size:0.75em;opacity:0;animation:kimeRise 1s ease-out 6.5s forwards;">押して、便箋に戻る</div>';
+  document.body.appendChild(ov);
+  requestAnimationFrame(function() { ov.style.background = 'rgba(14,11,8,0.95)'; ov.style.backdropFilter = 'blur(6px)'; ov.style.webkitBackdropFilter = 'blur(6px)'; });
+  ov.addEventListener('click', function() { ov.style.transition = 'opacity 0.6s ease'; ov.style.opacity = '0'; setTimeout(function() { ov.remove(); }, 650); });
+}
+window.koyomiKimeFx = koyomiKimeFx;
 function koyomiLetterChipsHtml(e) {
   var d = new Date();
   var grp = function(g) {
@@ -13609,7 +13658,7 @@ function koyomiLetterChipsHtml(e) {
       (g.key === 'jikou' && koyomiLetterKoyomiLine(d) ? '<div data-letter-koyomi-line style="font-size:0.7em;color:#a08d66;margin-top:4px;">' + e(koyomiLetterKoyomiLine(d)) + '</div>' : '') + '</div>';
   };
   // v0.76.14: 手紙の順に並べる。v0.76.22 から：前のあいさつ → 結び → 本文のきっかけ（長いので最後）
-  return '<div data-letter-chips style="margin:8px 0 2px;">' +
+  return '<div data-letter-chips style="margin:8px 0 2px;">' + koyomiKimeChipsHtml(e) +   // v0.76.81: 決め台詞はいちばん上に
     KOYOMI_LETTER_CHIPS.filter(function(g) { return g.where !== 'bottom'; }).map(grp).join('') +
     // v0.76.22: 【権威】2026-11-09「結びの語まで行くのに時間がかかる」→ 結びを、長い本文のきっかけより上へ（手紙の中で入る場所は今どおり敬具の上）
     KOYOMI_LETTER_CHIPS.filter(function(g) { return g.where === 'bottom'; }).map(grp).join('') +
@@ -13931,7 +13980,7 @@ function _capsuleRenderWrite(body, e) {
           koyomiCapsuleSealFx(_env, _sealK, koyomiCapsuleToNameOf({ body: txt }), function() {
             if (typeof showToast === 'function') showToast('🔏 封をした。' + _capsuleYmd(openAt.toISOString()) + 'に届く。カレンダーのその日に、予定を入れた', { type: 'success' });
             _capsuleTab = (typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? 'sealed' : 'write'; renderCapsuleView();
-          });
+          }, { kime: koyomiLetterKimeOf(txt), openLabel: _capsuleYmd(openAt.toISOString()) });
         })
         .catch(function(err) {
         if (/pledge_required/.test(String((err && err.message) || err))) { msg.textContent = ''; koyomiCapsulePledgeModal(function() { msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…'; _doSeal(); }); return; }   // v0.74.0
@@ -14548,7 +14597,8 @@ function koyomiCapsuleMyName() {
 window.koyomiCapsuleMyName = koyomiCapsuleMyName;
 window.koyomiCapsuleToNameOf = koyomiCapsuleToNameOf;
 // 封をしたときの動き：便箋が封筒に入る → ふたが閉じて封蝋 → 表に返る → 切手 → 消印。押すと飛ばせる
-function koyomiCapsuleSealFx(envId, k, toName, done) {
+function koyomiCapsuleSealFx(envId, k, toName, done, opt) {
+  opt = opt || {};   // v0.76.81: 決め台詞があれば、最後に「その一言は、○月○日に届く」
   var fin = function() { try { if (typeof done === 'function') done(); } catch (eD) {} };
   // v0.76.75: 封をして、カプセルに入れる動きは手紙の体験そのもの。動きを減らす設定でも止めない
   if (window._smokeTestRunning) { fin(); return; }
@@ -14616,7 +14666,8 @@ function koyomiCapsuleSealFx(envId, k, toName, done) {
     if (top) top.style.transform = 'none';
     q('[data-fx-text]').textContent = '封をした。届く日まで、手を離れる。';
   });
-  at(6700, end);
+  if (opt.kime) at(6500, function() { var tx = q('[data-fx-text]'); tx.style.transition = 'opacity 0.6s ease'; tx.style.opacity = '0'; setTimeout(function() { tx.textContent = '「' + opt.kime + '」は、' + (opt.openLabel || 'その日') + 'に届く。'; tx.style.opacity = '1'; }, 600); });
+  at(opt.kime ? 9300 : 6700, end);
 }
 window.koyomiCapsuleSealFx = koyomiCapsuleSealFx;
 
@@ -15008,6 +15059,7 @@ function _capsuleRenderReceived(body, e) {
             _front(true);
             lt.style.display = ''; if (hint) hint.textContent = '押して、しまう';
             if (!window._smokeTestRunning) lt.style.animation = 'capLetterIn 0.9s ease';
+            (function(kw) { if (kw) setTimeout(function() { koyomiKimeFx(kw, r.sender_name === '自分' ? '' : r.sender_name); }, window._smokeTestRunning ? 0 : 1500); })(koyomiLetterKimeOf(r.body));   // v0.76.81: 読み返すたびに
           });
         };
       }
@@ -15029,6 +15081,7 @@ function _capsuleRenderReceived(body, e) {
             var flap = env.querySelector('[data-cap-flap]'), seal = env.querySelector('[data-cap-seal]'), flipEl = env.querySelector('[data-cap-flip]');
             var showLetter = function() {
               stageEl.innerHTML = _capsuleLetterHtml(r, e); wire(card, r);
+              (function(kw) { if (kw) setTimeout(function() { koyomiKimeFx(kw, r.sender_name === '自分' ? '' : r.sender_name); }, window._smokeTestRunning ? 0 : 1500); })(koyomiLetterKimeOf(r.body));   // v0.76.81
               // v0.76.67: 切手を切手帳に貼る（初めての節気なら知らせる）
               var _sk0 = (r.sealed_koyomi || {}).sekki, _stampToast = function() { if (typeof showToast === 'function') showToast('切手帳に、' + _sk0 + 'の' + koyomiStampMotifText(_sk0) + 'の切手が貼られた', { type: 'success' }); };
               koyomiStampAlbumSync([r.id]).then(function(n) { if (n > 0) _stampToast(); }, function() { if (koyomiStampAlbumAdd(r)) _stampToast(); });
@@ -60718,6 +60771,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.82', date: '2026-11-17',
+    items: [
+      { icon:'✨', t:'決め台詞のあとに出る言葉を、整えました',
+        before:'決め台詞のあとに、短い一言が出ていました',
+        after:'「あなたの心のこもった言葉や行動は、未来の誰かへのタイムカプセル。それを紡ぐあなたの存在そのものが、心のこもった言葉や行動のあたたかさそのもの。あなたがいてくれて、本当によかった。」と出ます' }
+    ]
+  },
+  {
+    ver: 'v0.76.81', date: '2026-11-17',
+    items: [
+      { icon:'✨', t:'手紙に「決め台詞」を足しました',
+        before:'手紙の最後に、いちばん伝えたい一言を置く手助けがありませんでした',
+        after:'言葉のチップのいちばん上に「✨ 決め台詞」。「あなたがいてよかった。」「あなたがいてくれて、本当によかった。」「あなたに出会えて、よかった。」などを押すと、手紙の終わりに入ります。この一言が入った手紙は、受け取った人が読むたびに、その一言が静かに浮かび上がります' }
+    ]
+  },
+  {
     ver: 'v0.76.80', date: '2026-11-17',
     items: [
       { icon:'🖨', t:'手紙の印刷ボタンを、見つけやすくしました',
@@ -91671,7 +91740,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _mus608 = KOYOMI_LETTER_CHIPS.filter(function(g) { return g.key === 'musubi'; })[0];
        _r608.musubi = !!_mb608 && _mus608.items.length >= 14 && _mb608.querySelectorAll('[data-letter-chip="bottom"]').length === _mus608.items.length &&
          !!_mb608.previousElementSibling && _mb608.previousElementSibling.hasAttribute('data-letter-theme-box') &&
-         _ch608.querySelectorAll('[data-letter-chip="bottom"]').length === _mus608.items.length * 2;
+         _ch608.querySelectorAll('[data-letter-chip="bottom"]:not([data-letter-kime])').length === _mus608.items.length * 2;   // v0.76.81: 決め台詞は別に数える
        _r608.motif = Object.keys(KOYOMI_STAMP_MOTIF).length === 24 && KOYOMI_STAMP_MOTIF['立冬'] === '山茶花' && _w608.indexOf('data-cap-env-preview') !== -1 && _w608.indexOf('koyomiStampTitleText(sk)') !== -1 && _w608.indexOf('koyomiStampMotifText(sk)') !== -1;
        _r608.fxCapsule = koyomiCapsuleSealFx.toString().indexOf('data-fx-capsule') !== -1 && koyomiCapsuleSealFx.toString().indexOf('_capsuleBigIconSvg(k && k.cap)') !== -1;
      } catch(e) { _e608 = e; }
@@ -91707,6 +91776,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-614: 届く日のチップ「元日に」は11月・12月だけ、次の1月1日 朝7時')
          : ng('ST-614: 元日のチップが違う');
      } catch (e) { ng('ST-614: 例外', e.message); }
+     // ===== ST-617: 決め台詞「あなたがいてよかった」（v0.76.81） =====
+     try {
+       var _h617 = document.createElement('div'); _h617.innerHTML = koyomiLetterChipsHtml(_escapeHtml);
+       var _kb = _h617.querySelectorAll('[data-letter-kime]');
+       var _t617 = koyomiLetterInsert(koyomiLetterTemplate('うつ'), 'あなたがいてくれてよかった。', 'bottom', new Date()).split('\n');
+       var _ki = _t617.indexOf('あなたがいてくれてよかった。'), _ke = _t617.indexOf('敬具');
+       window._koyomiLastKime = null; koyomiKimeFx('あなたがいてよかった。', '<b>うつ</b>');
+       var _rv617 = _capsuleRenderReceived.toString();
+       (_kb.length === KOYOMI_KIME.length && KOYOMI_KIME.length >= 5 && _h617.querySelector('[data-letter-chips]').firstElementChild.hasAttribute('data-letter-kime-box') &&
+        Array.from(_kb).every(function(b) { return b.getAttribute('data-letter-chip') === 'bottom'; }) && _ki > 0 && _ke > _ki &&
+        koyomiLetterKimeOf('拝啓\n…あなたがいてよかった。\n敬具') === 'あなたがいてよかった。' && koyomiLetterKimeOf('あなたがいてくれて 本当によかった') !== '' &&
+        koyomiLetterKimeOf('あなたに出会えて、よかった。') === 'あなたに出会えて、よかった。' && koyomiLetterKimeOf('今日は晴れ。') === '' &&
+        window._koyomiLastKime && window._koyomiLastKime.from === '<b>うつ</b>' && !document.getElementById('koyomiKimeFx') &&
+        (_rv617.match(/koyomiKimeFx\(kw/g) || []).length === 2 && /opt\.kime/.test(koyomiCapsuleSealFx.toString()) && /kime: koyomiLetterKimeOf\(txt\)/.test(_capsuleRenderWrite.toString()))
+         ? ok('ST-617: 決め台詞は金のチップで手紙の終わりへ。届いた手紙にあれば、はじめても読み返しも演出。封をしたときは「その一言は○月○日に届く」')
+         : ng('ST-617: 決め台詞が違う');
+     } catch (e) { ng('ST-617: 例外', e.message); }
      // ===== ST-616: 恋文（ラブレター）の言葉（v0.76.78） =====
      try {
        var _lg = KOYOMI_LETTER_THEMES.filter(function(g) { return g.love; })[0], _all616 = [];
