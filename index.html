@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.76.88';
+    const APP_VERSION = 'v0.76.89';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14944,41 +14944,45 @@ function _capOpenSteps(P, t0) {
   ];
 }
 var _CAP_OPEN_LEN = 4800;
-// 文箱から読み返す：カプセルに戻り、ふたが閉まり、また開いて、封筒がせり上がり、封を切って便箋を引き出す
+// v0.76.89: 【権威】2026-11-17「封筒を押すと、カプセルに1回入ってからまた出てくる。下のカプセルがいつまでも残って、なんだこれと思う」「タイムカプセル委員会なんだから、カプセルでいいんじゃないの」
+//   → 文箱はカプセルで並べ、読み返しも、はじめてと同じ流れ（回り道をやめる）。封筒がせり上がったら、カプセルは静かに消える（用が済んだ部品は残さない）
+// ふたが外れ、封筒がせり上がり、カプセルが消える（t0 から。終わりの時刻を返す）
+function _capRiseSteps(P, t0) {
+  return [
+    [t0, function(i) { _capT(P.lid, 'transform 1s ease-in-out, opacity 1s ease-in-out', _CAP_LID_OFF, i); }],
+    [t0 + 1000, function(i) { _capT(P.env, 'transform 1.3s cubic-bezier(.2,.7,.3,1), opacity 0.8s ease-out', { transform: 'none', opacity: '1' }, i); }],
+    [t0 + 2500, function(i) { _capT(P.cap, 'opacity 0.8s ease, transform 0.8s ease', { opacity: '0', transform: 'translateY(12px)' }, i); }]
+  ];
+}
+var _CAP_RISE_LEN = 3300;
+function _capPrepClosed(P) { _capT(P.cap, '', { opacity: '1', transform: 'none' }, true); _capT(P.lid, '', _CAP_LID_ON, true); _capT(P.env, '', { transform: _CAP_SINK, opacity: '0' }, true); }
+// 文箱から読み返す：カプセルのふたが外れ、封筒がせり上がり、カプセルが消え、封を切って便箋を引き出す（押すのは1回）
 function koyomiCapsuleRereadFx(stage, done) {
   var P = _capParts(stage);
-  _capT(P.cap, '', { opacity: '0' }, true); _capT(P.lid, '', _CAP_LID_OFF, true);
-  var steps = [
-    [0, function(i) { _capT(P.cap, 'opacity 0.5s ease', { opacity: '1' }, i); }],
-    [300, function(i) { _capT(P.env, 'transform 0.9s cubic-bezier(.5,0,.7,.4), opacity 0.9s ease-in', { transform: _CAP_SINK, opacity: '0' }, i); }],
-    [1300, function(i) { _capT(P.lid, 'transform 0.7s cubic-bezier(.3,.7,.3,1), opacity 0.5s ease', _CAP_LID_ON, i); }],
-    [2300, function(i) { _capT(P.lid, 'transform 1s ease-in-out, opacity 1s ease-in-out', _CAP_LID_OFF, i); }],
-    [3300, function(i) { _capT(P.env, 'transform 1.3s cubic-bezier(.2,.7,.3,1), opacity 0.8s ease-out', { transform: 'none', opacity: '1' }, i); }]
-  ].concat(_capOpenSteps(P, 5100));
-  _capRun(stage, steps, 5100 + _CAP_OPEN_LEN, done);
+  _capPrepClosed(P);
+  _capRun(stage, _capRiseSteps(P, 300).concat(_capOpenSteps(P, 300 + _CAP_RISE_LEN + 300)), 300 + _CAP_RISE_LEN + 300 + _CAP_OPEN_LEN, done);
 }
-// はじめて：ふたが外れ、封筒がせり上がる（封を切るのは自分で押す）
+// はじめて：ふたが外れ、封筒がせり上がり、カプセルが消える（封を切るのは自分で押す）
 function koyomiCapsuleFirstRiseFx(stage, done) {
   var P = _capParts(stage);
-  _capT(P.lid, '', _CAP_LID_ON, true); _capT(P.env, '', { transform: _CAP_SINK, opacity: '0' }, true);
-  _capRun(stage, [
-    [300, function(i) { _capT(P.lid, 'transform 1s ease-in-out, opacity 1s ease-in-out', _CAP_LID_OFF, i); }],
-    [1300, function(i) { _capT(P.env, 'transform 1.3s cubic-bezier(.2,.7,.3,1), opacity 0.8s ease-out', { transform: 'none', opacity: '1' }, i); }]
-  ], 2700, done);
+  _capPrepClosed(P);
+  _capRun(stage, _capRiseSteps(P, 300), 300 + _CAP_RISE_LEN, done);
 }
-// しまう：便箋が戻り、ふたが閉じ、表に返り、カプセルに入って、ふたが閉まる
+// しまう：便箋が戻り、ふたが閉じ、表に返り、カプセルが現れて、封筒が入り、ふたが閉まる
 function koyomiCapsuleCloseFx(stage, done) {
   var P = _capParts(stage);
-  _capT(P.lid, '', _CAP_LID_OFF, true); _capT(P.flip, '', { transform: 'rotateY(180deg)' }, true); _capT(P.seal, '', { transform: 'scale(0.4)', opacity: '0' }, true);
+  _capT(P.cap, '', { opacity: '0', transform: 'translateY(12px)' }, true); _capT(P.lid, '', _CAP_LID_OFF, true);
+  _capT(P.flip, '', { transform: 'rotateY(180deg)' }, true); _capT(P.seal, '', { transform: 'scale(0.4)', opacity: '0' }, true);
   _capT(P.flap, '', { transform: 'rotateX(180deg)' }, true); _capT(P.paper, '', { transform: 'translateY(-104px)' }, true);
   _capRun(stage, [
     [100, function(i) { _capT(P.paper, 'transform 0.9s ease-in-out', { transform: 'none' }, i); }],
     [1000, function(i) { _capT(P.flap, 'transform 0.7s ease-in-out', { transform: 'none' }, i); }],
     [1600, function(i) { _capT(P.seal, 'transform 0.4s ease, opacity 0.4s ease', { transform: 'none', opacity: '1' }, i); }],
     [1900, function(i) { _capT(P.flip, 'transform 0.8s ease-in-out', { transform: 'none' }, i); }],
-    [2800, function(i) { _capT(P.env, 'transform 0.8s cubic-bezier(.5,0,.7,.4), opacity 0.8s ease-in', { transform: _CAP_SINK, opacity: '0' }, i); }],
-    [3600, function(i) { _capT(P.lid, 'transform 0.6s cubic-bezier(.3,.7,.3,1), opacity 0.4s ease', _CAP_LID_ON, i); }]
-  ], 4400, done);
+    [2600, function(i) { _capT(P.cap, 'opacity 0.6s ease, transform 0.6s ease', { opacity: '1', transform: 'none' }, i); }],
+    [3100, function(i) { _capT(P.env, 'transform 0.8s cubic-bezier(.5,0,.7,.4), opacity 0.8s ease-in', { transform: _CAP_SINK, opacity: '0' }, i); }],
+    [3900, function(i) { _capT(P.lid, 'transform 0.6s cubic-bezier(.3,.7,.3,1), opacity 0.4s ease', _CAP_LID_ON, i); }]
+  ], 4700, done);
 }
 window.koyomiCapsuleRereadFx = koyomiCapsuleRereadFx; window.koyomiCapsuleFirstRiseFx = koyomiCapsuleFirstRiseFx; window.koyomiCapsuleCloseFx = koyomiCapsuleCloseFx;
 function koyomiEnvelopeOpenFx(envEl, done) {
@@ -15020,8 +15024,9 @@ function _capsuleRenderReceived(body, e) {
         '<div style="font-weight:800;color:#7a3b1e;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-right:34px;">' + koyomiCapsuleIconSvg(20) + e(r.sender_name) + 'から' + ((r.sender_label && r.sender_label !== r.sender_name && r.sender_name !== '自分') ? '<span style="font-weight:400;font-size:0.8em;color:#8a7f6a;">（封をしたときは「' + e(r.sender_label) + '」）</span>' : '') + '</div>' +
         '<div style="font-size:0.78em;color:#8a7f6a;margin-top:2px;">到着：' + _capsuleYmd(r.open_at) + '</div>';
       // v0.76.67: 封を切った手紙は、届いた封筒の表のまま文箱にしまう。押すと便箋が出る（もう一度押すとしまう）
-      var stage = isOpen ? '<div data-cap-fubako style="text-align:center;"><div data-cap-fubako-env style="position:relative;width:240px;height:150px;margin:0 auto;cursor:pointer;">' +
-            koyomiEnvelopeFrontHtml((r.sealed_koyomi && r.sealed_koyomi.env) || 'kinari', r.sealed_koyomi, koyomiCapsuleToNameOf(r, koyomiCapsuleMyName()), r.sender_name, e) + '</div>' +
+      // v0.76.89: 文箱もカプセルで並べる（色もキラもそのまま）。押すと、ふたが外れて封筒がせり上がる
+      var stage = isOpen ? '<div data-cap-fubako style="text-align:center;"><div data-cap-fubako-env style="position:relative;width:260px;height:112px;margin:0 auto;cursor:pointer;display:flex;align-items:center;justify-content:center;">' +
+            koyomiCapsuleSvg((r.sealed_koyomi || {}).cap, 92) + '</div>' +
             '<div data-cap-fubako-hint style="font-size:0.78em;color:#7a3b1e;margin-top:6px;">押して、読む</div></div>' +
             '<div data-cap-fubako-letter style="display:none;margin-top:10px;">' + _capsuleLetterHtml(r, e) + '</div>'
         : '<div data-cap-closed="' + e(r.id) + '" style="text-align:center;padding:14px 0 6px;cursor:pointer;">' + _capsuleBigIconSvg((r.sealed_koyomi || {}).cap) + '<div style="font-size:0.82em;color:#2c4f78;margin-top:6px;">押して、カプセルを開ける</div></div>';
@@ -15067,8 +15072,8 @@ function _capsuleRenderReceived(body, e) {
           if (_fbBusy) return;
           var lt = card.querySelector('[data-cap-fubako-letter]'), hint = card.querySelector('[data-cap-fubako-hint]'), wrap = card.querySelector('[data-cap-fubako]'), show = lt.style.display === 'none';
           // v0.76.76: 舞台（カプセルと封筒）を一覧の封筒の場所に出して、儀式を流す。終わったら一覧の封筒に戻す
-          var _front = function(dim) { fbEnv.style.width = '240px'; fbEnv.style.height = '150px'; fbEnv.innerHTML = '<div style="position:absolute;inset:0;' + (dim ? 'opacity:0.55;' : '') + '">' + koyomiEnvelopeFrontHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e) + '</div>'; };
-          var _stage = function() { fbEnv.style.width = '260px'; fbEnv.style.height = '330px'; fbEnv.innerHTML = _capRitualHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e); return fbEnv.querySelector('[data-cap-ritual]'); };
+          var _front = function(dim) { fbEnv.style.width = '260px'; fbEnv.style.height = '112px'; fbEnv.style.display = 'flex'; fbEnv.innerHTML = '<div style="' + (dim ? 'opacity:0.45;' : (window._smokeTestRunning ? '' : 'animation:capLetterIn 0.6s ease;')) + '">' + koyomiCapsuleSvg((r.sealed_koyomi || {}).cap, 92) + '</div>'; };
+          var _stage = function() { fbEnv.style.width = '260px'; fbEnv.style.height = '330px'; fbEnv.style.display = 'block'; fbEnv.innerHTML = _capRitualHtml(_fbId, r.sealed_koyomi, _fbTo, r.sender_name, e); return fbEnv.querySelector('[data-cap-ritual]'); };
           _fbBusy = true;
           if (!show) {
             lt.style.display = 'none'; if (hint) hint.textContent = '';
@@ -60793,6 +60798,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.76.89', date: '2026-11-17',
+    items: [
+      { icon:'🫙', t:'文箱の手紙を、タイムカプセルで並べるようにしました',
+        before:'文箱の手紙は封筒の姿で並び、押すといったんカプセルに戻ってから出てきました。そのあともカプセルが下に残っていました',
+        after:'文箱にはカプセルが並びます（桜色やキラもそのまま）。押すと、ふたが外れ、封筒がせり上がって、カプセルは静かに消えます。そのあと封を切って、便箋をそっと引き出します。しまうときは、封筒がカプセルに戻ってふたが閉まります' }
+    ]
+  },
+  {
     ver: 'v0.76.88', date: '2026-11-17',
     items: [
       { icon:'💌', t:'恋文の言葉を、少し足しました',
@@ -91849,6 +91862,19 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-614: 届く日のチップ「元日に」は11月・12月だけ、次の1月1日 朝7時')
          : ng('ST-614: 元日のチップが違う');
      } catch (e) { ng('ST-614: 例外', e.message); }
+     // ===== ST-618: 用が済んだカプセルは残さない（v0.76.89） =====
+     try {
+       var _st618 = document.createElement('div'); _st618.innerHTML = _capRitualHtml('kinari', { sekki: '立冬', cap: 'kira' }, 'X', 'Y', _escapeHtml); document.body.appendChild(_st618);
+       var _rit = _st618.querySelector('[data-cap-ritual]'), _P = _capParts(_rit), _doneR = false;
+       koyomiCapsuleRereadFx(_rit, function() { _doneR = true; });
+       var _okR = _doneR && _P.cap.style.opacity === '0' && _P.env.style.opacity === '1' && _P.paper.style.transform === 'translateY(-104px)';
+       var _doneC = false; koyomiCapsuleCloseFx(_rit, function() { _doneC = true; });
+       var _okC = _doneC && _P.cap.style.opacity === '1' && _P.env.style.opacity === '0' && _P.lid.style.opacity === '1';
+       _st618.remove();
+       (_okR && _okC && !/_CAP_SINK[^;]*\}, i\); \}\],\s*\[1300/.test(koyomiCapsuleRereadFx.toString()) && _capRiseSteps.toString().indexOf("opacity: '0'") !== -1 && _rit.querySelector('[data-cap-kira]'))
+         ? ok('ST-618: 読み返しは回り道なし。封筒がせり上がったらカプセルは消え、しまうときにまた現れてふたが閉まる（キラの色も）')
+         : ng('ST-618: カプセルの出し入れが違う', JSON.stringify({ r: _okR, c: _okC }));
+     } catch (e) { ng('ST-618: 例外', e.message); }
      // ===== ST-617: 決め台詞「あなたがいてよかった」（v0.76.81） =====
      try {
        var _h617 = document.createElement('div'); _h617.innerHTML = koyomiLetterChipsHtml(_escapeHtml);
@@ -92152,7 +92178,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _host609 = document.createElement('div'); document.body.appendChild(_host609);
        _capsuleRenderReceived(_host609, _escapeHtml);
        await new Promise(function(r) { setTimeout(r, 60); });
-       var _fb = _host609.querySelector('[data-cap-fubako-env] [data-cap-env-front="yuki"]'), _lt = _host609.querySelector('[data-cap-fubako-letter]');
+       var _fb = _host609.querySelector('[data-cap-fubako-env] svg[data-cap-shell][data-cap-color]'), _lt = _host609.querySelector('[data-cap-fubako-letter]');
        _r609.box = !!_fb && !!_lt && _lt.style.display === 'none' && !!_host609.querySelector('[data-cap-recv-view="album"]') && /文箱（1通）/.test(_host609.textContent) &&
          _sAdd.length === 1 && _sAdd[0].join() === 'st609c' && !!JSON.parse(localStorage.getItem('koyomiStampAlbum') || '{}')['立冬'] &&
          !JSON.parse(localStorage.getItem('koyomiStampAlbum') || '{}')['大寒'] && !!window._koyomiStampServer && !!koyomiStampAlbumLoad()['立冬'];
@@ -92191,7 +92217,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r609.name ? ok('ST-609·①: 切手の名前は漢字（読み）・季節のひとこと（24すべて）') : ng('ST-609·①: 切手の名前・ひとことが違う');
        (_r609.zoom && _r609.zoomClose) ? ok('ST-609·②: 切手を押すと大きく（名前・読み・ひとこと）、押すと閉じる') : ng('ST-609·②: 切手が大きくならない');
        _r609.album ? ok('ST-609·③: 切手帳は受け取った切手だけ（自分からは除く・二重に貼らない・24枠）') : ng('ST-609·③: 切手帳が違う');
-       (_r609.box && _r609.read && _r609.put) ? ok('ST-609·④: 文箱は届いた封筒の表のまま。押すと便箋と切手の一行、もう一度でしまう') : ng('ST-609·④: 文箱が違う', JSON.stringify(_r609));
+       (_r609.box && _r609.read && _r609.put) ? ok('ST-609·④: 文箱はカプセルで並ぶ（v0.76.89〜）。押すと便箋と切手の一行、もう一度でしまう') : ng('ST-609·④: 文箱が違う', JSON.stringify(_r609));
        _r609.tab ? ok('ST-609·⑤: 文箱と切手帳を切り替えられる') : ng('ST-609·⑤: 切手帳に切り替えられない');
       _r609.box ? ok('ST-609·⑥: 台紙はサーバーが正（封を切った手紙をサーバーに渡し、読み直した台紙を見せる）') : ng('ST-609·⑥: サーバーの台紙を使っていない');
       _r609.otherUser ? ok('ST-609·⑦: 別の人がログインしたら、前の人の台紙は見せない') : ng('ST-609·⑦: 前の人の台紙が見える');
