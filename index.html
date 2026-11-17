@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.77.1';
+    const APP_VERSION = 'v0.77.2';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -14179,8 +14179,17 @@ function koyomiCapsuleSentReader(r) {
     var k = r.sealed_koyomi || {}, pid = String(r.id).replace(/[^A-Za-z0-9_-]/g, '');
     window._koyomiPrintLetters[pid] = { id: r.id, body: txt, sealed_koyomi: k, sender_name: (typeof koyomiCapsuleMyName === 'function' ? koyomiCapsuleMyName() : '') };
     box.style.color = '';
-    box.innerHTML = '<div data-sr-letter style="' + koyomiStationeryStyle(r.stationery || 'ruled', k.sekki) + '">' + e(txt) + '</div>' +
-      koyomiLetterPrintBox('data-letter-print', r.id, 'A4の便箋に。控えとして取っておく一通に', 'data-sr-print');
+    var letter = function() {
+      box.innerHTML = '<div data-sr-letter style="' + koyomiStationeryStyle(r.stationery || 'ruled', k.sekki) + 'animation:srLetterIn 0.45s ease-out;">' + e(txt) + '</div>' +
+        koyomiLetterPrintBox('data-letter-print', r.id, 'A4の便箋に。控えとして取っておく一通に', 'data-sr-print');
+    };
+    // v0.77.2: 【権威】2026-11-18「出した手紙はパッと出るのに、受け取った手紙はアニメーションがつく。ギャップ」→ A（控えを取り出す）。
+    //   自分の封筒のふたが開き、便箋がすっと出る。受け取ったときの動きの短い版（約1.7秒・カプセルは出さない・押せば飛ばせる）
+    if (!document.getElementById('srLetterInStyle')) { var ss = document.createElement('style'); ss.id = 'srLetterInStyle'; ss.textContent = '@keyframes srLetterIn{0%{opacity:0;transform:translateY(14px)}100%{opacity:1;transform:none}}'; document.head.appendChild(ss); }
+    box.innerHTML = '<div data-sr-stage style="position:relative;height:268px;cursor:pointer;"><div style="position:absolute;left:0;right:0;bottom:0;height:150px;">' +
+      _capsuleOpenableEnvHtml(k.env, k, koyomiCapsuleToNameOf({ body: txt }), (typeof koyomiCapsuleMyName === 'function' ? koyomiCapsuleMyName() : ''), e) + '</div></div>';
+    var stage = box.querySelector('[data-sr-stage]');
+    _capRun(stage, _capOpenStepsQuick(_capParts(stage)), 1750, letter);
   };
   var copy = (typeof koyomiCapsuleAdminCopies === 'function' ? koyomiCapsuleAdminCopies() : {})[r.id];
   Promise.resolve(_capsuleRpc('koyomiru_capsule_sent_body', { p_id: r.id })).then(function(b) { show((typeof b === 'string' && b) || (copy && copy.body) || ''); }, function() { show((copy && copy.body) || ''); });
@@ -15123,6 +15132,15 @@ function _capOpenSteps(P, t0) {
   ];
 }
 var _CAP_OPEN_LEN = 2700;
+// v0.77.2: 自分の控えを取り出すときの、短い版（裏返す・封蝋・ふた・引き出す を約1.7秒で）
+function _capOpenStepsQuick(P) {
+  return [
+    [0, function(i) { _capT(P.flip, 'transform 0.45s ease-in-out', { transform: 'rotateY(180deg)' }, i); }],
+    [480, function(i) { _capT(P.seal, 'transform 0.3s ease, opacity 0.3s ease', { transform: 'scale(0.4)', opacity: '0' }, i); }],
+    [700, function(i) { _capT(P.flap, 'transform 0.45s ease-in-out', { transform: 'rotateX(180deg)' }, i); }],
+    [1120, function(i) { _capT(P.paper, 'transform 0.6s cubic-bezier(.25,.6,.3,1)', { transform: 'translateY(-104px)' }, i); }]
+  ];
+}
 // v0.76.89: 【権威】2026-11-17「封筒を押すと、カプセルに1回入ってからまた出てくる。下のカプセルがいつまでも残って、なんだこれと思う」「タイムカプセル委員会なんだから、カプセルでいいんじゃないの」
 //   → 文箱はカプセルで並べ、読み返しも、はじめてと同じ流れ（回り道をやめる）。封筒がせり上がったら、カプセルは静かに消える（用が済んだ部品は残さない）
 // ふたが外れ、封筒がせり上がり、カプセルが消える（t0 から。終わりの時刻を返す）
@@ -60988,6 +61006,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.77.2', date: '2026-11-18',
+    items: [
+      { icon:'✉️', t:'出した手紙を読むときも、封筒から便箋を取り出すようにしました',
+        before:'出した手紙は、押すとすぐに文字が出ていました',
+        after:'自分の封筒が裏返り、ふたが開いて、便箋がすっと出てきます。受け取った手紙より短めです。押すと飛ばせます' }
+    ]
+  },
+  {
     ver: 'v0.77.1', date: '2026-11-18',
     items: [
       { icon:'🔏', t:'「出した手紙」を、みんなが見られるようにしました',
@@ -92222,12 +92248,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var ov2 = document.getElementById('capsuleSentReader');
        _ok.none = !!ov2 && !ov2.querySelector('[data-sr-letter]') && /読めなかった/.test(ov2.textContent);
        if (ov2) ov2.remove();
+       _ok.fx = /_capOpenStepsQuick\(_capParts\(stage\)\), 1750, letter\)/.test(koyomiCapsuleSentReader.toString()) && _capOpenStepsQuick({}).length === 4 && _capOpenStepsQuick({})[3][0] + 600 <= 1750 && !/_capRiseSteps|_capsuleBigIconSvg/.test(koyomiCapsuleSentReader.toString());
        _ok.tab = /\['sealed', '🔏 出した手紙'\]/.test(renderCapsuleView.toString()) && /中は相手にも読めない/.test(renderCapsuleView.toString());
      } catch (e) { _err = e; }
      finally { window._capsuleRpc = _rpcB; if (_h) _h.remove(); var o = document.getElementById('capsuleSentReader'); if (o) o.remove(); }
      if (_err) { ng('ST-624: 例外', _err.message); return; }
      var bad = Object.keys(_ok).filter(function(k) { return !_ok[k]; });
-     !bad.length ? ok('ST-624: 出した手紙の一覧はみんなに。押すと自分の書いた手紙が窓に（文字として・印刷つき）。読めないときはその旨だけ') : ng('ST-624: 出した手紙の窓が違う', bad.join(','));
+     !bad.length ? ok('ST-624: 出した手紙の一覧はみんなに。押すと自分の封筒から便箋がすっと出て（約1.7秒・カプセルなし）、窓に（文字として・印刷つき）。読めないときはその旨だけ') : ng('ST-624: 出した手紙の窓が違う', bad.join(','));
      })();
      });
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
