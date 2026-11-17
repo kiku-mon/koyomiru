@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.77.2';
+    const APP_VERSION = 'v0.77.4';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -13909,9 +13909,19 @@ function koyomiCapsuleSealConfirm(o, onOk) {
 }
 window.koyomiCapsuleSealConfirm = koyomiCapsuleSealConfirm;
 // ===== END v0.76.16 =====
+// v0.77.4: 届く日時のチップ（書く欄の上と、封をするボタンの上で同じものを使う）
+function koyomiCapsuleWhenChipsHtml(d) {
+  return [['m1', '1分後'], ['h1', '1時間後'], ['tm', '明日の朝']].concat(koyomiCapsuleNewYearChipOn(d) ? [['ny', '🎍 元日に']] : []).concat([['y1', '1年後'], ['y3', '3年後'], ['y5', '5年後'], ['y10', '10年後'], ['y20', '20年後'], ['y30', '30年後']]).map(function(c) {
+    return '<button type="button" data-cap-chip="' + c[0] + '" style="padding:6px 11px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#7a3b1e;font-size:0.85em;cursor:pointer;">' + c[1] + '</button>';
+  }).join('');
+}
+window.koyomiCapsuleWhenChipsHtml = koyomiCapsuleWhenChipsHtml;
 function _capsuleRenderWrite(body, e) {
   _capsuleRpc('koyomiru_capsule_recipients').then(function(list) {
     list = list || [];
+    // v0.77.3: 【権威】2026-11-18「宛先を自分にできない。自分にしてテストしたい」→ 一覧に自分がいなければ、いちばん上に「自分」を足す
+    var _me0 = window._cloudUserId;
+    if (_me0) { list = [{ user_id: _me0, name: '自分' }].concat(list.filter(function(p) { return p && p.user_id !== _me0; })); }
     var today = new Date(), next = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
     var minD = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1), maxD = new Date(today.getFullYear() + 30, today.getMonth(), today.getDate());
     // v0.73.3: 一晩置いた手紙の一覧
@@ -13940,9 +13950,7 @@ function _capsuleRenderWrite(body, e) {
       '<div style="font-weight:700;color:#5a4630;margin:12px 0 6px;">開く日と時刻</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' +
         // v0.76.73: 【権威】2026-11-17 最高峰会議「元日に開ける手紙」→ 11月と12月だけ「元日に」（次の1月1日 朝7時）
-        [['m1', '1分後'], ['h1', '1時間後'], ['tm', '明日の朝']].concat(koyomiCapsuleNewYearChipOn(new Date()) ? [['ny', '🎍 元日に']] : []).concat([['y1', '1年後'], ['y3', '3年後'], ['y5', '5年後'], ['y10', '10年後'], ['y20', '20年後'], ['y30', '30年後']]).map(function(c) {
-          return '<button type="button" data-cap-chip="' + c[0] + '" style="padding:6px 11px;border-radius:999px;border:1px solid #d9c9a6;background:#fff;color:#7a3b1e;font-size:0.85em;cursor:pointer;">' + c[1] + '</button>';
-        }).join('') + '</div>' +
+        koyomiCapsuleWhenChipsHtml(new Date()) + '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
         '<input type="date" data-cap="date" min="' + getLocalDateStr(today) + '" max="' + getLocalDateStr(maxD) + '" value="' + getLocalDateStr(next) + '" style="padding:8px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.95em;">' +
         '<input type="time" data-cap="time" value="09:00" style="padding:8px;border-radius:10px;border:1px solid #d9c9a6;font-size:0.95em;"></div>' +
@@ -13979,6 +13987,10 @@ function _capsuleRenderWrite(body, e) {
       '</div>' +
       koyomiLetterPrintBox('data-cap-print', null, '書いている手紙を、A4の便箋に。手で書き写すときに', 'data-cap-print-draft') +   // v0.76.80: 封をする前の見える場所へ
       '<div style="font-size:0.74em;color:#8a7f6a;margin-top:10px;line-height:1.6;">封をしたら、取り消せない。30年後まで選べるが、届けられるのは、こよみるが続いている限り。もしこよみるを終えるときは、できる限り前もって知らせ、封をした手紙を開けられるようにする。</div>' +
+      // v0.77.3: 【権威】2026-11-18「1分後を押してから書き始めると、封をする頃には1分後が切れている。封をするところにも、何分後に届くかを選べるものを」
+      // v0.77.4: 【権威】2026-11-18「上のチップと下のチップの整合性を取らないとダメ」→ 上と同じチップ（同じ並び・同じ見た目）。選んだものは上下とも色が付く
+      '<div data-cap-when2-box style="margin-top:10px;padding:8px 10px;border-radius:10px;background:#fffaf0;border:1px solid #e6d8bd;"><div data-cap-when2 style="font-size:0.84em;color:#2c4f78;font-weight:700;"></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">' + koyomiCapsuleWhenChipsHtml(new Date()) + '</div></div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap;"><button type="button" data-cap="draft" style="padding:10px 14px;border-radius:12px;border:1px solid #4a3f6b;background:#f4f1fa;color:#4a3f6b;font-weight:700;cursor:pointer;" title="この端末に置いておき、翌朝5時から封ができる">🌙 一晩置く</button>' +
       '<button type="button" data-cap="seal" style="padding:10px 18px;border-radius:12px;border:none;background:#b0443a;color:#fff;font-weight:800;cursor:pointer;">🔏 封をする</button></div>' +
       '<div data-cap="msg" style="margin-top:8px;font-size:0.86em;"></div></div>';
@@ -14086,39 +14098,48 @@ function _capsuleRenderWrite(body, e) {
       var at = _openAtOf(); if (!at) { _when.textContent = ''; return; }
       var secs = (at - Date.now()) / 1000, mins = Math.round(secs / 60);
       var lead = secs <= 0 ? 'もう過ぎている' : (secs < 60 ? 'あと1分以内' : (mins < 60 ? 'あと' + mins + '分' : (mins < 1440 * 2 ? 'あと' + Math.round(mins / 60) + '時間' : 'あと' + Math.round(mins / 1440) + '日')));
-      _when.textContent = '届く日時：' + at.getFullYear() + '年' + (at.getMonth() + 1) + '月' + at.getDate() + '日 ' + _pad(at.getHours()) + ':' + _pad(at.getMinutes()) + '（' + lead + '）';
+      _when.textContent = _relKey ? '届く日時：封をしてから' + (_relKey === 'm1' ? '1分後' : '1時間後') : '届く日時：' + at.getFullYear() + '年' + (at.getMonth() + 1) + '月' + at.getDate() + '日 ' + _pad(at.getHours()) + ':' + _pad(at.getMinutes()) + '（' + lead + '）';
+      var w2 = body.querySelector('[data-cap-when2]'); if (w2) w2.textContent = _when.textContent;
+      body.querySelectorAll('[data-cap-chip]').forEach(function(c) { var on = c.getAttribute('data-cap-chip') === _selKey; if (on) c.setAttribute('data-cap-chip-on', '1'); else c.removeAttribute('data-cap-chip-on'); c.style.background = on ? '#7a3b1e' : '#fff'; c.style.color = on ? '#fff' : '#7a3b1e'; });
     };
+    // v0.77.3: 「1分後」「1時間後」は、押した時からではなく、封をした時から数える（書いているうちに過ぎないように）
+    var _relKey = null, _selKey = null;
+    var _relAt = function(k, n0) { if (k === 'h1') return new Date(n0.getTime() + 3600000); var d = new Date(n0.getTime() + 60000); if (d.getSeconds() > 0) d = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes() + 1, 0); return d; };
     var _setAt = function(d) { _dIn.value = getLocalDateStr(d); _tIn.value = _pad(d.getHours()) + ':' + _pad(d.getMinutes()); _showWhen(); };
     body.querySelectorAll('[data-cap-chip]').forEach(function(c) {
       c.onclick = function() {
         var k = c.getAttribute('data-cap-chip'), n0 = new Date(), d;
-        if (k === 'm1') { d = new Date(n0.getTime() + 60000); if (d.getSeconds() > 0) d = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes() + 1, 0); }   // v0.73.1: 【権威】2026-11-04「1分後に送れるようにしとけ」。分までしか選べないので、次の分へ
-        else if (k === 'h1') d = new Date(n0.getTime() + 3600000);
+        _relKey = (k === 'm1' || k === 'h1') ? k : null; _selKey = k;
+        if (k === 'm1') { d = _relAt('m1', n0); }   // v0.73.1: 【権威】2026-11-04「1分後に送れるようにしとけ」。分までしか選べないので、次の分へ
+        else if (k === 'h1') d = _relAt('h1', n0);
         else if (k === 'tm') d = new Date(n0.getFullYear(), n0.getMonth(), n0.getDate() + 1, 7, 0);
         else if (k === 'ny') d = koyomiCapsuleNewYearAt(n0);
         else { var yy = Number(k.slice(1)); d = new Date(n0.getFullYear() + yy, n0.getMonth(), n0.getDate(), yy === 30 ? 0 : 9, 0); }
         _setAt(d);
       };
     });
-    _dIn.onchange = _showWhen; _tIn.onchange = _showWhen; _showWhen();
+    _dIn.onchange = function() { _relKey = null; _selKey = null; _showWhen(); }; _tIn.onchange = function() { _relKey = null; _selKey = null; _showWhen(); }; _showWhen();
+    window._capsuleRelAtForTest = _relAt;
     body.querySelector('[data-cap="peek"]').onclick = function() { var dv0 = _dIn.value; if (dv0) openKoyomiDayLookup({ name: 'タイムカプセルを開く日', date: dv0 }); };
     body.querySelector('[data-cap="seal"]').onclick = function() {
       var msg = body.querySelector('[data-cap="msg"]'), txt = String(body.querySelector('[data-cap="body"]').value || '').trim(), dv = body.querySelector('[data-cap="date"]').value, to = body.querySelector('[data-cap="to"]').value;
       if (!txt) { msg.style.color = '#c0392b'; msg.textContent = '手紙が空。'; return; }
       var _fe = koyomiLetterFormError(txt); if (_fe) { msg.style.color = '#c0392b'; msg.textContent = _fe; return; }   // v0.76.3
+      if (_relKey) _setAt(_relAt(_relKey, new Date()));   // v0.77.3: 封をする今から数え直す
       var openAt = _openAtOf(); if (!openAt) { msg.style.color = '#c0392b'; msg.textContent = '開く日と時刻を選んでほしい。'; return; }
       if (_capsuleLoadDraftId) { var _dd = _capsuleDrafts().filter(function(x) { return x.id === _capsuleLoadDraftId; })[0]; if (_dd && koyomiCapsuleDraftReadyAt(_dd.savedAt) > Date.now()) { msg.style.color = '#4a3f6b'; msg.textContent = '🌙 一晩置いている手紙。封ができるのは ' + _capsuleYmd(new Date(koyomiCapsuleDraftReadyAt(_dd.savedAt)).toISOString()) + ' 5:00 から。'; return; } }
       if (window._capsuleSuspended) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.suspended; return; }   // v0.74.2
       if (openAt <= new Date(Date.now() + 5000)) { msg.style.color = '#c0392b'; msg.textContent = '届く日時が、もう過ぎている。「1分後」を押すか、少し先の時刻を選んでほしい。'; _showWhen(); return; }   // v0.73.1: 今より先なら封をできる
       if (openAt > new Date(new Date().getFullYear() + 30, new Date().getMonth(), new Date().getDate() + 1)) { msg.style.color = '#c0392b'; msg.textContent = KOYOMI_CAPSULE_ERRORS.bad_open_at; return; }
       var sealBtn = body.querySelector('[data-cap="seal"]');
-      if (sealBtn.getAttribute('data-armed') !== '1') { msg.style.color = '#8a7f6a'; msg.textContent = '封をすると、あなたも読めなくなり、直せない。取り消しもできない（一度埋めたカプセルは、掘り出さない）。' + _capsuleYmd(openAt.toISOString()) + ' ' + String(openAt.getHours()).padStart(2, '0') + ':' + String(openAt.getMinutes()).padStart(2, '0') + 'に届ける。'; }
+      if (sealBtn.getAttribute('data-armed') !== '1') { msg.style.color = '#8a7f6a'; msg.textContent = '封をすると、直せない。取り消しもできない（一度埋めたカプセルは、掘り出さない）。' + _capsuleYmd(openAt.toISOString()) + ' ' + String(openAt.getHours()).padStart(2, '0') + ':' + String(openAt.getMinutes()).padStart(2, '0') + 'に届ける。'; }
       _capsuleTwoClick(sealBtn, '🔏 本当に封をする？', function() {
       // v0.76.16: 「本当に？」のあとに、届く日時の確かめの窓
       var _toSel1 = body.querySelector('[data-cap="to"]'), _toOpt1 = _toSel1 && _toSel1.options[_toSel1.selectedIndex];
       koyomiCapsuleSealConfirm({ openAt: openAt, toName: _capsuleReplyTo ? (_capsuleReplyTo.name || '') : (_toOpt1 ? _toOpt1.textContent : '自分'), onBack: function() { msg.style.color = '#8a7f6a'; msg.textContent = '届く日時を直してから、もう一度「封をする」を押してほしい。'; try { _dIn.focus(); _dIn.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (eB) {} } }, function() {
       msg.style.color = '#8a7f6a'; msg.textContent = '封をしている…';
       var _doSeal = function() {
+      if (_relKey) openAt = _relAt(_relKey, new Date());   // v0.77.3: 確かめの窓で時間がたっても、封をした時から数える
       var _sealK = Object.assign(koyomiCapsuleSealedKoyomi(new Date()), { env: _env });   // v0.76.65: 選んだ封筒も一緒に
       if (_cap && _cap !== 'std') _sealK.cap = _cap;   // v0.76.77: カプセルの色（キラは特別な手紙）
       var _sealArgs = { p_recipient: (_capsuleReplyTo ? _capsuleReplyTo.to : to), p_body: txt, p_open_at: openAt.toISOString(), p_sealed_koyomi: _sealK };
@@ -61006,6 +61027,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.77.4', date: '2026-11-18',
+    items: [
+      { icon:'⏱', t:'「1分後」は、封をした時から数えるようにしました',
+        before:'「1分後」を押してから手紙を書くと、封をする頃には時刻が過ぎていました',
+        after:'「1分後」「1時間後」は、封をしたその時から数えます。封をするボタンの上にも、届く日時と、上と同じチップを置きました。選んだチップは、上と下の両方に色が付きます' },
+      { icon:'🪞', t:'宛先に、いつも「自分」が出るようにしました',
+        before:'宛先の一覧に、自分が出ないことがありました',
+        after:'宛先のいちばん上に「自分」が出ます。未来の自分に手紙を書けます' }
+    ]
+  },
+  {
     ver: 'v0.77.2', date: '2026-11-18',
     items: [
       { icon:'✉️', t:'出した手紙を読むときも、封筒から便箋を取り出すようにしました',
@@ -90596,8 +90628,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 【権威】2026-11-03、「1分後は半端。何時何分と指定して届けたい」「チップが少なすぎる」「但し書きがいる」「無制限はやめる」「取り消しはできないように。管理者だけ」との指示
      try {
        var _wv = _capsuleRenderWrite.toString(), _sv = _capsuleRenderSealed.toString(), _av = _capsuleRenderAbout.toString();
-       var _chips = (_wv.match(/\['(m1|h1|tm|y1|y3|y5|y10|y20|y30)'/g) || []).length;
-       (_chips === 9 && /data-cap="time"/.test(_wv) && !/test1m/.test(_wv) && /isKoyomiruAdminMode\(\)\)\) \? '' : '<div style="text-align:right;margin-top:6px;"><button type="button" data-cap-cancel/.test(_sv) &&
+       var _chips = (koyomiCapsuleWhenChipsHtml.toString().match(/\['(m1|h1|tm|y1|y3|y5|y10|y20|y30)'/g) || []).length;
+       (_chips === 9 && (_wv.match(/koyomiCapsuleWhenChipsHtml\(new Date\(\)\)/g) || []).length === 2 && /data-cap="time"/.test(_wv) && !/test1m/.test(_wv) && /isKoyomiruAdminMode\(\)\)\) \? '' : '<div style="text-align:right;margin-top:6px;"><button type="button" data-cap-cancel/.test(_sv) &&
         /100通まで/.test(_av) && /300通まで/.test(_av) && /取り消し<\/td><td style="padding:4px;">できない/.test(_av) && /こよみるが続いている限り/.test(_wv) && /こよみるが続いている限り/.test(_av) &&
         document.querySelector('#navCapsule .nav-tab-label').textContent === 'タイムカプセル')
          ? ok('ST-538·①: タイムカプセルは日時を指定（チップ：1分後・1時間後・明日の朝・1年後〜30年後）。半端な試しの作りはやめた。取り消しは管理者だけ。無料100通・委員300通まで。但し書き（こよみるが続いている限り）。ナビは「タイムカプセル」')
@@ -92173,7 +92205,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _ny1 = koyomiCapsuleNewYearAt(new Date(2026, 10, 17)), _ny2 = koyomiCapsuleNewYearAt(new Date(2026, 11, 31, 23, 0));
        (koyomiCapsuleNewYearChipOn(new Date(2026, 10, 1)) && koyomiCapsuleNewYearChipOn(new Date(2026, 11, 31)) && !koyomiCapsuleNewYearChipOn(new Date(2026, 9, 31)) && !koyomiCapsuleNewYearChipOn(new Date(2027, 0, 1)) &&
         _ny1.getFullYear() === 2027 && _ny1.getMonth() === 0 && _ny1.getDate() === 1 && _ny1.getHours() === 7 && _ny2.getFullYear() === 2027 &&
-        /\['ny', '🎍 元日に'\]/.test(_capsuleRenderWrite.toString()) && /k === 'ny'/.test(_capsuleRenderWrite.toString()))
+        /\['ny', '🎍 元日に'\]/.test(koyomiCapsuleWhenChipsHtml.toString()) && (koyomiCapsuleWhenChipsHtml(new Date(2026, 10, 18)).match(/data-cap-chip="ny"/g) || []).length === 1 && !/data-cap-chip="ny"/.test(koyomiCapsuleWhenChipsHtml(new Date(2026, 9, 18))) && /k === 'ny'/.test(_capsuleRenderWrite.toString()))
          ? ok('ST-614: 届く日のチップ「元日に」は11月・12月だけ、次の1月1日 朝7時')
          : ng('ST-614: 元日のチップが違う');
      } catch (e) { ng('ST-614: 例外', e.message); }
@@ -92257,6 +92289,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      !bad.length ? ok('ST-624: 出した手紙の一覧はみんなに。押すと自分の封筒から便箋がすっと出て（約1.7秒・カプセルなし）、窓に（文字として・印刷つき）。読めないときはその旨だけ') : ng('ST-624: 出した手紙の窓が違う', bad.join(','));
      })();
      });
+     // ===== ST-625: 「1分後」「1時間後」は封をした時から数える。封をするところにも選べるチップ（v0.77.3） =====
+     try {
+       var _wv625 = _capsuleRenderWrite.toString();
+       var _ra = window._capsuleRelAtForTest, _n625 = new Date(2026, 10, 18, 1, 0, 30);
+       var _ok625 = /data-cap-when2-box/.test(_wv625) && /if \(_relKey\) _setAt\(_relAt\(_relKey, new Date\(\)\)\)/.test(_wv625) && /if \(_relKey\) openAt = _relAt\(_relKey, new Date\(\)\)/.test(_wv625) &&
+         /_relKey = null; _selKey = null; _showWhen\(\)/.test(_wv625) && /data-cap-chip-on/.test(_wv625) && !/あなたも読めなくなり/.test(_wv625) && /\[\{ user_id: _me0, name: '自分' \}\]\.concat/.test(_wv625) &&
+         (!_ra || (_ra('m1', _n625).getTime() === new Date(2026, 10, 18, 1, 2, 0).getTime() && _ra('h1', _n625).getTime() === _n625.getTime() + 3600000));
+       _ok625 ? ok('ST-625: 「1分後」「1時間後」は封をした時から数え直す（書いているうちに過ぎない）。封をするボタンの上にも届く日時とチップ') : ng('ST-625: 届く日時の数え方が違う', '');
+     } catch (e) { ng('ST-625: 例外', e.message); }
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
      try {
        var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
