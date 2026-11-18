@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.86.5 ★ -->
+<!-- ★ CURRENT VERSION: v0.86.6 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.86.5';
+    const APP_VERSION = 'v0.86.6';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61163,6 +61163,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.86.6', date: '2026-11-19',
+    items: [
+      { icon:'👀', t:'「今も見られる」は、何日も続くものだけに出すようにしました',
+        before:'月や虹のように、すぐ終わるものにも「今も見られる」が出ていました',
+        after:'桜・紅葉・花・イルミネーションのように、何日も見られるものだけに出ます。月や虹、夕焼けなどは、ありがとう（🙏）とコメント（💬）だけです' }
+    ]
+  },
+  {
     ver: 'v0.86.5', date: '2026-11-19',
     items: [
       { icon:'🖼', t:'季節の掲示板に「見本」を添えました',
@@ -71529,6 +71537,15 @@ function koyomiTayoriCatsNow(d, kind) {
     return true;
   });
 }
+// v0.86.6: 【権威】2026-11-19「今も見られるは、紅葉か桜ぐらいしかなくね。月や虹に出したら変だろう。いいように直して」
+//   → 「今も見られる」（近くの人が、まだ見られると上書きする）は、何日も続く分類だけに出す。目安は「旬の長さが2日以上」
+//   （桜・花・ひまわり・紅葉・金木犀・イルミネーションなど）。月・虹・夕焼け・花火・雪・蛍のような、すぐ終わるものには出さない。
+//   分類はCMSなので、旬の長さを変えれば、出る・出ないも一緒に変わる。災害復旧掲示板の「今も有効」は、これまでどおりいつも出す
+function _tayoriCanStillSee(cat) {
+  var c = koyomiTayoriCat(cat); if (!c) return false;
+  if (c.kind === 'disaster') return true;
+  return Number(c.win) >= 2 * KOYOMI_TAYORI_D;
+}
 function koyomiTayoriFreshness(cat, confirmedAt, now) {
   var c = koyomiTayoriCat(cat); if (!c) return 2;
   var age = (now || Date.now()) - new Date(confirmedAt).getTime();
@@ -71957,7 +71974,7 @@ function _tayoriPopupHtml(r, opt) {
     (cm.length ? '<div style="margin-top:6px;border-left:3px solid #eadfcd;padding-left:8px;">' + cm.map(function(c) {
       return '<div style="font-size:0.82em;color:#444;line-height:1.55;margin-top:2px;">' + _tayoriEsc(c.body) + ' <span style="color:#a39886;font-size:0.9em;">' + _tayoriEsc(koyomiTayoriAgo(c.created_at)) + '</span>' +
         (window._cloudIsLoggedIn ? ' <button type="button" data-tayori-creport="' + _tayoriEsc(c.id) + '" style="border:none;background:none;color:#b8ad9b;font-size:0.85em;text-decoration:underline;cursor:pointer;padding:0;">誤り</button>' : '') + '</div>'; }).join('') + '</div>' : '') +
-    '<div style="font-size:0.8em;color:' + (fr === 0 ? '#2e7d32' : '#9a8f7c') + ';margin-top:7px;">' + _tayoriEsc(koyomiTayoriAgo(r.confirmed_at)) + 'に確認・' + (Number(r.confirm_count) || 1) + '人' + (fr === 0 ? '' : '（少し前の情報です）') + '</div>' +
+    (!_tayoriCanStillSee(r.category) ? '<div style="font-size:0.8em;color:#9a8f7c;margin-top:7px;">' + _tayoriEsc(koyomiTayoriAgo(r.created_at || r.confirmed_at)) + 'の書き込み</div>' : '<div style="font-size:0.8em;color:' + (fr === 0 ? '#2e7d32' : '#9a8f7c') + ';margin-top:7px;">' + _tayoriEsc(koyomiTayoriAgo(r.confirmed_at)) + 'に確認・' + (Number(r.confirm_count) || 1) + '人' + (fr === 0 ? '' : '（少し前の情報です）') + '</div>') +
     (compact ? '<div data-tayori-more style="display:none;">' : '') +
     (disaster && states.length > 1 ? '<div style="font-size:0.76em;color:#8a7d6b;margin-top:8px;">いまの状況を選んで知らせる</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">' +
       states.map(function(s) { var t = KOYOMI_TAYORI_TONE[s.tone] || KOYOMI_TAYORI_TONE.ok, on = s.key === r.status;
@@ -71965,7 +71982,7 @@ function _tayoriPopupHtml(r, opt) {
     (compact ? '</div>' : '') +
     // v0.80.2: 隣は「今はない」。まちがいは下に小さく「誤情報を知らせる」（イマココナビと同じ言葉）。「通報」という言葉は使わない
     '<div style="display:flex;gap:6px;align-items:center;margin-top:9px;">' +
-      '<button type="button" data-tayori-confirm style="flex:1;min-height:' + (compact ? '50px' : '0') + ';padding:8px 10px;border:none;border-radius:9px;background:' + (r.confirmed_by_me ? '#e8f2ea' : '#2e7d32') + ';color:' + (r.confirmed_by_me ? '#2e7d32' : '#fff') + ';font-size:0.86em;font-weight:700;cursor:pointer;font-family:inherit;">' + (r.confirmed_by_me ? '✓ 確かめた（もう一度）' : (disaster ? '今も有効' : '今も見られる')) + '</button>' +
+      (!_tayoriCanStillSee(r.category) ? '' : '<button type="button" data-tayori-confirm style="flex:1;min-height:' + (compact ? '50px' : '0') + ';padding:8px 10px;border:none;border-radius:9px;background:' + (r.confirmed_by_me ? '#e8f2ea' : '#2e7d32') + ';color:' + (r.confirmed_by_me ? '#2e7d32' : '#fff') + ';font-size:0.86em;font-weight:700;cursor:pointer;font-family:inherit;">' + (r.confirmed_by_me ? '✓ 確かめた（もう一度）' : (disaster ? '今も有効' : '今も見られる')) + '</button>') +
       (_tayoriStopState(cat) ? '<button type="button" data-tayori-gone style="min-height:' + (compact ? '50px' : '0') + ';padding:8px 12px;border:1px solid #cfd5d8;border-radius:9px;background:#fff;color:#5f6b73;font-size:0.86em;font-weight:600;cursor:pointer;font-family:inherit;">今はない</button>' : '') +
     '</div>' +
     (disaster && _tayoriGmapUrl(r) ? '<a href="' + _tayoriEsc(_tayoriGmapUrl(r)) + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:8px;color:#3b6ea5;font-size:0.86em;text-decoration:underline;">🧭 Googleマップで道案内</a>' : '') +
@@ -73545,7 +73562,7 @@ function _tayoriFeedCard(r) {
     (r.note ? '<div style="font-size:0.95em;color:#3b3226;margin-top:2px;line-height:1.6;white-space:pre-wrap;word-break:break-word;">' + _tayoriEsc(r.note) + '</div>' : '') +
     _tayoriPhotoHtml(r, true) +
     '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">' +
-      (stale ? '' : '<button type="button" data-tayori-confirm title="今も見られる" style="' + act + (r.confirmed_by_me ? 'color:' + KOYOMI_TAYORI_ACC + ';font-weight:700;' : '') + '">👀 今も見られる' + (n ? ' ' + n : '') + '</button>') +
+      (stale || !_tayoriCanStillSee(r.category) ? '' : '<button type="button" data-tayori-confirm title="今も見られる" style="' + act + (r.confirmed_by_me ? 'color:' + KOYOMI_TAYORI_ACC + ';font-weight:700;' : '') + '">👀 今も見られる' + (n ? ' ' + n : '') + '</button>') +
       '<button type="button" data-tf-thread title="コメント" aria-label="コメント" style="' + act + '">💬' + (cmn ? ' ' + cmn : '') + '</button>' +
       '<button type="button" data-tayori-thanks title="ありがとう" aria-label="ありがとう" style="' + act + '">🙏' + (th ? ' ' + th : '') + '</button>' +
       '<button type="button" data-tf-more title="そのほか" aria-label="そのほか" style="' + act + 'margin-left:auto;padding:0 2px;font-size:1.05em;">⋯</button>' +
@@ -95227,7 +95244,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
      try {
        var _r654 = {};
-       var _c654 = _tayoriFeedCard({ id: 'f1', category: 'moon', place_name: '<b>x</b>', note: 'n', muni_name: 'm', confirm_count: 2, thanks_count: 1, created_at: new Date().toISOString(), confirmed_at: new Date().toISOString() });
+       var _c654 = _tayoriFeedCard({ id: 'f1', category: 'momiji', place_name: '<b>x</b>', note: 'n', muni_name: 'm', confirm_count: 2, thanks_count: 1, created_at: new Date().toISOString(), confirmed_at: new Date().toISOString() });
        _r654.card = /^<article data-tayori-card="f1"/.test(_c654) && /data-tayori-confirm/.test(_c654) && /data-tayori-thanks/.test(_c654) && /data-tf-more/.test(_c654) && /data-tayori-fav/.test(_c654) && /今も見られる 2/.test(_c654) && _c654.indexOf('<b>x</b>') === -1;
        _r654.oneColor = !/#2e7d32|#e0a100|#fff6dc/.test(_c654);
        _r654.feed = /_tayoriTab\(\) === 'season' \? _tayoriFeedCard : card/.test(_tayoriDraw.toString()) && /_tayoriSeasonChrome\(host\)/.test(renderTayoriView.toString());
@@ -95253,6 +95270,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r654.noTitle = /_hrow\.style\.display = 'none'/.test(_sc654) && /_foot\.style\.display = 'none'/.test(_sc654) && /data-tf-menu/.test(_tayoriDraw.toString());
        _r654.feedback = /koyomiru@gmail\.com/.test(_tayoriFeedback.toString()) && /googlegmail/.test(_tayoriFeedback.toString()) && /ご意見・ご要望を送る/.test(_tayoriSeasonMenu.toString()) && !/href="mailto:koyomiru@gmail\.com\?subject=' \+ encodeURIComponent\(dis/.test(renderTayoriView.toString());
        _r654.approve = /data-tp-approve/.test(_tayoriPhotoHtml.toString()) && /isKoyomiruAdminMode/.test(_tayoriPhotoHtml.toString()) && /data-tp-approve/.test(_tayoriWirePhoto.toString());
+       // v0.86.6: 「今も見られる」は何日も続く分類（旬が2日以上）だけ。月・虹には出さない。災害はいつも出す
+       _r654.stillSee = _tayoriCanStillSee('momiji') === true && _tayoriCanStillSee('sakura') === true && _tayoriCanStillSee('moon') === false && _tayoriCanStillSee('rainbow') === false &&
+         !/data-tayori-confirm/.test(_tayoriFeedCard({ id: 'm9', category: 'moon', confirmed_at: new Date().toISOString(), created_at: new Date().toISOString() })) &&
+         /data-tayori-confirm/.test(_tayoriFeedCard({ id: 'k9', category: 'momiji', confirmed_at: new Date().toISOString(), created_at: new Date().toISOString() })) &&
+         !/data-tayori-confirm/.test(_tayoriPopupHtml({ id: 'm8', category: 'moon', confirmed_at: new Date().toISOString() }));
        var _bad654 = Object.keys(_r654).filter(function(k) { return !_r654[k]; });
        !_bad654.length ? ok('ST-654: 季節の掲示板（見出しなし・⋯ は今日の季節の右・ご意見は宛先を見せる窓・はじめての写真はその場で載せる・Xの並びで縦に・写真は横長・コメントは数だけ・今日の季節は1行・色は青ひと色・書くのは＋だけ）')
          : ng('ST-654: 季節の掲示板の見た目が違う', _bad654.join(','));
