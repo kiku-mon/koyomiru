@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.76.46 ★ -->
+<!-- ★ CURRENT VERSION: v0.78.3 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.2';
+    const APP_VERSION = 'v0.78.3';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -27505,7 +27505,7 @@ function saveKoyomiTodayWord(text) {
   var j = allTasks.filter(function(t) { return t && t.kind === 'journal' && t.date === today; })[0];
   if (!j) { j = { id: generateTaskId(), kind: 'journal', date: today, text: '', thoughts: [], mood: 0, condition: 0, weather: '', savedAt: now, createdAt: now, updatedAt: now }; allTasks.push(j); }
   var tid = generateTaskId();
-  allTasks.push({ id: tid, kind: 'scratch', place: 'journal', date: today, text: text.slice(0, 500), createdAt: now, updatedAt: now });   // v0.78.1: 日誌に置いたメモ
+  allTasks.push({ id: tid, kind: 'scratch', place: 'journal', wroteIn: 'journal', date: today, text: text.slice(0, 500), createdAt: now, updatedAt: now });   // v0.78.1: 日誌に置いたメモ（v0.78.3: 日誌に書いたもの、の印）
   saveAllTasks();
   return tid;   // v0.70.4: 書き直しのとき同じ一言を書き換えられるよう、id を返す（真偽で使う呼び手はそのまま動く）
 }
@@ -40610,7 +40610,7 @@ window._repairCloudCalendarIds();
 
     // ===== v0.78.1: 「親の日誌が無い一言を消す」見張りはやめた（親がまだ届いていないだけのことがあり、消すと全端末から消えていた）。
     //   代わりに、起動のたびにメモの引っ越しを動かす（何度動かしても同じ。消さない。親の無い一言は雑記帳へ）
-    try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); if (typeof koyomiMemoTidy === 'function') koyomiMemoTidy(); } catch (eMM) { console.error('[memo_migrate]', eMM); }
+    try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); if (typeof koyomiMemoTidy === 'function') koyomiMemoTidy(); if (typeof koyomiMemoBackToScratch === 'function') koyomiMemoBackToScratch(); } catch (eMM) { console.error('[memo_migrate]', eMM); }
 
     // ===== 自動バックアップ（日次・7世代管理） =====
     (function() {
@@ -61061,6 +61061,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.78.3', date: '2026-11-18',
+    items: [
+      { icon:'✏️', t:'日誌に移っていたメモを、雑記帳に戻しました',
+        before:'前の決まりで、雑記帳に書いたメモが日誌に移っていました',
+        after:'日誌にあったメモを、書いた日ごとに雑記帳へ戻しました。タイムカプセルの記録、今日のありがとう、日誌に書いた本文と一言は、日誌に残しています' }
+    ]
+  },
   {
     ver: 'v0.78.2', date: '2026-11-18',
     items: [
@@ -92392,12 +92400,43 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        koyomiMemoTidy();
        var _ids = allTasks.filter(function(t) { return t.kind === 'scratch'; }).map(function(t) { return t.id; }).sort().join();
        var g1 = allTasks.filter(function(t) { return t.id === 'd-1'; })[0];
-       var _ok629 = _ids === 'd-1,d-3,d-4,d-6,d-7' && _c629.sort().join() === 'd-2,d-5' && g1.place === 'journal' && !g1.fromOrphan && !!koyomiJournalCover('2026-08-10', false) &&
+       var _ok629 = _ids === 'd-1,d-3,d-4,d-6,d-7' && _c629.sort().join() === 'd-2,d-5' && !g1.place && !g1.fromOrphan &&
          koyomiMemoTidy() === 0 && _c629.length === 2;
        allTasks = _bk629; window.saveAllTasks = _sv629; saveAllTasks = _sv629; window._propagateDeletion = _pd629; _propagateDeletion = _pd629;
-       _ok629 ? ok('ST-629: 親の無かった一言は書いた日の日誌へ。同じ日・同じ置き場所で1文字も違わない重複だけを1つに（古いほうを残す。少しでも違えば両方残す）。2回目は何もしない')
+       _ok629 ? ok('ST-629: 親の無かった一言は雑記帳のまま（v0.78.3）。同じ日・同じ置き場所で1文字も違わない重複だけを1つに（古いほうを残す。少しでも違えば両方残す）。2回目は何もしない')
          : ng('ST-629: メモの片づけが違う', _ids + ' / ' + _c629.join());
      } catch (e) { try { allTasks = _bk629; window.saveAllTasks = _sv629; saveAllTasks = _sv629; window._propagateDeletion = _pd629; _propagateDeletion = _pd629; } catch (e2) {} ng('ST-629: 例外', e.message); }
+     // ===== ST-630: 日誌のメモを雑記帳へ戻す（1回だけ・残すものは残す）（v0.78.3） =====
+     try {
+       var _bk630 = allTasks.slice(), _sv630 = saveAllTasks, _pd630 = window._propagateDeletion, _c630 = [];
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       window._propagateDeletion = function(id) { _c630.push(id); }; _propagateDeletion = window._propagateDeletion;
+       allTasks = [
+         { id: 'b-j', kind: 'journal', date: '2026-10-12', text: '', savedAt: '2026-10-12T10:00:00Z' },
+         { id: 'b-1', kind: 'scratch', place: 'journal', date: '2026-10-12', text: '15オリコ、15000円、毎月27日', createdAt: '2026-10-12T01:00:00Z', updatedAt: '2026-11-18T00:40:00Z' },
+         { id: 'b-2', kind: 'scratch', place: 'journal', date: '2026-10-12', text: '📜 タイムカプセル（自分から・…）：いえい', createdAt: '2026-10-12T02:00:00Z', updatedAt: '2026-11-18T00:40:00Z' },
+         { id: 'b-3', kind: 'scratch', place: 'journal', date: '2026-10-12', text: '今日のありがとう：あざます', createdAt: '2026-10-12T03:00:00Z' },
+         { id: 'b-4', kind: 'scratch', place: 'journal', date: '2026-10-12', text: '記すで書いた本文', createdAt: '2026-10-12T10:00:00Z' },
+         { id: 'b-5', kind: 'scratch', place: 'journal', wroteIn: 'journal', date: '2026-10-12', text: '今日の一言', createdAt: '2026-10-12T04:00:00Z' },
+         { id: 'b-6', kind: 'scratch', place: 'journal', date: '2026-11-18', text: 'この版の後に自分で送った', createdAt: '2026-11-18T00:00:00Z', updatedAt: '2026-11-18T05:00:00Z' }
+       ];
+       var n1 = koyomiMemoBackToScratch(true);
+       var pl = function(id) { var x = allTasks.filter(function(t) { return t.id === id; })[0]; return x ? (x.place || 'scratch') : 'gone'; };
+       allTasks.filter(function(t) { return t.id === 'b-6'; })[0].place = 'journal';
+       var _okA = pl('b-1') === 'scratch' && pl('b-2') === 'journal' && pl('b-3') === 'journal' && pl('b-4') === 'journal' && pl('b-5') === 'journal' && _c630.length === 0;
+       allTasks.filter(function(t) { return t.id === 'b-6'; })[0].updatedAt = '2026-11-18T05:00:00Z';
+       var _src630 = koyomiMemoBackToScratch.toString();
+       var _okB = /String\(m\.updatedAt\) > KOYOMI_MEMO_BACK_CUTOFF && !force/.test(_src630) && /mig_memo_back_v1/.test(_src630);
+       allTasks = _bk630; window.saveAllTasks = _sv630; saveAllTasks = _sv630; window._propagateDeletion = _pd630; _propagateDeletion = _pd630;
+       (_okA && _okB && /wroteIn: 'journal'/.test(saveKoyomiTodayWord.toString()))
+         ? ok('ST-630: 日誌のメモは雑記帳へ戻す（各端末で1回）。タイムカプセル・ありがとう・「記す」の本文・日誌に書いた一言は日誌に残す。この版より後に送ったものは戻さない。消した印は出さない')
+         : ng('ST-630: 雑記帳への戻し方が違う', [pl('b-1'), _c630.length].join(' / '));
+     } catch (e) { try { allTasks = _bk630; window.saveAllTasks = _sv630; saveAllTasks = _sv630; window._propagateDeletion = _pd630; _propagateDeletion = _pd630; } catch (e2) {} ng('ST-630: 例外', e.message); }
+     // ファイル先頭の版の書き込みが、今の版と同じ
+     try {
+       var _cm = [].filter.call(document.childNodes, function(n) { return n.nodeType === 8 && /CURRENT VERSION/.test(n.nodeValue); })[0];
+       (_cm && _cm.nodeValue.indexOf(APP_VERSION) !== -1) ? ok('ST-630·②: ファイル先頭の「CURRENT VERSION」は今の版と同じ') : ng('ST-630·②: ファイル先頭の版の書き込みが古い', _cm ? _cm.nodeValue : 'なし');
+     } catch (e) { ng('ST-630·②: 例外', e.message); }
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
      try {
        var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
@@ -99290,7 +99329,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         else if (j.text && String(j.text).trim()) {
           var tx2 = String(j.text).trim();
-          if (!has(j.date, tx2)) allTasks.push({ id: generateTaskId(), kind: 'scratch', place: 'journal', date: j.date, text: tx2, createdAt: at, updatedAt: now });
+          if (!has(j.date, tx2)) allTasks.push({ id: generateTaskId(), kind: 'scratch', place: 'journal', wroteIn: 'journal', date: j.date, text: tx2, createdAt: at, updatedAt: now });   // 日誌の「記す」で書いた本文
           j.text = ''; did = true;
         }
         if (did) { j.updatedAt = now; changed++; }
@@ -99305,7 +99344,7 @@ document.addEventListener('DOMContentLoaded', function() {
       var changed = 0, now = new Date().toISOString();
       allTasks.forEach(function(t) {
         if (!t || t.kind !== 'scratch' || !t.fromOrphan) return;
-        if (t.date) { koyomiJournalCover(t.date, true); t.place = 'journal'; }
+        // v0.78.3: 【権威】2026-11-18「日誌にあったけど、雑記帳にしたかった」→ 雑記帳のまま（目印を外すだけ）
         delete t.fromOrphan; t.updatedAt = now; changed++;
       });
       var groups = {};
@@ -99332,6 +99371,27 @@ document.addEventListener('DOMContentLoaded', function() {
       return changed;
     }
     window.koyomiMemoTidy = koyomiMemoTidy;
+    // v0.78.3: 【権威】2026-11-18「日誌にあったけど、雑記帳にしたかった」→ A：日誌のメモを、まとめて雑記帳へ戻す（各端末で1回だけ）。
+    //   残すもの：アプリが日誌に書いたもの（タイムカプセル・今日のありがとう・冬至）と、日誌に書いた本文（wroteIn）。
+    //   この版より後に自分で日誌へ送ったものは戻さない（更新の時刻が区切りより後のもの）
+    var KOYOMI_MEMO_BACK_CUTOFF = '2026-11-18T01:05:00Z';
+    var _KOYOMI_APP_JOURNAL_RE = /^(📜 タイムカプセル（|今日のありがとう：|冬至、この一年のありがとう：)/;
+    function koyomiMemoBackToScratch(force) {
+      try { if (!force && localStorage.getItem('mig_memo_back_v1')) return 0; } catch (e0) {}
+      var changed = 0, now = new Date().toISOString();
+      allTasks.forEach(function(m) {
+        if (!koyomiIsJournalMemo(m)) return;
+        if (m.wroteIn === 'journal' || _KOYOMI_APP_JOURNAL_RE.test(String(m.text || ''))) return;
+        if (m.updatedAt && String(m.updatedAt) > KOYOMI_MEMO_BACK_CUTOFF && !force) return;
+        var cv = koyomiJournalCover(m.date, false);
+        if (cv && m.createdAt && (m.createdAt === cv.savedAt || m.createdAt === cv.createdAt)) return;   // 「記す」の本文を写したもの
+        delete m.place; m.updatedAt = now; changed++;
+      });
+      try { if (!window._smokeTestRunning) localStorage.setItem('mig_memo_back_v1', now); } catch (e1) {}
+      if (changed && typeof saveAllTasks === 'function') saveAllTasks();
+      return changed;
+    }
+    window.koyomiMemoBackToScratch = koyomiMemoBackToScratch;
     window.koyomiMemoMigrate = koyomiMemoMigrate; window.koyomiIsJournalMemo = koyomiIsJournalMemo; window.koyomiJournalCover = koyomiJournalCover;
     function getThoughts(journalId) {
       var j = _koyomiJournalById(journalId);
