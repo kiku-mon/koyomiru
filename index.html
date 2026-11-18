@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.1';
+    const APP_VERSION = 'v0.78.2';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -36275,7 +36275,7 @@ function saveMsbEdit() {
       setTimeout(() => renderScratchView(), 180);
     }
     function renderScratchView() {
-      try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); } catch (eMM) {}   // v0.78.1: 同期で古い一言が届いても、ここで引っ越す
+      try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); if (typeof koyomiMemoTidy === 'function') koyomiMemoTidy(); } catch (eMM) {}   // v0.78.1: 同期で古い一言が届いても、ここで引っ越す
       const today = new Date();
       const label = document.getElementById('scratchDateLabel');
       if (label) {
@@ -40610,7 +40610,7 @@ window._repairCloudCalendarIds();
 
     // ===== v0.78.1: 「親の日誌が無い一言を消す」見張りはやめた（親がまだ届いていないだけのことがあり、消すと全端末から消えていた）。
     //   代わりに、起動のたびにメモの引っ越しを動かす（何度動かしても同じ。消さない。親の無い一言は雑記帳へ）
-    try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); } catch (eMM) { console.error('[memo_migrate]', eMM); }
+    try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); if (typeof koyomiMemoTidy === 'function') koyomiMemoTidy(); } catch (eMM) { console.error('[memo_migrate]', eMM); }
 
     // ===== 自動バックアップ（日次・7世代管理） =====
     (function() {
@@ -61061,6 +61061,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.78.2', date: '2026-11-18',
+    items: [
+      { icon:'🧹', t:'二重になっていたメモを片づけました',
+        before:'同じ文のメモが、同じ日にいくつも並んでいることがありました。もとは日誌に書いた一言が、雑記帳に出ていることもありました',
+        after:'同じ日・同じ場所で、1文字も違わないメモは1つにまとめました。少しでも違うものは両方残しています。もとは日誌の一言だったものは、書いた日の日誌に戻しました' }
+    ]
+  },
   {
     ver: 'v0.78.1', date: '2026-11-18',
     items: [
@@ -92367,6 +92375,29 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        !_bad628.length ? ok('ST-628: 書いた文はメモ1種類に。一言は同じ番号のまま日誌のメモへ、本文・古い並びも写して空に、親のない一言は雑記帳へ。文字は1文字も減らず、何度動かしても同じ、消した印も出さない。送る・戻すは印の書き換え')
          : ng('ST-628: メモの引っ越しが違う', _bad628.join(','));
      } catch (e) { try { allTasks = _bk628; window.saveAllTasks = _sv628; saveAllTasks = _sv628; window._propagateDeletion = _pd628; _propagateDeletion = _pd628; } catch (e2) {} ng('ST-628: 例外', e.message); }
+     // ===== ST-629: メモの片づけ（親の無かった一言は日誌へ・まったく同じ重複は1つに）（v0.78.2） =====
+     try {
+       var _bk629 = allTasks.slice(), _sv629 = saveAllTasks, _pd629 = window._propagateDeletion, _c629 = [];
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       window._propagateDeletion = function(id) { _c629.push(id); }; _propagateDeletion = window._propagateDeletion;
+       allTasks = [
+         { id: 'd-1', kind: 'scratch', date: '2026-08-10', text: '龍宮亭、北川さん', fromOrphan: true, createdAt: '2026-08-10T01:00:00Z' },
+         { id: 'd-2', kind: 'scratch', date: '2026-08-10', text: '龍宮亭、北川さん', fromOrphan: true, createdAt: '2026-08-10T02:00:00Z' },
+         { id: 'd-3', kind: 'scratch', date: '2026-08-04', text: 'アイコン', createdAt: '2026-08-04T01:00:00Z' },
+         { id: 'd-4', kind: 'scratch', date: '2026-08-04', text: 'アイコン #貢献', createdAt: '2026-08-04T02:00:00Z' },
+         { id: 'd-5', kind: 'scratch', date: '2026-08-04', text: 'アイコン', createdAt: '2026-08-04T03:00:00Z' },
+         { id: 'd-6', kind: 'scratch', date: '2026-08-05', text: 'アイコン', createdAt: '2026-08-05T03:00:00Z' },
+         { id: 'd-7', kind: 'scratch', place: 'journal', date: '2026-08-04', text: 'アイコン', createdAt: '2026-08-04T04:00:00Z' }
+       ];
+       koyomiMemoTidy();
+       var _ids = allTasks.filter(function(t) { return t.kind === 'scratch'; }).map(function(t) { return t.id; }).sort().join();
+       var g1 = allTasks.filter(function(t) { return t.id === 'd-1'; })[0];
+       var _ok629 = _ids === 'd-1,d-3,d-4,d-6,d-7' && _c629.sort().join() === 'd-2,d-5' && g1.place === 'journal' && !g1.fromOrphan && !!koyomiJournalCover('2026-08-10', false) &&
+         koyomiMemoTidy() === 0 && _c629.length === 2;
+       allTasks = _bk629; window.saveAllTasks = _sv629; saveAllTasks = _sv629; window._propagateDeletion = _pd629; _propagateDeletion = _pd629;
+       _ok629 ? ok('ST-629: 親の無かった一言は書いた日の日誌へ。同じ日・同じ置き場所で1文字も違わない重複だけを1つに（古いほうを残す。少しでも違えば両方残す）。2回目は何もしない')
+         : ng('ST-629: メモの片づけが違う', _ids + ' / ' + _c629.join());
+     } catch (e) { try { allTasks = _bk629; window.saveAllTasks = _sv629; saveAllTasks = _sv629; window._propagateDeletion = _pd629; _propagateDeletion = _pd629; } catch (e2) {} ng('ST-629: 例外', e.message); }
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
      try {
        var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
@@ -99267,6 +99298,40 @@ document.addEventListener('DOMContentLoaded', function() {
       if (changed && typeof saveAllTasks === 'function') saveAllTasks();
       return changed;
     }
+    // v0.78.2: 【権威】2026-11-18「二重のがあった」「実体をしっかりしときたい」→ 片づけ（何度動かしても同じ）
+    //   ① 親の日誌が無かった一言（目印 fromOrphan）は、書いた日の日誌に置き直す（もとは日誌の一言だった）
+    //   ② 同じ日・同じ置き場所で、文が1文字も違わないメモは1つに（いちばん古いものを残す。どの端末でも同じものが残る）。消す前に控えを取る
+    function koyomiMemoTidy() {
+      var changed = 0, now = new Date().toISOString();
+      allTasks.forEach(function(t) {
+        if (!t || t.kind !== 'scratch' || !t.fromOrphan) return;
+        if (t.date) { koyomiJournalCover(t.date, true); t.place = 'journal'; }
+        delete t.fromOrphan; t.updatedAt = now; changed++;
+      });
+      var groups = {};
+      allTasks.forEach(function(t) {
+        if (!t || t.kind !== 'scratch' || !t.id) return;
+        var tx = String(t.text || '').trim(); if (!tx) return;
+        var k = (t.place || '') + '|' + (t.date || '') + '|' + tx;
+        (groups[k] = groups[k] || []).push(t);
+      });
+      var drop = [];
+      Object.keys(groups).forEach(function(k) {
+        var g = groups[k]; if (g.length < 2) return;
+        g.sort(function(a, b) { var c = String(a.createdAt || '').localeCompare(String(b.createdAt || '')); return c || String(a.id).localeCompare(String(b.id)); });
+        drop = drop.concat(g.slice(1));
+      });
+      if (drop.length) {
+        try { if (!window._smokeTestRunning) { var old = JSON.parse(localStorage.getItem('mig_memo_tidy_backup_v1') || '[]'); var bk = JSON.stringify(old.concat(drop)); if (bk.length < 1500000) localStorage.setItem('mig_memo_tidy_backup_v1', bk); } } catch (eB) {}
+        var ids = {}; drop.forEach(function(t) { ids[t.id] = 1; });
+        allTasks = allTasks.filter(function(t) { return !(t && ids[t.id]); });
+        Object.keys(ids).forEach(function(id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(id); });   // まったく同じ文の重複だけ。伝えないと同期で戻る
+        changed += drop.length;
+      }
+      if (changed && typeof saveAllTasks === 'function') saveAllTasks();
+      return changed;
+    }
+    window.koyomiMemoTidy = koyomiMemoTidy;
     window.koyomiMemoMigrate = koyomiMemoMigrate; window.koyomiIsJournalMemo = koyomiIsJournalMemo; window.koyomiJournalCover = koyomiJournalCover;
     function getThoughts(journalId) {
       var j = _koyomiJournalById(journalId);
@@ -99538,7 +99603,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.koyomiJournalOwnText = koyomiJournalOwnText;
     function renderJournalView() {
       // v0.78.0: 季節の風の自動補完（空の日に日誌を作って一行を書き込む）はやめた。季節の一行は、表示のたびに暦から作る（koyomiJournalSeasonLine）
-      try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); } catch (eMM) {}   // v0.78.1
+      try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); if (typeof koyomiMemoTidy === 'function') koyomiMemoTidy(); } catch (eMM) {}   // v0.78.1
       const area = document.getElementById('journalListArea');
       if (!area) return;
       // 王国暦ラベル更新（第2条：nullチェック必須）
