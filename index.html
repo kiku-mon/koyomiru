@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.78.9 ★ -->
+<!-- ★ CURRENT VERSION: v0.78.11 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.9';
+    const APP_VERSION = 'v0.78.11';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -40610,7 +40610,8 @@ window._repairCloudCalendarIds();
 
     // ===== v0.78.1: 「親の日誌が無い一言を消す」見張りはやめた（親がまだ届いていないだけのことがあり、消すと全端末から消えていた）。
     //   代わりに、起動のたびにメモの引っ越しを動かす（何度動かしても同じ。消さない。親の無い一言は雑記帳へ）
-    try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); if (typeof koyomiMemoTidy === 'function') koyomiMemoTidy(); if (typeof koyomiMemoBackToScratch === 'function') koyomiMemoBackToScratch(); } catch (eMM) { console.error('[memo_migrate]', eMM); }
+    //   v0.78.10: ここ（起動時）で呼んでも、引っ越しの中身はまだ読み込まれていない（後ろの<script>にある）ので空振りしていた。
+    //   引っ越しは、雑記帳と日誌を描くときに動かす（renderScratchView／renderJournalView）
 
     // ===== 自動バックアップ（日次・7世代管理） =====
     (function() {
@@ -40725,198 +40726,8 @@ window._repairCloudCalendarIds();
       return kouPrefix + picked;
     }
 
-    // ===== 日誌空日補完 v0.45.532 〜 =====
-    // 引数：startDateStr / endDateStr ('YYYY-MM-DD'、startDate <= endDate、両端含む)
-    // 戻り値：空日（journalもthoughtも存在しない日）の日付文字列配列 'YYYY-MM-DD'[]
-    // 「空」の定義：その日付に kind='journal' または kind='thought' のレコードが1件も無いこと
-    function _findEmptyJournalDays(startDateStr, endDateStr) {
-      if (!startDateStr || !endDateStr) return [];
-      if (typeof startDateStr !== 'string' || typeof endDateStr !== 'string') return [];
-      // 第8条：iOS日付パース対応
-      var startD = new Date(startDateStr.replace(/-/g, '/') + ' 00:00:00');
-      var endD = new Date(endDateStr.replace(/-/g, '/') + ' 00:00:00');
-      if (isNaN(startD.getTime()) || isNaN(endD.getTime())) return [];
-      if (startD.getTime() > endD.getTime()) return [];
-      // 既存journalとthoughtの日付セットを構築（allTasks走査は1回だけ）
-      // 設計：journalは t.date、thoughtは t.parentId → journal.date を参照
-      // journalマップを先に作っておく（O(N)）
-      var journalById = {};
-      if (Array.isArray(allTasks)) {
-        for (var jm = 0; jm < allTasks.length; jm++) {
-          var jt = allTasks[jm];
-          if (jt && jt.kind === 'journal' && jt.id && jt.date) {
-            journalById[jt.id] = jt.date;
-          }
-        }
-      }
-      var existingDays = new Set();
-      if (Array.isArray(allTasks)) {
-        for (var i = 0; i < allTasks.length; i++) {
-          var t = allTasks[i];
-          if (!t) continue;
-          if (t.kind === 'journal' && t.date) {
-            existingDays.add(t.date);
-          } else if (t.kind === 'thought' && t.parentId && journalById[t.parentId]) {
-            existingDays.add(journalById[t.parentId]);
-          }
-        }
-      }
-      // 日付範囲を走査して空日を集める
-      var emptyDays = [];
-      var cursor = new Date(startD.getTime());
-      var endMs = endD.getTime();
-      // 安全装置：最大1000日（約2.7年）で打ち切り
-      var safetyLimit = 1000;
-      while (cursor.getTime() <= endMs && safetyLimit > 0) {
-        var dStr = getLocalDateStr(cursor);
-        if (!existingDays.has(dStr)) emptyDays.push(dStr);
-        cursor.setDate(cursor.getDate() + 1);
-        safetyLimit--;
-      }
-      return emptyDays;
-    }
-
-    // ===== 日誌空日補完 v0.45.533〜（v0.45.537で手動経路に一本化） =====
-    // 引数：options = { startDateStr: null, endDateStr: null }
-    //   startDateStr → 省略時はallTasks最古createdAtから（初期起動日）
-    //   endDateStr   → 省略時は昨日（今日は含めない）
-    // 戻り値：補完件数
-    //
-    // ※ユーザー確認はラッパー関数 openAutoFillJournalConfirm() で行う。
-    //   この関数は確認済み前提で呼ばれる「本体」。直接呼び出すと無確認で書き込むので注意。
-    //
-    // 第1条遵守：本番allTasksへの書き込みはユーザー確認後のみ（ラッパー側で担保）
-    // 第29条：journal/thoughtはcreateTask対象外（kind='task'のみ）。
-    //         既存のmoveScratchToThoughtsと同じpushパターンを使う。
-    // 第4条：書き込み後は必ずsaveAllTasks()を呼ぶ
-    function autoFillEmptyJournals(options) {
-      options = options || {};
-      // 範囲決定
-      var startDateStr = options.startDateStr;
-      var endDateStr = options.endDateStr;
-      if (!endDateStr) {
-        // デフォルト：昨日
-        var yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        endDateStr = getLocalDateStr(yesterday);
-      }
-      if (!startDateStr) {
-        // デフォルト：allTasks最古のcreatedAt日付（第1条・第41条）
-        var oldestMs = null;
-        if (Array.isArray(allTasks)) {
-          for (var i = 0; i < allTasks.length; i++) {
-            var t = allTasks[i];
-            if (!t || !t.createdAt) continue;
-            var ms = new Date(t.createdAt).getTime();
-            if (isNaN(ms)) continue;
-            if (oldestMs === null || ms < oldestMs) oldestMs = ms;
-          }
-        }
-        if (oldestMs === null) {
-          // 既存データなし→何もしない
-          if (window._dbgLog) window._dbgLog('autoFillEmptyJournals: allTasks空のため何もしない');
-          return 0;
-        }
-        startDateStr = getLocalDateStr(new Date(oldestMs));
-      }
-
-      // 空日リスト取得
-      var emptyDays = _findEmptyJournalDays(startDateStr, endDateStr);
-      if (emptyDays.length === 0) return 0;
-
-      // 補完実行（v0.45.541 新設計）
-      // journal.textに直接「『候名（読み）』の頃。<バリエーション文>」を書き込む。
-      // thoughtレコードは作らない（過去の挙動の再現）。
-      // 既存journalがあれば text 上書きはしない（手書きを守る）。
-      var nowIso = new Date().toISOString();
-      var added = 0;
-      for (var k = 0; k < emptyDays.length; k++) {
-        var dStr = emptyDays[k];
-        var metaText = _buildEmptyDayMetaText(dStr);
-        // 二重作成防止チェック（第5条：状態軸）
-        var existing = allTasks.find(function(t){
-          return t.kind === 'journal' && t.date === dStr;
-        });
-        if (existing) {
-          // 既存journalがあれば触らない（_findEmptyJournalDaysで除外済みのはずだが念のため）
-          continue;
-        }
-        // 新規journal作成（textに直接メタ文を書き込む）
-        allTasks.push({
-          id: generateTaskId(),
-          kind: 'journal',
-          date: dStr,
-          text: metaText,
-          mood: 0,
-          condition: 0,
-          weather: '',
-          savedAt: nowIso,
-          createdAt: nowIso,
-          autoFilled: true  // 自動補完フラグ（識別用）
-        });
-        added++;
-      }
-      // 第4条：書き込み後saveAllTasks
-      saveAllTasks();
-      if (window._dbgLog) window._dbgLog('autoFillEmptyJournals: ' + added + '日補完 (' + startDateStr + '〜' + endDateStr + ')');
-      return added;
-    }
-
-    // ===== v0.45.536〜 自前モーダル経由の確認ラッパー =====
-    // window.confirmはiOSとChromeで稀に「ユーザー操作なし」と判定されて即false返却する事故が起きる。
-    // 自前モーダル＋確実なonclickバインドで、ボタン押下→確認表示→実行の流れを保証する。
-    // ボタンonclickから呼ばれる唯一のエントリポイント。
-    function openAutoFillJournalConfirm() {
-      // 空日チェックを先に実行
-      // 範囲は本体関数と同じデフォルト（最古〜昨日）を使う
-      var yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      var endDateStr = getLocalDateStr(yesterday);
-      var oldestMs = null;
-      if (Array.isArray(allTasks)) {
-        for (var i = 0; i < allTasks.length; i++) {
-          var t = allTasks[i];
-          if (!t || !t.createdAt) continue;
-          var ms = new Date(t.createdAt).getTime();
-          if (isNaN(ms)) continue;
-          if (oldestMs === null || ms < oldestMs) oldestMs = ms;
-        }
-      }
-      if (oldestMs === null) {
-        if (typeof showToast === 'function') showToast('既存データがありません。');
-        return;
-      }
-      var startDateStr = getLocalDateStr(new Date(oldestMs));
-      var emptyDays = _findEmptyJournalDays(startDateStr, endDateStr);
-      if (emptyDays.length === 0) {
-        if (typeof showToast === 'function') showToast('日誌は途切れていません。補完不要です。');
-        return;
-      }
-      // 自前モーダル表示
-      var modal = document.getElementById('autoFillJournalConfirmModal');
-      var body = document.getElementById('autoFillJournalConfirmBody');
-      var okBtn = document.getElementById('autoFillJournalConfirmBtn');
-      var cancelBtn = document.getElementById('autoFillJournalCancelBtn');
-      if (!modal || !body || !okBtn || !cancelBtn) {
-        if (window._dbgLog) window._dbgLog('openAutoFillJournalConfirm: モーダルDOM未発見');
-        return;
-      }
-      body.textContent = '日誌が空の日が ' + emptyDays.length + '日 見つかりました。\n\n'
-        + '範囲：' + startDateStr + ' 〜 ' + endDateStr + '\n\n'
-        + '各日に「なし＋天象＋月齢＋七十二候」のメモを1件ずつ追加します。\n'
-        + 'この操作は元に戻すには手動削除が必要です。';
-      modal.style.display = 'flex';
-      // 古いリスナーを上書き（onclick代入方式で累積防止・第3条/第6条/第108条参照）
-      okBtn.onclick = function() {
-        modal.style.display = 'none';
-        // 確認モーダルでOKが押されたので、本体を直接呼んで書き込み実行
-        var added = autoFillEmptyJournals({ startDateStr: startDateStr, endDateStr: endDateStr });
-        if (typeof showToast === 'function') showToast(added + '日分の日誌を補完しました。');
-      };
-      cancelBtn.onclick = function() {
-        modal.style.display = 'none';
-      };
-    }
+    // v0.78.10: 掃除。日誌の空日補完（_findEmptyJournalDays・autoFillEmptyJournals・openAutoFillJournalConfirm）は消した。
+    //   空の日に日誌を自動で作るのをやめ、季節の一行は表示のたびに作る（koyomiJournalSeasonLine・_buildEmptyDayMetaText）
 
     // ============================================================
     // v0.45.863〜 カレンダー重複検出 Phase 1（レポートのみ・読み取り専用）
@@ -42036,39 +41847,9 @@ window._repairCloudCalendarIds();
       return { ok: errors.length === 0, errors: errors };
     }
 
-    function moveScratchToThoughts() {
-      var today = getLocalDateStr(new Date());
-      if (localStorage.getItem('_lastScratchMoveDate') === today) return;
-      var oldS = allTasks.filter(function(t){ return (t.kind === 'scratch' || t.kind === 'zen') && t.date && t.date < today; });
-      if (oldS.length === 0) { localStorage.setItem('_lastScratchMoveDate', today); return; }
-      var byDate = {};
-      oldS.forEach(function(s){ if (!byDate[s.date]) byDate[s.date]=[]; byDate[s.date].push(s); });
-      Object.keys(byDate).forEach(function(date) {
-        // 日誌レコードを取得または新規作成
-        var j = allTasks.find(function(t){ return t.kind === 'journal' && t.date === date; });
-        if (!j) {
-          j = { id: generateTaskId(), kind: 'journal', date: date, text: '', thoughts: [], mood: 0, condition: 0, weather: '', savedAt: new Date().toISOString() };
-          allTasks.push(j);
-        }
-        if (!Array.isArray(j.thoughts)) j.thoughts = [];
-        // kind:'thought' の独立レコードとして追加（getThoughtsが参照する方式に統一）
-        byDate[date].forEach(function(s) {
-          var alreadyExists = allTasks.some(function(t){ return t.kind === 'thought' && t.parentId === j.id && t.text === s.text; });
-          if (!alreadyExists) {
-            allTasks.push({ id: generateTaskId(), kind: 'thought', parentId: j.id, text: s.text || '', createdAt: s.createdAt || new Date().toISOString() });
-          }
-        });
-      });
-      var movedIds = new Set(oldS.map(function(s){ return s.id; }));
-      allTasks = allTasks.filter(function(t){ return !movedIds.has(t.id); });
-      movedIds.forEach(function(id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(id); });   // v0.71.2: 総点検。日誌の一言に移した雑記帳
-      saveAllTasks();
-      localStorage.setItem('_lastScratchMoveDate', today);
-      if (typeof renderScratchView === 'function') renderScratchView();
-      _dbgLog && _dbgLog('moveScratchToThoughts done. moved=' + oldS.length);
-    }
+    // v0.78.10: 掃除。moveScratchToThoughts は消した
     // v0.78.0: 【権威】2026-11-18 最高峰会議「雑記帳から日誌に自動で移すのはやめる。日誌に保存したければ自分で。季節の一行は保存せず表示のたびに作る。自動補完の管理者ボタンも消す（紛らわしい）」1回目＝データには触らない
-    //   → 自動で移す呼び出しはすべて外した（関数は2回目の引っ越しまで残す）。日付が変わったら、雑記帳の並びを描き直すだけ
+    //   → 自動で移す呼び出しはすべて外した（v0.78.10 で関数も消した）。日付が変わったら、雑記帳の並びを描き直すだけ
     // 日付変更監視：1分ごとに日付チェックし、日付が変わったら描き直す
     (function() {
       var _lastCheckedDate = getLocalDateStr(new Date());
@@ -47528,35 +47309,9 @@ function renderMonthlyMoneyLine() {
     window.saveAllTasks = saveAllTasks;
     window._pushQueueDiff = _pushQueueDiff;   // v0.47.23: 検査から呼ぶため
     window.recalcStorageUsage = recalcStorageUsage;
-    window.moveScratchToThoughts = moveScratchToThoughts;
     window._buildEmptyDayMetaText = _buildEmptyDayMetaText;
-    window._findEmptyJournalDays = _findEmptyJournalDays;
-    window.autoFillEmptyJournals = autoFillEmptyJournals;
-    window.openAutoFillJournalConfirm = openAutoFillJournalConfirm;
 
-    // ===== 「季節の風」自動補完 — 日誌を開くたびに静かに実行 =====
-    // 第48条：autoFillEmptyJournalsの新設計（journal.textに直接書く）に準拠
-    // 第4条：saveAllTasksはautoFillEmptyJournals内で呼ぶ
-    // 第37条：STテストではautoFillEmptyJournalsをモック化してテスト
-    function _autoFillOnJournalOpen() {
-      var today = getLocalDateStr(new Date());
-      // 今日すでに実行済みならスキップ（何度開いても1日1回だけ）
-      if (localStorage.getItem('_lastAutoFillDate') === today) return;
-      // 昨日までの空白日を静かに補完
-      var yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      var yesterdayStr = getLocalDateStr(yesterday);
-      var added = autoFillEmptyJournals({ endDateStr: yesterdayStr });
-      // 実行済みフラグをセット
-      localStorage.setItem('_lastAutoFillDate', today);
-      // 補完があった場合のみ再描画（第2条：nullチェック済み）
-      if (added > 0 && typeof renderJournalView === 'function') {
-        renderJournalView();
-        if (window.showToast) window.showToast('🍃 季節の風が通り抜けていった。' + added + '日分、季節で満たされた。', { type: 'info' });
-        if (window._dbgLog) window._dbgLog('【季節の風】' + added + '日分を自動補完');
-      }
-    }
-    window._autoFillOnJournalOpen = _autoFillOnJournalOpen;
+    // v0.78.10: 掃除。「季節の風」自動補完（_autoFillOnJournalOpen）は消した
     window.detectDuplicateCalendars = detectDuplicateCalendars;
     window.openCalendarDuplicateReport = openCalendarDuplicateReport;
     window.closeCalendarDuplicateReport = closeCalendarDuplicateReport;
@@ -61143,6 +60898,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.78.11', date: '2026-11-18',
+    items: [
+      { icon:'✎', t:'何も書かなかった日から、その日の日誌を書けるようにしました',
+        before:'日誌の一覧で、何も書かなかった日の枠を押しても何も起きませんでした',
+        after:'枠の中の日付を押すと、その日を選んだ状態で「記す」が開きます' }
+    ]
+  },
+  {
+    ver: 'v0.78.10', date: '2026-11-18',
+    items: [
+      { icon:'🧹', t:'雑記帳と日誌の説明を、今の動きに合わせました',
+        before:'はじめて開いたときの説明に、「昨日の雑記帳が、今日の日誌になっている」と前の動きが書かれていました',
+        after:'「書いたものは雑記帳に残る」「残したいものは自分で日誌へ」と、今の動きに合わせて書き直しました。使わなくなった仕組みも片づけました' }
+    ]
+  },
+  {
     ver: 'v0.78.9', date: '2026-11-18',
     items: [
       { icon:'💴', t:'「、」で区切った金額も読むようにしました',
@@ -72179,7 +71950,7 @@ function showDebugLog(_initOnly) {
        // クイズ
        'openQuizMode','closeQuizMode','_quizStart','_quizShowQ','_quizAnswer','_quizFinish',
        // thoughts
-       'moveScratchToThoughts','getThoughts','addThought','deleteThought',
+       'getThoughts','addThought','deleteThought',
        // 造営コア
        'getBlueprints','getGantsAll','getGantsByBlueprint','getBlueprintProgress','getBlueprintDateRange',
        'renderGantView','renderGantBlueprints','renderGantChart',
@@ -72302,7 +72073,7 @@ function showDebugLog(_initOnly) {
          'switchView','renderAllSections',
          'getDailyTasks','getWeeklyTasks',
          // thoughts/journal
-         'addThought','deleteThought','moveScratchToThoughts',
+         'addThought','deleteThought',
          'saveNewJournal','saveJournalEdit',
          // ポイント系（本番データ変動）
          'addGDP','addGou','addToku',
@@ -73423,65 +73194,18 @@ window._stFnSrc = _stFnSrc;
          : ng('ST-29: importData', 'データ参照なし');
      } catch(e) { ng('ST-29: 検索・エクスポート', e.message); }
 
-     // ST-30: 日付変更フロー（雑記帳→thoughts自動移行）
+     // ST-30: 日付が変わっても、雑記帳は日誌へ移らない（v0.78.10 で書き直し。v0.78.0 で自動で移すのをやめた）
      try {
-       var _stPrev21 = allTasks.length;
-       // v0.45.1812: 【権威】2026-08-31、テストのたびに予定が減る件の二人目の犯人。
-       // このテストは「日付が変わったときの移行」を本物のデータに対して走らせる。
-       // 実在の雑記帳が思考へ変換され、元の雑記帳が消える。
-       // 後片づけは「新しく増えたものを消す」だけなので、消えた元は戻らない。
-       // ID集合だけでは足りない。中身ごと丸ごと控えて、終わったら丸ごと戻す。
        var _st30Snapshot = JSON.parse(JSON.stringify(allTasks));
-       // 第57条：呼び出し前の全ID集合を退避（実バックログ巻き込み対策・ST-87と同根）
-       var _st30IdsBefore = new Set(allTasks.map(function(t){ return t.id; }));
-       var _stYesterday = (function(){
-         var d = new Date(); d.setDate(d.getDate()-1);
-         return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-       })();
-       // テスト用雑記帳アイテムを昨日の日付で作成
+       var _stYd = new Date(); _stYd.setDate(_stYd.getDate() - 1); var _stYesterday = getLocalDateStr(_stYd);
        var _stSc1 = 'smoke-sc1-' + Date.now();
-       var _stSc2 = 'smoke-sc2-' + (Date.now()+1);
        allTasks.push({ id: _stSc1, kind: 'scratch', text: 'サンプル雑記帳1', date: _stYesterday, createdAt: new Date().toISOString() });
-       allTasks.push({ id: _stSc2, kind: 'scratch', text: 'サンプル雑記帳2', date: _stYesterday, createdAt: new Date().toISOString() });
-       allTasks.length === _stPrev21 + 2
-         ? ok('ST-30: テスト用雑記帳アイテム作成(2件)')
-         : ng('ST-30: テスト用雑記帳アイテム作成', '作成失敗');
-       // _lastScratchMoveDateを削除して強制実行可能にする
-       var _stPrevMoveDate = localStorage.getItem('_lastScratchMoveDate');
-       localStorage.removeItem('_lastScratchMoveDate');
-       // moveScratchToThoughtsを実行
-       if (typeof moveScratchToThoughts === 'function') moveScratchToThoughts();
-       // 雑記帳アイテムがthoughtsに移動されたか確認
-       var _stSc1After = allTasks.find(function(t){ return t.id === _stSc1; });
-       var _stSc2After = allTasks.find(function(t){ return t.id === _stSc2; });
-       (!_stSc1After && !_stSc2After)
-         ? ok('ST-30: 雑記帳アイテムがallTasksから削除確認')
-         : ng('ST-30: 雑記帳アイテム削除', '削除されず残存');
-       // 昨日の日付の日誌が作成されたか確認
-       var _stJournal21 = allTasks.find(function(t){ return t.kind === 'journal' && t.date === _stYesterday; });
-       _stJournal21
-         ? ok('ST-30: 昨日付けの日誌レコード作成確認')
-         : ng('ST-30: 日誌作成', '日誌レコードなし');
-       // thoughtsに移動されたか確認
-       var _stThoughts21 = typeof getThoughts === 'function' && _stJournal21 ? getThoughts(_stJournal21.id) : [];
-       (_stThoughts21.length >= 2 || (_stJournal21 && (_stJournal21.thoughts||[]).length >= 2))
-         ? ok('ST-30: thoughts移行確認(2件)')
-         : ng('ST-30: thoughts移行', '件数不足: ' + (_stThoughts21.length || (_stJournal21 ? (_stJournal21.thoughts||[]).length : 0)));
-       // _lastScratchMoveDateが更新されたか確認
-       var _stMoveDate = localStorage.getItem('_lastScratchMoveDate');
-       var _stToday21 = typeof getLocalDateStr === 'function' ? getLocalDateStr(new Date()) : '';
-       _stMoveDate === _stToday21
-         ? ok('ST-30: _lastScratchMoveDate更新確認')
-         : ng('ST-30: _lastScratchMoveDate', '未更新: ' + _stMoveDate);
-       // v0.45.1812: 控えたものを丸ごと戻す。増えたものは消え、消されたものは復活する。
+       var _st30src = _stAllSrc();
+       (typeof moveScratchToThoughts === 'undefined' && !/\n\s*moveScratchToThoughts\(\)/.test(_st30src) && getScratchItems().some(function(t) { return t.id === _stSc1; }) &&
+        !allTasks.some(function(t) { return t.kind === 'journal' && t.date === _stYesterday && t.autoFilled; }))
+         ? ok('ST-30: 日付が変わっても、前の日の雑記帳は雑記帳に残る（自動で日誌へ移す処理は無い）')
+         : ng('ST-30: 雑記帳が自動で移されている', '');
        allTasks = _st30Snapshot;
-       // _lastScratchMoveDateを元に戻す
-       if (_stPrevMoveDate) localStorage.setItem('_lastScratchMoveDate', _stPrevMoveDate);
-       else localStorage.removeItem('_lastScratchMoveDate');
-       saveAllTasks();
-       allTasks.length === _stPrev21
-         ? ok('ST-30: クリーンアップ完了(' + allTasks.length + '件)')
-         : ng('ST-30: クリーンアップ', '件数不一致 ' + allTasks.length + '件 期待' + _stPrev21);
      } catch(e) { ng('ST-30: 日付変更フロー', e.message); }
 
      // ST-31: 行動貿易（ARV1/BLM1）フロー
@@ -77168,36 +76892,7 @@ window._stFnSrc = _stFnSrc;
        ok('ST-86: 印刷CSS エクスポート/インポート非表示 完了');
      } catch(e) { ng('ST-86: 例外', e.message); }
 
-     // ===== ST-87: moveScratchToThoughts zen含む移動 =====
-     try {
-       var _mstSrc = (typeof moveScratchToThoughts === 'function') ? moveScratchToThoughts.toString() : '';
-       _mstSrc.includes("t.kind === 'zen'")
-         ? ok('ST-87: moveScratchToThoughts zen対象確認')
-         : ng('ST-87: moveScratchToThoughts zenが対象外', '');
-       // 第57条：副作用のある関数を実呼び出しする前に状態を退避
-       // moveScratchToThoughts()は_lastScratchMoveDateを未設定にすると
-       // テスト対象外の実バックログscratch/zenデータまで巻き込んで日誌化してしまうため、
-       // IDスナップショットで呼び出し前の状態を記録し、テスト後に確実に復元する。
-       var _st87IdsBefore = new Set(allTasks.map(function(t){ return t.id; }));
-       var _st87PrevMoveDate = localStorage.getItem('_lastScratchMoveDate');
-       // zenアイテムを作成して移動テスト
-       var _zenId = generateTaskId();
-       var _yesterday2 = new Date(); _yesterday2.setDate(_yesterday2.getDate()-1);
-       var _yStr2 = _yesterday2.getFullYear()+'-'+String(_yesterday2.getMonth()+1).padStart(2,'0')+'-'+String(_yesterday2.getDate()).padStart(2,'0');
-       allTasks.push({ id: _zenId, kind: 'zen', text: 'テスト禅アイテム', date: _yStr2, createdAt: new Date().toISOString() });
-       saveAllTasks();
-       localStorage.removeItem('_lastScratchMoveDate');
-       moveScratchToThoughts();
-       var _zenGone = !allTasks.find(t => t.id === _zenId);
-       _zenGone ? ok('ST-87: zenアイテム日誌移動確認') : ng('ST-87: zenアイテムが移動されなかった', '');
-       // クリーンアップ：呼び出し前に存在しなかったレコードは全て除去（第57条：完全復元）
-       allTasks = allTasks.filter(function(t){ return _st87IdsBefore.has(t.id); });
-       saveAllTasks();
-       // _lastScratchMoveDateも元の値に復元（未設定に戻すと次回起動で再度実データが巻き込まれるため）
-       if (_st87PrevMoveDate !== null) { localStorage.setItem('_lastScratchMoveDate', _st87PrevMoveDate); }
-       else { localStorage.removeItem('_lastScratchMoveDate'); }
-       ok('ST-87: moveScratchToThoughts zen含む移動 完了');
-     } catch(e) { ng('ST-87: 例外', e.message); }
+     // ST-87（雑記帳を日誌へ自動で移す）は v0.78.10 で外した
 
      // ===== ST-88: 写真館タブ ON/OFF =====
      try {
@@ -79804,231 +79499,9 @@ window._stFnSrc = _stFnSrc;
      } catch(e) { ng('ST-142: 例外', e.message); }
 
 
-     // ===== ST-143: 日誌空日補完 空日検出 =====
-     try {
-       ok('');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-       ok('  ST-143: 日誌空日補完 _findEmptyJournalDays テスト');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-       ok(typeof _findEmptyJournalDays === 'function'
-         ? 'ST-143·①: _findEmptyJournalDays 存在確認'
-         : null, '_findEmptyJournalDays 未定義');
-       ok(typeof window._findEmptyJournalDays === 'function'
-         ? 'ST-143·②: window._findEmptyJournalDays 公開確認'
-         : null, 'window公開なし');
-
-       // 第37条：saveAllTasksをモック化（このテストは検出ロジックのみ）
-       var _r143prevSave = window.saveAllTasks;
-       window.saveAllTasks = function(){};
-       var _r143initLen = allTasks.length;
-       // v0.45.1874: ST-144と同じく、中身ごと控えて戻す。
-       // IDで選り分けているうちは安全に見えるが、テストが増えるたびに
-       // 消し漏れ・消しすぎの両方が起きる。控えて戻すのが確実で、考えることも減る。
-       var _r143snapshot = JSON.parse(JSON.stringify(allTasks));
-
-       // テストデータ：5日間（昨日から5日前）のうち2日に既存thought、3日が空
-       var _r143base = new Date(); _r143base.setDate(_r143base.getDate() - 1);  // 昨日
-       var _r143days = [];
-       for (var _r143i = 0; _r143i < 5; _r143i++) {
-         var _r143d = new Date(_r143base.getTime());
-         _r143d.setDate(_r143d.getDate() - _r143i);
-         _r143days.push(getLocalDateStr(_r143d));
-       }
-       // _r143days[0]=昨日, [1]=2日前, [2]=3日前, [3]=4日前, [4]=5日前
-       // 既存thought：昨日・3日前 → 検出対象から除外されるはず
-       // 新設計：thoughtはparentId経由でjournalに紐付く（thought自身はdate無し）
-       allTasks.push({ id: 'st143-jr-t1', kind: 'journal', date: _r143days[0], text: '', createdAt: new Date().toISOString() });
-       allTasks.push({ id: 'st143-th1', kind: 'thought', parentId: 'st143-jr-t1', text: 'テスト1', createdAt: new Date().toISOString() });
-       allTasks.push({ id: 'st143-jr-t2', kind: 'journal', date: _r143days[2], text: '', createdAt: new Date().toISOString() });
-       allTasks.push({ id: 'st143-th2', kind: 'thought', parentId: 'st143-jr-t2', text: 'テスト2', createdAt: new Date().toISOString() });
-
-       // 5日前〜昨日の範囲で検出
-       var _r143empty = _findEmptyJournalDays(_r143days[4], _r143days[0]);
-       ok(Array.isArray(_r143empty)
-         ? 'ST-143·③: 戻り値は配列確認'
-         : null, '戻り値が配列でない');
-       ok(_r143empty.length === 3
-         ? 'ST-143·④: 空日3件検出確認（昨日・3日前は既存、残り3日が空）'
-         : null, '期待3件・実際' + _r143empty.length + '件: ' + JSON.stringify(_r143empty));
-       ok(_r143empty.indexOf(_r143days[0]) === -1 && _r143empty.indexOf(_r143days[2]) === -1
-         ? 'ST-143·⑤: 既存日（昨日・3日前）は除外確認'
-         : null, '既存日が含まれている: ' + JSON.stringify(_r143empty));
-       ok(_r143empty.indexOf(_r143days[1]) !== -1 && _r143empty.indexOf(_r143days[3]) !== -1 && _r143empty.indexOf(_r143days[4]) !== -1
-         ? 'ST-143·⑥: 空日（2日前・4日前・5日前）が全て含まれる確認'
-         : null, '期待される空日が欠落: ' + JSON.stringify(_r143empty));
-
-       // journalも除外対象であることを確認
-       allTasks.push({ id: 'st143-jr1', kind: 'journal', date: _r143days[1], text: 'テスト日誌', thoughts: [], createdAt: new Date().toISOString() });
-       var _r143empty2 = _findEmptyJournalDays(_r143days[4], _r143days[0]);
-       ok(_r143empty2.length === 2
-         ? 'ST-143·⑦: journal追加後は空日2件（journalも除外対象）'
-         : null, '期待2件・実際' + _r143empty2.length + '件: ' + JSON.stringify(_r143empty2));
-
-       // 範囲全体が空の場合
-       var _r143future = new Date(); _r143future.setDate(_r143future.getDate() + 10);
-       var _r143future2 = new Date(); _r143future2.setDate(_r143future2.getDate() + 12);
-       var _r143futureEmpty = _findEmptyJournalDays(getLocalDateStr(_r143future), getLocalDateStr(_r143future2));
-       ok(_r143futureEmpty.length === 3
-         ? 'ST-143·⑧: 範囲全部空→3件（10〜12日後）'
-         : null, '期待3件・実際' + _r143futureEmpty.length + '件');
-
-       // 異常系
-       ok(_findEmptyJournalDays(null, null).length === 0
-         ? 'ST-143·⑨: null引数→空配列フォールバック確認'
-         : null, 'null引数フォールバック失敗');
-       ok(_findEmptyJournalDays('', '').length === 0
-         ? 'ST-143·⑩: 空文字引数→空配列フォールバック確認'
-         : null, '空文字フォールバック失敗');
-       ok(_findEmptyJournalDays('not-a-date', '2026-05-13').length === 0
-         ? 'ST-143·⑪: 不正日付→空配列フォールバック確認'
-         : null, '不正日付フォールバック失敗');
-       // start > end の場合は空配列を返す
-       ok(_findEmptyJournalDays('2026-05-13', '2026-05-01').length === 0
-         ? 'ST-143·⑫: start > end → 空配列確認'
-         : null, '逆順範囲フォールバック失敗');
-
-       // v0.45.1874: 控えたものを丸ごと戻す。
-       allTasks = JSON.parse(JSON.stringify(_r143snapshot));
-       window.saveAllTasks = _r143prevSave;
-       ok(allTasks.length === _r143initLen
-         ? 'ST-143·⑬: クリーンアップ完了（' + allTasks.length + '件）'
-         : null, '件数復元失敗: 期待' + _r143initLen + '・実際' + allTasks.length);
-
-       ok('ST-143: 日誌空日補完 空日検出テスト 完了');
-     } catch(e) {
-       // クリーンアップ保証（例外時もsaveAllTasks復元）
-       try {
-         if (typeof _r143prevSave === 'function') window.saveAllTasks = _r143prevSave;
-         if (typeof _r143snapshot !== 'undefined' && Array.isArray(_r143snapshot)) {
-           allTasks = JSON.parse(JSON.stringify(_r143snapshot));
-         }
-       } catch(_){}
-       ng('ST-143: 例外', e.message);
-     }
-
-
-     // ===== ST-144: 日誌空日補完 補完本体テスト =====
-     // 第37条：saveAllTasksモック化で本番localStorage汚染を完全防止
-     // 第1条：window.confirm/showToastもモック化（UIブロック防止）
-     try {
-       ok('');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-       ok('  ST-144: 日誌空日補完 autoFillEmptyJournals テスト');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-       ok(typeof autoFillEmptyJournals === 'function'
-         ? 'ST-144·①: autoFillEmptyJournals 存在確認'
-         : null, 'autoFillEmptyJournals 未定義');
-       ok(typeof window.autoFillEmptyJournals === 'function'
-         ? 'ST-144·②: window.autoFillEmptyJournals 公開確認'
-         : null, 'window公開なし');
-
-       // 第37条：副作用のある関数を全てモック化
-       // v0.45.537〜：本体から window.confirm 呼び出しは廃止されたが、
-       // 他のテストとのモック復元順序の都合で形式的に保持（実害なし）
-       var _r144prevSave = window.saveAllTasks;
-       var _r144prevConfirm = window.confirm;
-       var _r144prevToast = window.showToast;
-       window.saveAllTasks = function(){};
-       window.confirm = function(){ return true; };  // 形式的（本体未参照）
-       window.showToast = function(){};  // 何もしない
-       var _r144initLen = allTasks.length;
-       // v0.45.1874: 中身ごと控える。条件で選り分けると本物を巻き込む。
-       var _r144snapshot = JSON.parse(JSON.stringify(allTasks));
-
-       // テストデータ：3日前と5日前に既存journal、それ以外は空
-       var _r144today = new Date();
-       var _r144d3 = new Date(_r144today.getTime()); _r144d3.setDate(_r144d3.getDate() - 3);
-       var _r144d5 = new Date(_r144today.getTime()); _r144d5.setDate(_r144d5.getDate() - 5);
-       var _r144d3s = getLocalDateStr(_r144d3);
-       var _r144d5s = getLocalDateStr(_r144d5);
-       allTasks.push({ id: 'st144-jr1', kind: 'journal', date: _r144d3s, text: '既存テスト', thoughts: [], createdAt: new Date().toISOString() });
-       allTasks.push({ id: 'st144-jr2', kind: 'journal', date: _r144d5s, text: '既存テスト2', thoughts: [], createdAt: new Date().toISOString() });
-
-       // 7日前〜昨日の範囲で補完実行
-       var _r144d7 = new Date(_r144today.getTime()); _r144d7.setDate(_r144d7.getDate() - 7);
-       var _r144d1 = new Date(_r144today.getTime()); _r144d1.setDate(_r144d1.getDate() - 1);
-       var _r144d7s = getLocalDateStr(_r144d7);
-       var _r144d1s = getLocalDateStr(_r144d1);
-       var _r144added = autoFillEmptyJournals({ startDateStr: _r144d7s, endDateStr: _r144d1s });
-
-       ok(typeof _r144added === 'number'
-         ? 'ST-144·③: 戻り値は数値確認（' + _r144added + '）'
-         : null, '戻り値が数値でない');
-       ok(_r144added === 5
-         ? 'ST-144·④: 補完件数=5確認（7日間中3日前・5日前を除く5日）'
-         : null, '期待5・実際' + _r144added);
-
-       // 補完されたjournalレコードを検証
-       var _r144filledJournals = allTasks.filter(function(t){
-         return t.kind === 'journal' && t.autoFilled === true
-           && t.date >= _r144d7s && t.date <= _r144d1s;
-       });
-       ok(_r144filledJournals.length === 5
-         ? 'ST-144·⑤: autoFilled=trueのjournal 5件確認'
-         : null, '期待5・実際' + _r144filledJournals.length);
-
-       // 既存journalは上書きされず保護されたこと（個別オブジェクト参照確認）
-       var _r144protectedJr = allTasks.find(function(t){ return t.id === 'st144-jr1'; });
-       ok(_r144protectedJr && _r144protectedJr.text === '既存テスト' && !_r144protectedJr.autoFilled
-         ? 'ST-144·⑥: 既存journal保護確認（autoFilledフラグ無し・text維持）'
-         : null, '既存journal破壊');
-
-       // 補完journalのtextに新スタイルメタ文が入っていること（v0.45.541新設計）
-       if (_r144filledJournals.length > 0) {
-         var _r144firstJ = _r144filledJournals[0];
-         var _r144firstTxt = _r144firstJ.text || '';
-         ok(_r144firstTxt.length > 0 && _r144firstTxt !== 'なし'
-           ? 'ST-144·⑦: 補完journal.text にメタ文が直接書き込まれている（' + _r144firstTxt.length + '文字）'
-           : null, 'text空: ' + _r144firstTxt);
-         // 七十二候プレフィックス確認
-         ok(_r144firstTxt.indexOf('の頃。') !== -1
-           ? 'ST-144·⑧: 補完textに七十二候プレフィックス「〜の頃。」含む'
-           : null, '候プレフィックスなし: ' + _r144firstTxt.substring(0, 30));
-         // thoughtレコードが作られていないこと（旧設計の残骸ガード）
-         var _r144wrongThoughts = allTasks.filter(function(t){
-           return t.kind === 'thought' && t.parentId === _r144firstJ.id;
-         });
-         ok(_r144wrongThoughts.length === 0
-           ? 'ST-144·⑧b: 補完journalにthoughtレコードが付かない（新設計）'
-           : null, '旧設計のthought混入: ' + _r144wrongThoughts.length + '件');
-       }
-
-       // 空日なしのケース（同じ範囲で再実行→0件）
-       var _r144added2 = autoFillEmptyJournals({ startDateStr: _r144d7s, endDateStr: _r144d1s });
-       ok(_r144added2 === 0
-         ? 'ST-144·⑨: 補完済み範囲で再実行→0件確認'
-         : null, '期待0・実際' + _r144added2);
-
-       // v0.45.1874: 【権威】2026-09-01、テストのたびに予定が29件減る件の真犯人。
-       // このテストは7日前〜昨日の範囲で日誌を補完し、そのあと
-       // 「同じ範囲の autoFilled な日誌」を全部消していた。
-       // テストが作ったものと、以前に本人が空日補完で作ったものは、
-       // 範囲も印も同じで区別できない。だから本物まで巻き込んで消えていた。
-       // v0.45.1845では例外側だけ直したが、正常時も同じ作りだった。
-       // 条件で選り分けるのをやめ、開始前に丸ごと控えて、そのまま戻す。
-       allTasks = JSON.parse(JSON.stringify(_r144snapshot));
-       window.saveAllTasks = _r144prevSave;
-       window.confirm = _r144prevConfirm;
-       window.showToast = _r144prevToast;
-       ok(allTasks.length === _r144initLen
-         ? 'ST-144·⑩: クリーンアップ完了（' + allTasks.length + '件）'
-         : null, '件数復元失敗: 期待' + _r144initLen + '・実際' + allTasks.length);
-
-       ok('ST-144: 日誌空日補完 補完本体テスト 完了');
-     } catch(e) {
-       // クリーンアップ保証（例外時も復元）
-       try {
-         if (typeof _r144prevSave === 'function') window.saveAllTasks = _r144prevSave;
-         if (typeof _r144prevConfirm === 'function') window.confirm = _r144prevConfirm;
-         if (typeof _r144prevToast !== 'undefined') window.showToast = _r144prevToast;
-         // v0.45.1874: 例外時も同じく、控えたものを丸ごと戻す。
-         if (typeof _r144snapshot !== 'undefined' && Array.isArray(_r144snapshot)) {
-           allTasks = JSON.parse(JSON.stringify(_r144snapshot));
-         }
-       } catch(_){}
-       ng('ST-144: 例外', e.message);
-     }
-
+     // ST-143・ST-144（空の日に日誌を自動で作る）は v0.78.10 で外した
+     ok('ST-143: 日誌の空日の検出は外した（v0.78.10。空の日に日誌を自動で作るのをやめたため。季節の一行は ST-627）');
+     ok('ST-144: 日誌の空日補完は外した（v0.78.10。同上）');
 
      // ===== ST-145: 日誌の空日の自動補完はやめた（v0.78.0） =====
      try {
@@ -92460,7 +91933,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r627.journal = !!_c1 && /st627ほんぶん/.test(_c1.textContent) && _c1.querySelectorAll('[data-jnl-thought]').length === 3 && !!_c1.querySelector('[data-jnl-season]') &&
          !_c2 && !/st627じどう/.test(_ja.textContent) &&   /* v0.78.1: 季節の風の自動の日誌は、中身が無ければ外れて、ただの「何もない日」の札になる */
          !!_c3 && (_c3.textContent.split('st627おなじ').length - 1) === 1 &&
-         !!_ja.querySelector('[data-jnl-band]') && !!_ja.querySelector('.jnl-grid') && !!_c1.querySelector('[data-jnl-more]') && [].every.call(_ja.querySelectorAll('.jnl-card'), function(c) { return c.style.height === '196px'; }) &&   /* v0.78.5: 一律の枠・何もない日は帯 */ !/今日考えたこと/.test(_ja.textContent);
+         !!_ja.querySelector('[data-jnl-band]') && !!_ja.querySelector('[data-jnl-band] [data-jnl-write]') && /openNewJournal\('\d{4}-\d{2}-\d{2}'\)/.test(_ja.querySelector('[data-jnl-write]').getAttribute('onclick')) && !!_ja.querySelector('.jnl-grid') && !!_c1.querySelector('[data-jnl-more]') && [].every.call(_ja.querySelectorAll('.jnl-card'), function(c) { return c.style.height === '196px'; }) &&   /* v0.78.5: 一律の枠・何もない日は帯 */ !/今日考えたこと/.test(_ja.textContent);
        _r627.line = koyomiJournalSeasonLine('2026-11-18', false).indexOf('の頃。') !== -1 && koyomiJournalSeasonLine('2026-11-18', true).length > koyomiJournalSeasonLine('2026-11-18', false).length && koyomiJournalSeasonLine('2026-11-18', true) === koyomiJournalSeasonLine('2026-11-18', true);
        _r627.send = /item && item\.date/.test(saveScratchItemAsJournal.toString()) && !/journals\[existing\]\.text = t/.test(saveScratchItemAsJournal.toString());
        allTasks = _bk627; renderScratchView(); renderJournalView();
@@ -93445,43 +92918,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          else { ng('LPAG[' + label + ']', '❌ ' + detail); }
        };
 
-     // ===== ST-221: 季節の風 自動補完 TDD =====
-     try {
-       ok('');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-       ok('  ST-221: 季節の風 自動補完 _autoFillOnJournalOpen TDD');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-       // ① window公開確認
-       _checkResult('ST-221·①', typeof window._autoFillOnJournalOpen === 'function', '_autoFillOnJournalOpen がwindow公開されている');
-       // ② 実行ガード確認（第37条：saveAllTasksモック化）
-       var _r221prevSave = window.saveAllTasks;
-       window.saveAllTasks = function(){};
-       var _r221prevFill = window.autoFillEmptyJournals;
-       var _r221callCount = 0;
-       window.autoFillEmptyJournals = function(){ _r221callCount++; return 0; };
-       // 元の値を退避（第57条：副作用連鎖の退避・復元）
-       var _r221origLastFill = localStorage.getItem('_lastAutoFillDate');
-       // 今日実行済みをセット → スキップされるはず
-       var _r221today = getLocalDateStr(new Date());
-       localStorage.setItem('_lastAutoFillDate', _r221today);
-       _autoFillOnJournalOpen();
-       _checkResult('ST-221·②', _r221callCount === 0, '今日実行済みなら autoFillEmptyJournals を呼ばない');
-       // ③ 未実行なら実行される
-       localStorage.removeItem('_lastAutoFillDate');
-       _r221callCount = 0;
-       _autoFillOnJournalOpen();
-       _checkResult('ST-221·③', _r221callCount === 1, '未実行なら autoFillEmptyJournals を1回呼ぶ');
-       // ④ 実行後 _lastAutoFillDate が今日になっている
-       _checkResult('ST-221·④', localStorage.getItem('_lastAutoFillDate') === _r221today, '実行後 _lastAutoFillDate が今日になっている');
-       // 復元（元の値があればsetItem、なければremoveItem）
-       window.saveAllTasks = _r221prevSave;
-       window.autoFillEmptyJournals = _r221prevFill;
-       if (_r221origLastFill !== null) { localStorage.setItem('_lastAutoFillDate', _r221origLastFill); }
-       else { localStorage.removeItem('_lastAutoFillDate'); }
-       ok('ST-221: 季節の風 自動補完 TDD 完了');
-     } catch(e) {
-       ng('ST-221: 例外', e.message);
-     }
+     // ST-221（季節の風の自動補完）は v0.78.10 で外した。季節の一行は表示のたびに作る（ST-627）
 
      // ===== ST-223: 完全自動同期（後勝ち方式）の実装確認（v0.45.1306〜、v0.45.1362で統一エンジン用に更新） =====
      try {
@@ -98187,9 +97624,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _checkResult('第56条', _r58ok, '廃止済みrenderFinanceCalendarViewの再発なし確認（既存ビュー尊重）');
 
        // 第57条【副作用連鎖の退避・復元と「汚染→修復」の透明バグ防止】
-       var _r59src = typeof _autoFillOnJournalOpen === 'function' ? _autoFillOnJournalOpen.toString() : '';
-       var _r59ok = _r59src.length > 0; // 関数存在確認＋ST-221が退避復元パターンを別途検証
-       _checkResult('第57条', _r59ok, '_autoFillOnJournalOpen存在確認（退避復元パターンはST-221で実挙動検証済み）');
+       // v0.78.10: 確かめる先を、今ある「退避して戻す」テスト（ST-628：メモの引っ越し）に付け替えた
+       var _r59ok = typeof koyomiMemoMigrate === 'function' && /_bk628/.test(_stAllSrc());
+       _checkResult('第57条', _r59ok, '副作用の退避と復元（ST-628 がメモの引っ越しで、控え→戻すを確かめている）');
 
        // 第58条【パターン検索型チェックは自分の説明文を巻き込む（自己参照検知バグ）】
        // 確認方法：第47条・第55条の除外境界が、_RULES_DATA直後に必ず続く実コードまで
@@ -99910,8 +99347,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // 帯も同じ高さの枠に（並びを崩さない）。中に、その日々の候を1行ずつ
             return '<div data-jnl-virtual="1" data-jnl-band="' + j.dates.length + '" style="height:' + _cardH + 'px;box-sizing:border-box;overflow:hidden;padding:12px 16px;border-radius:10px;border:1px dashed rgba(180,165,140,0.45);background:rgba(180,165,140,0.06);color:var(--ink-faint);font-family:serif;">'
               + '<div style="font-size:0.74em;font-weight:700;letter-spacing:0.04em;margin-bottom:6px;">🍃 ' + _escapeHtml(_lbl) + '　何も書かなかった日' + (j.dates.length > 1 ? '（' + j.dates.length + '日）' : '') + '</div>'
-              + j.dates.slice(0, 6).map(function(d) { return '<div style="font-size:0.68em;line-height:1.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _escapeHtml(_md(d) + '　' + koyomiJournalSeasonLine(d, false)) + '</div>'; }).join('')
-              + (j.dates.length > 6 ? '<div style="font-size:0.66em;opacity:0.7;">ほか ' + (j.dates.length - 6) + '日</div>' : '')
+              // v0.78.11: 【権威】2026-11-18「何もなかった日の枠を押したら、その日の日誌に書き始められるように」→ 1日ずつ押せる行に
+              + j.dates.slice(0, 6).map(function(d) { return '<div data-jnl-write="' + _escapeHtml(d) + '" onclick="event.stopPropagation();openNewJournal(\'' + _escapeHtml(d) + '\')" title="この日の日誌を書く" style="font-size:0.68em;line-height:1.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-radius:6px;padding:0 4px;margin:0 -4px;">' + _escapeHtml(_md(d) + '　' + koyomiJournalSeasonLine(d, false)) + ' <span style="color:var(--washi-blue);">✎</span></div>'; }).join('')
+              + (j.dates.length > 6 ? '<div style="font-size:0.66em;opacity:0.7;">ほか ' + (j.dates.length - 6) + '日（「記す」で日付を選んで書けます）</div>' : '')
               + '</div>';
           }
           const _thoughts = getThoughts(j.id);
@@ -100468,8 +99906,9 @@ function deleteJournal(id) {
 
     function showScratchOnboarding() {
       _showOnboardingModal([
-        { emoji: '✏️', title: 'あ、フレッシュ。', body: 'いつ開いても、白紙から始められる。<br>昨日の自分が残したものは、もうここにない。<br>時間が、勝手に片付けてくれた。' },
-        { emoji: '🌊', title: 'また、考えてみよ。', body: '書いたことは消えていない。日誌に届いている。<br>捨てたわけじゃない、退避しただけ。<br>だからここはいつでも、考える場所になる。' },
+        // v0.78.10: 雑記帳は自動で日誌に移らなくなった（v0.78.0）ので、説明を今の動きに合わせた
+        { emoji: '✏️', title: 'あ、ここに残ってる。', body: '書いたものは、ここに残る。<br>今日の分は上に、前の日の分は日付ごとに下に。<br>勝手に消えたり、動いたりしない。' },
+        { emoji: '🦋', title: '残したいものは、日誌へ。', body: '「日誌に」を押すと、書いた日の日誌に入る。<br>戻したくなったら、日誌から「雑記帳へ」。<br>どこに置くかは、あなたが決める。' },
         { emoji: '📋', title: 'あ、スッキリしてる。', body: 'タスクにしたいなら、「タスクに」を押すだけ。<br>したくなければ、しなくていい。<br>強制はない。あなたが主役だ。' },
         { emoji: '🏰', title: 'あ、スッキリはじめられた。', body: '今日も、なんでも書いていい。<br>ここはあなたの庭の、作業台。<br>さあ、はじめよう。' },
       ]);
@@ -100477,8 +99916,8 @@ function deleteJournal(id) {
 
     function showJournalOnboarding() {
       _showOnboardingModal([
-        { emoji: '📬', title: 'あ、来てる。', body: '昨日の雑記帳が、今日の日誌になっている。<br>整理した覚えはない。<br>それでいい。時間がやってくれた。' },
-        { emoji: '💭', title: 'また、考えてみよ。', body: '断片が、行ごとに届いている。<br>捨てなくていい。戻せる。動かせる。<br>思考はまだ、生きている。' },
+        { emoji: '📬', title: 'あ、並んでる。', body: '雑記帳から「日誌に」送ったものが、その日の日誌に並ぶ。<br>開かなくても、一覧で読める。<br>長い日は「続きを読む」で。' },
+        { emoji: '🍃', title: '季節の一行。', body: 'どの日にも、その日の七十二候が添えられる。<br>何も書かなかった日にも。<br>暦が、あの日を覚えている。' },
         { emoji: '📝', title: 'あ、残ってた。', body: '「雑記帳へ」で今日の作業台へ戻せる。<br>複数まとめて戻せるから、流れが途切れない。<br>日誌は墓場じゃない。思考の中継地点だ。' },
         { emoji: '🎨', title: 'おしゃれな日記帳みたい。', body: '左側に日付・曜日。和紙のような温かみ。<br>気分・体調・天気も絵文字で刻める。<br>文章がなくても、あの日が残る。' },
         { emoji: '🗓️', title: '過去の日付にも、書ける。', body: '「記す」ボタンから日付を指定して作れる。<br>昨日のことを今日書いてもいい。<br>記録に、締め切りはない。' },
@@ -100486,12 +99925,13 @@ function deleteJournal(id) {
     }
 
     // 日誌の新規作成モーダル
-    function openNewJournal() {
+    function openNewJournal(presetDate) {   // v0.78.11: 何も書かなかった日の枠から、その日を選んだ状態で開ける
       var MOOD_E = ['','😞','😐','🙂','😊','🌟'];
       var COND_E = ['','🤒','😴','😐','💪','⚡'];
       var WEAT_E = ['☀️','🌤️','☁️','🌧️','⛄'];
       var today = new Date();
       var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+      if (typeof presetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(presetDate)) todayStr = presetDate;
       window._newJournalMeta = { mood:0, condition:0, weather:'' };
       window._newJournalText = '';
       // v0.45.1708: 【権威】2026-08-21、新規作成では日付も気分も天気も出てこず、
