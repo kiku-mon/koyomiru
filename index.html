@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.83.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.83.4 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.83.3';
+    const APP_VERSION = 'v0.83.4';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6785,7 +6785,8 @@ function _showInviteWelcome() {
           // v0.59.0: 季節の風だよりに一本化。注文票を聞く回は先に注文票（順番に出す道具が待たせる）。出すかは「出てくる時」で決める
           try { if (typeof maybeShowKoyomiToday === 'function') maybeShowKoyomiToday(); } catch (eM) {}
           if (typeof koyomiKazeAutoDecision === 'function' && !koyomiKazeAutoDecision()) return;
-          whenStartupClear(function() { if (typeof _koyomiMarkKazeShown === 'function') _koyomiMarkKazeShown(); showKazedayoriModal(); });
+          // v0.83.4: 被災した町の掲示板に関わっている人には、季節の風だよりの代わりに掲示板の案内を出す（下から風だよりも読める）
+          whenStartupClear(function() { if (typeof _koyomiMarkKazeShown === 'function') _koyomiMarkKazeShown(); if (typeof window.koyomiSaigaiStartupInstead === 'function' && window.koyomiSaigaiStartupInstead()) return; showKazedayoriModal(); });
         };
         if (document.readyState === 'complete') _kzDecide(); else window.addEventListener('load', function() { setTimeout(_kzDecide, 0); }, { once: true });
       } catch(e) {}
@@ -61108,6 +61109,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.83.4', date: '2026-11-18',
+    items: [
+      { icon:'🌙', t:'災害復旧掲示板に、使い方と今夜の月を置きました',
+        before:'はじめて開いた方が、どう使えばよいか迷うことがありました',
+        after:'いちばん上に3行の使い方（✕で閉じられます）、いちばん下に今夜の月の形と名前を出します' },
+      { icon:'🆘', t:'被災した町の掲示板に関わっている方には、開いたときに掲示板をご案内します',
+        before:'災害のさなかでも、開くといつもの季節の風だよりが出ていました',
+        after:'季節の風だよりの代わりに、その町の災害復旧掲示板をご案内します。風だよりも、そこから読めます' }
+    ]
+  },
+  {
     ver: 'v0.83.3', date: '2026-11-18',
     items: [
       { icon:'⚖️', t:'利用規約に「災害復旧掲示板」の決まりを足しました（2026年11月25日から適用）',
@@ -71409,7 +71421,7 @@ function _tayoriLoadMeta() {
     rpcWithTimeout('koyomiru_tayori_modes_active', {}, 8000)
   ]).then(function(rs) {
     if (rs[0] && !rs[0].error && Array.isArray(rs[0].data) && rs[0].data.length) _koyomiTayori.cats = rs[0].data.map(_tayoriFromServerCat);
-    if (rs[1] && !rs[1].error && Array.isArray(rs[1].data)) _koyomiTayori.modes = rs[1].data;
+    if (rs[1] && !rs[1].error && Array.isArray(rs[1].data)) { _koyomiTayori.modes = rs[1].data; try { if (!window._isTesting && !window._smokeTestRunning) _tayoriRememberRelated(); } catch (eR) {} }
     try { _tayoriSyncNav(); } catch (e) {}
   }).catch(function() {});
 }
@@ -72366,7 +72378,7 @@ function _tayoriRenderDisaster(host) {
     head = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 10px;"><div style="font-size:1.1em;font-weight:700;color:#3b3226;">' + _tayoriEsc((d.label || 'すべて') + '・' + (d.near ? '今いる近く' : (d.area || 'どこでも'))) + '</div>' +
       '<button type="button" data-td-reset style="flex-shrink:0;min-height:44px;padding:0 12px;border:1px solid #d9cfbf;border-radius:10px;background:#fff;color:#3b3226;font-size:0.9em;cursor:pointer;font-family:inherit;">さがし直す</button></div>';
   } else {
-    head = '<input type="search" data-td-q value="' + _tayoriEsc(_koyomiTayori.q || '') + '" placeholder="🔍 何をさがしていますか？（例：水、おにぎり）" style="width:100%;box-sizing:border-box;min-height:56px;padding:0 14px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;font-size:1.02em;font-family:inherit;margin:4px 0 10px;">' +
+    head = _tayoriGuideHtml() + '<input type="search" data-td-q value="' + _tayoriEsc(_koyomiTayori.q || '') + '" placeholder="🔍 何をさがしていますか？（例：水、おにぎり）" style="width:100%;box-sizing:border-box;min-height:56px;padding:0 14px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;font-size:1.02em;font-family:inherit;margin:4px 0 10px;">' +
       (_koyomiTayori.q ? '' : '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">' + KOYOMI_TAYORI_QUICK.map(function(x) { return _tayoriBigBtn('data-td-quick="' + x.id + '"', x.emoji, x.label); }).join('') + '</div>') +
       (_koyomiTayori.only ? '<div style="margin:0 0 8px;font-size:0.92em;color:#8a6d1e;">' + (_koyomiTayori.only === 'fav' ? '📌 覚えておいた場所だけを出しています' : '自分が書いたものだけを出しています') + '　<button type="button" data-td-only-off style="border:none;background:none;color:#3b6ea5;text-decoration:underline;cursor:pointer;font-size:1em;font-family:inherit;">すべてにもどす</button></div>' : '') +
       '<div style="font-size:0.95em;font-weight:700;color:#5a4e3c;margin:4px 2px 8px;">掲示板の書き込み（使えるもの・新しい順）</div>';
@@ -72404,7 +72416,9 @@ function _tayoriRenderDisaster(host) {
   var foot = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 6px;">' +
     '<button type="button" data-td-map style="min-height:56px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;color:#3b3226;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">🗺 地図で見る</button>' +
     '<button type="button" data-td-post style="min-height:56px;border:none;border-radius:14px;background:#9f2a22;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">＋ 掲示板に書く</button></div>';
-  w(head + body + foot);
+  w(head + body + foot + _tayoriMoonHtml());
+  _tayoriDrawMoon(box);
+  var go = box.querySelector('[data-td-guideoff]'); if (go) go.onclick = function() { _tayoriLSSet('tayoriGuideOff', 1); _tayoriRenderDisaster(host); };
   [].forEach.call(box.querySelectorAll('[data-tayori-card]'), function(el) { var id = el.getAttribute('data-tayori-card'); var r = rows.filter(function(x) { return String(x.id) === id; })[0]; if (r) _tayoriWirePopup(el, r); });
   var qi = box.querySelector('[data-td-q]');
   if (qi) qi.oninput = function() { _koyomiTayori.q = qi.value; clearTimeout(_koyomiTayori.qt); _koyomiTayori.qt = setTimeout(function() { var pos = qi.selectionStart; _tayoriRenderDisaster(host); var q2 = box.querySelector('[data-td-q]'); if (q2) { q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (e) {} } }, 300); };
@@ -72850,6 +72864,51 @@ function _tayoriStartWizard() {
   }
   draw();
 }
+// ===== v0.83.4: 掲示板の使い方のカード・月・起動のときの案内 =====
+// 【権威】2026-11-18 最高峰会議の切り分けに「いいと思う」。「一行だけじゃなく月の形も出して。月の形が励みになる人もいる」
+//   ① 掲示板のいちばん上に3行の使い方（窓でふさがない・✕で閉じる） ② いちばん下に今夜の月の形と名前
+//   ③ 被災した町に関わっている人には、起動のとき季節の風だよりの代わりに掲示板の案内（風だよりも下から読める）
+function _tayoriGuideHtml() {
+  if (_tayoriLS('tayoriGuideOff', 0)) return '';
+  return '<div data-td-guide style="position:relative;background:#f4f8fc;border:1px solid #c9d9ea;border-radius:14px;padding:12px 40px 12px 14px;margin:0 0 12px;line-height:1.75;">' +
+    '<button type="button" data-td-guideoff title="閉じる" style="position:absolute;top:6px;right:6px;width:34px;height:34px;border:none;background:none;color:#7a8a9a;font-size:1.1em;cursor:pointer;">✕</button>' +
+    '<div style="font-weight:700;color:#234d7a;margin-bottom:4px;">この掲示板の使い方</div>' +
+    '<div style="color:#3b3226;">① 「何をさがしていますか？」で、水やトイレなどを探せます</div>' +
+    '<div style="color:#3b3226;">② 見かけたら「＋ 掲示板に書く」。見るだけなら登録はいりません</div>' +
+    '<div style="color:#3b3226;">③ 自治体などの公式の発表も、あわせてご確認ください</div></div>';
+}
+function _tayoriMoonHtml() {
+  try {
+    var now = new Date(), age = (typeof calcMoonAgeNAOJ === 'function') ? calcMoonAgeNAOJ(now) : null;
+    if (age == null || !isFinite(age)) return '';
+    var nm = (typeof koyomiMoonOfDay === 'function') ? koyomiMoonOfDay(now) : null;
+    return '<div data-td-moon style="display:flex;align-items:center;justify-content:center;gap:10px;margin:18px 0 6px;color:#5a4e3c;">' +
+      '<canvas data-td-mooncv width="44" height="44" style="width:44px;height:44px;"></canvas>' +
+      '<div style="line-height:1.5;"><div style="font-weight:600;">今夜の月' + (nm ? '：' + _tayoriEsc(nm.name) : '') + '</div><div style="font-size:0.85em;color:#8a7d6b;">月齢 ' + (Math.round(age * 10) / 10).toFixed(1) + '</div></div></div>';
+  } catch (e) { return ''; }
+}
+function _tayoriDrawMoon(box) {
+  var cv = box && box.querySelector('[data-td-mooncv]'); if (!cv || typeof _drawMiniMoon !== 'function') return;
+  try { var now = new Date(); _drawMiniMoon(cv, calcMoonAgeNAOJ(now), (typeof _currentMoonTiltDeg === 'function') ? _currentMoonTiltDeg(now) : 0, 44); } catch (e) {}
+}
+// 起動のとき：関わっている掲示板があれば、風だよりの代わりに案内を出す（覚えておくのは、名前と時刻だけ）
+function _tayoriRememberRelated() {
+  var m = _tayoriMode();
+  if (m) _tayoriLSSet('tayoriLastRelated', { id: m.id, name: String(m.name || '').slice(0, 40), at: Date.now() });
+  else { try { localStorage.removeItem('tayoriLastRelated'); } catch (e) {} }
+}
+function koyomiSaigaiStartupInstead() {
+  if (window._koyomiruEntryMode === 'saigai') return true;   // リンクから来た人には、もともと出さない
+  var r = _tayoriLS('tayoriLastRelated', null);
+  if (!r || !r.id || !(Date.now() - Number(r.at) < 72 * KOYOMI_TAYORI_H)) return false;
+  showChoiceModal({ title: '🆘 ' + _tayoriEsc(r.name) + 'の災害復旧掲示板', desc: '大変な中、おつかれさまです。水・食べもの・トイレ・開いているお店などを、町の人どうしで知らせ合っています。見かけたことがあれば、ひとことでも書いていただけると助かります。', buttons: [
+    { label: '掲示板を開く', style: 'primary', onClick: function() { try { switchView('tayori'); } catch (e) {} _tayoriLoadMeta().then(function() { if (_tayoriModeActive(r.id)) _tayoriOpenMode(r.id); }); } },
+    { label: '🍃 季節の風だよりを読む', style: 'cancel', onClick: function() { if (typeof showKazedayoriModal === 'function') showKazedayoriModal(); } },
+    { label: '閉じる', style: 'cancel' }
+  ] });
+  return true;
+}
+window.koyomiSaigaiStartupInstead = koyomiSaigaiStartupInstead;
 // v0.83.0: 【権威】2026-11-18「緊急災害復旧モードは、アカウントの下や設定に常設して。季節のたよりを使っている人しか分からない。
 //   サブタイトルで、誰でも市区町村の災害復旧掲示板を起動できます、と」→ アカウントのメニューと設定のプロフィールから開く入口
 function openKoyomiSaigaiHub() {
@@ -90628,7 +90687,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _src = document.documentElement.outerHTML;
        // v0.59.0: 【第67条④】今日の暦のカードは無くし、季節の風だよりに一本化した
        (['oshiraseModal', 'kazedayoriModal', 'koyomiOrderOverlay', 'setupOverlay'].every(function(x) { return _ids.indexOf(x) !== -1; }) && _ids.indexOf('koyomiTodayOverlay') === -1 && _busy1 === true && _calls1 === 0 &&
-        /whenStartupClear\(function\(\) \{ if \(typeof _koyomiMarkKazeShown === 'function'\) _koyomiMarkKazeShown\(\); showKazedayoriModal\(\); \}\)/.test(_src) &&
+        // v0.83.4: 被災した町に関わる人には、風だよりの代わりに掲示板の案内（同じ順番の道具の中で切り替える）
+        /whenStartupClear\(function\(\) \{ if \(typeof _koyomiMarkKazeShown === 'function'\) _koyomiMarkKazeShown\(\); if \(typeof window\.koyomiSaigaiStartupInstead === 'function' && window\.koyomiSaigaiStartupInstead\(\)\) return; showKazedayoriModal\(\); \}\)/.test(_src) &&
         /whenStartupClear\(function\(\) \{\s*if \(typeof openOshiraseModal === 'function'\) openOshiraseModal\(\);/.test(_src))
          ? ok('ST-460·①: お知らせ・注文票・季節の風だよりは、ほかの画面が開いている間は待ち、1つずつ順番に出る（同じ1つの道具を通す）')
          : ng('ST-460·①: 起動の画面の出し方が違う', _ids + ' / ' + _busy1 + ',' + _calls1);
@@ -94358,6 +94418,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r651.notes = /var _id = '019e3a10-1000-7000-9000-000000000022', _title = "💬 LINEでログインするとき"/.test(_src651) && _src651.indexOf("addMigration('mig_note_id_split_v1'") !== -1 && _src651.indexOf("addMigration('mig_saigai_note_v1'") !== -1;
        // 利用規約に、災害復旧掲示板の節（公的機関の発表を優先・禁止事項・運営の措置）と、適用日の周知
        _r651.terms = /4の2\.<\/span>災害復旧掲示板/.test(_src651) && /公的機関の発表と指示を優先/.test(_src651) && /第4条の2 災害復旧掲示板、第7条 免責事項）は、<b>2026年11月25日から適用/.test(_src651);
+       // 使い方のカード・今夜の月・起動のときの案内（v0.83.4）
+       _r651.guide = /この掲示板の使い方/.test(_tayoriGuideHtml.toString()) && /data-td-guideoff/.test(_rd651 + _tayoriRenderDisaster.toString()) && /_tayoriMoonHtml\(\)/.test(_tayoriRenderDisaster.toString()) && (_tayoriMoonHtml() === '' || /今夜の月/.test(_tayoriMoonHtml())) &&
+         typeof window.koyomiSaigaiStartupInstead === 'function' && /koyomiSaigaiStartupInstead/.test(_src651);
        var _bad651 = Object.keys(_r651).filter(function(k) { return !_r651[k]; });
        !_bad651.length ? ok('ST-651: 緊急災害復旧モードを常設（アカウント・設定）・リンクから来た人には掲示板だけ・募集の案内・自由帳の番号の重なりを直す')
          : ng('ST-651: 緊急災害復旧モードの入口・掲示板が違う', _bad651.join(','));
