@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.77.5';
+    const APP_VERSION = 'v0.78.1';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7495,6 +7495,7 @@ function _showInviteWelcome() {
         <textarea class="scratch-input" id="scratchInput" placeholder="なんでも…" rows="1" autocomplete="off" name="koyomiru-scratch-input"></textarea>
         <button class="scratch-hodokosu-btn" id="scratchHodokusuBtn" onclick="window.addScratchHodokosu()" title="貢献として記録（見える貢献・見えない貢献を自動判定）" style="display:none;">🤲<span class="scratch-hodokosu-label">人のためにほどこす</span></button>
       </div>
+      <div id="scratchPastList"></div><!-- v0.78.0: 前の日までの雑記（書く欄の下に、日付ごと） -->
       <div id="scratchBottomPad" style="height:400px;background-image:repeating-linear-gradient(to bottom,transparent 0px,transparent 47px,#e6e0d4 47px,#e6e0d4 48px);pointer-events:none;"></div>
 
     </div>
@@ -10085,16 +10086,10 @@ function _showInviteWelcome() {
           <p style="font-size:0.72em;color:#888;margin:0 0 10px 0;">初回モーダルを再表示したい場合にリセット</p>
           <button onclick="allSettings.flags.hodokusuFirstDone=false;saveAllSettings();showToast&&showToast('リセット完了。次回ほどこす時にモーダルが出ます',{type:'success'});" style="width:100%;padding:9px;background:transparent;border:1px solid #7c3aed;border-radius:8px;color:#a78bfa;font-size:0.82em;cursor:pointer;">🔄 ほどこすモーダルをリセット</button>
         </div>
-        <!-- v0.45.534〜 日誌空日補完 -->
-        <div id="adminAutoFillJournalArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
-          <div style="font-size:0.82em;font-weight:700;color:#80deea;margin-bottom:8px;">📓 日誌の空日を補完する</div>
-          <!-- v0.45.535〜 補完前に容量を確認するためのパネル -->
-          <div style="background:rgba(128,222,234,0.06);border:1px solid rgba(0,172,193,0.3);border-radius:8px;padding:8px 10px;margin-bottom:10px;">
-            <div style="font-size:0.72em;color:#80deea;font-weight:700;margin-bottom:3px;">📊 補完前の容量チェック</div>
-            <div id="adminStorageUsage" style="font-size:0.78em;color:#888;line-height:1.5;">💾 容量確認中...</div>
-          </div>
-          <p style="font-size:0.72em;color:#888;margin:0 0 10px 0;">最古の記録〜昨日までの「日誌も雑記もない日」に、天象・月齢・七十二候のメモを1件ずつ追加します。実行前に件数の確認モーダルが出ます。</p>
-          <button id="adminAutoFillJournalBtn" onclick="openAutoFillJournalConfirm()" style="width:100%;padding:9px;background:transparent;border:1px solid #00acc1;border-radius:8px;color:#80deea;font-size:0.82em;cursor:pointer;">📓 日誌の空日を補完する</button>
+        <!-- v0.78.0: 日誌の空日の自動補完（とその管理者ボタン）はやめた。季節の一行は表示のたびに作る。容量の確かめだけ残す -->
+        <div id="adminStorageArea" style="margin-top:14px;border-top:1px solid #333;padding-top:14px;">
+          <div style="font-size:0.82em;font-weight:700;color:#80deea;margin-bottom:8px;">📊 この端末の容量</div>
+          <div id="adminStorageUsage" style="font-size:0.78em;color:#888;line-height:1.5;">💾 容量確認中...</div>
         </div>
         <!-- v0.45.1408: 【権威】2026-07-25、開発者が「誰がどの共有カレンダーに
              参加したか」を把握できる場所が必要との要望を受け、管理者パネル専用の
@@ -12740,7 +12735,7 @@ function koyomiRenderRituals(host, esc, date) {
         // v0.70.4: 【権威】2026-11-03、「今日のありがとうは日誌に残らないの？」との指摘。ありがとう（と冬至）は、その日の日誌にも残す。書き直したときは同じ一言を書き換える
         if (r.journal) {
           try {
-            var jid = _koyomiRitualLog()[r.input + ':jid'], th = jid ? allTasks.filter(function(x) { return x && x.id === jid && x.kind === 'thought'; })[0] : null;
+            var jid = _koyomiRitualLog()[r.input + ':jid'], th = jid ? allTasks.filter(function(x) { return x && x.id === jid && (x.kind === 'thought' || koyomiIsJournalMemo(x)); })[0] : null;
             if (th) { th.text = (r.journal + t).slice(0, 500); th.updatedAt = new Date().toISOString(); saveAllTasks(); }
             else { var nid = saveKoyomiTodayWord(r.journal + t); if (nid) _koyomiRitualSave(r.input + ':jid', nid); }
           } catch (eJ) {}
@@ -17662,6 +17657,7 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
     function recordSourceLabel(t) {
       var cal = calendarForRecord(t);
       if (cal) return cal.name;
+      if (t && t.kind === 'scratch' && t.place === 'journal') return RECORD_KIND_LABELS.thought;   // v0.78.1: 日誌に置いたメモ
       if (t && RECORD_KIND_LABELS[t.kind]) return RECORD_KIND_LABELS[t.kind];
       if (t && t.calendarId && t.calendarId !== 'default') return '手元に無いカレンダー';
       return '';
@@ -19226,7 +19222,7 @@ function renderTodoList() {
     }
     function _searchSectionOf(t) {
       var k = t && t.kind;
-      if (k === 'thought' || k === 'journal') return 'journal';
+      if (k === 'thought' || k === 'journal' || koyomiIsJournalMemo(t)) return 'journal';
       if (k === 'scratch') return 'scratch';
       if (k === 'zen') return 'zen';
       return 'task';
@@ -19430,7 +19426,7 @@ function renderTodoList() {
       // 編集するかどうかは、着いてから本人が決める。
       row.onclick = () => {
         closeSearchModal();
-        var _jid = t.kind === 'thought' ? t.parentId : (t.kind === 'journal' ? t.id : null);
+        var _jid = t.kind === 'thought' ? t.parentId : (t.kind === 'journal' ? t.id : (koyomiIsJournalMemo(t) ? ((koyomiJournalCover(t.date, false) || {}).id || null) : null));
         if (_jid && typeof openJournalDetail === 'function') { if (typeof switchView === 'function') switchView('journal'); setTimeout(function() { openJournalDetail(_jid); }, 60); return; }
         jumpToTaskDate(t);
       };
@@ -27509,7 +27505,7 @@ function saveKoyomiTodayWord(text) {
   var j = allTasks.filter(function(t) { return t && t.kind === 'journal' && t.date === today; })[0];
   if (!j) { j = { id: generateTaskId(), kind: 'journal', date: today, text: '', thoughts: [], mood: 0, condition: 0, weather: '', savedAt: now, createdAt: now, updatedAt: now }; allTasks.push(j); }
   var tid = generateTaskId();
-  allTasks.push({ id: tid, kind: 'thought', parentId: j.id, text: text.slice(0, 500), createdAt: now, updatedAt: now });
+  allTasks.push({ id: tid, kind: 'scratch', place: 'journal', date: today, text: text.slice(0, 500), createdAt: now, updatedAt: now });   // v0.78.1: 日誌に置いたメモ
   saveAllTasks();
   return tid;   // v0.70.4: 書き直しのとき同じ一言を書き換えられるよう、id を返す（真偽で使う呼び手はそのまま動く）
 }
@@ -36173,7 +36169,7 @@ function saveMsbEdit() {
     // 発願タブの表示制御（管理者設定連動）
     // ===== 雑記帳 CRUD =====
     function getScratchItems() {
-      return allTasks.filter(t => t.kind === 'scratch' || t.kind === 'zen')
+      return allTasks.filter(t => (t.kind === 'scratch' || t.kind === 'zen') && t.place !== 'journal')   // v0.78.1: 日誌に置いたメモは雑記帳に出さない
         .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     }
     // アイテムをインライン編集モードに切り替え
@@ -36279,16 +36275,40 @@ function saveMsbEdit() {
       setTimeout(() => renderScratchView(), 180);
     }
     function renderScratchView() {
+      try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); } catch (eMM) {}   // v0.78.1: 同期で古い一言が届いても、ここで引っ越す
       const today = new Date();
       const label = document.getElementById('scratchDateLabel');
       if (label) {
         const w = ['日','月','火','水','木','金','土'][today.getDay()];
         label.textContent = `${today.getMonth()+1}月${today.getDate()}日（${w}）`;
       }
-      const list = document.getElementById('scratchList');
-      if (!list) return;
-      list.innerHTML = '';
-      getScratchItems().forEach(item => {
+      const list0 = document.getElementById('scratchList');
+      if (!list0) return;
+      list0.innerHTML = '';
+      const past0 = document.getElementById('scratchPastList');
+      if (past0) past0.innerHTML = '';
+      var list = list0;
+      // v0.78.0: 【権威】2026-11-18 自動で日誌に移さなくなったので、日付ごとに並べる。今日の分がいちばん上、前の日の分は下へ（A）
+      var _todayK = getLocalDateStr(today), _byDay = {};
+      getScratchItems().forEach(function(it) {
+        var k = it.date || (it.createdAt ? getLocalDateStr(new Date(it.createdAt)) : _todayK);
+        (_byDay[k] = _byDay[k] || []).push(it);
+      });
+      var _days = Object.keys(_byDay).sort(function(a, b) { return b.localeCompare(a); });
+      var _wk = ['日','月','火','水','木','金','土'];
+      _days.forEach(function(dk) {
+        list = (dk === _todayK || !past0) ? list0 : past0;   // 今日の分は書く欄の上、前の日の分は書く欄の下
+        if (dk !== _todayK) {
+          var hd = document.createElement('div');
+          hd.className = 'scratch-day-head'; hd.setAttribute('data-scratch-day', dk);
+          var dd = new Date(dk.replace(/-/g, '/') + ' 12:00:00');
+          hd.textContent = dk === _todayK ? '今日' : ((dd.getFullYear() !== today.getFullYear() ? dd.getFullYear() + '年' : '') + (dd.getMonth() + 1) + '月' + dd.getDate() + '日（' + _wk[dd.getDay()] + '）');
+          hd.style.cssText = 'font-size:0.74em;font-weight:700;color:#a09080;letter-spacing:0.06em;padding:12px 16px 4px;border-top:1px dashed rgba(150,140,130,0.35);margin-top:8px;';
+          list.appendChild(hd);
+        }
+        _byDay[dk].forEach(function(item) { _renderScratchRow(item); });
+      });
+      function _renderScratchRow(item) {
         const div = document.createElement('div');
         div.className = 'scratch-item' + (item.kind === 'task' ? ' promoted' : '') + (item.kind === 'zen' ? ' zen-item' : '');
         div.dataset.id = item.id;
@@ -36310,7 +36330,7 @@ function saveMsbEdit() {
           });
         }
         list.appendChild(div);
-      });
+      }
       // 新規入力欄の初期化
       const input = document.getElementById('scratchInput');
       if (input) {
@@ -40588,20 +40608,9 @@ window._repairCloudCalendarIds();
     }
     validateCalendarIds();
 
-    // ===== 孤立thought自動クリーンアップ（毎起動Guardian） =====
-    (function() {
-      try {
-        var _journalIds = new Set(allTasks.filter(function(t){ return t.kind==='journal'; }).map(function(t){ return t.id; }));
-        var _orphans = allTasks.filter(function(t){ return t.kind==='thought' && !_journalIds.has(t.parentId); });
-        if (_orphans.length > 0) {
-          var _orphanIds = new Set(_orphans.map(function(t){ return t.id; }));
-          allTasks = allTasks.filter(function(t){ return !_orphanIds.has(t.id); });
-          _orphanIds.forEach(function(id) { if (typeof _propagateDeletion === 'function') _propagateDeletion(id); });   // v0.71.2: 総点検。親の日誌が無い一言
-          saveAllTasks();
-          window._dbgLog && window._dbgLog('orphan thoughts cleaned: ' + _orphans.length + '件');
-        }
-      } catch(e) { console.error('[orphan_thought_guardian]', e); }
-    })();
+    // ===== v0.78.1: 「親の日誌が無い一言を消す」見張りはやめた（親がまだ届いていないだけのことがあり、消すと全端末から消えていた）。
+    //   代わりに、起動のたびにメモの引っ越しを動かす（何度動かしても同じ。消さない。親の無い一言は雑記帳へ）
+    try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); } catch (eMM) { console.error('[memo_migrate]', eMM); }
 
     // ===== 自動バックアップ（日次・7世代管理） =====
     (function() {
@@ -40662,7 +40671,7 @@ window._repairCloudCalendarIds();
       // ===== バリエーション文のプール構築 =====
       // 汎用（無条件で常に候補）
       var pool = [
-        '雑記帳は白いままだった。',
+        '日誌は白いままだった。',   // v0.78.0: 雑記帳は日誌に移らなくなったので「日誌は」
         'この日、王国は静かに息をしていた。',
         '今日は何も刻まれていない。',
         '王国はただ、廻っていた。',
@@ -42058,15 +42067,15 @@ window._repairCloudCalendarIds();
       if (typeof renderScratchView === 'function') renderScratchView();
       _dbgLog && _dbgLog('moveScratchToThoughts done. moved=' + oldS.length);
     }
-    moveScratchToThoughts();
-    // 日付変更監視：1分ごとに日付チェックし、日付が変わったら自動実行
+    // v0.78.0: 【権威】2026-11-18 最高峰会議「雑記帳から日誌に自動で移すのはやめる。日誌に保存したければ自分で。季節の一行は保存せず表示のたびに作る。自動補完の管理者ボタンも消す（紛らわしい）」1回目＝データには触らない
+    //   → 自動で移す呼び出しはすべて外した（関数は2回目の引っ越しまで残す）。日付が変わったら、雑記帳の並びを描き直すだけ
+    // 日付変更監視：1分ごとに日付チェックし、日付が変わったら描き直す
     (function() {
       var _lastCheckedDate = getLocalDateStr(new Date());
       setInterval(function() {
         var _nowDate = getLocalDateStr(new Date());
         if (_nowDate !== _lastCheckedDate) {
           _lastCheckedDate = _nowDate;
-          moveScratchToThoughts();
           if (typeof renderScratchView === 'function') renderScratchView();
           if (typeof renderAllSections === 'function') renderAllSections();
           window._dbgLog && window._dbgLog('【日付変更】自動日誌移動実行: ' + _nowDate);
@@ -42075,7 +42084,6 @@ window._repairCloudCalendarIds();
     })();
     document.addEventListener('visibilitychange', function(){
       if (document.visibilityState === 'visible') {
-        moveScratchToThoughts();
         if (typeof renderScratchView === 'function') renderScratchView();
       }
     });
@@ -61054,6 +61062,25 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.78.1', date: '2026-11-18',
+    items: [
+      { icon:'📝', t:'雑記帳と日誌の書きものを、ひとつの形にまとめました',
+        before:'同じ書きものが、雑記帳・日誌の本文・日誌の一言と、いくつもの形に分かれていました。日誌へ送ると、消して作り直していました',
+        after:'書きものは「メモ」ひとつの形になり、雑記帳にあるか日誌にあるかの違いだけになりました。日誌へ送る・雑記帳へ戻すは、置き場所を変えるだけです。消して作り直さないので、端末をまたいでも、消えたり二重になったりしにくくなります。今までの書きものは、そのまま引っ越しています' }
+    ]
+  },
+  {
+    ver: 'v0.78.0', date: '2026-11-18',
+    items: [
+      { icon:'✏️', t:'雑記帳に書いたものが、勝手に日誌へ移らなくなりました',
+        before:'日付が変わると、雑記帳に書いたものがその日の日誌へ移り、雑記帳からは消えていました',
+        after:'雑記帳に書いたものは、そのまま残ります。今日の分がいちばん上、前の日の分は日付ごとに下に並びます。日誌に残したいものは、「日誌へ」で自分で送れます。送ると、書いた日の日誌に入ります' },
+      { icon:'🦋', t:'日誌の一覧で、書いたことが全部見えるようにしました',
+        before:'一言を見るには、日誌を1日ずつ開く必要がありました',
+        after:'一覧に、その日の本文と一言がすべて出ます。広い画面では横に並べて、画面いっぱいに使います。季節の一行は、その日の暦から毎回つくります。何も書かなかった日にも出ます' }
+    ]
+  },
+  {
     ver: 'v0.77.5', date: '2026-11-18',
     items: [
       { icon:'🔍', t:'検索で、日誌の一言が「タスク」に並ばないようにしました',
@@ -71695,22 +71722,7 @@ function showDebugLog(_initOnly) {
     localStorage.removeItem('_dbg_errors');
     wrap.remove();
   };
-  var btnTestMove = document.createElement('button');
-  btnTestMove.textContent = '🔄 日付変更テスト';
-  btnTestMove.style.cssText = 'width:100%;padding:13px 10px;background:rgba(255,215,0,0.12);border:2px solid rgba(255,215,0,0.4);border-radius:8px;color:#ffd700;font-size:1em;cursor:pointer;margin-bottom:8px;font-weight:700;';
-  btnTestMove.onclick = function(){
-    var yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    var yStr = yesterday.getFullYear() + '-' + String(yesterday.getMonth()+1).padStart(2,'0') + '-' + String(yesterday.getDate()).padStart(2,'0');
-    var changed = 0;
-    allTasks.forEach(function(t){ if (t.kind === 'scratch') { t.date = yStr; changed++; } });
-    if (changed === 0) { showToast('雑記帳にアイテムがありません', {type:'warn'}); return; }
-    saveAllTasks();
-    localStorage.removeItem('_lastScratchMoveDate');
-    moveScratchToThoughts();
-    wrap.remove();
-    showToast('🔄 テスト実行（' + changed + '件移動）', {type:'info'});
-  };
+  // v0.78.0: 「🔄 日付変更テスト」（雑記帳を日誌へ自動で移す試し）は、自動で移すのをやめたので外した
 
   // ===== v0.45.648〜: 🎙️ 音声データ救出ボタン =====
   // 背景：iPhone Safari ではConsoleが見られないため、アプリ内で診断・救出する。
@@ -79012,7 +79024,7 @@ window._stFnSrc = _stFnSrc;
        // ⑤b v0.45.535〜：管理者モードの#adminStorageUsage DOM存在確認
        var _st129AdminEl = document.getElementById('adminStorageUsage');
        _st129AdminEl
-         ? ok('ST-129: #adminStorageUsage DOM確認（管理者モード・日誌補完前チェック用）')
+         ? ok('ST-129: #adminStorageUsage DOM確認（管理者モード・この端末の容量）')
          : ng('ST-129: #adminStorageUsage', 'DOM未存在');
 
        // ⑥ recalcStorageUsage 独立関数化確認（第41条 SSOT）+ 3DOM対応
@@ -79873,89 +79885,14 @@ window._stFnSrc = _stFnSrc;
      }
 
 
-     // ===== ST-145: 日誌空日補完 手動ボタンUI配線テスト =====
-     // 第18条：DOM存在・onclick属性確認
+     // ===== ST-145: 日誌の空日の自動補完はやめた（v0.78.0） =====
      try {
-       ok('');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-       ok('  ST-145: 日誌空日補完 手動ボタンUI配線テスト（v0.45.536〜自前モーダル方式）');
-       ok('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-       // ①管理者モード内エリア存在確認
-       var _r145area = document.getElementById('adminAutoFillJournalArea');
-       if (_r145area) ok('ST-145·①: #adminAutoFillJournalArea DOM存在確認');
-       else ng('ST-145·①: #adminAutoFillJournalArea', 'DOM未発見');
-
-       // ②ボタンDOM存在確認
-       var _r145btn = document.getElementById('adminAutoFillJournalBtn');
-       if (_r145btn) ok('ST-145·②: #adminAutoFillJournalBtn DOM存在確認');
-       else ng('ST-145·②: #adminAutoFillJournalBtn', 'DOM未発見');
-
-       // ③onclick属性 → openAutoFillJournalConfirm呼び出し確認（v0.45.536〜）
-       var _r145onclickAttr = _r145btn ? (_r145btn.getAttribute('onclick') || '') : '';
-       if (_r145onclickAttr.indexOf('openAutoFillJournalConfirm') !== -1) {
-         ok('ST-145·③: ボタンonclickでopenAutoFillJournalConfirm呼び出し確認（v0.45.536〜）');
-       } else {
-         ng('ST-145·③: onclick属性', '異常: ' + _r145onclickAttr);
-       }
-
-       // ④openAutoFillJournalConfirm関数存在＆window公開
-       if (typeof openAutoFillJournalConfirm === 'function' && typeof window.openAutoFillJournalConfirm === 'function') {
-         ok('ST-145·④: openAutoFillJournalConfirm 存在＆window公開確認');
-       } else {
-         ng('ST-145·④: openAutoFillJournalConfirm', '関数なし or window未公開');
-       }
-
-       // ⑤自前確認モーダルDOM存在確認
-       var _r145modal = document.getElementById('autoFillJournalConfirmModal');
-       var _r145modalBody = document.getElementById('autoFillJournalConfirmBody');
-       var _r145modalOk = document.getElementById('autoFillJournalConfirmBtn');
-       var _r145modalCancel = document.getElementById('autoFillJournalCancelBtn');
-       if (_r145modal && _r145modalBody && _r145modalOk && _r145modalCancel) {
-         ok('ST-145·⑤: 自前確認モーダルDOM全4件確認（modal/body/okBtn/cancelBtn）');
-       } else {
-         ng('ST-145·⑤: 自前モーダルDOM', 'modal=' + !!_r145modal + ' body=' + !!_r145modalBody + ' ok=' + !!_r145modalOk + ' cancel=' + !!_r145modalCancel);
-       }
-
-       // ⑥ボタン配置：管理者モード内（toggleAdminModeボタンより前）
-       var _r145adminHtml = document.body.innerHTML;
-       var _r145posBtn = _r145adminHtml.indexOf('adminAutoFillJournalBtn');
-       var _r145posExit = _r145adminHtml.indexOf('管理者モードを解除する');
-       if (_r145posBtn !== -1 && _r145posExit !== -1 && _r145posBtn < _r145posExit) {
-         ok('ST-145·⑥: 配置確認（管理者モード内・「解除する」より前）');
-       } else {
-         ng('ST-145·⑥: 配置順', 'btn=' + _r145posBtn + ' exit=' + _r145posExit);
-       }
-
-       // ⑦openAutoFillJournalConfirm内で _findEmptyJournalDays を呼び・本体を起動する構造確認
-       var _r145openSrc = '';
-       try { _r145openSrc = openAutoFillJournalConfirm.toString(); } catch(_){}
-       if (_r145openSrc.indexOf('_findEmptyJournalDays') !== -1
-           && _r145openSrc.indexOf('autoFillEmptyJournals') !== -1) {
-         ok('ST-145·⑦: ラッパー構造確認（_findEmptyJournalDays→autoFillEmptyJournals本体呼び出し）');
-       } else {
-         ng('ST-145·⑦: ラッパー構造', '_findEmptyJournalDays/autoFillEmptyJournals参照なし');
-       }
-
-       // ⑧モーダル初期非表示確認
-       if (_r145modal && (_r145modal.style.display === 'none' || _r145modal.style.display === '')) {
-         ok('ST-145·⑧: 自前モーダル初期非表示確認');
-       } else {
-         ng('ST-145·⑧: 自前モーダル', '初期display異常: ' + (_r145modal ? _r145modal.style.display : 'null'));
-       }
-
-       // ⑨ボタンスタイル：青系（情報系）であることのみ軽く確認
-       var _r145styleAttr = _r145btn ? (_r145btn.getAttribute('style') || '') : '';
-       if (_r145styleAttr.indexOf('#00acc1') !== -1 || _r145styleAttr.indexOf('80deea') !== -1) {
-         ok('ST-145·⑨: ボタン配色確認（破壊系の赤ではなく情報系の青）');
-       } else {
-         ng('ST-145·⑨: ボタン配色', _r145styleAttr);
-       }
-
-       ok('ST-145: 日誌空日補完 手動ボタンUI配線テスト 完了');
-     } catch(e) {
-       ng('ST-145: 例外', e.message);
-     }
+       var _r145v = renderJournalView.toString();
+       (!document.getElementById('adminAutoFillJournalArea') && !document.getElementById('adminAutoFillJournalBtn') && !/_autoFillOnJournalOpen\(\)/.test(_r145v) &&
+        !!document.getElementById('adminStorageUsage'))
+         ? ok('ST-145: 日誌を開いても空の日を自動で作らない。管理者の補完ボタンもない（容量の確かめは残す）（v0.78.0）')
+         : ng('ST-145: 自動補完が残っている', '');
+     } catch(e) { ng('ST-145: 例外', e.message); }
 
      // ===== ST-146: 魚の目ビュー・象限フィルタ付き新規作成のsection整合性（第49条）=====
      try {
@@ -89580,7 +89517,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        (window.__st486 === 0 && /_escapeHtml\(t\.title \|\| t\.text \|\| ''\)/.test(_src) && /_escapeHtml\(deck\.title\|\|'デッキ'\)/.test(_src) && /_escapeHtml\(deck\.createdBy\)/.test(_src) &&
         /var displayText = _escapeHtml\(/.test(_all) &&   /* 魚の目（_quadTaskItem） */
         /_escapeHtml\(m\.display_name \|\| '\(名前未設定\)'\)/.test(_all) && /_escapeHtml\(cal\.name\)/.test(_all) &&   /* 管理者の画面・編集画面のカレンダー */
-        /const preview = _escapeHtml\(/.test(_all))   /* 日誌の一覧 */
+        /_escapeHtml\(_own\)/.test(_all) && /_escapeHtml\(th\.text \|\| ''\)/.test(_all))   /* 日誌の一覧（v0.78.0：本文と一言を全部出す） */
          ? ok('ST-486·①: 魚の目の拡大画面の予定の題名、便りの題名と作者名は、無害にしてから入れる（仕掛けが動かない）')
          : ng('ST-486·①: 他人が書ける文字が、無害にせずに入っている', String(window.__st486));
      } catch(e) {
@@ -90405,10 +90342,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _d = new Date(); koyomiRenderRituals(_host, function(x) { return String(x); }, _d);
        var _box = _host.querySelector('[data-ritual="thanks"]');
        _box.querySelector('[data-rt-in]').value = 'あざます'; _box.querySelector('[data-rt-save]').click();
-       var _th = allTasks.filter(function(t) { return t && t.kind === 'thought' && t.text === '今日のありがとう：あざます'; });
+       var _th = allTasks.filter(function(t) { return t && koyomiIsJournalMemo(t) && t.text === '今日のありがとう：あざます'; });
        _host.querySelector('[data-ritual="thanks"] [data-rt-edit]').click();
        _host.querySelector('[data-ritual="thanks"] [data-rt-in]').value = 'ありがとう'; _host.querySelector('[data-ritual="thanks"] [data-rt-save]').click();
-       var _th2 = allTasks.filter(function(t) { return t && t.kind === 'thought' && /^今日のありがとう：/.test(t.text) && t.createdAt >= new Date(Date.now() - 60000).toISOString(); });
+       var _th2 = allTasks.filter(function(t) { return t && koyomiIsJournalMemo(t) && /^今日のありがとう：/.test(t.text) && t.createdAt >= new Date(Date.now() - 60000).toISOString(); });
        _host.remove();
        // 戻す
        allTasks.splice(_tasksLen); window.saveAllTasks = _saveAT; saveAllTasks = _saveAT;
@@ -90428,9 +90365,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      try {
        var _sj = saveScratchItemAsJournal.toString(), _led = renderLedgerDashboardCard.toString(), _src = startInlineEdit.toString();
        var _kz = koyomiTodaySentenceHtml(koyomiTodayData(new Date()), getKoyomiOrder(), function(x) { return String(x); });
-       (/allTasks\.splice\(delIdx, 1\)[\s\S]{0,400}_propagateDeletion\(item\.id\)/.test(_sj) && /isKoyomiruAdminMode\(\)\) && \(!_km/.test(_src) &&
+       (/rec\.place = 'journal'/.test(_sj) && !/_propagateDeletion|splice/.test(_sj) &&   /* v0.78.1: 日誌へ送るは印の書き換え（消さない） */ /isKoyomiruAdminMode\(\)\) && \(!_km/.test(_src) &&
         /c\.cloudCalendarId === \(x\.cal && x\.cal\.id\)/.test(_led) && _kz.indexOf('～今日を声に出して味わってみよう～') !== -1 && _kz.indexOf('一度きりの今日') === -1)
-         ? ok('ST-526·①: 雑記帳の「日誌に」はクラウドにも消したことを伝える（復活しない）。「造営に」は管理者だけ。大福帳は手元にあるカレンダーだけ。見出しは「～今日を声に出して味わってみよう～」（v0.76.24〜）')
+         ? ok('ST-526·①: 雑記帳の「日誌に」は置き場所の印を書き換えるだけ（消さないので復活も二重もない）（v0.78.1）。「造営に」は管理者だけ。大福帳は手元にあるカレンダーだけ。見出しは「～今日を声に出して味わってみよう～」（v0.76.24〜）')
          : ng('ST-526·①: どこかが違う', '');
      } catch(e) {
        ng('ST-526: 例外', e.message);
@@ -90474,7 +90411,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        deleteThoughtsByJournal('st528-j');
        allTasks.splice(_len);
        window._propagateDeletion = _orig; _propagateDeletion = _orig; window.saveAllTasks = _saveT; saveAllTasks = _saveT;
-       (_calls.join(',') === 'st528-t1,st528-t2' && _up && /_propagateDeletion\(item\.id\)/.test(saveScratchItemAsJournal.toString()))
+       (_calls.join(',') === 'st528-t1,st528-t2' && _up && !/_propagateDeletion/.test(saveScratchItemAsJournal.toString()))
          ? ok('ST-528·①: 日誌の一言を消す・雑記帳に戻す・日誌をまるごと消すときも、クラウドに消したことを伝える（雑記帳に送るときも）。書き直した一言には時刻を付ける')
          : ng('ST-528·①: 一言の消し方が違う', [_calls.join(','), _up].join(' / '));
      } catch(e) {
@@ -92352,6 +92289,84 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          ? ok('ST-626: 検索は出どころごとに見出し（予定／日誌／雑記帳）。日誌の一言は親の日誌の日付で出し・絞り、押すと日誌が開く')
          : ng('ST-626: 検索の見出しが違う', _secs626);
      } catch (e) { ng('ST-626: 例外', e.message); }
+     // ===== ST-627: 雑記帳は自動で日誌に移さない。日付ごとに並ぶ。日誌は一覧で全部見え、季節の一行は作るだけ（v0.78.0） =====
+     try {
+       var _bk627 = allTasks.slice(), _r627 = {};
+       var _src = document.documentElement.innerHTML;
+       _r627.noAuto = !/\n\s*moveScratchToThoughts\(\);\n\s*\/\/ 日付変更監視/.test(_src) && (_src.split('btn' + 'TestMove').length === 1) && !/_autoFillOnJournalOpen\(\)/.test(renderJournalView.toString());
+       var _td = getLocalDateStr(new Date()), _yd0 = new Date(); _yd0.setDate(_yd0.getDate() - 1); var _yd = getLocalDateStr(_yd0);
+       allTasks.push({ id: 'st627-s1', kind: 'scratch', date: _yd, text: 'st627きのうのメモ', createdAt: _yd0.toISOString() });
+       allTasks.push({ id: 'st627-s2', kind: 'scratch', date: _td, text: 'st627きょうのメモ', createdAt: new Date().toISOString() });
+       renderScratchView();
+       var _ls = document.getElementById('scratchList'), _lp = document.getElementById('scratchPastList');
+       var _heads = _lp ? [].map.call(_lp.querySelectorAll('[data-scratch-day]'), function(x) { return x.getAttribute('data-scratch-day'); }) : [];
+       _r627.scratch = !!_ls && /st627きょうのメモ/.test(_ls.textContent) && !/st627きのうのメモ/.test(_ls.textContent) && _heads[0] === _yd && /st627きのうのメモ/.test(_lp.textContent) &&
+         !!(_ls.compareDocumentPosition(document.getElementById('scratchInputRow')) & 4) && !!(document.getElementById('scratchInputRow').compareDocumentPosition(_lp) & 4) && allTasks.some(function(x) { return x.id === 'st627-s1'; });
+       // 日誌：本文と一言が一覧に全部出る。季節の風の自動の本文は出さず、一行は作る。一言と同じ本文は二重に出さない
+       allTasks.push({ id: 'st627-j1', kind: 'journal', date: '2026-10-12', text: 'st627ほんぶん' });
+       allTasks.push({ id: 'st627-t1', kind: 'thought', parentId: 'st627-j1', text: 'st627ひとこと1', createdAt: '2026-10-12T01:00:00Z' });
+       allTasks.push({ id: 'st627-t2', kind: 'thought', parentId: 'st627-j1', text: 'st627ひとこと2', createdAt: '2026-10-12T02:00:00Z' });
+       allTasks.push({ id: 'st627-j2', kind: 'journal', date: '2026-10-10', text: '「なにか」の頃。st627じどう', autoFilled: true });
+       allTasks.push({ id: 'st627-j3', kind: 'journal', date: '2026-10-08', text: 'st627おなじ' });
+       allTasks.push({ id: 'st627-t3', kind: 'thought', parentId: 'st627-j3', text: 'st627おなじ', createdAt: '2026-10-08T01:00:00Z' });
+       renderJournalView();
+       var _ja = document.getElementById('journalListArea');
+       var _c1 = _ja && _ja.querySelector('[data-jnl-id="st627-j1"]'), _c2 = _ja && _ja.querySelector('[data-jnl-id="st627-j2"]'), _c3 = _ja && _ja.querySelector('[data-jnl-id="st627-j3"]');
+       _r627.journal = !!_c1 && /st627ほんぶん/.test(_c1.textContent) && _c1.querySelectorAll('[data-jnl-thought]').length === 3 && !!_c1.querySelector('[data-jnl-season]') &&
+         !_c2 && !/st627じどう/.test(_ja.textContent) &&   /* v0.78.1: 季節の風の自動の日誌は、中身が無ければ外れて、ただの「何もない日」の札になる */
+         !!_c3 && (_c3.textContent.split('st627おなじ').length - 1) === 1 &&
+         !!_ja.querySelector('[data-jnl-virtual="1"]') && !!_ja.querySelector('.jnl-grid') && !/今日考えたこと/.test(_ja.textContent);
+       _r627.line = koyomiJournalSeasonLine('2026-11-18', false).indexOf('の頃。') !== -1 && koyomiJournalSeasonLine('2026-11-18', true).length > koyomiJournalSeasonLine('2026-11-18', false).length && koyomiJournalSeasonLine('2026-11-18', true) === koyomiJournalSeasonLine('2026-11-18', true);
+       _r627.send = /item && item\.date/.test(saveScratchItemAsJournal.toString()) && !/journals\[existing\]\.text = t/.test(saveScratchItemAsJournal.toString());
+       allTasks = _bk627; renderScratchView(); renderJournalView();
+       var _bad627 = Object.keys(_r627).filter(function(k) { return !_r627[k]; });
+       !_bad627.length ? ok('ST-627: 雑記帳は自動で日誌に移さず、今日を上に日付ごと。日誌は一覧で本文と一言が全部見え、季節の一行は保存せず作る。手で送ると、書いた日の日誌へ（本文に二重に入れない）')
+         : ng('ST-627: 雑記帳と日誌の見せ方が違う', _bad627.join(','));
+     } catch (e) { ng('ST-627: 例外', e.message); }
+     // ===== ST-628: メモを1つの箱に（引っ越し・送る・戻す）（v0.78.1） =====
+     try {
+       var _bk628 = allTasks.slice(), _sv628 = saveAllTasks, _pd628 = window._propagateDeletion, _calls628 = [], _r628 = {};
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       window._propagateDeletion = function(id) { _calls628.push(id); }; _propagateDeletion = window._propagateDeletion;
+       allTasks = [
+         { id: 'm-j1', kind: 'journal', date: '2026-10-12', text: 'じぶんの本文', weather: '☀', mood: 3, savedAt: '2026-10-12T10:00:00Z' },
+         { id: 'm-t1', kind: 'thought', parentId: 'm-j1', text: '1イオン、0-2000、毎月2日', createdAt: '2026-10-12T01:00:00Z' },
+         { id: 'm-t2', kind: 'thought', parentId: 'm-j1', text: 'じぶんの本文', createdAt: '2026-10-12T02:00:00Z' },
+         { id: 'm-t3', kind: 'thought', parentId: 'm-gone', text: '親のない一言', createdAt: '2026-09-30T03:00:00Z' },
+         { id: 'm-j2', kind: 'journal', date: '2026-10-10', text: '「なにか」の頃。じどう', autoFilled: true },
+         { id: 'm-j3', kind: 'journal', date: '2026-10-08', text: '', thoughts: [{ text: 'ふるい並び1' }, 'ふるい並び2'] },
+         { id: 'm-s1', kind: 'scratch', date: '2026-11-18', text: 'ざつき', createdAt: '2026-11-18T01:00:00Z' }
+       ];
+       var _chars = function() { return allTasks.filter(function(t) { return t.kind === 'scratch' || t.kind === 'thought' || (t.kind === 'journal' && !t.autoFilled); }).map(function(t) { return String(t.text || '') + (Array.isArray(t.thoughts) ? t.thoughts.map(function(x) { return x && x.text != null ? x.text : x; }).join('') : ''); }).join('').length; };
+       var _before = _chars() - 'じぶんの本文'.length;   // 本文と一言の同じ文は1つにまとまる
+       koyomiMemoMigrate();
+       var g = function(id) { return allTasks.filter(function(t) { return t.id === id; })[0]; };
+       _r628.inPlace = g('m-t1').kind === 'scratch' && g('m-t1').place === 'journal' && g('m-t1').date === '2026-10-12' && !g('m-t1').parentId && g('m-t1').text === '1イオン、0-2000、毎月2日';
+       _r628.orphan = g('m-t3').kind === 'scratch' && !g('m-t3').place && g('m-t3').date === getLocalDateStr(new Date('2026-09-30T03:00:00Z'));
+       _r628.body = g('m-j1').text === '' && allTasks.filter(function(t) { return koyomiIsJournalMemo(t) && t.date === '2026-10-12' && t.text === 'じぶんの本文'; }).length === 1 && g('m-j1').weather === '☀' && g('m-j1').mood === 3;
+       _r628.auto = !g('m-j2') && !allTasks.some(function(t) { return /じどう/.test(t.text || ''); });
+       _r628.inline = g('m-j3').thoughts.length === 0 && allTasks.filter(function(t) { return koyomiIsJournalMemo(t) && t.date === '2026-10-08'; }).map(function(t) { return t.text; }).join() === 'ふるい並び1,ふるい並び2';
+       _r628.noLegacy = !allTasks.some(function(t) { return t.kind === 'thought'; });
+       _r628.chars = _chars() === _before;
+       var _snap = JSON.stringify(allTasks.map(function(t) { var c = Object.assign({}, t); delete c.updatedAt; return c; }));
+       _r628.again = koyomiMemoMigrate() === 0 && JSON.stringify(allTasks.map(function(t) { var c = Object.assign({}, t); delete c.updatedAt; return c; })) === _snap;
+       _r628.noDelete = _calls628.length === 0;
+       // 見え方：雑記帳には日誌に置いたメモが出ない。日誌の一言として出る
+       _r628.views = getScratchItems().map(function(t) { return t.id; }).sort().join() === 'm-s1,m-t3' && getThoughts('m-j1').length === 2;
+       // 送る＝印を書き換え（同じ番号）。書いた日の日誌へ。戻す＝印を外す
+       saveScratchItemAsJournal('ざつき', g('m-s1'));
+       var _sent = g('m-s1') && g('m-s1').place === 'journal' && g('m-s1').date === '2026-11-18' && !!koyomiJournalCover('2026-11-18', false);
+       thoughtToScratch(koyomiJournalCover('2026-11-18', false).id, 'm-s1');
+       _r628.flip = _sent && g('m-s1') && !g('m-s1').place && g('m-s1').kind === 'scratch' && _calls628.length === 0;
+       // 今日の一言（ありがとう等）も、日誌に置いたメモとして
+       var _wid = saveKoyomiTodayWord('st628きょうの一言');
+       _r628.word = koyomiIsJournalMemo(g(_wid)) && g(_wid).date === getLocalDateStr(new Date());
+       _r628.search = _searchSectionOf(g('m-t1')) === 'journal' && recordSourceLabel(g('m-t1')) === '🦋 日誌の一言' && _searchDateOf(g('m-t1')) === '2026-10-12';
+       allTasks = _bk628; window.saveAllTasks = _sv628; saveAllTasks = _sv628; window._propagateDeletion = _pd628; _propagateDeletion = _pd628;
+       var _bad628 = Object.keys(_r628).filter(function(k) { return !_r628[k]; });
+       !_bad628.length ? ok('ST-628: 書いた文はメモ1種類に。一言は同じ番号のまま日誌のメモへ、本文・古い並びも写して空に、親のない一言は雑記帳へ。文字は1文字も減らず、何度動かしても同じ、消した印も出さない。送る・戻すは印の書き換え')
+         : ng('ST-628: メモの引っ越しが違う', _bad628.join(','));
+     } catch (e) { try { allTasks = _bk628; window.saveAllTasks = _sv628; saveAllTasks = _sv628; window._propagateDeletion = _pd628; _propagateDeletion = _pd628; } catch (e2) {} ng('ST-628: 例外', e.message); }
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
      try {
        var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
@@ -98419,7 +98434,6 @@ var resultDiv = document.createElement('div');
   box.appendChild(btnMigrationReport);
   box.appendChild(btnRules);
 
-  box.appendChild(btnTestMove);
   box.appendChild(btnAudioRescue);
   var btnClose = document.createElement('button');
   btnClose.textContent = '閉じる';
@@ -99193,26 +99207,92 @@ document.addEventListener('DOMContentLoaded', function() {
       return y + '年' + m + '月' + d + '日（' + w + '）';
     }
     // ===== thoughtsヘルパー（kind:'thought' フラット構造） =====
+    // ===== v0.78.1: メモを1つの箱に（2回目・データの引っ越し） =====
+    // 【権威】2026-11-18 最高峰会議「データ構造もすっきりさせたい」→ 書いた文は「メモ」1種類（kind:'scratch'）にまとめ、
+    //   置き場所は印で持つ（place:'journal' なら日誌、無ければ雑記帳）。日誌（kind:'journal'）は日付・天気・気分・体調の表紙だけ。
+    //   日誌へ送る・雑記帳へ戻すは印の書き換え（同じ番号のまま。消して作り直さない＝端末をまたいで消えない・二重にならない）。
+    //   季節の一行は保存しない（表示のたびに暦から作る）
+    function koyomiIsJournalMemo(t) { return !!t && t.kind === 'scratch' && t.place === 'journal'; }
+    function _koyomiJournalById(id) { for (var i = 0; i < allTasks.length; i++) { var t = allTasks[i]; if (t && t.kind === 'journal' && t.id === id) return t; } return null; }
+    function koyomiJournalCover(dateStr, create) {
+      var j = null;
+      for (var i = 0; i < allTasks.length; i++) { var t = allTasks[i]; if (t && t.kind === 'journal' && t.date === dateStr && !t.autoFilled) { j = t; break; } }
+      if (!j) for (var k = 0; k < allTasks.length; k++) { var t2 = allTasks[k]; if (t2 && t2.kind === 'journal' && t2.date === dateStr) { j = t2; break; } }
+      if (!j && create) { var now = new Date().toISOString(); j = { id: generateTaskId(), kind: 'journal', date: dateStr, text: '', mood: 0, condition: 0, weather: '', savedAt: now, createdAt: now, updatedAt: now }; allTasks.push(j); }
+      return j;
+    }
+    // 引っ越し：何度動かしても同じ結果になる。消さない（写してから空にする）。サーバーへの「消した」印も出さない
+    function koyomiMemoMigrate() {
+      var changed = 0, now = new Date().toISOString(), today = getLocalDateStr(new Date());
+      var dayOf = function(iso) { try { var d = new Date(iso); return isNaN(d) ? today : getLocalDateStr(d); } catch (e) { return today; } };
+      var has = function(dateStr, text) { var tx = String(text || '').trim(); return allTasks.some(function(m) { return koyomiIsJournalMemo(m) && m.date === dateStr && String(m.text || '').trim() === tx; }); };
+      var legacy = allTasks.filter(function(t) { return t && (t.kind === 'thought' || (t.kind === 'journal' && ((t.text && String(t.text).trim()) || (Array.isArray(t.thoughts) && t.thoughts.length) || t.autoFilled))); });
+      if (!legacy.length) return 0;
+      try { if (!window._smokeTestRunning && !localStorage.getItem('mig_memo_backup_v1')) { var bk = JSON.stringify(legacy); if (bk.length < 1500000) localStorage.setItem('mig_memo_backup_v1', bk); } } catch (eB) {}
+      // ① 日誌の一言 → 同じ番号のまま、日誌に置いたメモへ
+      allTasks.forEach(function(t) {
+        if (!t || t.kind !== 'thought') return;
+        var j = t.parentId ? _koyomiJournalById(t.parentId) : null;
+        t.kind = 'scratch';
+        if (j && j.date) { t.place = 'journal'; t.date = j.date; }
+        else { t.date = t.date || dayOf(t.createdAt); delete t.place; t.fromOrphan = true; }   // 親の日誌が無い一言は、消さずに雑記帳へ
+        delete t.parentId;
+        if (!t.createdAt) t.createdAt = now;
+        t.updatedAt = now; changed++;
+      });
+      // ② 日誌の本文・古い一言の並び → 日誌に置いたメモへ（同じ文がもうあれば写さない）。季節の風の自動の本文は写さない
+      allTasks.slice().forEach(function(j) {
+        if (!j || j.kind !== 'journal') return;
+        var at = j.savedAt || j.createdAt || now, did = false;
+        if (Array.isArray(j.thoughts) && j.thoughts.length) {
+          j.thoughts.forEach(function(x, i) {
+            var tx = String((x && (x.text != null ? x.text : x)) || '').trim();
+            if (tx && !has(j.date, tx)) allTasks.push({ id: generateTaskId(), kind: 'scratch', place: 'journal', date: j.date, text: tx, createdAt: (x && x.createdAt) || at, updatedAt: now });
+          });
+          j.thoughts = []; did = true;
+        }
+        if (j.autoFilled) {
+          // 季節の風で自動に作った日誌は、この端末だけのもの（サーバーには無い）。中身が無ければ手元から外す（消した印は出さない）
+          var _hasMemo = allTasks.some(function(m) { return koyomiIsJournalMemo(m) && m.date === j.date; });
+          if (!j.weather && !j.mood && !j.condition && !_hasMemo) { var _ix = allTasks.indexOf(j); if (_ix !== -1) allTasks.splice(_ix, 1); changed++; return; }
+          j.text = ''; delete j.autoFilled; did = true;
+        }
+        else if (j.text && String(j.text).trim()) {
+          var tx2 = String(j.text).trim();
+          if (!has(j.date, tx2)) allTasks.push({ id: generateTaskId(), kind: 'scratch', place: 'journal', date: j.date, text: tx2, createdAt: at, updatedAt: now });
+          j.text = ''; did = true;
+        }
+        if (did) { j.updatedAt = now; changed++; }
+      });
+      if (changed && typeof saveAllTasks === 'function') saveAllTasks();
+      return changed;
+    }
+    window.koyomiMemoMigrate = koyomiMemoMigrate; window.koyomiIsJournalMemo = koyomiIsJournalMemo; window.koyomiJournalCover = koyomiJournalCover;
     function getThoughts(journalId) {
-      return allTasks.filter(function(t){ return t.kind === 'thought' && t.parentId === journalId; })
+      var j = _koyomiJournalById(journalId);
+      return allTasks.filter(function(t){ return (j && koyomiIsJournalMemo(t) && t.date === j.date) || (t.kind === 'thought' && t.parentId === journalId); })
         .sort(function(a,b){ return new Date(a.createdAt) - new Date(b.createdAt); });
     }
     function addThought(journalId, text) {
-      allTasks.push({ id: generateTaskId(), kind: 'thought', parentId: journalId, text: text, createdAt: new Date().toISOString() });
+      var j = _koyomiJournalById(journalId), now = new Date().toISOString();
+      var id = generateTaskId();
+      allTasks.push({ id: id, kind: 'scratch', place: 'journal', date: (j && j.date) || getLocalDateStr(new Date()), text: text, createdAt: now, updatedAt: now });
+      return id;
     }
     // v0.71.1: 【権威】2026-11-03、「日誌から雑記帳に戻して、また日誌に送ると、雑記帳で復活する」との報告。
     // 日誌の一言を消すとき、手元から消すだけでクラウドに伝えていなかったため、次の同期で戻ってきていた。ふつうの削除と同じく伝える
     function deleteThought(thoughtId) {
-      var idx = allTasks.findIndex(function(t){ return t.id === thoughtId && t.kind === 'thought'; });
+      var idx = allTasks.findIndex(function(t){ return t.id === thoughtId && (t.kind === 'thought' || koyomiIsJournalMemo(t)); });
       if (idx !== -1) { allTasks.splice(idx, 1); if (typeof _propagateDeletion === 'function') _propagateDeletion(thoughtId); }
     }
     function updateThoughtText(thoughtId, newText) {
-      var th = allTasks.find(function(t){ return t.id === thoughtId && t.kind === 'thought'; });
+      var th = allTasks.find(function(t){ return t.id === thoughtId && (t.kind === 'thought' || koyomiIsJournalMemo(t)); });
       if (th) { th.text = newText; th.updatedAt = new Date().toISOString(); }   // v0.71.1: 書き直した時刻を付けて、同期で届くように
     }
     function deleteThoughtsByJournal(journalId) {
+      var _jd = _koyomiJournalById(journalId);
       for (var i = allTasks.length - 1; i >= 0; i--) {
-        if (allTasks[i].kind === 'thought' && allTasks[i].parentId === journalId) {
+        if ((allTasks[i].kind === 'thought' && allTasks[i].parentId === journalId) || (_jd && koyomiIsJournalMemo(allTasks[i]) && allTasks[i].date === _jd.date)) {
           var _tid = allTasks[i].id;
           allTasks.splice(i, 1);
           if (typeof _propagateDeletion === 'function') _propagateDeletion(_tid);   // v0.71.1
@@ -99357,38 +99437,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function saveScratchItemAsJournal(text, item) {
       const t = (text || '').trim();
       if (!t) return;
-      const m = window._journalMeta || { mood:0, condition:0, weather:'' };
-      const today = new Date();
-      const dateStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
-      const journals = loadJournals();
-      const existing = journals.findIndex(function(j) { return j.date === dateStr; });
-      var toastMsg;
-      if (existing >= 0) {
-        // ★ v0.45.626: 既存日誌のjournal.textが空ならテキスト本文にも書き込む（日誌一覧に表示するため）
-        if (!journals[existing].text || journals[existing].text.trim() === '') {
-          journals[existing].text = t;
-        }
-        // thoughtsにも追加（フラット構造）
-        addThought(journals[existing].id, t);
-        journals[existing].savedAt = new Date().toISOString();
-        toastMsg = '📖 ' + (function(d){ var p=d.split('-'); return parseInt(p[1])+'月'+parseInt(p[2])+'日'; })(dateStr) + 'の日誌に追加しました';
-      } else {
-        // ★ v0.45.626: 新規日誌作成時にもtextを本文として初期値設定
-        var newJournal = { id: generateTaskId(), kind: 'journal', date: dateStr, text: t, mood: m.mood, condition: m.condition, weather: m.weather, savedAt: new Date().toISOString() };
-        allTasks.push(newJournal);
-        addThought(newJournal.id, t);
-        toastMsg = '📖 ' + (function(d){ var p=d.split('-'); return parseInt(p[1])+'月'+parseInt(p[2])+'日'; })(dateStr) + 'の日誌を作成しました';
-      }
-      // 雑記帳のアイテムを削除
-      var delIdx = allTasks.findIndex(function(t){ return t.id === item.id; });
-      if (delIdx !== -1) allTasks.splice(delIdx, 1);
+      // v0.78.1: 日誌へ送る＝置き場所の印を「日誌」にするだけ（同じ番号のまま。消して作り直さない）。送り先はそのメモを書いた日の日誌
+      const dateStr = (item && item.date) || getLocalDateStr(new Date());
+      var rec = item ? allTasks.find(function(x) { return x.id === item.id; }) : null;
+      var isNew = !koyomiJournalCover(dateStr, false);
+      var j = koyomiJournalCover(dateStr, true);
+      var m = window._journalMeta || null;
+      if (isNew && m) { j.mood = m.mood || 0; j.condition = m.condition || 0; j.weather = m.weather || ''; }
+      if (rec) { rec.text = t; rec.place = 'journal'; rec.date = dateStr; rec.updatedAt = new Date().toISOString(); }
+      else allTasks.push({ id: generateTaskId(), kind: 'scratch', place: 'journal', date: dateStr, text: t, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      j.savedAt = new Date().toISOString();
       saveAllTasks();
-      // v0.70.9: 【権威】2026-11-03、「雑記帳で日誌に送るを押したのに、雑記帳で復活しちゃう」との報告。
-      // 手元から消すだけでクラウドに伝えていなかったため、次の同期で戻ってきていた。ふつうの削除と同じく伝える
-      if (typeof _propagateDeletion === 'function') _propagateDeletion(item.id);
-      renderScratchView();
-      _showJournalToast(toastMsg);
+      var toastMsg = '📖 ' + (function(d){ var p=d.split('-'); return parseInt(p[1])+'月'+parseInt(p[2])+'日'; })(dateStr) + (isNew ? 'の日誌を作成しました' : 'の日誌に追加しました');
+      if (typeof renderScratchView === 'function') renderScratchView();
+      if (typeof _showJournalToast === 'function') _showJournalToast(toastMsg); else if (typeof showToast === 'function') showToast(toastMsg, { type: 'success' });
     }
+
     function saveScratchAsJournal() {
       const inputEl = document.getElementById('scratchInput');
       const text = inputEl ? inputEl.value.trim() : '';
@@ -99452,9 +99516,29 @@ document.addEventListener('DOMContentLoaded', function() {
       saveAllTasks();
       _showJournalToast(_toastMsg3 || ('📖 ' + (function(d){ var p=d.split('-'); return parseInt(p[1])+'月'+parseInt(p[2])+'日'; })(dateStr) + 'の日誌を作成しました'));
     }
+    // v0.78.0: 季節の一行は保存せず、表示のたびにその日の暦から作る。何か書いた日は候だけ、何もない日は季節の風の一文まで
+    function koyomiJournalSeasonLine(dateStr, empty) {
+      if (empty) return (typeof _buildEmptyDayMetaText === 'function') ? _buildEmptyDayMetaText(dateStr) : '';
+      try {
+        var d = new Date(String(dateStr).replace(/-/g, '/') + ' 12:00:00');
+        var kou = (typeof getCurrentShichijuniKou === 'function') ? getCurrentShichijuniKou(d) : null;
+        if (kou && kou.name) return '「' + kou.name + (kou.reading ? '（' + kou.reading + '）' : '') + '」の頃。';
+      } catch (e) {}
+      return '';
+    }
+    window.koyomiJournalSeasonLine = koyomiJournalSeasonLine;
+    // 日誌の本文のうち、自分で書いたもの（季節の風の一行・一言と同じ文は除く）
+    function koyomiJournalOwnText(j, thoughts) {
+      if (!j || j.autoFilled) return '';
+      var t = String(j.text || '').trim();
+      if (!t) return '';
+      if ((thoughts || []).some(function(x) { return String(x.text || '').trim() === t; })) return '';
+      return t;
+    }
+    window.koyomiJournalOwnText = koyomiJournalOwnText;
     function renderJournalView() {
-      // 季節の風：静かに空白日を自動補完（1日1回・第48条準拠）
-      if (typeof _autoFillOnJournalOpen === 'function') _autoFillOnJournalOpen();
+      // v0.78.0: 季節の風の自動補完（空の日に日誌を作って一行を書き込む）はやめた。季節の一行は、表示のたびに暦から作る（koyomiJournalSeasonLine）
+      try { if (typeof koyomiMemoMigrate === 'function') koyomiMemoMigrate(); } catch (eMM) {}   // v0.78.1
       const area = document.getElementById('journalListArea');
       if (!area) return;
       // 王国暦ラベル更新（第2条：nullチェック必須）
@@ -99470,42 +99554,62 @@ document.addEventListener('DOMContentLoaded', function() {
       const MOOD_E = ['','😞','😐','🙂','😊','🌟'];
       const COND_E = ['','🤒','😴','😐','💪','⚡'];
       const WEEKDAY = ['日','月','火','水','木','金','土'];
-      area.innerHTML = '<div style="max-width:560px;margin:0 auto;padding-bottom:24px;">'
-        + '<div style="font-size:0.68em;color:var(--ink-faint);margin:8px 0 16px 4px;font-family:serif;letter-spacing:0.12em;">全 ' + journals.length + ' 件</div>'
-        + journals.map(function(j) {
-          const _thoughts = getThoughts(j.id);
+      // v0.78.0: 【権威】2026-11-18「一言を見るのに、いちいちクリックするのが面倒」「PCでも縦長。画面いっぱい使って、何分割してもいい」
+      //   → 一覧で本文も一言も全部見せる。広い画面では横に並べる。季節の一行は表示のたびに作り、何もない日も一行の札で並べる（保存はしない）
+      var _byDate = {};
+      journals.forEach(function(j) { if (j && j.date) (_byDate[j.date] = _byDate[j.date] || []).push(j); });
+      var _entries = journals.slice();
+      try {
+        var _ds = Object.keys(_byDate).sort();
+        if (_ds.length) {
+          var _cur = new Date(_ds[0].replace(/-/g, '/') + ' 12:00:00'), _yd = new Date(); _yd.setDate(_yd.getDate() - 1); _yd.setHours(12, 0, 0, 0);
+          var _guard = 0;
+          while (_cur <= _yd && _guard++ < 4000) {
+            var _k = _cur.getFullYear() + '-' + String(_cur.getMonth() + 1).padStart(2, '0') + '-' + String(_cur.getDate()).padStart(2, '0');
+            if (!_byDate[_k]) _entries.push({ id: '', kind: 'journal', date: _k, _virtual: true });
+            _cur.setDate(_cur.getDate() + 1);
+          }
+        }
+      } catch (eV) {}
+      _entries.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
+      var _realN = _entries.filter(function(j) { return !j._virtual; }).length;
+      area.innerHTML = '<div style="padding:0 8px 24px;">'
+        + '<div style="font-size:0.68em;color:var(--ink-faint);margin:8px 0 12px 4px;font-family:serif;letter-spacing:0.12em;">全 ' + _realN + ' 件</div>'
+        + '<div class="jnl-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:10px;align-items:start;max-width:1600px;margin:0 auto;">'
+        + _entries.map(function(j) {
+          const _thoughts = j._virtual ? [] : getThoughts(j.id);
+          const _own = j._virtual ? '' : koyomiJournalOwnText(j, _thoughts);
+          const _empty = !_own && _thoughts.length === 0;
+          const _season = koyomiJournalSeasonLine(j.date, _empty);
           const _dp = j.date.split('-');
           const _wday = WEEKDAY[new Date(j.date.replace(/-/g,'/')).getDay()];
           const _monthDay = parseInt(_dp[1]) + '月' + parseInt(_dp[2]) + '日';
           const _year = parseInt(_dp[0]) + '年';
-          // v0.60.14: 安全のための見直し（くわしい経緯は運営の手元の記録にある）
-          const preview = _escapeHtml((j.text || '').replace(/\n/g,' ').slice(0,55) + ((j.text||'').length > 55 ? '…' : ''));
           const _hasMeta = j.weather || j.mood || j.condition;
-          const _metaHtml = _hasMeta
-            ? '<div style="font-size:0.95em;opacity:0.75;">' + _escapeHtml(j.weather||'') + (j.mood ? MOOD_E[j.mood] : '') + (j.condition ? COND_E[j.condition] : '') + '</div>'
-            : '';
-          const _thoughtBadge = _thoughts.length > 0
-            ? '<span style="font-size:0.62em;background:rgba(74,96,128,0.07);color:var(--washi-blue);border:1px solid rgba(74,96,128,0.18);border-radius:3px;padding:1px 7px;margin-left:7px;font-family:sans-serif;vertical-align:middle;">💭 ' + _thoughts.length + '</span>'
-            : '';
-          return '<div class="jnl-card" onclick="openJournalDetail(\'' + j.id + '\')" style="display:flex;align-items:stretch;background:linear-gradient(135deg,#faf8f3 0%,#f5f1ea 100%);border:none;border-bottom:1px solid rgba(180,165,140,0.4);padding:0;margin-bottom:0;cursor:pointer;position:relative;overflow:hidden;">'
-            + '<div style="width:52px;flex-shrink:0;background:rgba(44,36,22,0.035);border-right:1px solid rgba(180,165,140,0.35);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 0;gap:2px;">'
+          const _click = j._virtual ? '' : ' onclick="openJournalDetail(\'' + _escapeHtml(j.id) + '\')"';
+          return '<div class="jnl-card"' + (j._virtual ? ' data-jnl-virtual="1"' : ' data-jnl-id="' + _escapeHtml(j.id) + '"') + _click + ' style="display:flex;align-items:stretch;background:linear-gradient(135deg,#faf8f3 0%,#f5f1ea 100%);border:1px solid rgba(180,165,140,0.4);border-radius:10px;padding:0;margin:0;' + (j._virtual ? 'opacity:0.72;' : 'cursor:pointer;') + 'position:relative;overflow:hidden;">'
+            + '<div style="width:52px;flex-shrink:0;background:rgba(44,36,22,0.035);border-right:1px solid rgba(180,165,140,0.35);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:14px 0;gap:2px;">'
             + '<div style="font-size:0.58em;color:var(--ink-faint);font-family:serif;letter-spacing:0.05em;">' + _year + '</div>'
             + '<div style="font-size:0.88em;font-weight:700;color:var(--ink);font-family:\'Noto Serif JP\',serif;letter-spacing:0.03em;">' + parseInt(_dp[1]) + '/' + parseInt(_dp[2]) + '</div>'
             + '<div style="font-size:0.68em;color:var(--ink-light);font-family:serif;">(' + _wday + ')</div>'
             + (_hasMeta ? '<div style="font-size:0.85em;margin-top:4px;opacity:0.7;">' + _escapeHtml(j.weather||'') + '</div>' : '')
             + '</div>'
-            + '<div style="flex:1;padding:13px 14px 12px;min-width:0;">'
-            + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">'
-            + '<div style="font-size:0.78em;font-weight:600;color:var(--ink);font-family:serif;letter-spacing:0.05em;">' + _monthDay + '(' + _wday + ')' + _thoughtBadge + '</div>'
+            + '<div style="flex:1;padding:12px 14px 12px;min-width:0;">'
+            + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+            + '<div style="font-size:0.78em;font-weight:600;color:var(--ink);font-family:serif;letter-spacing:0.05em;">' + _monthDay + '(' + _wday + ')</div>'
             + (j.mood || j.condition ? '<div style="font-size:0.88em;opacity:0.72;">' + (j.mood ? MOOD_E[j.mood] : '') + (j.condition ? COND_E[j.condition] : '') + '</div>' : '')
             + '</div>'
-            + '<div style="font-size:0.8em;color:var(--ink);line-height:1.75;font-family:\'Noto Serif JP\',serif;">'
-            + (preview || '<span style="color:var(--ink-faint);font-style:italic;">今日考えたこと ' + (_thoughts.length > 0 ? _thoughts.length + '件' : '') + '</span>')
-            + '</div>'
+            + (_season ? '<div data-jnl-season style="font-size:0.72em;color:var(--ink-faint);font-family:serif;line-height:1.7;margin-bottom:' + (_empty ? '0' : '6px') + ';">🍃 ' + _escapeHtml(_season) + '</div>' : '')
+            + (_own ? '<div data-jnl-own style="font-size:0.82em;color:var(--ink);line-height:1.75;font-family:\'Noto Serif JP\',serif;white-space:pre-wrap;word-break:break-word;margin-bottom:4px;">' + _escapeHtml(_own) + '</div>' : '')
+            + _thoughts.map(function(th) {
+                return '<div data-jnl-thought style="display:flex;gap:7px;align-items:flex-start;font-size:0.82em;color:var(--ink);line-height:1.7;font-family:\'Noto Serif JP\',serif;padding:3px 0;">'
+                  + '<span style="width:5px;height:5px;border-radius:50%;background:var(--washi-blue);opacity:0.6;flex-shrink:0;margin-top:0.7em;"></span>'
+                  + '<span style="white-space:pre-wrap;word-break:break-word;min-width:0;">' + _escapeHtml(th.text || '') + '</span></div>';
+              }).join('')
             + '</div>'
             + '</div>';
         }).join('')
-        + '</div>';
+        + '</div></div>';
     }
     function openJournalDetail(id) {
       var journals = loadJournals();
@@ -99552,6 +99656,10 @@ document.addEventListener('DOMContentLoaded', function() {
       // 本体
       var body = document.createElement('div');
       body.style.cssText = 'padding:24px 24px 40px;flex:1;';
+      // v0.78.0: 季節の一行（保存せず、その日の暦から作る）
+      var _ownD = koyomiJournalOwnText(j, _jThoughts);
+      var _seasonD = koyomiJournalSeasonLine(j.date, !_ownD && _jThoughts.length === 0);
+      if (_seasonD) { var sdl = document.createElement('div'); sdl.setAttribute('data-jnl-season', '1'); sdl.style.cssText = 'font-size:13px;color:var(--ink-faint);font-family:serif;line-height:1.8;margin-bottom:16px;'; sdl.textContent = '🍃 ' + _seasonD; body.appendChild(sdl); }
       // 気分・体調・天気
       if (j.weather || j.mood || j.condition) {
         var metaRow = document.createElement('div');
@@ -99559,8 +99667,8 @@ document.addEventListener('DOMContentLoaded', function() {
         metaRow.textContent = (j.weather||'') + (j.mood ? MOOD_E[j.mood] : '') + (j.condition ? COND_E[j.condition] : '');
         body.appendChild(metaRow);
       }
-      // 本文
-      if (j.text) {
+      // 本文（自分で書いたものだけ。季節の風の一行・一言と同じ文は出さない）
+      if (_ownD) {
         var textLabel = document.createElement('div');
         textLabel.style.cssText = 'font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:.14em;margin-bottom:10px;font-family:serif;display:flex;align-items:center;justify-content:space-between;';
         textLabel.innerHTML = '<span>RECORD / 記録</span>';
@@ -99573,7 +99681,7 @@ document.addEventListener('DOMContentLoaded', function() {
         body.appendChild(textLabel);
         var textBody = document.createElement('div');
         textBody.style.cssText = 'font-size:16px;color:var(--ink);line-height:2.0;white-space:pre-wrap;font-family:Noto Serif JP,serif;background:rgba(255,255,255,0.6);border-radius:12px;padding:18px;margin-bottom:24px;';
-        textBody.textContent = j.text;
+        textBody.textContent = _ownD;
         body.appendChild(textBody);
       }
       // 今日考えたこと
@@ -99779,22 +99887,24 @@ document.addEventListener('DOMContentLoaded', function() {
       renderJournalView();
     }
     function thoughtToScratch(journalId, thoughtId) {
-      var th = allTasks.find(function(t){ return t.id === thoughtId && t.kind === 'thought'; });
+      var th = allTasks.find(function(t){ return t.id === thoughtId && (t.kind === 'thought' || koyomiIsJournalMemo(t)); });
       if (!th) return;
-      addScratchItem(th.text);
-      deleteThought(thoughtId);
+      // v0.78.1: 雑記帳へ戻す＝置き場所の印を外すだけ（同じ番号のまま。書いた日もそのまま）
+      if (th.kind === 'thought') { var _pj = _koyomiJournalById(th.parentId); th.kind = 'scratch'; th.date = (_pj && _pj.date) || th.date || getLocalDateStr(new Date()); delete th.parentId; }
+      delete th.place; th.updatedAt = new Date().toISOString();
       saveAllTasks();
+      if (typeof renderScratchView === 'function') renderScratchView();
       // モーダルを閉じずにDOM要素だけ削除（複数件連続操作のためモーダルは維持）
       var _el = document.getElementById('th_' + thoughtId);
       if (_el) _el.remove();
       showToast('📝 雑記帳へ戻しました', {type:'success'});
     }
     function thoughtToTask(journalId, thoughtId) {
-      var th = allTasks.find(function(t){ return t.id === thoughtId && t.kind === 'thought'; });
+      var th = allTasks.find(function(t){ return t.id === thoughtId && (t.kind === 'thought' || koyomiIsJournalMemo(t)); });
       if (!th) return;
       var dateStr = (typeof currentDailyDate !== 'undefined' && currentDailyDate) || getLocalDateStr(new Date());
-      allTasks.push({ id: generateTaskId(), kind: 'scratch', text: th.text, date: dateStr, createdAt: new Date().toISOString() });
-      deleteThought(thoughtId);
+      // v0.78.1: 雑記帳へ（印を外して、その日の雑記に）。消して作り直さない
+      th.kind = 'scratch'; delete th.parentId; delete th.place; th.date = dateStr; th.updatedAt = new Date().toISOString();
       saveAllTasks();
       document.getElementById('journalDetailModal').style.display = 'none';
       renderJournalView();
