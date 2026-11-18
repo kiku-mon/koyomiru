@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.82.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.83.2 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.82.0';
+    const APP_VERSION = 'v0.83.2';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -286,6 +286,10 @@
     var _emParams = new URLSearchParams(window.location.search);
     if (_emParams.get('view'))      window._koyomiruEntryMode = 'view';
     else if (_emParams.get('join')) window._koyomiruEntryMode = 'join';
+    // v0.83.0: 【権威】2026-11-18「Xで流れてきて緊急でやりたいのに、いきなり暦の注文表とか出てきたらびっくりする」
+    //   → 災害復旧掲示板のリンク（?saigai=）から来た人には、起動の演出・カレンダー選び・注文票を出さず、掲示板だけを見せる。
+    //   ログインで外へ出て戻ってきても続けられるよう、同じタブの間だけ覚えておく
+    else if (_emParams.get('saigai')) { window._koyomiruEntryMode = 'saigai'; try { sessionStorage.setItem('koyomiru_pending_saigai', String(_emParams.get('saigai')).slice(0, 40)); } catch (eS) {} }
     // v0.45.1779: 【権威】2026-08-31、Googleログインから戻ってきた回を数え忘れていた。
     // ログインは別サイトへ飛んで戻ってくるので、戻り道のURLに ?join= は付いていない。
     // そのままだと戻った瞬間に起動アニメとセットアップ画面が復活し、
@@ -296,6 +300,7 @@
         sessionStorage.getItem('koyomiru_pending_join')) {
       window._koyomiruEntryMode = 'join';
     }
+    if (!window._koyomiruEntryMode && sessionStorage.getItem('koyomiru_pending_saigai')) window._koyomiruEntryMode = 'saigai';
   } catch(e) {}
   // 保留したセットアップ画面を、招待が片付いてから出すための旗。
   // 「出さない」だけにすると、断った人がカレンダーの選び直しに一生たどり着けない。
@@ -7286,6 +7291,8 @@ function _showInviteWelcome() {
       <!-- v0.45.1608: ログイン方法の連携。同じ人が別の方法で入ると別人扱いになるため、
            ここで紐づけておけば、どちらで入っても同じデータが見える。 -->
       <button class="account-menu-item" id="accountMenuLink" onclick="closeAccountMenu(); openLinkMethodModal();"><span>🔗</span>アカウント連携</button>
+      <!-- v0.83.0: 【権威】2026-11-18 緊急災害復旧モードを常設する。誰でも自分の市区町村の掲示板を立ち上げられる、と添える -->
+      <button class="account-menu-item" id="accountMenuSaigai" onclick="closeAccountMenu(); openKoyomiSaigaiHub();" style="align-items:flex-start;"><span>🆘</span><span style="display:block;text-align:left;"><span style="display:block;color:#9f2a22;font-weight:700;">緊急災害復旧モード</span><span style="display:block;font-size:0.8em;color:#8e8e8e;font-weight:400;line-height:1.5;margin-top:1px;white-space:normal;">誰でも、自分の市区町村の災害復旧掲示板を立ち上げられます</span></span></button>
       <!-- v0.45.2060: 【権威】2026-09-04、長押しで開発者ログに入る経路を作った覚えがない、
            勝手に作るな、との指摘。版の記録も残っておらず、いつ入ったか追えなかった。
            開発者ログには招待コード・見るだけリンクのトークン・予定の本文が出る。
@@ -10230,6 +10237,11 @@ function _showInviteWelcome() {
           <div id="profileFacts" style="margin-top:20px;padding-top:16px;border-top:1px solid #f0f0f0;"></div>
           <!-- v0.78.26: 【権威】2026-11-18「設定は何でもできるようにしたい」→ アカウント連携を設定のプロフィールにも置く。
                上の「アカウント」メニューと同じ窓を開くだけ（中身は1つなので、2か所でずれない） -->
+          <!-- v0.83.0: 緊急災害復旧モードの入口（アカウントのメニューと同じ窓を開く） -->
+          <div id="profileSaigaiRow" style="margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div><div style="font-size:0.92em;font-weight:700;color:#9f2a22;">🆘 緊急災害復旧モード</div><div style="font-size:0.76em;color:#999;margin-top:3px;line-height:1.5;">誰でも、自分の市区町村の災害復旧掲示板を立ち上げられます。水・炊き出し・開いているお店などを、町の人どうしで知らせ合えます</div></div>
+            <button type="button" onclick="if (typeof openKoyomiSaigaiHub === 'function') openKoyomiSaigaiHub();" style="flex-shrink:0;padding:8px 14px;border:1px solid #9f2a22;border-radius:9px;background:#fff;color:#9f2a22;font-size:0.84em;font-weight:700;cursor:pointer;font-family:inherit;">開く</button>
+          </div>
           <div id="profileLinkRow" style="margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;gap:10px;">
             <div><div style="font-size:0.92em;font-weight:600;color:#333;">🔗 アカウント連携</div><div style="font-size:0.76em;color:#999;margin-top:3px;line-height:1.5;">LINE・Google・Discordをつなぐと、どれで入っても同じ予定が見られます</div></div>
             <button type="button" onclick="if (typeof openLinkMethodModal === 'function') openLinkMethodModal();" style="flex-shrink:0;padding:8px 14px;border:1px solid #0b6bcb;border-radius:9px;background:#fff;color:#0b5bb0;font-size:0.84em;font-weight:600;cursor:pointer;font-family:inherit;">開く</button>
@@ -28102,6 +28114,7 @@ function _koyomiAskedKey() {
   return ui.koyomiOrderAskedKou ? 'kou:' + ui.koyomiOrderAskedKou : '';   // 第48条：v0.58.4〜 の印を引き継ぐ
 }
 function koyomiOrderAskWillShow() {
+  if (window._koyomiruEntryMode === 'saigai') return false;   // v0.83.0: 災害復旧掲示板のリンクから来た人には出さない
   try {
     var setup = document.getElementById('setupOverlay'), kou = _koyomiCurrentKou(), freq = koyomiAskFreq();
     return koyomiOrderAskDecide({ testing: !!window._isTesting, setupVisible: !!(setup && getComputedStyle(setup).display !== 'none'), freq: freq,
@@ -39625,7 +39638,8 @@ window._repairCloudCalendarIds();
       var _raw = localStorage.getItem('allTasks'); if (!_raw) return;
       var _list; try { _list = JSON.parse(_raw); } catch (e) { return; }
       if (!Array.isArray(_list)) return;
-      var _id = '019e3a10-1000-7000-9000-000000000020', _title = "💬 LINEでログインするとき", _now = new Date().toISOString();
+      // v0.83.0: 020 は大福帳の使い方がすでに使っていた番号だった。LINEのページは 022 にする（下の mig_note_id_split_v1 で直す）
+      var _id = '019e3a10-1000-7000-9000-000000000022', _title = "💬 LINEでログインするとき", _now = new Date().toISOString();
       var _link = _list.filter(function(t) { return t && t.kind === 'note' && (t.id === '019e3a10-1000-7000-9000-000000000002' || t.title === '\ud83d\udd17 アカウント連携'); })[0];
       var _order = (_link && typeof _link.order === 'number') ? _link.order + 0.5 : 0.5;
       var _hit = false;
@@ -39712,6 +39726,45 @@ window._repairCloudCalendarIds();
           allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); });
         }
       } catch(e) {}
+    });
+    // v0.83.0: 【不具合】v0.78.25 で「💬 LINEでログインするとき」を、大福帳の使い方と同じ番号（020）で入れていた。
+    //   すでに使っていた人は大福帳の使い方がLINEのページに書き換わり、新しく入れた人はLINEの題で中身が大福帳になっていた。
+    //   020 は大福帳の使い方に戻し、LINEのページは別の番号（022）で入れ直す
+    addMigration('mig_note_id_split_v1', function() {
+      var _raw = localStorage.getItem('allTasks'); if (!_raw) return;
+      var _list; try { _list = JSON.parse(_raw); } catch (e) { return; }
+      if (!Array.isArray(_list)) return;
+      var _now = new Date().toISOString(), _ch = false;
+      var _ledId = '019e3a10-1000-7000-9000-000000000020', _ledTitle = '📒 大福帳の使い方';
+      var _lineId = '019e3a10-1000-7000-9000-000000000022', _lineTitle = "💬 LINEでログインするとき";
+      var _led = _list.filter(function(t) { return t && t.kind === 'note' && t.id === _ledId; })[0];
+      if (_led && (_led.title !== _ledTitle || String(_led.textL || '').indexOf('《大福帳とは》') !== 0)) {
+        _led.title = _ledTitle; _led.textL = "《大福帳とは》\n\n共有カレンダーを作った人（番頭）が、\nだれが来たかを見られる帳面です。\n江戸の商家が、火事のときに井戸へ\n投げ込んで守ったという、\nあの大福帳から名前を借りました。\n\n《番頭とお得意さま》\n\nカレンダーを作った人が「番頭」、\n入った人が「お得意さま」です。\n\n《見られるもの》\n\nダッシュボードの「📒 大福帳」に、\n自分が番頭のカレンダーごとに、\n今日・昨日来た人数が出ます。\n押すと、だれが何時に来たかが分かります。"; _led.textR = "《「来た」の意味》\n\nそのカレンダーを表示した状態で\nこよみるを開いたことです。\n1人・1日1行。記録は90日で消えます。\n\n《読んだことを伝えるには》\n\n「来た」は、予定を読んだ証明では\nありません。ちゃんと見たことを\n伝えたいときは、その予定の\nコメントに「見ました」「行けます」と\n書きましょう。番頭にも仲間にも、\nはっきり伝わります。\n\n《届けたくないとき》\n\nアカウントのメニューの\n「📒 大福帳（だれが来たかの記録）」で、\nカレンダーごとに止められます。\n止めると、それまでの記録も消えます。"; _led.updatedAt = _now; _ch = true;
+      }
+      var _hasLine = _list.some(function(t) { return t && t.kind === 'note' && t.id !== _ledId && (t.id === _lineId || t.title === _lineTitle); });
+      if (!_hasLine && (_led || _list.some(function(t) { return t && t.kind === 'note'; }))) {
+        var _link = _list.filter(function(t) { return t && t.kind === 'note' && (t.id === '019e3a10-1000-7000-9000-000000000002' || t.title === '\ud83d\udd17 アカウント連携'); })[0];
+        _list.push({ id: _lineId, kind: 'note', title: _lineTitle, textL: "LINEでもログインできるようになりました。\nパスワードもメールアドレスも\nいりません。\n\n《はじめての方》\n\nログインの画面のいちばん上、\n「LINEでログイン」を押して、\nLINEの画面で「許可する」を\n押すだけです。\n\n《もう使っている方は、ここが大事》\n\nGoogle・Discord・メールで\nすでにログインしたことがある方は、\nいきなり「LINEでログイン」を\n押さないでください。\n\nLINEで先に入ると、\n別の人として新しく作られ、\nいつもの予定が見えません。\nあとから1つにまとめることも\nできません。\n\n先に、いつもの方法でログインして、\nそこへLINEをつなぎます（右のページ）。", textR: "《もう使っている方の手順》\n\n① いつもの方法でログイン\n　（予定が見えていることを確かめる）\n② アカウント → 🔗 アカウント連携\n　（設定 → プロフィール からも開けます）\n③ LINEの「連携する」を押す\n④ LINEの画面で「許可する」\n⑤ こよみるに戻ってくる\n\n✓ 連携済み と出たら完了です。\n\n《つないだあとは》\n\n次からは、LINEでも、\nいつもの方法でも、\nどちらでログインしても\n同じ予定が見られます。\n\n《先にLINEで入ってしまったら》\n\nいったんログアウトして、\nいつもの方法でログインし直せば、\nこれまでの予定が見えます。\n予定は消えていません。\n\nそのあと連携しようとして\n「すでに別のこよみるアカウント\nとして登録されています」と出たら、\n管理者にご相談ください。",
+          dateL: '', dateR: '', text: '', margin: '', order: (_link && typeof _link.order === 'number') ? _link.order + 0.5 : 0.5, createdAt: _now, updatedAt: _now });
+        _ch = true;
+      }
+      if (!_ch) return;
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try { if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) { allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); }); } } catch (e) {}
+    });
+    // v0.83.0: 【権威】2026-11-18「緊急災害復旧モードを常設して、自由帳も作ってあげて」→ 使い方のページを配る
+    addMigration('mig_saigai_note_v1', function() {
+      var _raw = localStorage.getItem('allTasks'); if (!_raw) return;
+      var _list; try { _list = JSON.parse(_raw); } catch (e) { return; }
+      if (!Array.isArray(_list)) return;
+      var _id = '019e3a10-1000-7000-9000-000000000023', _title = '🆘 緊急災害復旧モードの使い方', _now = new Date().toISOString();
+      var _tL = "大きな災害が起きたとき、\nその市区町村だけの\n「災害復旧掲示板」を、\nだれでも立ち上げられます。\n\n水が出る場所、炊き出し、\n開いているお店やトイレなどを、\n町の人どうしで知らせ合えます。\n\n《立ち上げ方》\n\nアカウント → 🆘 緊急災害復旧モード\n（設定 → プロフィール からも開けます）\n\n① 何が起きたかを選ぶ\n② 町を選ぶ（今いる場所から自動）\n③「始める」を押す\n\n始めたら、XやLINEのボタンで\nまわりの人に知らせてください。\nリンクを開いた人には、\nその町の掲示板がすぐ出ます。";
+      var _tR = "《確認中について》\n\n始めた直後は「確認中」と出ます。\nその町にいる方が3人\n「私もここで被災しています」を\n押すと、確かめられたことになります。\n確かめられないときは、\n72時間で自動で終わります。\n\n《書き込むとき》\n\n「＋ 掲示板に書く」を押して、\n聞かれたことに答えるだけです。\n場所は約50mにまるめて載せ、\nだれが書いたかは出ません。\n\n《見るとき》\n\n利用者どうしで知らせ合った\n情報です。自治体などの\n公式の発表もあわせて\nご確認ください。\n\n本当に災害が起きているときだけ、\n立ち上げてください。";
+      var _hit = _list.filter(function(t) { return t && t.kind === 'note' && (t.id === _id || t.title === _title); })[0];
+      if (_hit) { _hit.textL = _tL; _hit.textR = _tR; _hit.updatedAt = _now; }
+      else _list.push({ id: _id, kind: 'note', title: _title, textL: _tL, textR: _tR, dateL: '', dateR: '', text: '', margin: '', order: 0.7, createdAt: _now, updatedAt: _now });
+      localStorage.setItem('allTasks', JSON.stringify(_list));
+      try { if (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) { allTasks.length = 0; _list.forEach(function(t) { allTasks.push(t); }); } } catch (e) {}
     });
 
     // v0.56.7: 【権威】2026-10-14、業務モードのメモの《生まれた経緯》に、作者の勤め先と仕事の中身が書いてあった（第85条）。
@@ -42288,6 +42341,8 @@ window._repairCloudCalendarIds();
 
     // v0.45.1248: 図書館「案内表示の設定」トグルリスト
     function switchView(view) {
+      // v0.83.0: 災害復旧掲示板のリンクから来た人が、ほかの画面へ移ったら、待たせていたカレンダー選びを出す
+      try { if (view !== 'tayori' && window._koyomiruEntryMode === 'saigai' && window._tayoriLinkOpened) { window._koyomiruEntryMode = null; try { sessionStorage.removeItem('koyomiru_pending_saigai'); } catch (eS) {} if (typeof _releasePendingSetup === 'function') _releasePendingSetup(400); } } catch (eSg) {}
       // v0.68.5: 世界の暦はタブの下に出すページなので、ほかのタブへ移るときは閉じる
       try { var _wov = document.getElementById('koyomiWorldOverlay'); if (_wov) { try { clearInterval(_koyomiWorldTimer); } catch (eT) {} _koyomiWorldTimer = null; _wov.remove(); } } catch (eWo) {}
       // ビュー切替時にsnackbarを確実に消去
@@ -61027,6 +61082,42 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.83.2', date: '2026-11-18',
+    items: [
+      { icon:'📌', t:'災害復旧掲示板の言葉を、やさしく見直しました',
+        before:'たいへんな中で使う掲示板なのに、「お気に入り」など、ふだん使いの言葉が残っていました',
+        after:'「📌 覚えておく」（あとで見返すため）、「自分が書いたもの」などの言葉にしました。書き込んだあとは「大変な中、知らせてくださって、ありがとうございます」とお伝えします' },
+      { icon:'📣', t:'XやLINEで知らせる文を、ていねいにしました',
+        before:'何の掲示板なのかの説明が足りない文でした',
+        after:'「【緊急災害掲示板】」と町の名前、何を知らせ合う掲示板か、登録しなくても見られること、書き込みのお願いを入れました。立ち上げたばかりのときは「確認中」と正直に書きます。Xでは文字数に収まるように整えます' }
+    ]
+  },
+  {
+    ver: 'v0.83.1', date: '2026-11-18',
+    items: [
+      { icon:'✍️', t:'災害復旧掲示板に、分類ごとの「募集しています」の窓を並べました',
+        before:'まだ書き込みがないとき、何を書けばよいかが分かりにくい画面でした',
+        after:'給水所・炊き出し・トイレなど、まだ書き込みのない分類ごとに「情報を募集しています」の窓が並びます。窓のボタンを押すと、その分類を選んだ状態で書き始められます' }
+    ]
+  },
+  {
+    ver: 'v0.83.0', date: '2026-11-18',
+    items: [
+      { icon:'🆘', t:'「緊急災害復旧モード」を、いつでも開ける場所に置きました',
+        before:'災害復旧掲示板の立ち上げ方は、「季節のたより」を使っている人にしか分かりませんでした',
+        after:'アカウントのメニューと、設定 → プロフィールに「🆘 緊急災害復旧モード」を置きました。誰でも、自分の市区町村の災害復旧掲示板を立ち上げられます。使い方は自由帳にも書きました' },
+      { icon:'📋', t:'「生活情報」を「災害復旧掲示板」という名前にしました',
+        before:'掲示板として使うものなのに、掲示板らしく見えませんでした',
+        after:'「災害復旧掲示板」と出て、書き込みは「＋ 掲示板に書く」から。まだ書き込みがないときは「この町の情報を募集しています」と、書く場所へご案内します' },
+      { icon:'🔗', t:'XやLINEのリンクから来た方には、掲示板だけを出すようにしました',
+        before:'はじめての方がリンクを開くと、先にカレンダー選びなどの画面が出ていました',
+        after:'リンクを開くと、すぐにその町の掲示板が出ます。カレンダー選びは、ほかの画面へ移ったときにご案内します' },
+      { icon:'📒', t:'自由帳の「大福帳の使い方」が消えることがあったのを直しました',
+        before:'「LINEでログインするとき」のページを足したとき、「大福帳の使い方」のページと重なっていました',
+        after:'2つのページを、それぞれ元どおりに分けました' }
+    ]
+  },
+  {
     ver: 'v0.82.0', date: '2026-11-18',
     items: [
       { icon:'🆘', t:'自分の町で、緊急災害復旧モードを始められるようにしました',
@@ -71353,13 +71444,13 @@ function renderTayoriView() {
   var tabs = document.getElementById('tayoriTabs');
   if (tabs) {
     var tb = function(k, label) { var on = tab === k; return '<button type="button" data-tayori-tab="' + k + '" style="flex:1;padding:7px 0;border:none;border-radius:8px;background:' + (on ? '#fff' : 'transparent') + ';color:' + (on ? '#3b3226' : '#8a7d6b') + ';font-size:0.84em;font-weight:' + (on ? '700' : '500') + ';cursor:pointer;font-family:inherit;box-shadow:' + (on ? '0 1px 3px rgba(0,0,0,0.12)' : 'none') + ';">' + label + '</button>'; };
-    tabs.innerHTML = mode ? '<div style="display:flex;gap:4px;padding:3px;background:#efe8dc;border-radius:10px;">' + tb('disaster', '生活情報') + tb('season', '季節のたより') + '</div>' : '';
+    tabs.innerHTML = mode ? '<div style="display:flex;gap:4px;padding:3px;background:#efe8dc;border-radius:10px;">' + tb('disaster', '災害復旧掲示板') + tb('season', '季節のたより') + '</div>' : '';
     [].forEach.call(tabs.querySelectorAll('[data-tayori-tab]'), function(b) { b.onclick = function() { _koyomiTayori.tab = b.getAttribute('data-tayori-tab'); _koyomiTayori.filter = ''; _koyomiTayori.view = ''; renderTayoriView(); _tayoriDraw(); }; });
   }
-  var tt = document.getElementById('tayoriTitle'); if (tt) tt.textContent = dis ? '生活情報' : '季節のたより';
+  var tt = document.getElementById('tayoriTitle'); if (tt) tt.textContent = dis ? '災害復旧掲示板' : '季節のたより';
   var sub = document.getElementById('tayoriSub');
-  if (sub) sub.textContent = dis ? '水・食べもの・お店などの、いまの状況です。見かけたら「今も有効」で知らせてください' : 'いま、季節が動いているところ（' + seasonName + '）';
-  var pb = host.querySelector('[data-tayori-post]'); if (pb) { pb.textContent = dis ? '＋ 知らせる' : '＋ たよりを出す'; pb.style.background = dis ? '#9f2a22' : '#3b6ea5'; }
+  if (sub) sub.textContent = dis ? 'この町の水・食べもの・お店などを、町の人どうしで知らせ合う掲示板です。見かけたら「今も有効」を押してください' : 'いま、季節が動いているところ（' + seasonName + '）';
+  var pb = host.querySelector('[data-tayori-post]'); if (pb) { pb.textContent = dis ? '＋ 掲示板に書く' : '＋ たよりを出す'; pb.style.background = dis ? '#9f2a22' : '#3b6ea5'; }
   // 地域と「使えるところだけ」
   var fl = document.getElementById('tayoriFilters');
   if (fl) {
@@ -71414,9 +71505,9 @@ function renderTayoriView() {
     : '位置は約500mの範囲にぼかして載せます。誰が出したかは、ほかの人には見えません。') +
     '読み込むのは、開いたときと地図を動かしたときだけです。' + (mode ? '<br>市区町村の境目：国土交通省「国土数値情報（行政区域データ）」を加工して作成' : '') +
     // v0.80.5: 【権威】2026-11-18「意見を受け取る仕組みは、こよみるの Gmail でいい」→ 問い合わせと同じ窓口へ、件名を入れて開く
-    (dis ? '' : '<button type="button" data-tayori-start style="display:block;width:100%;min-height:50px;margin:12px 0 4px;border:1.5px solid #e6b4ad;border-radius:12px;background:#fff;color:#9f2a22;font-size:1.25em;font-weight:700;cursor:pointer;font-family:inherit;">🆘 自分の町で緊急災害復旧モードを始める</button>' +
-      '<div style="font-size:1.05em;color:#8a7d6b;line-height:1.6;">大きな災害が起きたとき、その市区町村だけで、水・食べもの・お店などを知らせ合えるようにします。</div>') +
-    '<div style="margin-top:8px;"><a href="mailto:koyomiru@gmail.com?subject=' + encodeURIComponent(dis ? '【こよみる 生活情報】ご意見' : '【こよみる 季節のたより】ご意見') + '&body=' + encodeURIComponent((mode && dis ? '（' + mode.name + '）\n' : '') + 'ご意見・ご要望をお書きください。\n\n') + '" style="color:#3b6ea5;font-size:1.05em;text-decoration:underline;">💬 ご意見・ご要望を送る（メール）</a></div>';
+    (dis ? '' : '<button type="button" data-tayori-start style="display:block;width:100%;min-height:50px;margin:12px 0 4px;border:1.5px solid #e6b4ad;border-radius:12px;background:#fff;color:#9f2a22;font-size:1.25em;font-weight:700;cursor:pointer;font-family:inherit;">🆘 自分の町の災害復旧掲示板を立ち上げる</button>' +
+      '<div style="font-size:1.05em;color:#8a7d6b;line-height:1.6;">緊急災害復旧モード：大きな災害が起きたとき、誰でも、その市区町村だけの掲示板を立ち上げられます。</div>') +
+    '<div style="margin-top:8px;"><a href="mailto:koyomiru@gmail.com?subject=' + encodeURIComponent(dis ? '【こよみる 災害復旧掲示板】ご意見' : '【こよみる 季節のたより】ご意見') + '&body=' + encodeURIComponent((mode && dis ? '（' + mode.name + '）\n' : '') + 'ご意見・ご要望をお書きください。\n\n') + '" style="color:#3b6ea5;font-size:1.05em;text-decoration:underline;">💬 ご意見・ご要望を送る（メール）</a></div>';
   var _sb = foot && foot.querySelector('[data-tayori-start]'); if (_sb) _sb.onclick = _tayoriStartWizard;
   // 管理者モードのときだけ「見張り」を出す（サーバー側でも管理者かを確かめる）
   var _adm = (typeof isKoyomiruAdminMode === 'function') && isKoyomiruAdminMode();
@@ -71442,8 +71533,8 @@ function renderTayoriView() {
 function _tayoriDisMenu() {
   var adm = (typeof isKoyomiruAdminMode === 'function') && isKoyomiruAdminMode(), d = _tdState();
   var bs = [
-    { label: '★ お気に入りだけを出す', style: 'cancel', onClick: function() { _koyomiTayori.only = 'fav'; d.stage = 'home'; renderTayoriView(); } },
-    { label: '自分が知らせたものだけを出す', style: 'cancel', onClick: function() { _koyomiTayori.only = 'mine'; d.stage = 'home'; renderTayoriView(); } },
+    { label: '📌 覚えておいた場所だけを出す', style: 'cancel', onClick: function() { _koyomiTayori.only = 'fav'; d.stage = 'home'; renderTayoriView(); } },
+    { label: '自分が書いたものだけを出す', style: 'cancel', onClick: function() { _koyomiTayori.only = 'mine'; d.stage = 'home'; renderTayoriView(); } },
     { label: '🚰 断水・停電の状況を見る', style: 'cancel', onClick: function() { d.keys = ['lifeline']; d.label = '🚰 断水・停電'; d.area = ''; d.near = null; d.stage = 'results'; renderTayoriView(); } },
     { label: '📍 今いるあたりを地図で見る', style: 'cancel', onClick: function() { _koyomiTayori.view = 'map'; renderTayoriView(); _tayoriDraw(); setTimeout(_tayoriGoHere, 300); } }
   ];
@@ -71572,7 +71663,9 @@ function _tayoriPopupHtml(r, opt) {
   var when = _tayoriWhen(r);
   return '<div style="font-family:inherit;min-width:210px;">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-size:1.02em;font-weight:700;color:#3b3226;">' + _tayoriEsc(cat.emoji) + ' ' + _tayoriEsc(cat.label) + '</span>' + _tayoriBadge(st) +
-      '<button type="button" data-tayori-fav title="お気に入り" style="margin-left:auto;border:none;background:none;font-size:1.15em;cursor:pointer;color:' + (fav ? '#e0a100' : '#c9bfae') + ';padding:0 2px;">' + (fav ? '★' : '☆') + '</button></div>' +
+      // v0.83.2: 【権威】2026-11-18「本当に被災して大変な人に、お気に入りも何もない。寄り添っていない言葉はやめたら」→ 災害のときは「📌 覚えておく」（あとで見返すため）
+      (disaster ? '<button type="button" data-tayori-fav title="あとで見返せるように覚えておく" style="margin-left:auto;padding:3px 9px;border:1px solid ' + (fav ? '#c9a227' : '#e1d8c8') + ';border-radius:999px;background:' + (fav ? '#fff6dc' : '#fff') + ';color:#5a4e3c;font-size:0.8em;cursor:pointer;font-family:inherit;">' + (fav ? '📌 覚えています' : '📌 覚えておく') + '</button>'
+        : '<button type="button" data-tayori-fav title="お気に入り" style="margin-left:auto;border:none;background:none;font-size:1.15em;cursor:pointer;color:' + (fav ? '#e0a100' : '#c9bfae') + ';padding:0 2px;">' + (fav ? '★' : '☆') + '</button>') + '</div>' +
     (r.place_name ? '<div style="font-size:0.92em;color:#3b3226;margin-top:3px;font-weight:600;">' + _tayoriEsc(r.place_name) + '</div>' : '') +
     (r.muni_name ? '<div style="font-size:0.78em;color:#9a8f7c;margin-top:1px;">' + _tayoriEsc(r.muni_name) + '</div>' : '') +
     (when ? '<div style="font-size:0.84em;color:#7a3b1e;margin-top:5px;font-weight:600;">🕒 ' + _tayoriEsc(when) + '</div>' : '') +
@@ -71725,7 +71818,7 @@ function _tayoriOpenPostForm(latlng) {
   var ov = document.createElement('div'); ov.id = 'tayoriPostOverlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,0.42);display:flex;align-items:center;justify-content:center;padding:16px;';
   ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;padding:20px 18px;max-width:440px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.25);max-height:90vh;overflow:auto;">' +
-    '<div style="font-size:1.05em;font-weight:700;color:#3b3226;margin-bottom:10px;">' + (tab === 'disaster' ? '生活情報を知らせる' : 'たよりを出す') + '</div>' +
+    '<div style="font-size:1.05em;font-weight:700;color:#3b3226;margin-bottom:10px;">' + (tab === 'disaster' ? '掲示板に書く' : 'たよりを出す') + '</div>' +
     '<div style="font-size:0.8em;color:#8a7d6b;margin-bottom:6px;">' + (tab === 'disaster' ? 'なにがありますか' : 'なにが見えましたか') + '</div>' +
     '<div id="tayoriPostCats" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>' +
     '<div id="tayoriPostStates" style="margin-bottom:10px;"></div>' +
@@ -71790,7 +71883,7 @@ function _tayoriOpenAdmin(tab) {
   ov.style.cssText = 'position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,0.42);display:flex;align-items:center;justify-content:center;padding:16px;';
   var tb = function(k, label) { var on = tab === k; return '<button type="button" data-tayori-admin-tab="' + k + '" style="padding:6px 12px;border-radius:9px;border:1px solid ' + (on ? '#7a5c1e' : '#e1d8c8') + ';background:' + (on ? '#7a5c1e' : '#fff') + ';color:' + (on ? '#fff' : '#5a4e3c') + ';font-size:0.84em;cursor:pointer;font-family:inherit;">' + label + '</button>'; };
   ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;padding:18px;max-width:560px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25);">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-weight:700;color:#3b3226;">🛡 見張り（季節のたより・生活情報）</div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-weight:700;color:#3b3226;">🛡 見張り（季節のたより・災害復旧掲示板）</div>' +
     '<button type="button" data-tayori-admin-close style="border:none;background:none;font-size:20px;color:#9aa3af;cursor:pointer;">✕</button></div>' +
     '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">' + tb('report', '誤情報の知らせ') + tb('comments', '追記') + tb('mode', '緊急災害復旧モード') + tb('cats', '分類') + '</div>' +
     '<div data-tayori-admin-list style="font-size:0.88em;color:#666;">読み込んでいます…</div></div>';
@@ -71936,7 +72029,7 @@ function _tayoriAdminCats(box) {
     var cats = r.data;
     box.innerHTML = '<button type="button" data-cat-new style="width:100%;padding:10px;border:1px dashed #c9b48a;border-radius:10px;background:#fff;color:#7a5c1e;font-size:0.9em;cursor:pointer;font-family:inherit;margin-bottom:10px;">＋ 分類を足す</button>' +
       ['disaster', 'season'].map(function(k) {
-        return '<div style="font-weight:700;color:#3b3226;margin:8px 0 6px;">' + (k === 'disaster' ? '生活情報（緊急災害復旧モード）' : '🍃 季節のたより') + '</div>' + cats.filter(function(c) { return c.kind === k; }).map(function(c) {
+        return '<div style="font-weight:700;color:#3b3226;margin:8px 0 6px;">' + (k === 'disaster' ? '災害復旧掲示板（緊急災害復旧モード）' : '🍃 季節のたより') + '</div>' + cats.filter(function(c) { return c.kind === k; }).map(function(c) {
           return '<div data-cat-edit="' + _tayoriEsc(c.key) + '" style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #eee3d0;border-radius:9px;margin-bottom:5px;cursor:pointer;background:' + (c.active ? '#fff' : '#f4f1ec') + ';">' +
             '<span style="font-size:1.2em;">' + _tayoriEsc(c.emoji) + '</span><span style="flex:1;color:' + (c.active ? '#3b3226' : '#9a8f7c') + ';">' + _tayoriEsc(c.label) + (c.active ? '' : '（止めています）') + '</span>' +
             '<span style="font-size:0.78em;color:#9a8f7c;">' + _tayoriEsc((c.states || []).map(function(s) { return s.label; }).join('／')) + '</span></div>';
@@ -72241,20 +72334,42 @@ function _tayoriRenderDisaster(host) {
   } else {
     head = '<input type="search" data-td-q value="' + _tayoriEsc(_koyomiTayori.q || '') + '" placeholder="🔍 何をさがしていますか？（例：水、おにぎり）" style="width:100%;box-sizing:border-box;min-height:56px;padding:0 14px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;font-size:1.02em;font-family:inherit;margin:4px 0 10px;">' +
       (_koyomiTayori.q ? '' : '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">' + KOYOMI_TAYORI_QUICK.map(function(x) { return _tayoriBigBtn('data-td-quick="' + x.id + '"', x.emoji, x.label); }).join('') + '</div>') +
-      (_koyomiTayori.only ? '<div style="margin:0 0 8px;font-size:0.92em;color:#8a6d1e;">' + (_koyomiTayori.only === 'fav' ? '★ お気に入りだけを出しています' : '自分が知らせたものだけを出しています') + '　<button type="button" data-td-only-off style="border:none;background:none;color:#3b6ea5;text-decoration:underline;cursor:pointer;font-size:1em;font-family:inherit;">すべてにもどす</button></div>' : '') +
-      '<div style="font-size:0.95em;font-weight:700;color:#5a4e3c;margin:4px 2px 8px;">今の情報</div>';
+      (_koyomiTayori.only ? '<div style="margin:0 0 8px;font-size:0.92em;color:#8a6d1e;">' + (_koyomiTayori.only === 'fav' ? '📌 覚えておいた場所だけを出しています' : '自分が書いたものだけを出しています') + '　<button type="button" data-td-only-off style="border:none;background:none;color:#3b6ea5;text-decoration:underline;cursor:pointer;font-size:1em;font-family:inherit;">すべてにもどす</button></div>' : '') +
+      '<div style="font-size:0.95em;font-weight:700;color:#5a4e3c;margin:4px 2px 8px;">掲示板の書き込み（使えるもの・新しい順）</div>';
   }
   var cardOf = function(r) {
     var dist = (d.stage === 'results' && d.near && r._dist != null) ? '<div style="font-size:0.85em;color:#3b6ea5;font-weight:700;margin-bottom:4px;">📍 ここから約' + (r._dist < 1000 ? Math.round(r._dist / 10) * 10 + 'm' : (r._dist / 1000).toFixed(1) + 'km') + '</div>' : '';
     var closed = _tayoriClosed(r.category, r.status);
     return '<div data-tayori-card="' + _tayoriEsc(r.id) + '" style="font-size:1.06em;background:' + (closed ? '#f3f3f1' : '#fff') + ';border:1px solid ' + (closed ? '#e2e2de' : '#eee3d0') + ';border-radius:14px;padding:14px;margin-bottom:10px;' + (closed ? 'opacity:0.75;' : '') + '">' + dist + _tayoriPopupHtml(r, { compact: true }) + '</div>';
   };
-  var body = sorted.live.length ? sorted.live.map(cardOf).join('')
-    : '<div style="padding:22px 12px;text-align:center;color:#8a7d6b;line-height:1.8;background:#fff;border:1px dashed #e1d8c8;border-radius:14px;">' + (d.stage === 'results' ? 'いまは、まだ知らせがありません。<br>見つけたら、知らせていただけると助かります。' : 'まだ知らせがありません。') + '</div>';
+  // v0.83.0: 【権威】2026-11-18「立ち上げのときは何が何だか分からない。うその情報を流すのではなく、
+  //   災害復旧時の情報を募集中です、作るのはこちら、とボタンへ誘導する親切設計に」→ まだ1件もないときは、募集の案内と大きな「書く」ボタンを出す
+  // v0.83.1: 【権威】2026-11-18「水につき募集中の窓、物資につき募集中の窓、トイレにつき募集中の窓…が縦にずらずら並んで、
+  //   そこにもボタンがあって投稿できる。投稿を促す誘導のUI」→ まだ書き込みのない分類ごとに「募集しています」の窓を並べ、その分類で書けるボタンを置く
+  var _none = !(_koyomiTayori.rows || []).some(function(r) { var c = r && koyomiTayoriCat(r.category); return c && c.kind === 'disaster'; });
+  var _plain = !_koyomiTayori.q && !_koyomiTayori.only;
+  var _have = {}; sorted.live.forEach(function(r) { _have[r.category] = 1; });
+  var _wantCats = koyomiTayoriCatsNow(new Date(), 'disaster').filter(function(c) { return !_have[c.key] && (!d.keys || d.keys.indexOf(c.key) !== -1); });
+  var recruit = _plain ? _wantCats.map(function(c) {
+    return '<div data-td-want="' + _tayoriEsc(c.key) + '" style="background:#fffdf8;border:1.5px dashed #e6b4ad;border-radius:14px;padding:12px 14px;margin-bottom:10px;">' +
+      '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:1.7em;line-height:1;">' + _tayoriEsc(c.emoji) + '</span>' +
+      '<div style="min-width:0;flex:1;"><div style="font-weight:700;color:#3b3226;">' + _tayoriEsc(c.label) + '</div>' +
+      '<div style="font-size:0.86em;color:#9f2a22;font-weight:600;margin-top:2px;">情報を募集しています</div></div></div>' +
+      '<button type="button" data-td-wantpost="' + _tayoriEsc(c.key) + '" style="width:100%;min-height:50px;margin-top:10px;border:1.5px solid #9f2a22;border-radius:12px;background:#fff;color:#9f2a22;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">＋ ' + _tayoriEsc(c.label) + 'のことを書く</button>' +
+      '</div>'; }).join('') : '';
+  var intro = (_none && _plain && d.stage !== 'results')
+    ? '<div data-td-recruit style="padding:16px;text-align:center;background:#fff;border:2px solid #f0c9c4;border-radius:16px;margin-bottom:12px;">' +
+        '<div style="font-size:1.15em;font-weight:700;color:#9f2a22;">✍️ この町の情報を募集しています</div>' +
+        '<div style="color:#5a4e3c;line-height:1.8;margin-top:6px;">見かけたことを、下の分類ごとに書いてください。ひとつの書き込みが、近くの人を助けます。</div>' +
+        (mode ? '<div style="font-size:0.9em;color:#8a7d6b;margin:12px 0 6px;">まわりの人にも知らせてください</div>' + _tayoriShareBtns('data-td-share', false) : '') +
+      '</div>' : '';
+  var body = intro + (sorted.live.length ? sorted.live.map(cardOf).join('') : '') +
+    (recruit ? (sorted.live.length ? '<div style="font-size:0.95em;font-weight:700;color:#5a4e3c;margin:14px 2px 8px;">まだ書き込みのないもの</div>' : '') + recruit
+      : (sorted.live.length ? '' : '<div style="padding:22px 12px;text-align:center;color:#8a7d6b;line-height:1.8;background:#fff;border:1px dashed #e1d8c8;border-radius:14px;">' + (d.stage === 'results' ? 'いまは、まだ書き込みがありません。<br>見つけたら、書いていただけると助かります。' : 'まだ書き込みがありません。') + '</div>'));
   if (sorted.old.length) body += '<button type="button" data-td-old style="width:100%;min-height:50px;margin:6px 0 8px;border:1px dashed #d9cfbf;border-radius:12px;background:transparent;color:#8a7d6b;font-size:0.95em;cursor:pointer;font-family:inherit;">' + (d.showOld ? '▾ ' : '▸ ') + '終わった・古い情報（' + sorted.old.length + '）</button>' + (d.showOld ? sorted.old.map(cardOf).join('') : '');
   var foot = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 6px;">' +
     '<button type="button" data-td-map style="min-height:56px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;color:#3b3226;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">🗺 地図で見る</button>' +
-    '<button type="button" data-td-post style="min-height:56px;border:none;border-radius:14px;background:#9f2a22;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">＋ 知らせる</button></div>';
+    '<button type="button" data-td-post style="min-height:56px;border:none;border-radius:14px;background:#9f2a22;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">＋ 掲示板に書く</button></div>';
   w(head + body + foot);
   [].forEach.call(box.querySelectorAll('[data-tayori-card]'), function(el) { var id = el.getAttribute('data-tayori-card'); var r = rows.filter(function(x) { return String(x.id) === id; })[0]; if (r) _tayoriWirePopup(el, r); });
   var qi = box.querySelector('[data-td-q]');
@@ -72269,9 +72384,11 @@ function _tayoriRenderDisaster(host) {
   var ob = box.querySelector('[data-td-old]'); if (ob) ob.onclick = function() { d.showOld = !d.showOld; _tayoriRenderDisaster(host); };
   box.querySelector('[data-td-map]').onclick = function() { _koyomiTayori.view = 'map'; renderTayoriView(); _tayoriDraw(); };
   box.querySelector('[data-td-post]').onclick = function() { _tayoriPostWizard(); };
+  [].forEach.call(box.querySelectorAll('[data-td-wantpost]'), function(b) { b.onclick = function() { _tayoriPostWizard(b.getAttribute('data-td-wantpost')); }; });
+  if (mode) _tayoriWireShare(box, 'data-td-share', mode);
 }
 // ===== 知らせるウィザード（1画面に1問。戻れる。最後に確認） =====
-function _tayoriPostWizard() {
+function _tayoriPostWizard(preCat) {
   var mode = _tayoriMode();
   var old = document.getElementById('tayoriWizOverlay'); if (old) old.remove();
   var ov = document.createElement('div'); ov.id = 'tayoriWizOverlay';
@@ -72279,6 +72396,9 @@ function _tayoriPostWizard() {
   ov.innerHTML = '<div data-wz style="background:#fffdf8;border-radius:18px;padding:20px 18px;max-width:480px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25);' + KOYOMI_TAYORI_BIG + '"></div>';
   document.body.appendChild(ov);
   var box = ov.querySelector('[data-wz]'), st = { step: 'cat', cat: null, pos: null, status: '', starts: null, ends: null, place: '', note: '' }, hist = [];
+  // v0.83.1: 募集中の窓から来たときは、分類を選んだ状態で「場所はどこですか？」から始める（もどると分類を選び直せる）
+  var _pc = preCat && koyomiTayoriCat(preCat);
+  if (_pc && _pc.kind === 'disaster' && koyomiTayoriCatsNow(new Date(), 'disaster').some(function(c) { return c.key === preCat; })) { st.cat = preCat; st.step = 'place'; hist = ['cat']; }
   var close = function() { try { if (st.map) st.map.remove(); } catch (e) {} ov.remove(); };
   ov.onclick = function(e) { if (e.target === ov) close(); };
   var go = function(step) { hist.push(st.step); st.step = step; draw(); };
@@ -72387,7 +72507,7 @@ function _tayoriPostWizard() {
       box.querySelector('[data-wz-same]').onclick = function() { this.disabled = true; _tayoriSendConfirm(n, st.status || null, null); go('done'); };
       box.querySelector('[data-wz-diff]').onclick = function() { st.skipSame = true; send(this); };
     } else if (st.step === 'done') {
-      box.innerHTML = '<div style="text-align:center;padding:16px 6px;"><div style="font-size:2.4em;">🙏</div><div style="font-size:1.15em;font-weight:700;color:#3b3226;margin-top:8px;line-height:1.6;">知らせてくださって、<br>ありがとうございます。</div>' +
+      box.innerHTML = '<div style="text-align:center;padding:16px 6px;"><div style="font-size:2.4em;">🙏</div><div style="font-size:1.15em;font-weight:700;color:#3b3226;margin-top:8px;line-height:1.6;">大変な中、知らせてくださって、<br>ありがとうございます。</div>' +
         '<div style="font-size:0.92em;color:#8a7d6b;margin-top:8px;line-height:1.7;">状況が変わったら、その情報の「今も有効」「今はない」で教えてください。</div>' +
         '<button type="button" data-wz-ok style="width:100%;min-height:56px;margin-top:16px;border:none;border-radius:14px;background:#3b3226;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">閉じる</button></div>';
       box.querySelector('[data-wz-ok]').onclick = close;
@@ -72456,20 +72576,37 @@ function _tayoriShareUrl(m) {
   var base = /^https?:$/.test(location.protocol) ? location.origin + location.pathname : 'https://koyomiru.com/';
   return base + '?saigai=' + encodeURIComponent(m.slug || m.id);
 }
-function _tayoriShareText(m) {
+// v0.83.2: 【権威】2026-11-18「XやLINEの文面も、寄り添った文面に。緊急災害掲示板だと、ちゃんと少し案内しないとダメ。優しい言葉で」
+//   → 何の掲示板か・登録なしで見られること・書き込みのお願い（押しつけない言い方）・確認中なら正直に。LINEには公式の発表も確かめて、を添える。
+//   Xは日本語1文字を2と数えて280まで（リンクは23）。長い町の名前でも収まる長さにする（ST-650で確かめる）
+function _tayoriShareText(m, forLine, noReg) {
   var hz = _tayoriHazardLabel(m.hazard), unverified = m.kind === 'user' && !m.verified_at;
-  return (unverified ? '【確認中】' : '') + m.name + (hz ? '（' + hz + '）' : '') + 'の水・食べもの・開いているお店などを、こよみるで知らせ合えます。見つけたら知らせてください';
+  return '【緊急災害掲示板】' + m.name + (hz ? '（' + hz + '）' : '') + '\n' +
+    (unverified ? '※立ち上げたばかりで、確認中です\n' : '') +
+    '水・食べもの・トイレ・お店などを、町の人どうしで知らせ合う掲示板です。' + (noReg ? '' : forLine ? '登録しなくても見られます。' : '登録なしで見られます。') + '\n' +
+    '見かけたら、ひとことでも書いていただけると、近くの方の助けになります。' +
+    (forLine ? '\nつらいときは、見るだけでも大丈夫です。自治体などの公式の発表も、あわせてご確認ください。' : '');
 }
+// Xに入れる文：280に収まるように、大事な順に足していく（本文 → 登録なしで見られる → #町の名前 → #こよみる）
+function _tayoriXText(m, url) {
+  var ms = (m.munis || []), town = ms.length === 1 && ms[0] && ms[0].name ? '#' + String(ms[0].name).replace(/[\s#＃、。・]/g, '') : '';
+  var fit = function(t) { return _tayoriXLen(t + ' ' + url) <= 280; };
+  var t = _tayoriShareText(m, false, true), t2 = _tayoriShareText(m, false, false);
+  if (fit(t2)) t = t2;
+  [town, '#こよみる'].forEach(function(tag) { if (tag && fit(t + '\n' + tag)) t += (/#\S+$/.test(t) ? ' ' : '\n') + tag; });
+  return t;
+}
+function _tayoriXLen(t) { var n = 0; String(t).replace(/https?:\/\/\S+/g, function() { n += 23; return ''; }).split('').forEach(function(ch) { var c = ch.charCodeAt(0); n += (c <= 4351 || (c >= 8192 && c <= 8205) || (c >= 8208 && c <= 8223) || (c >= 8242 && c <= 8247)) ? 1 : 2; }); return n; }
 function _tayoriShareTags(m) {
   var ms = (m.munis || []), t = ms.length === 1 && ms[0] && ms[0].name ? '#' + String(ms[0].name).replace(/[\s#＃、。・]/g, '') + ' ' : '';
-  return t + '#給水 #こよみる';
+  return t + '#こよみる';
 }
 function _tayoriShare(m, how) {
-  if (!m) return; var url = _tayoriShareUrl(m), text = _tayoriShareText(m), tags = _tayoriShareTags(m), go;
-  if (how === 'x') go = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text + '\n' + tags) + '&url=' + encodeURIComponent(url);
-  else if (how === 'line') go = 'https://line.me/R/share?text=' + encodeURIComponent(text + '\n' + url);
+  if (!m) return; var url = _tayoriShareUrl(m), text = _tayoriShareText(m, how !== 'x'), tags = _tayoriShareTags(m), go;
+  if (how === 'x') go = 'https://x.com/intent/tweet?text=' + encodeURIComponent(_tayoriXText(m, url)) + '&url=' + encodeURIComponent(url);
+  else if (how === 'line') go = 'https://line.me/R/share?text=' + encodeURIComponent(text + '\n\n' + url);
   if (go) { try { window.open(go, '_blank', 'noopener'); } catch (e) {} return; }
-  var all = text + '\n' + tags + '\n' + url;
+  var all = text + '\n' + tags + '\n\n' + url;
   var done = function() { if (typeof showToast === 'function') showToast('知らせる文とリンクをコピーしました', { type: 'success' }); };
   var fallback = function() {
     var ta = document.createElement('textarea'); ta.value = all; ta.style.position = 'fixed'; ta.style.opacity = '0';
@@ -72498,7 +72635,7 @@ function _tayoriModeLine(m) {
   return m.name + (hz || unv ? '（' + [hz, unv ? '確認中' : ''].filter(Boolean).join('・') + '）' : '');
 }
 function _tayoriPickOtherMode() {
-  var bs = _tayoriOtherModes().slice(0, 12).map(function(m) { return { label: _tayoriModeLine(m), style: 'cancel', onClick: function() { _tayoriOpenMode(m.id); } }; });
+  var bs = _tayoriOtherModes().slice(0, 12).map(function(m) { return { label: _tayoriEsc(_tayoriModeLine(m)), style: 'cancel', onClick: function() { _tayoriOpenMode(m.id); } }; });
   if (_tayoriMode()) bs.push({ label: '🍃 季節のたよりにもどる', style: 'cancel', onClick: function() { _koyomiTayori.tab = 'season'; _koyomiTayori.view = ''; renderTayoriView(); _tayoriDraw(); } });
   bs.push({ label: '閉じる', style: 'cancel' });
   showChoiceModal({ title: 'いま緊急災害復旧モードの地域', desc: bs.length > 1 ? '' : 'いまはありません', buttons: bs });
@@ -72538,7 +72675,7 @@ function _tayoriWireUserMode(el, m) {
   };
   var v = el.querySelector('[data-tum-vouch]'); if (v) v.onclick = function() { _tayoriVouch(m, v); };
   var e = el.querySelector('[data-tum-end]'); if (e) e.onclick = function() {
-    showChoiceModal({ title: '緊急災害復旧モードを止めますか？', desc: m.name + 'のモードを止めます。知らせ合った情報は見えなくなります。', dangerConfirm: false, buttons: [
+    showChoiceModal({ title: '緊急災害復旧モードを止めますか？', desc: _tayoriEsc(m.name) + 'のモードを止めます。知らせ合った情報は見えなくなります。', dangerConfirm: false, buttons: [
       { label: '止める', style: 'danger', onClick: function() {
         rpcWithTimeout('koyomiru_tayori_user_end', { p_mode: m.id }, 10000).then(function(r) {
           if (r && !r.error && r.data) { _tayoriSetFollow(m.id, false); _koyomiTayori.modeId = null; _koyomiTayori.tab = ''; if (typeof showToast === 'function') showToast('止めました', { type: 'success' }); _tayoriLoadMeta().then(function() { renderTayoriView(); _tayoriLoad(false); }); }
@@ -72604,7 +72741,7 @@ function _tayoriStartWizard() {
   var setMuni = function(m) { st.muni = m; go('confirm'); };
   function draw() {
     if (st.step === 'login') {
-      frame('始めるには、ログインをお願いしています', 'うその災害を防ぐためです。LINEでもすぐに入れます。', '<button type="button" data-wz-login style="' + btnS + 'border:none;background:#06C755;color:#fff;">ログインする</button>');
+      frame('立ち上げるには、ログインをお願いしています', 'うその災害を防ぐためです。LINEでもすぐに入れます。', '<button type="button" data-wz-login style="' + btnS + 'border:none;background:#06C755;color:#fff;">ログインする</button>');
       box.querySelector('[data-wz-login]').onclick = function() { close(); try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {} };
     } else if (st.step === 'hazard') {
       frame('何が起きましたか？', '', '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;">' + KOYOMI_TAYORI_HAZARDS.map(function(h) { return _tayoriBigBtn('data-wz-hz="' + h[0] + '"', h[1], h[2]); }).join('') + '</div>');
@@ -72647,12 +72784,12 @@ function _tayoriStartWizard() {
       }).catch(function() { ml.textContent = '読み込めませんでした。少しおいて、もう一度お試しください'; });
     } else if (st.step === 'confirm') {
       var m = st.muni;
-      frame(_tayoriEsc(m.pref + ' ' + m.name) + 'で、緊急災害復旧モードを始めますか？',
-        '始めるとすぐ、この町の水・食べもの・開いているお店などを、利用者どうしで知らせ合えるようになります。<br>' +
+      frame(_tayoriEsc(m.pref + ' ' + m.name) + 'の災害復旧掲示板を立ち上げますか？',
+        '立ち上げるとすぐ、この町の水・食べもの・開いているお店などを、利用者どうしで知らせ合えるようになります。<br>' +
         'この町にいる方が3人「私もここで被災しています」を押すまでは「確認中」と出ます。確かめられないときは、72時間で自動で終わります。<br>' +
-        '<b style="color:#7a2a22;">本当に災害が起きているときだけ、始めてください。</b>', '', '始める');
+        '<b style="color:#7a2a22;">本当に災害が起きているときだけ、立ち上げてください。</b>', '', '立ち上げる');
       box.querySelector('[data-wz-next]').onclick = function() {
-        var b = this; b.disabled = true; b.textContent = '始めています…';
+        var b = this; b.disabled = true; b.textContent = '立ち上げています…';
         rpcWithTimeout('koyomiru_tayori_user_start', { p_code: m.code, p_hazard: st.hazard }, 15000).then(function(r) {
           if (r && !r.error && r.data && r.data.id) {
             st.res = r.data; _tayoriSetFollow(r.data.id, true); _koyomiTayori.modeId = r.data.id; _koyomiTayori.tab = 'disaster';
@@ -72660,17 +72797,17 @@ function _tayoriStartWizard() {
             return;
           }
           var msg = String((r && r.error && r.error.message) || '');
-          b.disabled = false; b.textContent = '始める';
-          if (typeof showToast === 'function') showToast(/limit/.test(msg) ? '始められるのは、1日に1つまでです' : /login/.test(msg) ? 'ログインをお願いしています' : /no muni/.test(msg) ? 'この町は、まだ選べません。運営にお知らせください' : '始められませんでした。もう一度お試しください', { type: 'warn' });
-        }).catch(function() { b.disabled = false; b.textContent = '始める'; });
+          b.disabled = false; b.textContent = '立ち上げる';
+          if (typeof showToast === 'function') showToast(/limit/.test(msg) ? '立ち上げられるのは、1日に1つまでです' : /login/.test(msg) ? 'ログインをお願いしています' : /no muni/.test(msg) ? 'この町は、まだ選べません。運営にお知らせください' : '始められませんでした。もう一度お試しください', { type: 'warn' });
+        }).catch(function() { b.disabled = false; b.textContent = '立ち上げる'; });
       };
     } else if (st.step === 'done') {
       var mm = (_koyomiTayori.modes || []).filter(function(x) { return x.id === st.res.id; })[0] || { id: st.res.id, slug: st.res.slug, name: st.muni.pref + ' ' + st.muni.name, hazard: st.hazard, kind: 'user', munis: [{ name: st.muni.name }] };
-      frame(st.res.merged ? 'この町では、もう始まっていました' : '始めました',
+      frame(st.res.merged ? 'この町の掲示板は、もう立ち上がっていました' : '立ち上げました',
         (st.res.merged ? 'そちらに合流しました。' : '') + 'まわりの人に知らせてください。XやLINEで広がるほど、情報が集まります。',
         _tayoriShareBtns('data-wz-share', true) +
         (st.res.merged && mm.kind === 'user' && !mm.verified_at ? '<button type="button" data-wz-vouch style="' + btnS + 'margin-top:12px;border:none;background:#8a5a00;color:#fff;">🙋 私もここで被災しています</button>' : '') +
-        '<button type="button" data-wz-see style="' + btnS + 'margin-top:12px;border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">この町の生活情報を見る</button>');
+        '<button type="button" data-wz-see style="' + btnS + 'margin-top:12px;border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">この町の掲示板を見る</button>');
       _tayoriWireShare(box, 'data-wz-share', mm);
       var vb = box.querySelector('[data-wz-vouch]'); if (vb) vb.onclick = function() { _tayoriVouch(mm, vb); };
       box.querySelector('[data-wz-back]').style.visibility = 'hidden';
@@ -72679,11 +72816,26 @@ function _tayoriStartWizard() {
   }
   draw();
 }
+// v0.83.0: 【権威】2026-11-18「緊急災害復旧モードは、アカウントの下や設定に常設して。季節のたよりを使っている人しか分からない。
+//   サブタイトルで、誰でも市区町村の災害復旧掲示板を起動できます、と」→ アカウントのメニューと設定のプロフィールから開く入口
+function openKoyomiSaigaiHub() {
+  var show = function() {
+    var ms = (_koyomiTayori.modes || []).filter(Boolean);
+    var bs = [{ label: '🆘 自分の町の災害復旧掲示板を立ち上げる', style: 'primary', onClick: function() { _tayoriStartWizard(); } }];
+    ms.slice(0, 6).forEach(function(m) { bs.push({ label: '📋 ' + _tayoriEsc(_tayoriModeLine(m)) + 'の掲示板を見る', style: 'cancel', onClick: function() { try { switchView('tayori'); } catch (e) {} _tayoriOpenMode(m.id); } }); });
+    if (ms.length > 6) bs.push({ label: 'ほかの地域も見る', style: 'cancel', onClick: function() { try { switchView('tayori'); } catch (e) {} _tayoriPickOtherMode(); } });
+    bs.push({ label: '閉じる', style: 'cancel' });
+    showChoiceModal({ title: '🆘 緊急災害復旧モード', desc: '大きな災害が起きたとき、だれでも、自分の市区町村の「災害復旧掲示板」を立ち上げられます。水が出る場所・炊き出し・開いているお店などを、町の人どうしで知らせ合えます。使い方は自由帳の「🆘 緊急災害復旧モードの使い方」にあります。' + (ms.length ? '' : '<br>いま立ち上がっている掲示板はありません。'), buttons: bs });
+  };
+  _tayoriLoadMeta().then(show, show);
+}
+window.openKoyomiSaigaiHub = openKoyomiSaigaiHub;
 // 共有リンク（?saigai=…）から来たとき：そのモードを開き、見守るに入れる
 function _tayoriTakeLink() {
   var slug = '';
   try {
     var u = new URL(location.href); slug = u.searchParams.get('saigai') || '';
+    if (!slug) { try { slug = sessionStorage.getItem('koyomiru_pending_saigai') || ''; } catch (eS) {} }   // ログインから戻ってきたとき
     if (u.searchParams.has('saigai')) { u.searchParams.delete('saigai'); history.replaceState(history.state, '', u.pathname + (u.search || '') + u.hash); }
   } catch (e) { return false; }
   if (!/^[0-9a-f-]{8,40}$/i.test(slug)) return false;
@@ -72694,12 +72846,20 @@ function _tayoriApplyLink() {
   var slug = _koyomiTayori.pendingLink; if (!slug) return;
   _koyomiTayori.pendingLink = '';
   var m = (_koyomiTayori.modes || []).filter(function(x) { return String(x.slug || '').toLowerCase() === slug || String(x.id).toLowerCase() === slug; })[0];
-  if (!m) { if (typeof showToast === 'function') showToast('このリンクの緊急災害復旧モードは、もう終わっています', { type: 'info' }); return; }
+  if (!m) { window._tayoriLinkOpened = true; if (typeof showToast === 'function') showToast('このリンクの災害復旧掲示板は、もう終わっています', { type: 'info' }); return; }
   _tayoriSetFollow(m.id, true);
+  window._tayoriLinkOpened = true;
   try { switchView('tayori'); } catch (e) {}
   _tayoriOpenMode(m.id);
 }
-if (_tayoriTakeLink()) setTimeout(function() { try { if (window._isTesting || window._smokeTestRunning) return; _tayoriLoadMeta().then(_tayoriApplyLink); } catch (e) {} }, 1500);
+// v0.83.0: リンクから来た人を待たせない（先に掲示板の画面を開き、読み込めたらその町に合わせる）
+if (_tayoriTakeLink()) setTimeout(function() {
+  try {
+    if (window._isTesting || window._smokeTestRunning) return;
+    try { switchView('tayori'); } catch (e) {}
+    _tayoriLoadMeta().then(_tayoriApplyLink);
+  } catch (e) {}
+}, 700);
 // 道案内はGoogleマップに任せる（APIは使わない。押した人の端末でGoogleマップが開くだけ）
 function _tayoriGmapUrl(r) {
   var a = Number(r && r.lat), o = Number(r && r.lng);
@@ -90153,8 +90313,9 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      // 【権威】2026-10-11、お知らせを一番上に・大福帳に分かる説明を・はじめの案内は「はじめての方へ」に、との指示
      try {
        var _st450 = [].map.call(document.querySelectorAll('#accountMenu .account-menu-item'), function(b) { return b.textContent.trim(); });
-       (_st450.join('|') === '📣お知らせ|👥共有カレンダー|📒大福帳（共有カレンダーの来訪記録）|🔗アカウント連携|🌙はじめての方へ')
-         ? ok('ST-450·①: アカウントのメニューは、お知らせ → 共有カレンダー → 大福帳（共有カレンダーの来訪記録）→ アカウント連携 → はじめての方へ')
+       // v0.83.0: 【権威】2026-11-18 緊急災害復旧モードをアカウントの下に常設（アカウント連携の次）
+       (_st450.join('|') === '📣お知らせ|👥共有カレンダー|📒大福帳（共有カレンダーの来訪記録）|🔗アカウント連携|🆘緊急災害復旧モード誰でも、自分の市区町村の災害復旧掲示板を立ち上げられます|🌙はじめての方へ')
+         ? ok('ST-450·①: アカウントのメニューは、お知らせ → 共有カレンダー → 大福帳（共有カレンダーの来訪記録）→ アカウント連携 → 緊急災害復旧モード → はじめての方へ')
          : ng('ST-450·①: アカウントのメニューの並びか言葉が違う', _st450.join(' | '));
      } catch(e) {
        ng('ST-450: 例外', e.message);
@@ -94145,6 +94306,26 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        !_bad634.length ? ok('ST-634: 繰り返しの予定を消すときは「この日だけ／この日より後も／全部」から選べる（件数つき）。繰り返しでない予定はいつもどおり。見出しの予定名は無害にして出す')
          : ng('ST-634: 繰り返しの消し方が違う', _bad634.join(','));
      } catch (e) { try { allTasks = _bk634; window.saveAllTasks = _sv634; saveAllTasks = _sv634; window._propagateDeletion = _pd634; _propagateDeletion = _pd634; } catch (e2) {} ng('ST-634: 例外', e.message); }
+     // ===== ST-651: 緊急災害復旧モードの常設の入口・リンクから来た人・掲示板（v0.83.0） =====
+     try {
+       var _r651 = {};
+       // 常設の入口：アカウントのメニューと、設定のプロフィール（誰でも立ち上げられる、と添える）
+       var _am651 = document.getElementById('accountMenuSaigai'), _pr651 = document.getElementById('profileSaigaiRow');
+       _r651.entry = !!_am651 && /誰でも、自分の市区町村の災害復旧掲示板を立ち上げられます/.test(_am651.textContent) && !!_pr651 && /openKoyomiSaigaiHub/.test(_pr651.innerHTML) && typeof openKoyomiSaigaiHub === 'function';
+       // リンクから来た人には、注文票を出さない。ほかの画面へ移ったら、待たせていたカレンダー選びを出す
+       var _em651 = window._koyomiruEntryMode; window._koyomiruEntryMode = 'saigai';
+       _r651.noOrder = koyomiOrderAskWillShow() === false; window._koyomiruEntryMode = _em651;
+       _r651.release = /_koyomiruEntryMode === 'saigai'[\s\S]{0,200}_releasePendingSetup/.test(switchView.toString());
+       // 掲示板の言葉と、まだ1件もないときの募集の案内
+       var _rd651 = _tayoriRenderDisaster.toString();
+       _r651.board = /この町の情報を募集しています/.test(_rd651) && /data-td-wantpost/.test(_rd651) && /情報を募集しています/.test(_rd651) && /preCat/.test(_tayoriPostWizard.toString()) && /掲示板の書き込み（使えるもの・新しい順）/.test(_rd651) && /＋ 掲示板に書く/.test(_rd651) && /'災害復旧掲示板'/.test(renderTayoriView.toString());
+       // 自由帳：LINEのページと大福帳のページが同じ番号にならない。使い方のページを配る
+       var _src651 = document.documentElement.innerHTML;
+       _r651.notes = /var _id = '019e3a10-1000-7000-9000-000000000022', _title = "💬 LINEでログインするとき"/.test(_src651) && _src651.indexOf("addMigration('mig_note_id_split_v1'") !== -1 && _src651.indexOf("addMigration('mig_saigai_note_v1'") !== -1;
+       var _bad651 = Object.keys(_r651).filter(function(k) { return !_r651[k]; });
+       !_bad651.length ? ok('ST-651: 緊急災害復旧モードを常設（アカウント・設定）・リンクから来た人には掲示板だけ・募集の案内・自由帳の番号の重なりを直す')
+         : ng('ST-651: 緊急災害復旧モードの入口・掲示板が違う', _bad651.join(','));
+     } catch (e) { ng('ST-651: 例外', e.message); }
      // ===== ST-650: 一般の人が始める緊急災害復旧モード（v0.82.0） =====
      try {
        var _r650 = {}, _bk650 = { modes: _koyomiTayori.modes, modeId: _koyomiTayori.modeId, fol: localStorage.getItem('tayoriFollow'), vo: localStorage.getItem('tayoriVouched') };
@@ -94163,7 +94344,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _koyomiTayori.modes = [_um650, { id: 'a1', kind: 'admin', name: '令和8年 地震', munis: [] }];
        _r650.admin = _tayoriMode().id === 'a1'; _koyomiTayori.modeId = 'u1'; _r650.pick = _tayoriMode().id === 'u1'; _koyomiTayori.modeId = null;
        // 知らせる文：確認中・リンク・ハッシュタグ
-       _r650.share = /^【確認中】熊本県 益城町（地震）の水/.test(_tayoriShareText(_um650)) && /\?saigai=ab12cd34ef$/.test(_tayoriShareUrl(_um650)) && _tayoriShareTags(_um650) === '#益城町 #給水 #こよみる';
+       _r650.share = /^【緊急災害掲示板】熊本県 益城町（地震）\n※立ち上げたばかりで、確認中です\n水・食べもの/.test(_tayoriShareText(_um650)) && /公式の発表/.test(_tayoriShareText(_um650, true)) && !/公式の発表/.test(_tayoriShareText(_um650)) && /\?saigai=ab12cd34ef$/.test(_tayoriShareUrl(_um650)) && _tayoriShareTags(_um650) === '#益城町 #こよみる';
+       // Xは280まで（日本語は1文字2・リンクは23）。いちばん長い町の名前でも収まる
+       var _lg650 = Object.assign({}, _um650, { name: '鹿児島県 ああああああああああ', hazard: 'ooame', munis: [{ name: 'ああああああああああ' }] }), _u650 = 'https://koyomiru.com/?saigai=ab12cd34ef';
+       var _xs650 = _tayoriXText(_um650, _u650);
+       _r650.xlen = _tayoriXLen(_tayoriXText(_lg650, _u650) + ' ' + _u650) <= 280 && _tayoriXLen('あa https://x.y/z') === 27 &&
+         /登録なしで見られます/.test(_xs650) && /#益城町 #こよみる$/.test(_xs650) && /登録しなくても見られます/.test(_tayoriShareText(_um650, true)) && /近くの方の助けになります/.test(_xs650);
        _r650.shareOk = !/確認中/.test(_tayoriShareText({ id: 'v', kind: 'user', name: 'x', verified_at: '2026-01-01T00:00:00Z' }));
        // 帯：確認中なら「私もここで被災しています」。始めた本人には「止める」
        var _h650 = _tayoriUserModeHtml(_um650);
