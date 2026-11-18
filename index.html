@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.78.12 ★ -->
+<!-- ★ CURRENT VERSION: v0.78.13 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.12';
+    const APP_VERSION = 'v0.78.13';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -23955,6 +23955,7 @@ function myDeckApply(idx) {
       const _newScope = newTime ? 'both' : 'daily_only';
       var _wRepVal = document.getElementById('weeklyEditRepeat') ? document.getElementById('weeklyEditRepeat').value : 'none';
       var _wRepEnd = document.getElementById('weeklyEditRepeatEnd') ? document.getElementById('weeklyEditRepeatEnd').value : '';
+      var _wRepPrev = _repeatSnapshot(editingWeeklyTaskId);   // v0.78.13: 書き換える前に控える
       updateTask(editingWeeklyTaskId, Object.assign({
         text: newText,
         memo: newMemo || null,
@@ -23966,9 +23967,9 @@ function myDeckApply(idx) {
         displayScope: _newScope,
         repeat: _wRepVal !== 'none' ? _wRepVal : null,
         repeatEnd: _wRepEnd || null,
-        repeatGroupId: _wRepVal !== 'none' ? editingWeeklyTaskId : null
+        repeatGroupId: _wRepVal !== 'none' ? (_wRepPrev.groupId || editingWeeklyTaskId) : null
       }, _wm2Update));
-      var _wRepContinue = applyRepeatSave(editingWeeklyTaskId, null, _wRepVal, _wRepEnd, newDate);
+      var _wRepContinue = applyRepeatSave(editingWeeklyTaskId, null, _wRepVal, _wRepEnd, newDate, _wRepPrev);
       if (!_wRepContinue) return;
       closeWeeklyEditModal();
       renderWeeklyView();
@@ -34628,8 +34629,9 @@ function saveMsbEdit() {
       const _mRepVal = document.getElementById('monthlyEditRepeat') ? document.getElementById('monthlyEditRepeat').value : 'none';
       const _mRepEnd = document.getElementById('monthlyEditRepeatEnd') ? document.getElementById('monthlyEditRepeatEnd').value : '';
       if (taskId) {
-        updateTask(taskId, { text, memo: memo || null, date: dateStr, time, section, displayScope: _mScope, calendarId: _monthlyCalendarId || 'default', repeat: _mRepVal !== 'none' ? _mRepVal : null, repeatEnd: _mRepEnd || null, repeatGroupId: _mRepVal !== 'none' ? taskId : null });
-        var _mRepContinue = applyRepeatSave(taskId, null, _mRepVal, _mRepEnd, dateStr);
+        var _mRepPrev = _repeatSnapshot(taskId);   // v0.78.13: 書き換える前に控える
+        updateTask(taskId, { text, memo: memo || null, date: dateStr, time, section, displayScope: _mScope, calendarId: _monthlyCalendarId || 'default', repeat: _mRepVal !== 'none' ? _mRepVal : null, repeatEnd: _mRepEnd || null, repeatGroupId: _mRepVal !== 'none' ? (_mRepPrev.groupId || taskId) : null });
+        var _mRepContinue = applyRepeatSave(taskId, null, _mRepVal, _mRepEnd, dateStr, _mRepPrev);
         if (!_mRepContinue) return;
       } else {
         const newTask = createTask({ text: text, date: dateStr, time: time, section: section, displayScope: _mScope });
@@ -35369,16 +35371,17 @@ function saveMsbEdit() {
       var _instVisible = _instSection2 && _instSection2.style.display !== 'none';
       var _newInstinct = (_instSelEl && _instVisible)
         ? (_instSelEl.value || null) : (baseTask ? (baseTask.instinct || null) : null);
+      var _tRepPrev = _repeatSnapshot(taskId);   // v0.78.13: 書き換える前に控える
       updateTask(taskId, Object.assign({
         text, memo: memo || null, date, time, endTime,
         repeat: repeat !== 'none' ? repeat : null,
         repeatEnd: repeatEnd || null,
-        repeatGroupId: baseTask?.repeatGroupId || (repeat !== 'none' ? taskId : null),
+        repeatGroupId: repeat !== 'none' ? (baseTask?.repeatGroupId || taskId) : null,
         calendarId: _newCalendarId,
         instinct: _newInstinct
       }, _tm2Update));
       // 繰り返し処理（共通関数）
-      var _repeatContinue = applyRepeatSave(taskId, null, repeat, repeatEnd, date);
+      var _repeatContinue = applyRepeatSave(taskId, null, repeat, repeatEnd, date, _tRepPrev);
       if (!_repeatContinue) return; // 確認ダイアログ待ち
       // recalcAllはupdateTask内で実行済み
       saveAllTasks();
@@ -60905,6 +60908,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.78.13', date: '2026-11-18',
+    items: [
+      { icon:'🔁', t:'繰り返しを「なし」にすると、その日より後の分が消えるように直しました',
+        before:'繰り返しの予定を1つ開いて「なし」にしても、ほかの日の分が残っていました',
+        after:'どの日の分を開いて「なし」にしても、確かめたうえで、その日より後の分をまとめて消します。その日と前の日の分は残ります' }
+    ]
+  },
   {
     ver: 'v0.78.12', date: '2026-11-18',
     items: [
@@ -92123,6 +92134,41 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _ok632 ? ok('ST-632: 「▲15000 15オリコ」は15000と読み、名目は「15オリコ」（後ろの通し番号を金額につなげない）。「、」も区切り（▲15000、15オリコ／15オリコ、▲15000／▲、15000。名目は「円」「、」の手前まで）。「▲ 15,000」「▲ 三井住友（金額なし）」は今までどおり')
          : ng('ST-632: 金額の読み方が違う', [_pm('▲15000 15オリコ'), _pm('▲ 15,000 オリコ'), _pm('▲ 三井住友'), JSON.stringify(_pe)].join(' '));
      } catch (e) { ng('ST-632: 例外', e.message); }
+     // ===== ST-633: 繰り返しの1件を「なし」にすると、その日より後の仲間が消える（v0.78.13） =====
+     try {
+       var _bk633 = allTasks.slice(), _sv633 = saveAllTasks, _cm633 = window.showChoiceModal, _pd633 = window._propagateDeletion, _r633 = {};
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks;
+       window._propagateDeletion = function() {}; _propagateDeletion = window._propagateDeletion;
+       var _picked = null;
+       window.showChoiceModal = function(o) { _picked = o; }; showChoiceModal = window.showChoiceModal;
+       allTasks = [{ id: 'rp-m', kind: 'task', text: '教科書1ページ', date: '2026-11-01', repeat: 'daily', repeatEnd: '2026-11-30', repeatGroupId: 'rp-m', calendarId: 'default' }];
+       applyRepeatSave('rp-m', null, 'daily', '2026-11-30', '2026-11-01', { repeat: 'none', groupId: null });
+       var _ser = function() { return allTasks.filter(function(t) { return t.repeatGroupId === 'rp-m'; }); };
+       _r633.made = _ser().length === 30 && allTasks.some(function(t) { return t.id === 'rp-m'; });
+       // 11/18 のものを開いて「なし」にする（画面と同じ順：控える → 書き換える → applyRepeatSave）
+       var c18 = allTasks.filter(function(t) { return t.date === '2026-11-18'; })[0];
+       var prev = _repeatSnapshot(c18.id);
+       updateTask(c18.id, { repeat: null, repeatEnd: null, repeatGroupId: null });
+       var cont = applyRepeatSave(c18.id, null, 'none', '', '2026-11-18', prev);
+       _r633.asked = cont === false && !!_picked && /12件/.test(_picked.desc);
+       var btn = _picked.buttons.filter(function(b) { return b.style === 'danger'; })[0]; btn.onClick();
+       _r633.stopped = !allTasks.some(function(t) { return t.date > '2026-11-18' && /教科書/.test(t.text); }) && allTasks.some(function(t) { return t.id === c18.id; }) &&
+         allTasks.filter(function(t) { return t.date < '2026-11-18'; }).length === 17;
+       // 仲間の1件で「毎日→毎週」に変えても、その1件は消えない
+       allTasks = [{ id: 'rq-m', kind: 'task', text: '読む', date: '2026-11-01', repeat: 'daily', repeatEnd: '2026-11-10', repeatGroupId: 'rq-m', calendarId: 'default' }];
+       applyRepeatSave('rq-m', null, 'daily', '2026-11-10', '2026-11-01', { repeat: 'none', groupId: null });
+       var c5 = allTasks.filter(function(t) { return t.date === '2026-11-05'; })[0];
+       var prev5 = _repeatSnapshot(c5.id);
+       applyRepeatSave(c5.id, null, 'weekly', '2026-11-30', '2026-11-05', prev5);
+       _r633.change = allTasks.some(function(t) { return t.id === c5.id; }) && allTasks.filter(function(t) { return t.date > '2026-11-05' && t.date <= '2026-11-10'; }).length === 0 &&
+         allTasks.some(function(t) { return t.date === '2026-11-12'; }) && allTasks.filter(function(t) { return t.repeatGroupId === 'rq-m'; }).length === 4 + 1 + 3;
+       // 画面の保存（月間・週間・編集）は、書き換える前に控えている
+       _r633.sites = /_repeatSnapshot\(taskId\)/.test(String(window.saveMonthlyEdit || '')) || (_stAllSrc().split('_repeatSnapshot(').length - 1) >= 4;
+       allTasks = _bk633; window.saveAllTasks = _sv633; saveAllTasks = _sv633; window.showChoiceModal = _cm633; showChoiceModal = _cm633; window._propagateDeletion = _pd633; _propagateDeletion = _pd633;
+       var _bad633 = Object.keys(_r633).filter(function(k) { return !_r633[k]; });
+       !_bad633.length ? ok('ST-633: 繰り返しの1件を「なし」にすると、確かめてから、その日より後の仲間を消す（その日と前の日は残る）。仲間の1件で決まりを変えても、その1件は消えない')
+         : ng('ST-633: 繰り返しのやめ方が違う', _bad633.join(','));
+     } catch (e) { try { allTasks = _bk633; window.saveAllTasks = _sv633; saveAllTasks = _sv633; window.showChoiceModal = _cm633; showChoiceModal = _cm633; window._propagateDeletion = _pd633; _propagateDeletion = _pd633; } catch (e2) {} ng('ST-633: 例外', e.message); }
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
      try {
        var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
@@ -98236,12 +98282,12 @@ document.addEventListener('DOMContentLoaded', function() {
 // ===== 管理者モード =====
 // v0.76.38: 入口は、サーバーが管理者と答えた人にだけ出る「🔐 管理者モード」のボタン（プロフィールの下）
 // 共通：繰り返しタスクの将来分を削除
-function deleteRepeatFutureTasks(groupId, fromDate) {
+function deleteRepeatFutureTasks(groupId, fromDate, keepId) {   // v0.78.13: keepId＝いま編集しているもの（消さない）
   var today = fromDate || getLocalDateStr(new Date());
   var before = allTasks.length;
   var _deletedIds = [];
   for (var i = allTasks.length - 1; i >= 0; i--) {
-    if (allTasks[i].repeatGroupId === groupId && allTasks[i].date >= today) { _deletedIds.push(allTasks[i].id); allTasks.splice(i, 1); }
+    if (allTasks[i].repeatGroupId === groupId && allTasks[i].date >= today && (!keepId || allTasks[i].id !== keepId)) { _deletedIds.push(allTasks[i].id); allTasks.splice(i, 1); }
   }
   if (typeof _propagateDeletion === 'function') _deletedIds.forEach(function(id){ _propagateDeletion(id); }); // v0.45.1391: 同期漏れ修正
   return before - allTasks.length;
@@ -98279,30 +98325,39 @@ function generateRepeatTasks(baseTask, repeat, repeatEnd, startDate, groupId) {
   return count;
 }
 // 共通：繰り返し保存処理（全モーダル共通）
-function applyRepeatSave(taskId, task, repeat, repeatEnd, date) {
+// v0.78.13: 【権威】2026-11-18「教科書1ページの一つの繰り返しをなしにしたが、全部消えはしなかった」
+//   原因：編集の保存で、先に updateTask で repeat と repeatGroupId を消してから applyRepeatSave を呼んでいた。
+//   applyRepeatSave は「前は繰り返しだったか」「どの仲間か」を、もう消えた値から読んでいたので、何もしなかった。
+//   → 書き換える前の値（_repeatSnapshot）を控えて渡す。仲間の印（repeatGroupId）は、繰り返しを続ける限り元のまま
+function _repeatSnapshot(taskId) {
+  var t = allTasks.find(function(x){ return x.id === taskId; });
+  return { repeat: t ? (t.repeat || 'none') : 'none', groupId: t ? (t.repeatGroupId || null) : null };
+}
+function applyRepeatSave(taskId, task, repeat, repeatEnd, date, prev) {
   var baseTask = allTasks.find(function(t){ return t.id === taskId; });
-  var prevRepeat = baseTask ? (baseTask.repeat || 'none') : 'none';
-  var groupId = (baseTask && baseTask.repeatGroupId) || taskId;
+  var prevRepeat = prev ? prev.repeat : (baseTask ? (baseTask.repeat || 'none') : 'none');
+  var groupId = (prev && prev.groupId) || (baseTask && baseTask.repeatGroupId) || taskId;
   if (repeat !== 'none') {
-    // 繰り返しあり→将来タスクを一旦削除して再生成
-    deleteRepeatFutureTasks(groupId, date);
+    // 繰り返しあり→将来タスクを一旦削除して再生成（いま編集しているものは残す）
+    deleteRepeatFutureTasks(groupId, date, taskId);
     generateRepeatTasks(baseTask || task, repeat, repeatEnd, date, groupId);
   } else if (prevRepeat !== 'none') {
     // 繰り返し解除→将来タスク削除
     var count = allTasks.filter(function(t){
       return t.repeatGroupId === groupId && t.date >= date && t.id !== taskId;
     }).length;
+    if (baseTask && baseTask.repeatGroupId === groupId) { baseTask.repeatGroupId = null; baseTask.repeat = null; baseTask.repeatEnd = null; }   // この日のものは残す（仲間から外す）
     if (count > 0) {
       showChoiceModal({
         title: '繰り返しを解除する',
-        desc: '将来の <b>' + count + '件</b> のタスクが削除されます。',
+        desc: 'この日より後の <b>' + count + '件</b> を消して、繰り返しをやめます。この日と、前の日のものは残ります。',
         buttons: [
           { label: '解除する', style: 'danger',
             dangerConfirm: { title: '⚠️ 将来のやることを消しますか？',
                              desc: 'この先の繰り返し分が消えます。取り消せません。',
                              yes: '解除して消す', no: 'やめる' },
             onClick: function() {
-            deleteRepeatFutureTasks(groupId, date);
+            deleteRepeatFutureTasks(groupId, date, taskId);
             updateTask(taskId, { repeat: null, repeatEnd: null, repeatGroupId: null });
             saveAllTasks();
             renderAllSections(); renderWeeklyView(); renderMonthlyView();
@@ -98312,7 +98367,7 @@ function applyRepeatSave(taskId, task, repeat, repeatEnd, date) {
       });
       return false; // 通常の保存フローを中断
     } else {
-      deleteRepeatFutureTasks(groupId, date);
+      deleteRepeatFutureTasks(groupId, date, taskId);
     }
   }
   return true;
