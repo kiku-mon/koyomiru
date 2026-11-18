@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.86.3 ★ -->
+<!-- ★ CURRENT VERSION: v0.86.4 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.86.3';
+    const APP_VERSION = 'v0.86.4';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61163,6 +61163,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.86.4', date: '2026-11-19',
+    items: [
+      { icon:'🍃', t:'季節の掲示板を、書き込みだけが並ぶ形にしました',
+        before:'いちばん上に見出し、いちばん下に説明やメールの案内があり、書き込みの場所が狭くなっていました',
+        after:'見出しと下の説明はなくし、書き込みだけが並びます。ご意見・この掲示板についての説明は、右上の ⋯ の中にあります' },
+      { icon:'💬', t:'ご意見の送り方を変えました',
+        before:'押すとスマホのメールが開き、メールの設定をしていないと送れませんでした',
+        after:'宛先（koyomiru@gmail.com）が出て、コピーする・Gmailで開く・いつものメールで開く、から選べます' }
+    ]
+  },
+  {
     ver: 'v0.86.3', date: '2026-11-19',
     items: [
       { icon:'🆘', t:'設定に「緊急災害復旧モード」の分類を置きました',
@@ -71714,8 +71725,9 @@ function renderTayoriView() {
     // v0.80.5: 【権威】2026-11-18「意見を受け取る仕組みは、こよみるの Gmail でいい」→ 問い合わせと同じ窓口へ、件名を入れて開く
     (dis ? '' : '<button type="button" data-tayori-start style="display:block;width:100%;min-height:50px;margin:12px 0 4px;border:1.5px solid #e6b4ad;border-radius:12px;background:#fff;color:#9f2a22;font-size:1.25em;font-weight:700;cursor:pointer;font-family:inherit;">🆘 自分の町の災害復旧掲示板を立ち上げる</button>' +
       '<div style="font-size:1.05em;color:#8a7d6b;line-height:1.6;">緊急災害復旧モード：大きな災害が起きたとき、誰でも、その市区町村だけの掲示板を立ち上げられます。</div>') +
-    '<div style="margin-top:8px;"><a href="mailto:koyomiru@gmail.com?subject=' + encodeURIComponent(dis ? '【こよみる 災害復旧掲示板】ご意見' : '【こよみる 季節のたより】ご意見') + '&body=' + encodeURIComponent((mode && dis ? '（' + mode.name + '）\n' : '') + 'ご意見・ご要望をお書きください。\n\n') + '" style="color:#3b6ea5;font-size:1.05em;text-decoration:underline;">💬 ご意見・ご要望を送る（メール）</a></div>';
+    '<div style="margin-top:8px;"><button type="button" data-tayori-feedback style="border:none;background:none;padding:0;color:#3b6ea5;font-size:1.05em;text-decoration:underline;cursor:pointer;font-family:inherit;">💬 ご意見・ご要望を送る</button></div>';   // v0.86.4: メールの設定がなくても送れるよう、宛先を見せる窓を開く
   var _sb = foot && foot.querySelector('[data-tayori-start]'); if (_sb) _sb.onclick = _tayoriStartWizard;
+  var _fbk = foot && foot.querySelector('[data-tayori-feedback]'); if (_fbk) _fbk.onclick = function() { _tayoriFeedback(dis); };
   // 管理者モードのときだけ「見張り」を出す（サーバー側でも管理者かを確かめる）
   var _adm = (typeof isKoyomiruAdminMode === 'function') && isKoyomiruAdminMode();
   var _ab = host.querySelector('[data-tayori-admin]');
@@ -71748,6 +71760,7 @@ function _tayoriDisMenu() {
   ];
   if (_tayoriOtherModes().length) bs.push({ label: '🆘 ほかの地域を見る', style: 'cancel', onClick: _tayoriPickOtherMode });
   bs.push({ label: '🆘 別の町で緊急災害復旧モードを始める', style: 'cancel', onClick: _tayoriStartWizard });
+  bs.push({ label: '💬 ご意見・ご要望を送る', style: 'cancel', onClick: function() { _tayoriFeedback(true); } });
   if (adm) bs.push({ label: '🛡 見張り（管理者）', style: 'cancel', onClick: function() { _tayoriOpenAdmin(); } });
   bs.push({ label: '閉じる', style: 'cancel' });
   showChoiceModal({ title: 'そのほか', desc: '', buttons: bs });
@@ -71879,10 +71892,13 @@ function _tayoriDraw() {
     // v0.86.1: 季節の掲示板の一覧は、いちばん上に「今日の季節」
     if (_tayoriTab() === 'season' && view === 'list') {
       if (rows.length) html = '<div style="background:#fff;border-radius:16px;overflow:hidden;border:1px solid #eee8de;">' + html + '</div>';
-      if (!_koyomiTayori.q && !_koyomiTayori.only && !_koyomiTayori.muni && !_koyomiTayori.filter) html = _tayoriTodayCard() + html;
+      if (!_koyomiTayori.q && !_koyomiTayori.searchOpen && !_koyomiTayori.only && !_koyomiTayori.muni && !_koyomiTayori.filter)
+        html = '<div style="display:flex;gap:4px;align-items:flex-start;"><div style="flex:1;min-width:0;">' + _tayoriTodayCard() + '</div>' +
+          '<button type="button" data-tf-menu title="そのほか" aria-label="そのほか" style="flex-shrink:0;width:40px;height:40px;border:none;border-radius:10px;background:none;color:#3b3226;font-size:1.3em;cursor:pointer;">⋯</button></div>' + html;
     }
     lw.innerHTML = html;
     if (lw.querySelector('[data-tf-today]')) _tayoriDrawMoon(lw);
+    var _tm = lw.querySelector('[data-tf-menu]'); if (_tm) _tm.onclick = _tayoriSeasonMenu;
     [].forEach.call(lw.querySelectorAll('[data-tf-todaytoggle]'), function(b) { b.onclick = function() { _koyomiTayori.todayOpen = !_koyomiTayori.todayOpen; _tayoriDraw(); }; });
     [].forEach.call(lw.querySelectorAll('[data-tayori-card]'), function(el) {
       var id = el.getAttribute('data-tayori-card'); var r = rows.filter(function(x) { return String(x.id) === id; })[0]; if (r) _tayoriWirePopup(el, r);
@@ -73409,7 +73425,12 @@ function _tayoriPhotoHtml(r, feed) {
   return '<div data-tp-wrap style="position:relative;margin-top:8px;border-radius:' + (feed ? '14px' : '12px') + ';overflow:hidden;background:#eee;">' +
     '<img alt="' + _tayoriEsc((koyomiTayoriCat(r.category) || {}).label || '写真') + '" loading="lazy" data-tp-open src="' + _tayoriEsc(src) + '" style="display:block;width:100%;' + (feed ? 'aspect-ratio:16/9;max-height:190px' : 'max-height:260px') + ';object-fit:cover;cursor:zoom-in;' + (blur ? 'filter:blur(18px);transform:scale(1.08);' : '') + '">' +
     (blur ? '<button type="button" data-tp-unblur style="position:absolute;inset:0;width:100%;border:none;background:rgba(255,255,255,0.35);color:#3b3226;font-size:0.86em;line-height:1.6;cursor:pointer;font-family:inherit;padding:10px;">通報があったため、ぼかしています。<br>押すと見られます</button>' : '') +
-    (p.status === 'pending' ? '<div style="position:absolute;left:8px;bottom:8px;right:8px;background:rgba(255,248,225,0.95);border-radius:8px;padding:5px 8px;font-size:0.76em;color:#6b5a2a;">運営が確かめてから、みんなに載ります（いまは、あなただけに見えています）</div>' : '') +
+    (p.status === 'pending' ? ((typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode())
+      // v0.86.4: 【権威】2026-11-19「運営はどうやって確かめるの？やり方わからねえよ」→ 作った本人には、その場で「載せる」「消す」を出す
+      ? '<div style="position:absolute;left:8px;bottom:8px;right:8px;display:flex;gap:6px;align-items:center;background:rgba(255,255,255,0.95);border-radius:10px;padding:6px 8px;"><span style="flex:1;font-size:0.76em;color:#6b5a2a;">はじめての1枚です</span>' +
+        '<button type="button" data-tp-approve style="padding:7px 12px;border:none;border-radius:8px;background:#2e7d32;color:#fff;font-size:0.84em;font-weight:700;cursor:pointer;font-family:inherit;">✓ 載せる</button>' +
+        '<button type="button" data-tp-del style="padding:7px 12px;border:1px solid #b3261e;border-radius:8px;background:#fff;color:#b3261e;font-size:0.84em;cursor:pointer;font-family:inherit;">消す</button></div>'
+      : '<div style="position:absolute;left:8px;bottom:8px;right:8px;background:rgba(255,248,225,0.95);border-radius:8px;padding:5px 8px;font-size:0.76em;color:#6b5a2a;">運営が確かめてから、みんなに載ります（いまは、あなただけに見えています）</div>') : '') +
     '</div>' +
     ((p.status === 'ok' || p.status === 'blur') && !p.mine && !feed ? '<div style="text-align:right;margin-top:3px;"><button type="button" data-tp-report style="border:none;background:none;color:#b8ad9b;font-size:0.76em;text-decoration:underline;cursor:pointer;padding:2px 0;font-family:inherit;">不適切な写真を通報する</button></div>' : '');
 }
@@ -73417,6 +73438,15 @@ function _tayoriWirePhoto(el, r) {
   var p = r && _koyomiTayori.photos && _koyomiTayori.photos[r.id]; if (!el || !p) return;
   var ub = el.querySelector('[data-tp-unblur]'); if (ub) ub.onclick = function(e) { e.stopPropagation(); _koyomiTayori.unblur = _koyomiTayori.unblur || {}; _koyomiTayori.unblur[r.id] = 1; _tayoriDraw(); };
   var op = el.querySelector('[data-tp-open]'); if (op) op.onclick = function(e) { if (el.querySelector('[data-tp-unblur]')) return; e.stopPropagation(); _tayoriPhotoBig(p.path); };
+  var _adminSet = function(act) {
+    rpcWithTimeout('koyomiru_tayori_admin_photo_set', { p_id: r.id, p_act: act }, 10000).then(function(res) {
+      if (!res || res.error) { if (typeof showToast === 'function') showToast('できませんでした', { type: 'warn' }); return; }
+      var done = function() { if (typeof showToast === 'function') showToast(act === 'ok' ? '写真を載せました' : '写真を消しました', { type: 'success' }); _tayoriLoadPhotos(); };
+      if (act !== 'ok' && KOYOMI_TAYORI_PHOTO_RE.test(String(res.data || ''))) supabaseClient.storage.from('tayori-photos').remove([res.data + '.jpg', res.data + '_s.jpg']).then(done, done); else done();
+    });
+  };
+  var ap = el.querySelector('[data-tp-approve]'); if (ap) ap.onclick = function(e) { e.stopPropagation(); ap.disabled = true; _adminSet('ok'); };
+  var dl = el.querySelector('[data-tp-del]'); if (dl) dl.onclick = function(e) { e.stopPropagation(); showChoiceModal({ title: 'この写真を消しますか？', desc: '取り消せません。書き込みは残ります。', dangerConfirm: false, buttons: [{ label: '消す', style: 'danger', onClick: function() { _adminSet('delete'); } }, { label: 'やめる', style: 'cancel' }] }); };
   var rp = el.querySelector('[data-tp-report]'); if (rp) rp.onclick = function(e) {
     e.stopPropagation();
     if (!window._cloudIsLoggedIn) { _tayoriNeedLogin(null); return; }
@@ -73537,6 +73567,21 @@ function _tayoriFeedMore(r) {
   });
 }
 // 季節の掲示板の「⋯」（右上）：絞り込み・地図・災害のとき・見張り
+// v0.86.4: 【権威】2026-11-19「問い合わせを開くとメールの設定をしろと出る（iPhoneのメールを使っていない）。koyomiru@gmail.com にならないの？問い合わせは3点ボタンに集約」
+//   → ⋯ の中に「ご意見・ご要望を送る」。宛先を見せて、コピー・Gmailで開く・メールで開くを選べるようにする（メールの設定がなくても送れる）
+function _tayoriFeedback(dis) {
+  var to = 'koyomiru@gmail.com', subj = dis ? '【こよみる 災害復旧掲示板】ご意見' : '【こよみる 季節の掲示板】ご意見';
+  var copy = function() { var done = function() { if (typeof showToast === 'function') showToast('アドレスをコピーしました', { type: 'success' }); };
+    try { navigator.clipboard.writeText(to).then(done, function() { if (typeof showToast === 'function') showToast(to, { type: 'info' }); }); } catch (e) { if (typeof showToast === 'function') showToast(to, { type: 'info' }); } };
+  showChoiceModal({ title: '💬 ご意見・ご要望を送る', desc: '宛先：<b>' + to + '</b><br>いただいたご意見は、作った本人がすべて読んでいます。', buttons: [
+    { label: '📋 アドレスをコピーする', style: 'primary', onClick: copy },
+    { label: '✉️ Gmailで開く', style: 'cancel', onClick: function() { location.href = 'googlegmail:///co?to=' + encodeURIComponent(to) + '&subject=' + encodeURIComponent(subj); } },
+    { label: '📨 いつものメールで開く', style: 'cancel', onClick: function() { location.href = 'mailto:' + to + '?subject=' + encodeURIComponent(subj); } },
+    { label: '閉じる', style: 'cancel' } ] });
+}
+function _tayoriAbout() {
+  showChoiceModal({ title: 'ℹ️ 季節の掲示板について', desc: 'みんなが見つけた「いまの季節」を書き込む掲示板です。<br>場所は約500mの範囲にぼかして載せます。誰が書いたかは、ほかの人には見えません（コメントには呼び名が出ます）。<br>読み込むのは、開いたときと地図を動かしたときだけです。', buttons: [{ label: '閉じる', style: 'cancel' }] });
+}
 function _tayoriSeasonMenu() {
   var adm = (typeof isKoyomiruAdminMode === 'function') && isKoyomiruAdminMode();
   var bs = [];
@@ -73554,7 +73599,9 @@ function _tayoriSeasonMenu() {
     showChoiceModal({ title: '地域で絞る', desc: '', buttons: munis.sort().slice(0, 30).map(function(n) { return { label: _tayoriEsc(n), style: 'cancel', onClick: function() { _koyomiTayori.muni = n; renderTayoriView(); _tayoriDraw(); } }; }).concat([{ label: '閉じる', style: 'cancel' }]) });
   } });
   bs.push({ label: '🆘 災害のとき：町の掲示板を立ち上げる', style: 'cancel', onClick: _tayoriStartWizard });
-  if (adm) bs.push({ label: '🛡 見張り（管理者）', style: 'cancel', onClick: function() { _tayoriOpenAdmin(); } });
+  bs.push({ label: '💬 ご意見・ご要望を送る', style: 'cancel', onClick: function() { _tayoriFeedback(false); } });
+  bs.push({ label: 'ℹ️ この掲示板について', style: 'cancel', onClick: _tayoriAbout });
+  if (adm) bs.push({ label: '🛡 見張り（はじめての写真の確認など）', style: 'cancel', onClick: function() { _tayoriOpenAdmin('photos'); } });
   bs.push({ label: '閉じる', style: 'cancel' });
   showChoiceModal({ title: 'そのほか', desc: '', buttons: bs });
 }
@@ -73563,7 +73610,9 @@ function _tayoriSeasonChrome(host) {
   var dis = _tayoriTab() === 'disaster', view = _tayoriView();
   var tt = document.getElementById('tayoriTitle'), sub = document.getElementById('tayoriSub'), pb = host.querySelector('[data-tayori-post]'), mb = host.querySelector('[data-tayori-menu]');
   var icons = host.querySelector('[data-tayori-icons]');
+  var _hrow = tt && tt.parentNode && tt.parentNode.parentNode, _foot = document.getElementById('tayoriFoot');
   if (dis) {
+    if (_hrow) _hrow.style.display = 'flex'; if (_foot) _foot.style.display = '';
     if (tt) { tt.style.fontSize = ''; tt.style.letterSpacing = ''; }
     if (sub) sub.style.display = '';
     if (pb) pb.style.display = ''; if (icons) icons.style.display = 'none';
@@ -73572,6 +73621,9 @@ function _tayoriSeasonChrome(host) {
   var seasonName = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' }[koyomiTayoriSeason(new Date())];
   // v0.86.2: 見出しは細い1行（右に ⋯ だけ）
   if (tt) { tt.textContent = '🍃 季節の掲示板'; tt.style.fontSize = '1.3em'; tt.style.letterSpacing = '0.02em'; tt.style.fontWeight = '800'; }
+  // v0.86.4: 【権威】2026-11-19「タイトルさえもなくて、ただ写真の投稿が並んでいる」「問い合わせは3点ボタンに集約」
+  //   → 見出しの行といちばん下の文は出さない（名前はナビタブにある）。⋯ は「今日の季節」の帯の右に置く
+  if (_hrow) _hrow.style.display = 'none'; if (_foot) _foot.style.display = 'none';
   if (sub) { sub.textContent = 'みんなの「いまの季節」が集まる掲示板'; sub.style.display = 'none'; }
   if (pb) pb.style.display = 'none';
   if (mb) mb.style.display = 'none';
@@ -73594,10 +73646,12 @@ function _tayoriSeasonChrome(host) {
       (_koyomiTayori.only === 'fav' ? tag('only', '★ お気に入りだけ') : _koyomiTayori.only === 'mine' ? tag('only', '自分が書いたものだけ') : '') +
       (_koyomiTayori.muni ? tag('muni', '📍 ' + _tayoriEsc(_koyomiTayori.muni)) : '') +
       (_koyomiTayori.filter ? tag('filter', _tayoriEsc(((koyomiTayoriCat(_koyomiTayori.filter) || {}).emoji || '') + ' ' + ((koyomiTayoriCat(_koyomiTayori.filter) || {}).label || ''))) : '') +
+      ((_tayoriView() === 'map' || _koyomiTayori.q || _koyomiTayori.searchOpen || _koyomiTayori.only || _koyomiTayori.muni || _koyomiTayori.filter) ? '<button type="button" data-tf-menu title="そのほか" aria-label="そのほか" style="order:9;margin-left:auto;width:40px;height:36px;border:none;border-radius:10px;background:none;color:#3b3226;font-size:1.3em;cursor:pointer;">⋯</button>' : '') +
       (_tayoriView() === 'map' ? '<button type="button" data-tf-tolist style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid ' + KOYOMI_TAYORI_ACC + ';border-radius:999px;background:#fff;color:' + KOYOMI_TAYORI_ACC + ';font-size:0.84em;cursor:pointer;font-family:inherit;">☰ 一覧にもどる</button>' : '');
     fl.style.display = fl.innerHTML ? 'flex' : 'none';
     var qi = fl.querySelector('[data-tayori-q]'); if (qi) qi.oninput = function() { _koyomiTayori.q = qi.value; clearTimeout(_koyomiTayori.qt); _koyomiTayori.qt = setTimeout(function() { _tayoriDraw(); }, 250); };
     [].forEach.call(fl.querySelectorAll('[data-tf-clear]'), function(b) { b.onclick = function() { _koyomiTayori[b.getAttribute('data-tf-clear')] = ''; renderTayoriView(); _tayoriDraw(); }; });
+    var fm = fl.querySelector('[data-tf-menu]'); if (fm) fm.onclick = _tayoriSeasonMenu;
     var tl = fl.querySelector('[data-tf-tolist]'); if (tl) tl.onclick = function() { _koyomiTayori.view = 'list'; renderTayoriView(); _tayoriDraw(); _tayoriLoad(false); };
   }
   // 分類：1行で横に流す（選んだものだけ青）。v0.86.2: 札は出さず、⋯ の「分類で絞る」へ
@@ -95158,8 +95212,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r654.thread = /koyomiru_tayori_comment_thread/.test(_th654) && /maxlength="140"/.test(_th654) && /呼び名を決めてください/.test(_th654) && /本名は避けて/.test(_th654) && /koyomiru_tayori_comment_report/.test(_th654);
        _r654.today = /今日の季節/.test(_tayoriTodayCard.toString()) && /_tayoriTodayCard\(\)/.test(_tayoriDraw.toString()) && (_tayoriTodayCard() === '' || /data-tf-today/.test(_tayoriTodayCard()));
        _r654.days30 = /30 \* KOYOMI_TAYORI_D/.test(_tayoriVisibleRows.toString());
+       // v0.86.4: 見出しを出さない・⋯ は今日の季節の右・ご意見は宛先を見せる窓・はじめての写真は作った本人がその場で載せる
+       _r654.noTitle = /_hrow\.style\.display = 'none'/.test(_sc654) && /_foot\.style\.display = 'none'/.test(_sc654) && /data-tf-menu/.test(_tayoriDraw.toString());
+       _r654.feedback = /koyomiru@gmail\.com/.test(_tayoriFeedback.toString()) && /googlegmail/.test(_tayoriFeedback.toString()) && /ご意見・ご要望を送る/.test(_tayoriSeasonMenu.toString()) && !/href="mailto:koyomiru@gmail\.com\?subject=' \+ encodeURIComponent\(dis/.test(renderTayoriView.toString());
+       _r654.approve = /data-tp-approve/.test(_tayoriPhotoHtml.toString()) && /isKoyomiruAdminMode/.test(_tayoriPhotoHtml.toString()) && /data-tp-approve/.test(_tayoriWirePhoto.toString());
        var _bad654 = Object.keys(_r654).filter(function(k) { return !_r654[k]; });
-       !_bad654.length ? ok('ST-654: 季節の掲示板（細い見出しと右上の ⋯ だけ・Xの並びで縦に・写真は横長・コメントは数だけ・今日の季節は1行・色は青ひと色・書くのは＋だけ）')
+       !_bad654.length ? ok('ST-654: 季節の掲示板（見出しなし・⋯ は今日の季節の右・ご意見は宛先を見せる窓・はじめての写真はその場で載せる・Xの並びで縦に・写真は横長・コメントは数だけ・今日の季節は1行・色は青ひと色・書くのは＋だけ）')
          : ng('ST-654: 季節の掲示板の見た目が違う', _bad654.join(','));
      } catch (e) { ng('ST-654: 例外', e.message); }
      // ===== ST-653: 季節の掲示板の写真（v0.85.0） =====
@@ -95174,7 +95232,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _koyomiTayori.unblur = {};
        _koyomiTayori.photos = { a: { path: _p653, status: 'blur', mine: false }, b: { path: _p653, status: 'pending', mine: true }, c: { path: _p653, status: 'ok', mine: false } };
        var _ha = _tayoriPhotoHtml({ id: 'a', category: 'moon' }), _hb = _tayoriPhotoHtml({ id: 'b', category: 'moon' }), _hc = _tayoriPhotoHtml({ id: 'c', category: 'moon' });
-       _r653.view = /blur\(18px\)/.test(_ha) && /通報があったため、ぼかしています/.test(_ha) && /運営が確かめてから/.test(_hb) && !/data-tp-report/.test(_hb) && /不適切な写真を通報する/.test(_hc) && !/blur\(/.test(_hc) &&
+       _r653.view = /blur\(18px\)/.test(_ha) && /通報があったため、ぼかしています/.test(_ha) && (/運営が確かめてから/.test(_hb) || /data-tp-approve/.test(_hb)) && !/data-tp-report/.test(_hb) && /不適切な写真を通報する/.test(_hc) && !/blur\(/.test(_hc) &&
          _tayoriPhotoHtml({ id: 'zz', category: 'moon' }) === '';
        _koyomiTayori.photos = { x: { path: '"><img src=x>', status: 'ok' } };
        _r653.xss = _tayoriPhotoHtml({ id: 'x', category: 'moon' }) === '';
@@ -95358,7 +95416,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r648.esc = _tayoriPopupHtml({ id: 'z', category: 'water', confirmed_at: _n648 }).indexOf('<img') === -1;
        _r648.edit = _tayoriPopupHtml({ id: 'd', category: 'lifeline', confirmed_at: _n648 }).indexOf('data-tayori-edit') !== -1 && /p_token/.test(_tayoriOpenEditForm.toString());
        _r648.dup = /これのことですか/.test(_tayoriOpenPostForm.toString()) && /_tayoriDistM/.test(_tayoriOpenPostForm.toString());
-       _r648.mail = /mailto:koyomiru@gmail\.com\?subject=/.test(renderTayoriView.toString());
+       // v0.86.4: ご意見は、宛先を見せる窓から（メールの設定がなくても送れる）
+       _r648.mail = /data-tayori-feedback/.test(renderTayoriView.toString()) && /mailto:' \+ to \+ '\?subject=/.test(_tayoriFeedback.toString());
        var _nl648 = document.getElementById('navTayoriLabel'), _keepM648 = _koyomiTayori.modes;
        // v0.84.0: 季節のたよりのタブはいつも季節のたより。災害復旧掲示板は別のタブ（navSaigai）が出たり消えたりする
        var _sg648 = document.getElementById('navSaigai'), _vt648 = allSettings.ui.visibleTabs.saigai; delete allSettings.ui.visibleTabs.saigai;
