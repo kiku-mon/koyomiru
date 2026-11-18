@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.78.16 ★ -->
+<!-- ★ CURRENT VERSION: v0.78.17 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.16';
+    const APP_VERSION = 'v0.78.17';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -34498,6 +34498,12 @@ function saveMsbEdit() {
         } catch(eT2) { showToast('追加しました', {type:'ok'}); }
         return;
       }
+      // v0.78.16: 【権威】2026-11-18「この繰り返しを全部消す…出ない」（月間の右の欄で操作していた）
+      //   この欄の保存だけ、v0.78.13 の直しが入っていなかった。
+      //   ①仲間の印を自分の id に付け替えていた → 1件直すたびに新しい繰り返しが生まれ、同じ日に2つ並んだ
+      //   ②「なし」にしても、後ろの仲間を消していなかった
+      //   → ほかの画面と同じく、書き換える前に控え（_repeatSnapshot）、印は元のまま、「なし」でも applyRepeatSave を通す
+      var _msbRepPrev = (typeof _repeatSnapshot === 'function') ? _repeatSnapshot(id) : { repeat: 'none', groupId: null };
       if (typeof updateTask === 'function') {
         // v0.47.28: メモ２。欄が無い（古い画面）ときは触らない。undefined を書くと消えてしまう。
         var _m2Update = (memo2 !== undefined) ? { memo2: memo2 } : {};
@@ -34511,10 +34517,10 @@ function saveMsbEdit() {
           endDate: _endDate,
           repeat: repeat !== 'none' ? repeat : null,
           repeatEnd: repEnd,
-          repeatGroupId: repeat !== 'none' ? id : null
+          repeatGroupId: repeat !== 'none' ? (_msbRepPrev.groupId || id) : null
         }, _m2Update));
-        if (repeat !== 'none' && typeof applyRepeatSave === 'function') {
-          applyRepeatSave(id, null, repeat, repEnd, date);
+        if ((repeat !== 'none' || _msbRepPrev.repeat !== 'none') && typeof applyRepeatSave === 'function') {
+          if (applyRepeatSave(id, null, repeat, repEnd, date, _msbRepPrev) === false) { saveAllTasks(); return; }   // 確かめる窓に任せる
         }
       }
       saveAllTasks();
@@ -34549,6 +34555,11 @@ function saveMsbEdit() {
     function deleteMsbTask() {
       var id = document.getElementById('msbEditId').value;
       if (!id) return;
+      // v0.78.16: 繰り返しの予定なら、ほかの画面と同じく「この日だけ／この日より後も／全部」を選ぶ
+      var _rbM = (typeof koyomiRepeatDeleteButtons === 'function') ? koyomiRepeatDeleteButtons(allTasks.find(function(x) { return x.id === id; }), function() {
+        closeMsbEdit(); renderMonthlySidebarTasks(); typeof renderMonthlyView === 'function' && renderMonthlyView(); showToast('\u524a\u9664\u3057\u307e\u3057\u305f', {type:'ok'});
+      }) : null;
+      if (_rbM) { var _tM = allTasks.find(function(x) { return x.id === id; }); showChoiceModal({ title: '「' + _escapeHtml((_tM && _tM.text) || '') + '」の繰り返しを消す', desc: 'どこまで消すかを選んでください。取り消せません。', buttons: _rbM }); return; }
       var btn = document.querySelector('.msb-btn-delete');
       if (btn && btn.dataset.confirm !== '1') {
         btn.dataset.confirm = '1';
@@ -60972,6 +60983,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.78.17', date: '2026-11-18',
+    items: [
+      { icon:'🔁', t:'月間カレンダーの右の欄でも、繰り返しを「全部消す」を選べるようにしました',
+        before:'右の欄の「削除」は、繰り返しの予定でも、その1件しか消せませんでした',
+        after:'右の欄の「削除」を押すと「この日だけ／この日より後も／全部」を選べます' },
+      { icon:'🔁', t:'右の欄で繰り返しの予定を直すと、同じ日に2つ並ぶのを直しました',
+        before:'右の欄で繰り返しの1件を保存すると、別の繰り返しがもう1つ作られ、同じ日に2つ並んでいました。「なし」にしても後ろが消えませんでした',
+        after:'保存しても同じ繰り返しのままです。「なし」にすると、ほかの画面と同じく、後ろを消すか確かめます' }
+    ]
+  },
   {
     ver: 'v0.78.16', date: '2026-11-18',
     items: [
@@ -92303,10 +92325,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r637.last = c10 === false && !!_pk637 && _pk637.buttons.some(function(b) { return /全部消す（10件）/.test(b.label); });
        _pk637.buttons.filter(function(b) { return /全部消す/.test(b.label); })[0].onClick(); _r637.lastAll = allTasks.length === 1;
        // 週間の削除・一覧の × でも選べる
-       _r637.sites = /koyomiRepeatDeleteButtons/.test(confirmDeleteFromEdit.toString()) && (_stAllSrc().split('_rbD = ').length - 1) >= 1;
+       _r637.sites = /koyomiRepeatDeleteButtons/.test(confirmDeleteFromEdit.toString()) && (_stAllSrc().split('_rbD = ').length - 1) >= 1 && /koyomiRepeatDeleteButtons/.test(deleteMsbTask.toString());
+       // 月間の右の欄の保存：印を付け替えない・「なし」でも後ろを消す窓を通す
+       var _sm637 = saveMsbEdit.toString();
+       _r637.msbSave = /_msbRepPrev\.groupId \|\| id/.test(_sm637) && /_msbRepPrev\.repeat !== 'none'/.test(_sm637) && !/repeatGroupId: repeat !== 'none' \? id : null/.test(_sm637);
        allTasks = _bk637; window.saveAllTasks = _sv637; saveAllTasks = _sv637; window._propagateDeletion = _pd637; _propagateDeletion = _pd637; window.showChoiceModal = _cm637; showChoiceModal = _cm637;
        var _bad637 = Object.keys(_r637).filter(function(k) { return !_r637[k]; });
-       !_bad637.length ? ok('ST-637: 繰り返しの印が消えた日（前の版で「なし」にした日）からも、仲間を見つけて「全部消す」を出す。最後の日を「なし」にしても出す。週間・一覧の × でも出す。別のカレンダーの同名は巻き込まない')
+       !_bad637.length ? ok('ST-637: 繰り返しの印が消えた日（前の版で「なし」にした日）からも、仲間を見つけて「全部消す」を出す。最後の日を「なし」にしても出す。週間・一覧の ×・月間の右の欄でも出す。右の欄で直しても新しい繰り返しを作らない。別のカレンダーの同名は巻き込まない')
          : ng('ST-637: 繰り返しを全部消せない場面がある', _bad637.join(','));
      } catch (e) { try { allTasks = _bk637; window.saveAllTasks = _sv637; saveAllTasks = _sv637; window._propagateDeletion = _pd637; _propagateDeletion = _pd637; window.showChoiceModal = _cm637; showChoiceModal = _cm637; } catch (e2) {} ng('ST-637: 例外', e.message); }
      // ===== ST-635: 繰り返しは「いつまで」を必ず決める（長くても1年）・毎月31日は月末に（v0.78.15） =====
@@ -98587,6 +98612,11 @@ window.koyomiRepeatUIRefresh = koyomiRepeatUIRefresh; window.koyomiRepeatUIRefre
 // v0.78.16: 【権威】2026-11-18「この繰り返しを全部消す…出ないよ！」
 //   原因：前の版で「なし」にした日は、仲間の印（repeatGroupId）が消えていて、仲間を探せなかった。
 //   → 印が無くても、①自分の id を印にしている予定、②同じ名前・同じカレンダーで印を持つ予定、を仲間として探す
+function _repeatCloseAll() {   // v0.78.16: どの画面から来ても、開いている編集を閉じて描き直す（月間の右の欄も）
+  ['closeMonthlyTaskModal', 'closeTaskEditModal', 'closeWeeklyEditModal', 'closeMsbEdit'].forEach(function(n) { try { if (typeof window[n] === 'function') window[n](); } catch (e) {} });
+  try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); } catch (e) {}
+  try { renderAllSections(); renderWeeklyView(); renderMonthlyView(); } catch (e) {}
+}
 function koyomiRepeatSiblings(task) {
   if (!task) return [];
   var isTask = function(t) { return t && (t.kind || 'task') === 'task'; };
@@ -98649,11 +98679,7 @@ function applyRepeatSave(taskId, task, repeat, repeatEnd, date, prev) {
     if (baseTask && baseTask.repeatGroupId === groupId) { baseTask.repeatGroupId = null; baseTask.repeat = null; baseTask.repeatEnd = null; }   // この日のものは残す（仲間から外す）
     var _delAll = { label: 'この繰り返しを全部消す（' + _sibAll.length + '件）', style: 'danger', onClick: function() {   // v0.78.14: 前の日の分もまとめて
             _sibAll.map(function(t) { return t.id; }).concat([taskId]).forEach(function(id) { if (typeof deleteTaskById === 'function') deleteTaskById(id); });
-            saveAllTasks();
-            if (typeof closeMonthlyTaskModal === 'function') try { closeMonthlyTaskModal(); } catch (eC) {}
-            if (typeof closeTaskEditModal === 'function') try { closeTaskEditModal(); } catch (eC2) {}
-            if (typeof closeWeeklyEditModal === 'function') try { closeWeeklyEditModal(); } catch (eC3) {}
-            renderAllSections(); renderWeeklyView(); renderMonthlyView();
+            saveAllTasks(); _repeatCloseAll();
           }};
     if (count === 0 && _sibAll.length > 1) {   // v0.78.16: 後ろが無くても（最後の日・前の日だけ残っている）、全部消すを選べる
       showChoiceModal({
@@ -98661,11 +98687,7 @@ function applyRepeatSave(taskId, task, repeat, repeatEnd, date, prev) {
         desc: 'この日より後の予定はありません。前の日の <b>' + (_sibAll.length - 1) + '件</b> は残ります。',
         buttons: [
           { label: 'この日だけ繰り返しをやめる', style: 'primary', onClick: function() {
-            updateTask(taskId, { repeat: null, repeatEnd: null, repeatGroupId: null }); saveAllTasks();
-            if (typeof closeMonthlyTaskModal === 'function') try { closeMonthlyTaskModal(); } catch (eC) {}
-            if (typeof closeTaskEditModal === 'function') try { closeTaskEditModal(); } catch (eC2) {}
-            if (typeof closeWeeklyEditModal === 'function') try { closeWeeklyEditModal(); } catch (eC3) {}
-            renderAllSections(); renderWeeklyView(); renderMonthlyView();
+            updateTask(taskId, { repeat: null, repeatEnd: null, repeatGroupId: null }); saveAllTasks(); _repeatCloseAll();
           }},
           _delAll,
           { label: 'キャンセル', style: 'cancel' }
@@ -98686,6 +98708,7 @@ function applyRepeatSave(taskId, task, repeat, repeatEnd, date, prev) {
             deleteRepeatFutureTasks(groupId, date, taskId);
             updateTask(taskId, { repeat: null, repeatEnd: null, repeatGroupId: null });
             saveAllTasks();
+            try { if (typeof closeMsbEdit === 'function') closeMsbEdit(); if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); } catch (eM) {}   // v0.78.16: 月間の右の欄から来たとき
             renderAllSections(); renderWeeklyView(); renderMonthlyView();
           }},
           _delAll,
