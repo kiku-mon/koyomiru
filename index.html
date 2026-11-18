@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.78.13 ★ -->
+<!-- ★ CURRENT VERSION: v0.78.14 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.13';
+    const APP_VERSION = 'v0.78.14';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -34655,6 +34655,15 @@ function saveMsbEdit() {
     function deleteMonthlyTask() {
       const taskId = document.getElementById('monthlyTaskId').value;
       if (!taskId) return;
+      var _afterDel = function() {
+        closeMonthlyTaskModal();
+        renderMonthlyView();
+        const tlv = document.getElementById('timelineView');
+        if (tlv && tlv.style.display !== 'none') renderTimelineView();
+        renderAllSections((typeof currentDailyDate !== 'undefined' && currentDailyDate) || null);
+      };
+      var _rb = (typeof koyomiRepeatDeleteButtons === 'function') ? koyomiRepeatDeleteButtons(allTasks.find(function(t) { return t.id === taskId; }), _afterDel) : null;
+      if (_rb) { showChoiceModal({ title: '繰り返しの予定を消す', desc: 'どこまで消すかを選んでください。取り消せません。', buttons: _rb }); return; }   // v0.78.14
       showChoiceModal({
         title: 'やることを王国から消す',
         desc: 'この操作は取り消せません。',
@@ -35417,8 +35426,17 @@ function saveMsbEdit() {
       const gantWarn = linkedGants.length > 0
         ? `\n⚠️ このタスクは${linkedGants.length}件の手立てに紐づいています。削除すると紐づきも解除されます。`
         : '';
+      var _rb2 = (typeof koyomiRepeatDeleteButtons === 'function' && !linkedGants.length) ? koyomiRepeatDeleteButtons(task, function() {
+        closeTaskEditModal();
+        renderAllSections(currentDailyDate || getLocalDateStr(new Date()));
+        renderWeeklyView();
+        renderGantView && renderGantView();
+        const mv = document.getElementById('monthlyView');
+        if (mv && mv.style.display === 'block') renderMonthlyView();
+      }) : null;
+      if (_rb2) { showChoiceModal({ title: '「' + _escapeHtml(task.text || '') + '」の繰り返しを消す', desc: 'どこまで消すかを選んでください。取り消せません。', buttons: _rb2 }); return; }   // v0.78.14
       showChoiceModal({
-        title: `「${task.text}」を王国から消す`,
+        title: '「' + _escapeHtml(task.text || '') + '」を王国から消す',   // v0.78.14: 窓の見出しは HTML として描くので、予定の文字は無害にしてから（共有カレンダーは他の人も書ける）
         desc: 'この操作は取り消せません。' + (gantWarn ? '<br><span style="color:#ffb74d;">⚠️ ' + linkedGants.length + '件の手立てへの紐づきも解除されます。</span>' : ''),
         buttons: [
           { label: '消す', style: 'danger', onClick: function() {
@@ -60908,6 +60926,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.78.14', date: '2026-11-18',
+    items: [
+      { icon:'🔁', t:'繰り返しの予定を、まとめて消せるようにしました',
+        before:'繰り返しの予定は、1件ずつしか消せませんでした',
+        after:'繰り返しの予定で「削除」を押すと、「この日だけ」「この日より後も」「この繰り返しを全部」から選べます。件数も出ます。繰り返しを「なし」にするときも、「全部消す」を選べます' }
+    ]
+  },
   {
     ver: 'v0.78.13', date: '2026-11-18',
     items: [
@@ -92169,6 +92195,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        !_bad633.length ? ok('ST-633: 繰り返しの1件を「なし」にすると、確かめてから、その日より後の仲間を消す（その日と前の日は残る）。仲間の1件で決まりを変えても、その1件は消えない')
          : ng('ST-633: 繰り返しのやめ方が違う', _bad633.join(','));
      } catch (e) { try { allTasks = _bk633; window.saveAllTasks = _sv633; saveAllTasks = _sv633; window.showChoiceModal = _cm633; showChoiceModal = _cm633; window._propagateDeletion = _pd633; _propagateDeletion = _pd633; } catch (e2) {} ng('ST-633: 例外', e.message); }
+     // ===== ST-634: 繰り返しの予定を消すとき、範囲を選べる（v0.78.14） =====
+     try {
+       var _bk634 = allTasks.slice(), _sv634 = saveAllTasks, _pd634 = window._propagateDeletion, _r634 = {};
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks; window._propagateDeletion = function() {}; _propagateDeletion = window._propagateDeletion;
+       var mk = function() { allTasks = []; for (var d = 1; d <= 10; d++) allTasks.push({ id: 'dl-' + d, kind: 'task', text: '教科書<b>1</b>', date: '2026-11-' + String(d).padStart(2, '0'), repeat: 'daily', repeatGroupId: 'dl-1', calendarId: 'default' }); allTasks.push({ id: 'dl-x', kind: 'task', text: '別', date: '2026-11-05', calendarId: 'default' }); };
+       var g = function(id) { return allTasks.filter(function(t) { return t.id === id; })[0]; };
+       mk(); var bs = koyomiRepeatDeleteButtons(g('dl-5'));
+       _r634.btns = !!bs && bs.map(function(b) { return b.label; }).join('|') === 'この日だけ消す|この日より後も消す（6件）|この繰り返しを全部消す（10件）|キャンセル' && koyomiRepeatDeleteButtons(g('dl-x')) === null;
+       mk(); koyomiRepeatDeleteRange(g('dl-5'), 'one'); _r634.one = !g('dl-5') && allTasks.length === 10;
+       mk(); koyomiRepeatDeleteRange(g('dl-5'), 'after'); _r634.after = allTasks.filter(function(t) { return t.repeatGroupId === 'dl-1'; }).length === 4 && !!g('dl-4') && !!g('dl-x');
+       mk(); koyomiRepeatDeleteRange(g('dl-5'), 'all'); _r634.all = allTasks.length === 1 && !!g('dl-x');
+       _r634.esc = /_escapeHtml\(task\.text \|\| ''\) \+ '」を王国から消す'/.test(deleteTaskFromEditModal.toString()) && /koyomiRepeatDeleteButtons/.test(deleteMonthlyTask.toString());
+       allTasks = _bk634; window.saveAllTasks = _sv634; saveAllTasks = _sv634; window._propagateDeletion = _pd634; _propagateDeletion = _pd634;
+       var _bad634 = Object.keys(_r634).filter(function(k) { return !_r634[k]; });
+       !_bad634.length ? ok('ST-634: 繰り返しの予定を消すときは「この日だけ／この日より後も／全部」から選べる（件数つき）。繰り返しでない予定はいつもどおり。見出しの予定名は無害にして出す')
+         : ng('ST-634: 繰り返しの消し方が違う', _bad634.join(','));
+     } catch (e) { try { allTasks = _bk634; window.saveAllTasks = _sv634; saveAllTasks = _sv634; window._propagateDeletion = _pd634; _propagateDeletion = _pd634; } catch (e2) {} ng('ST-634: 例外', e.message); }
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
      try {
        var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
@@ -98329,6 +98372,34 @@ function generateRepeatTasks(baseTask, repeat, repeatEnd, startDate, groupId) {
 //   原因：編集の保存で、先に updateTask で repeat と repeatGroupId を消してから applyRepeatSave を呼んでいた。
 //   applyRepeatSave は「前は繰り返しだったか」「どの仲間か」を、もう消えた値から読んでいたので、何もしなかった。
 //   → 書き換える前の値（_repeatSnapshot）を控えて渡す。仲間の印（repeatGroupId）は、繰り返しを続ける限り元のまま
+// v0.78.14: 【権威】2026-11-18「繰り返しを一挙に削除とかできないの？」→ 繰り返しの予定を消すときは、範囲を選べる
+//   （この日だけ／この日より後も／この繰り返しを全部）。Google カレンダー等の定石と同じ
+function koyomiRepeatSiblings(task) {
+  if (!task || !task.repeatGroupId) return [];
+  return allTasks.filter(function(t) { return t && t.repeatGroupId === task.repeatGroupId && (t.kind || 'task') === 'task'; });
+}
+function koyomiRepeatDeleteRange(task, range) {   // range: 'one' | 'after' | 'all'
+  var sib = koyomiRepeatSiblings(task);
+  var ids = range === 'all' ? sib.map(function(t) { return t.id; })
+    : range === 'after' ? sib.filter(function(t) { return t.date >= task.date; }).map(function(t) { return t.id; })
+    : [task.id];
+  if (ids.indexOf(task.id) === -1) ids.push(task.id);
+  ids.forEach(function(id) { if (typeof deleteTaskById === 'function') deleteTaskById(id); });
+  return ids.length;
+}
+function koyomiRepeatDeleteButtons(task, after) {   // 繰り返しの仲間がいれば、範囲を選ぶボタンを返す（いなければ null）
+  var sib = koyomiRepeatSiblings(task);
+  if (sib.length < 2) return null;
+  var nAfter = sib.filter(function(t) { return t.date >= task.date; }).length;
+  var mk = function(label, range, style) { return { label: label, style: style, onClick: function() { koyomiRepeatDeleteRange(task, range); if (typeof after === 'function') after(); } }; };
+  return [
+    mk('この日だけ消す', 'one', 'danger'),
+    mk('この日より後も消す（' + nAfter + '件）', 'after', 'danger'),
+    mk('この繰り返しを全部消す（' + sib.length + '件）', 'all', 'danger'),
+    { label: 'キャンセル', style: 'cancel' }
+  ];
+}
+window.koyomiRepeatDeleteRange = koyomiRepeatDeleteRange; window.koyomiRepeatDeleteButtons = koyomiRepeatDeleteButtons;
 function _repeatSnapshot(taskId) {
   var t = allTasks.find(function(x){ return x.id === taskId; });
   return { repeat: t ? (t.repeat || 'none') : 'none', groupId: t ? (t.repeatGroupId || null) : null };
@@ -98360,6 +98431,13 @@ function applyRepeatSave(taskId, task, repeat, repeatEnd, date, prev) {
             deleteRepeatFutureTasks(groupId, date, taskId);
             updateTask(taskId, { repeat: null, repeatEnd: null, repeatGroupId: null });
             saveAllTasks();
+            renderAllSections(); renderWeeklyView(); renderMonthlyView();
+          }},
+          { label: 'この繰り返しを全部消す', style: 'danger', onClick: function() {   // v0.78.14: 前の日の分もまとめて
+            var _all = allTasks.filter(function(t) { return t.repeatGroupId === groupId || t.id === taskId; }).map(function(t) { return t.id; });
+            _all.forEach(function(id) { if (typeof deleteTaskById === 'function') deleteTaskById(id); });
+            saveAllTasks();
+            if (typeof closeMonthlyTaskModal === 'function') try { closeMonthlyTaskModal(); } catch (eC) {}
             renderAllSections(); renderWeeklyView(); renderMonthlyView();
           }},
           { label: 'キャンセル', style: 'cancel' },
