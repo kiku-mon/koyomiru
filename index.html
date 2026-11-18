@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.77.4';
+    const APP_VERSION = 'v0.77.5';
   const APP_LAST_UPDATED = '2026-11-16'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -17658,7 +17658,7 @@ window.isKoyomiruAdminMode = isKoyomiruAdminMode;
     window.ensureOwnMainCalendar = ensureOwnMainCalendar;
     // 検索などに出す「出どころ」の名前
     // v0.55.40: 雑記帳の印は、日次のつまみと同じ「✏️」に
-    var RECORD_KIND_LABELS = { scratch: '✏️ 雑記帳', zen: '🧘 禅', video: '🎬 動画', audio: '🎙 音声' };
+    var RECORD_KIND_LABELS = { scratch: '✏️ 雑記帳', zen: '🧘 禅', video: '🎬 動画', audio: '🎙 音声', journal: '🦋 日誌', thought: '🦋 日誌の一言' };
     function recordSourceLabel(t) {
       var cal = calendarForRecord(t);
       if (cal) return cal.name;
@@ -19216,6 +19216,23 @@ function renderTodoList() {
       note: 1, deckHistory: 1, myDeck: 1, guildLicense: 1,
       photo: 1, audio: 1, video: 1, stamp: 1, dailyStatus: 1, deck: 1
     };
+    // v0.77.5: 【権威】2026-11-18「日誌にあるのに、タスクにあることになっているのが変」
+    //   → 検索の見出しを出どころで分ける（予定／日誌／雑記帳／禅）。日誌の一言は親の日誌の日付で絞り・並べ・表示し、押すと日誌が開く
+    function _searchDateOf(t) {
+      if (!t) return '';
+      if (t.date) return t.date;
+      if (t.kind === 'thought' && t.parentId) { var j = allTasks.filter(function(x) { return x && x.id === t.parentId && x.kind === 'journal'; })[0]; return (j && j.date) || ''; }
+      return '';
+    }
+    function _searchSectionOf(t) {
+      var k = t && t.kind;
+      if (k === 'thought' || k === 'journal') return 'journal';
+      if (k === 'scratch') return 'scratch';
+      if (k === 'zen') return 'zen';
+      return 'task';
+    }
+    var _SEARCH_SECTIONS = [['task', '✅ 予定'], ['journal', '🦋 日誌'], ['scratch', '✏️ 雑記帳'], ['zen', '🧘 禅']];
+    window._searchDateOf = _searchDateOf; window._searchSectionOf = _searchSectionOf;
     function _isSearchableTask(t) {
       if (!t) return false;
       if (t.kind && _SEARCH_EXCLUDE_KINDS[t.kind]) return false;
@@ -19262,7 +19279,7 @@ function renderTodoList() {
         // v0.48.10: 既定を「今日から先」から「過去もふくめて全部」に変えた。
         var _r = window._searchRange || 'all';
         if (_r === 'all') return true;
-        var _d = t.date || '';
+        var _d = _searchDateOf(t);
         if (!_d) return _r === 'all';
         var _td = new Date(); _td.setHours(0,0,0,0);
         var _fmt = function(dt) {
@@ -19277,7 +19294,7 @@ function renderTodoList() {
         // month
         return _d >= _fmt(new Date(_td.getFullYear(), _td.getMonth(), 1)) &&
                _d <= _fmt(new Date(_td.getFullYear(), _td.getMonth() + 1, 0));
-      }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      }).sort((a, b) => _searchDateOf(b).localeCompare(_searchDateOf(a)));
       // 自由帳検索
       // v0.45.1947: 言葉が空のときは自由帳を出さない。
       // 一覧として眺めたいのは予定であって、自由帳の全ページではない。
@@ -19392,11 +19409,15 @@ function renderTodoList() {
       if (caseHits.length > 0) _renderCaseSearchHits(container, caseHits, q);
       // タスクヒット
       if (taskHits.length > 0) {
+        _SEARCH_SECTIONS.forEach(function(sx) {
+        var _hitsS = taskHits.filter(function(t) { return _searchSectionOf(t) === sx[0]; });
+        if (!_hitsS.length) return;
         const sec = document.createElement('div');
+        sec.setAttribute('data-search-section', sx[0]);
         sec.style.cssText = 'font-size:0.72em;font-weight:700;color:#aaa;padding:6px 4px 4px;letter-spacing:0.05em;';
-        sec.textContent = '✅ タスク';
+        sec.textContent = sx[1];
         container.appendChild(sec);
-        taskHits.forEach(t => {
+        _hitsS.forEach(t => {
           const cal = calendarForRecord(t);   // v0.55.39: ほかのカレンダーのふりをさせない
           const row = document.createElement('div');
           row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:10px 8px;border-bottom:1px solid #f5f5f5;cursor:pointer;border-radius:8px;transition:background 0.1s;';
@@ -19407,7 +19428,12 @@ function renderTodoList() {
       // 探しているのは「その予定を直したい」ではなく「その日に何があるか見たい」
       // ことが多い。前後の予定や暦と一緒に見たいという意図。
       // 編集するかどうかは、着いてから本人が決める。
-      row.onclick = () => { closeSearchModal(); jumpToTaskDate(t); };
+      row.onclick = () => {
+        closeSearchModal();
+        var _jid = t.kind === 'thought' ? t.parentId : (t.kind === 'journal' ? t.id : null);
+        if (_jid && typeof openJournalDetail === 'function') { if (typeof switchView === 'function') switchView('journal'); setTimeout(function() { openJournalDetail(_jid); }, 60); return; }
+        jumpToTaskDate(t);
+      };
           const dot = document.createElement('div');
           dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${cal?.color||'#ccc'};flex-shrink:0;margin-top:5px;`;
           const info = document.createElement('div');
@@ -19417,7 +19443,7 @@ function renderTodoList() {
           textEl.innerHTML = highlightSafe(t.text || t.title || '', q);
           const meta = document.createElement('div');
           meta.style.cssText = 'font-size:0.75em;color:#aaa;margin-top:2px;';
-          meta.textContent = (t.date||'') + (t.time?' '+t.time:'') + '　' + recordSourceLabel(t);   // v0.55.39: 雑記帳なら「📝 雑記帳」など、正しい出どころ
+          meta.textContent = _searchDateOf(t) + (t.time?' '+t.time:'') + '　' + recordSourceLabel(t);   // v0.55.39: 雑記帳なら「📝 雑記帳」など、正しい出どころ
           info.appendChild(textEl);
           if (t.memo) {
             const memoEl = document.createElement('div');
@@ -19428,6 +19454,7 @@ function renderTodoList() {
           info.appendChild(meta);
           row.appendChild(dot); row.appendChild(info);
           container.appendChild(row);
+        });
         });
       }
     }
@@ -61027,6 +61054,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.77.5', date: '2026-11-18',
+    items: [
+      { icon:'🔍', t:'検索で、日誌の一言が「タスク」に並ばないようにしました',
+        before:'日誌の一言も雑記帳も、検索ではすべて「タスク」の見出しの下に並んでいました',
+        after:'見出しを「予定」「日誌」「雑記帳」に分けました。日誌の一言には、その日誌の日付が出ます。押すと、その日の日誌が開きます。期間で絞るときも、日誌の日付で絞ります' }
+    ]
+  },
+  {
     ver: 'v0.77.4', date: '2026-11-18',
     items: [
       { icon:'⏱', t:'「1分後」は、封をした時から数えるようにしました',
@@ -92298,6 +92333,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          (!_ra || (_ra('m1', _n625).getTime() === new Date(2026, 10, 18, 1, 2, 0).getTime() && _ra('h1', _n625).getTime() === _n625.getTime() + 3600000));
        _ok625 ? ok('ST-625: 「1分後」「1時間後」は封をした時から数え直す（書いているうちに過ぎない）。封をするボタンの上にも届く日時とチップ') : ng('ST-625: 届く日時の数え方が違う', '');
      } catch (e) { ng('ST-625: 例外', e.message); }
+     // ===== ST-626: 検索の見出しを出どころで分ける。日誌の一言は親の日誌の日付で（v0.77.5） =====
+     try {
+       var _bk626 = allTasks.slice(), _q626 = document.getElementById('searchInput'), _qv626 = _q626 ? _q626.value : '', _rg626 = window._searchRange, _cf626 = window._searchCalFilter, _mn626 = window._searchMoney;
+       allTasks.push({ id: 'st626-j', kind: 'journal', date: '2026-10-12', text: '' });
+       allTasks.push({ id: 'st626-t', kind: 'thought', parentId: 'st626-j', text: 'st626ざつき毎月', createdAt: '2026-10-12T01:00:00Z' });
+       allTasks.push({ id: 'st626-s', kind: 'scratch', date: '2026-11-18', text: 'st626ざつき雑記' });
+       allTasks.push({ id: 'st626-k', kind: 'task', date: '2026-11-20', text: 'st626ざつき予定' });
+       window._searchCalFilter = null; window._searchMoney = 'off'; window._searchRange = 'all';
+       _q626.value = 'st626ざつき'; renderSearchResults();
+       var _box626 = document.getElementById('searchResults');
+       var _secs626 = [].map.call(_box626.querySelectorAll('[data-search-section]'), function(x) { return x.getAttribute('data-search-section') + ':' + x.textContent; }).join('|');
+       var _ok626 = _secs626 === 'task:✅ 予定|journal:🦋 日誌|scratch:✏️ 雑記帳' && /2026-10-12　🦋 日誌の一言/.test(_box626.textContent) && !/✅ タスク/.test(_box626.textContent);
+       window._searchRange = 'month'; renderSearchResults();
+       var _okM = _searchDateOf({ kind: 'thought', parentId: 'st626-j' }) === '2026-10-12';
+       allTasks = _bk626; _q626.value = _qv626; window._searchRange = _rg626; window._searchCalFilter = _cf626; window._searchMoney = _mn626;
+       (_ok626 && _okM && /openJournalDetail\(_jid\)/.test(renderSearchResults.toString()))
+         ? ok('ST-626: 検索は出どころごとに見出し（予定／日誌／雑記帳）。日誌の一言は親の日誌の日付で出し・絞り、押すと日誌が開く')
+         : ng('ST-626: 検索の見出しが違う', _secs626);
+     } catch (e) { ng('ST-626: 例外', e.message); }
      // ===== ST-623: 返信の型と、相手ごとの言葉の出し分け（v0.77.0） =====
      try {
        var _r623 = {}, _d623 = new Date(2026, 10, 18, 9, 0), _bk623 = window._capsuleRecvRows, _rp623 = _capsuleReplyTo;
