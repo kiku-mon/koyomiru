@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.83.4 ★ -->
+<!-- ★ CURRENT VERSION: v0.83.5 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.83.4';
+    const APP_VERSION = 'v0.83.5';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61109,6 +61109,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.83.5', date: '2026-11-18',
+    items: [
+      { icon:'🛠', t:'ほかの町の書き込みが、別の掲示板に出てしまう不具合を直しました',
+        before:'2つの町で掲示板が立ち上がっているとき、片方の町の書き込みが、もう片方の掲示板に出ることがありました',
+        after:'それぞれの掲示板には、その町の書き込みだけが出ます。書くときに、開いている掲示板の町の外を選んだときは、選び直しをお願いするようにしました' }
+    ]
+  },
+  {
     ver: 'v0.83.4', date: '2026-11-18',
     items: [
       { icon:'🌙', t:'災害復旧掲示板に、使い方と今夜の月を置きました',
@@ -71646,6 +71654,9 @@ function _tayoriLoad(force) {
 }
 // いま見せる便り（分類の切り替え・絞り込み・古さを当てたもの）
 // いま見せる便り（分類の切り替え・絞り込み・検索・お気に入り・自分のもの・古さを当てたもの）
+// v0.83.5: 【不具合】2026-11-18「銚子で作った炊き出し・ボランティアが、千葉テストの掲示板に出る。由々しきもの、絶対直して」
+//   原因：一覧は「地図に入っている範囲」で読み、どの掲示板の書き込みかを見ていなかった。掲示板では、その掲示板（mode_id）の書き込みだけを出す
+function _tayoriInMode(r) { var m = _tayoriMode(); return !!m && !!r && String(r.mode_id || '') === String(m.id); }
 function _tayoriVisibleRows(ignoreCat) {
   var now = Date.now(), tab = _tayoriTab(), q = String(_koyomiTayori.q || '').trim().toLowerCase();
   var fav = _tayoriFavs(), tok = _tayoriTokens();
@@ -71653,6 +71664,7 @@ function _tayoriVisibleRows(ignoreCat) {
     if (!r) return false;
     var cat = koyomiTayoriCat(r.category); if (!cat) return false;
     if ((cat.kind || 'season') !== tab) return false;
+    if (tab === 'disaster' && !_tayoriInMode(r)) return false;
     if (!ignoreCat && _koyomiTayori.filter && r.category !== _koyomiTayori.filter) return false;
     if (_koyomiTayori.muni && r.muni_name !== _koyomiTayori.muni) return false;
     if (_koyomiTayori.openOnly && _tayoriClosed(cat, r.status)) return false;
@@ -72316,6 +72328,7 @@ function _tayoriDisRows() {
   var d = _tdState(), q = String(_koyomiTayori.q || '').trim().toLowerCase(), fav = _tayoriFavs(), tok = _tayoriTokens();
   return (_koyomiTayori.rows || []).filter(function(r) {
     var cat = r && koyomiTayoriCat(r.category); if (!cat || cat.kind !== 'disaster') return false;
+    if (!_tayoriInMode(r)) return false;
     if (d.keys && d.keys.indexOf(r.category) === -1) return false;
     if (d.area && r.muni_name !== d.area) return false;
     if (_koyomiTayori.only === 'fav' && fav.indexOf(r.id) === -1) return false;
@@ -72392,7 +72405,7 @@ function _tayoriRenderDisaster(host) {
   //   災害復旧時の情報を募集中です、作るのはこちら、とボタンへ誘導する親切設計に」→ まだ1件もないときは、募集の案内と大きな「書く」ボタンを出す
   // v0.83.1: 【権威】2026-11-18「水につき募集中の窓、物資につき募集中の窓、トイレにつき募集中の窓…が縦にずらずら並んで、
   //   そこにもボタンがあって投稿できる。投稿を促す誘導のUI」→ まだ書き込みのない分類ごとに「募集しています」の窓を並べ、その分類で書けるボタンを置く
-  var _none = !(_koyomiTayori.rows || []).some(function(r) { var c = r && koyomiTayoriCat(r.category); return c && c.kind === 'disaster'; });
+  var _none = !(_koyomiTayori.rows || []).some(function(r) { var c = r && koyomiTayoriCat(r.category); return c && c.kind === 'disaster' && _tayoriInMode(r); });
   var _plain = !_koyomiTayori.q && !_koyomiTayori.only;
   var _have = {}; sorted.live.forEach(function(r) { _have[r.category] = 1; });
   var _wantCats = koyomiTayoriCatsNow(new Date(), 'disaster').filter(function(c) { return !_have[c.key] && (!d.keys || d.keys.indexOf(c.key) !== -1); });
@@ -72460,7 +72473,9 @@ function _tayoriPostWizard(preCat) {
     box.querySelector('[data-wz-back]').onclick = back; box.querySelector('[data-wz-close]').onclick = close;
   };
   var cat = function() { return koyomiTayoriCat(st.cat); };
-  function afterPlace() { var c = cat(); if (c && (c.states || []).length > 1) go('status'); else if (KOYOMI_TAYORI_TIME_CATS.indexOf(st.cat) !== -1) go('time'); else go('words'); }
+  // v0.83.5: 選んだ場所が、いま開いている掲示板の町の外なら、そのまま進めない（書き込みは場所の町の掲示板に入るため、思った掲示板に載らない）
+  function _outside() { var mm = _tayoriMode(); return !!(mm && mm.w != null && st.pos && (st.pos.lat < mm.s || st.pos.lat > mm.n || st.pos.lng < mm.w || st.pos.lng > mm.e)); }
+  function afterPlace() { if (_outside()) { go('outside'); return; } var c = cat(); if (c && (c.states || []).length > 1) go('status'); else if (KOYOMI_TAYORI_TIME_CATS.indexOf(st.cat) !== -1) go('time'); else go('words'); }
   function afterStatus() { if (KOYOMI_TAYORI_TIME_CATS.indexOf(st.cat) !== -1) go('time'); else go('words'); }
   function draw() {
     if (st.step === 'cat') {
@@ -72482,6 +72497,13 @@ function _tayoriPostWizard(preCat) {
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
       };
       box.querySelector('[data-wz-map]').onclick = function() { go('map'); };
+    } else if (st.step === 'outside') {
+      var _mn = _tayoriEsc((mode && mode.name) || 'この町');
+      frame('この場所は、' + _mn + 'の外です', 'この掲示板には、' + _mn + 'の中の場所だけを書けます。住所か地図で、' + _mn + 'の中の場所を選んでください。',
+        '<div style="display:grid;gap:8px;"><button type="button" data-wz-addr2 style="min-height:56px;border:none;border-radius:14px;background:#3b6ea5;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">🏠 住所や施設の名前で探す</button>' +
+        '<button type="button" data-wz-map2 style="min-height:56px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;color:#3b3226;font-size:1em;font-weight:600;cursor:pointer;font-family:inherit;">🗺 地図で選ぶ</button></div>');
+      box.querySelector('[data-wz-addr2]').onclick = function() { st.pos = null; go('addr'); };
+      box.querySelector('[data-wz-map2]').onclick = function() { st.pos = null; go('map'); };
     } else if (st.step === 'addr') {
       // v0.81.1: 【権威】2026-11-18「住所でも入れられるように」→ 国土地理院の住所検索で場所を出し、地図で確かめてから決める
       frame('住所や、施設の名前を入れてください', '例：益城町宮園、〇〇小学校', '<div style="display:flex;gap:6px;"><input data-wz-q type="search" maxlength="60" style="flex:1;min-width:0;min-height:54px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:1em;font-family:inherit;">' +
@@ -94421,6 +94443,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // 使い方のカード・今夜の月・起動のときの案内（v0.83.4）
        _r651.guide = /この掲示板の使い方/.test(_tayoriGuideHtml.toString()) && /data-td-guideoff/.test(_rd651 + _tayoriRenderDisaster.toString()) && /_tayoriMoonHtml\(\)/.test(_tayoriRenderDisaster.toString()) && (_tayoriMoonHtml() === '' || /今夜の月/.test(_tayoriMoonHtml())) &&
          typeof window.koyomiSaigaiStartupInstead === 'function' && /koyomiSaigaiStartupInstead/.test(_src651);
+       // 掲示板には、その掲示板の書き込みだけを出す（銚子の書き込みが千葉テストに出た不具合・v0.83.5）
+       var _bkM651 = { modes: _koyomiTayori.modes, modeId: _koyomiTayori.modeId };
+       _koyomiTayori.modes = [{ id: 'mA', kind: 'admin', name: 'A' }, { id: 'mB', kind: 'admin', name: 'B' }]; _koyomiTayori.modeId = 'mA';
+       _r651.sep = _tayoriInMode({ mode_id: 'mA' }) && !_tayoriInMode({ mode_id: 'mB' }) && !_tayoriInMode({}) && /_tayoriInMode\(r\)/.test(_tayoriDisRows.toString()) && /_tayoriInMode\(r\)/.test(_tayoriVisibleRows.toString()) && /go\('outside'\)/.test(_tayoriPostWizard.toString());
+       _koyomiTayori.modes = _bkM651.modes; _koyomiTayori.modeId = _bkM651.modeId;
        var _bad651 = Object.keys(_r651).filter(function(k) { return !_r651[k]; });
        !_bad651.length ? ok('ST-651: 緊急災害復旧モードを常設（アカウント・設定）・リンクから来た人には掲示板だけ・募集の案内・自由帳の番号の重なりを直す')
          : ng('ST-651: 緊急災害復旧モードの入口・掲示板が違う', _bad651.join(','));
@@ -94515,6 +94542,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _n648 = new Date().toISOString();
        _koyomiTayori.rows = [{ id: 'a', category: 'water', status: 'ok', place_name: '〇〇小', muni_name: '益城町', confirmed_at: _n648 }, { id: 'b', category: 'water', status: 'end', place_name: '△△公園', confirmed_at: _n648 },
          { id: 'c', category: 'lifeline', status: 'off', muni_name: '益城町', confirmed_at: _n648 }, { id: 'd', category: 'lifeline', status: 'back', muni_name: '西原村', confirmed_at: _n648 }];
+       _koyomiTayori.rows.forEach(function(r) { if (r && !('mode_id' in r)) r.mode_id = 'm1'; }); _koyomiTayori.modeId = null;   // v0.83.5: 掲示板の書き込みは、その掲示板のものだけを出すため
        _koyomiTayori.tab = 'disaster'; _koyomiTayori.filter = ''; _koyomiTayori.muni = ''; _koyomiTayori.openOnly = false; _koyomiTayori.comments = { b: [{ id: 'x', body: '整理券あり' }] };
        _koyomiTayori.q = '整理券'; _r648.search = _tayoriVisibleRows().map(function(r) { return r.id; }).join() === 'b';
        _koyomiTayori.q = ''; localStorage.setItem('tayoriFav', JSON.stringify(['c'])); _koyomiTayori.only = 'fav'; _r648.fav = _tayoriVisibleRows().map(function(r) { return r.id; }).join() === 'c';
@@ -94558,6 +94586,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r647.anon = _tayoriNeedLogin({ mode_id: 'm1' }) === false && _tayoriNeedLogin({ mode_id: 'x' }) === true && _tayoriNeedLogin(null) === true;
        window.showToast = _ts647; window.openCloudLoginModal = _lm647;
        _koyomiTayori.rows = [{ id: 'a', category: 'water', status: 'end', muni_name: '益城町', confirmed_at: new Date().toISOString() }, { id: 'b', category: 'water', status: 'ok', muni_name: '熊本市中央区', confirmed_at: new Date().toISOString() }, { id: 'c', category: 'moon', confirmed_at: new Date().toISOString() }];
+       _koyomiTayori.rows.forEach(function(r) { if (r && !('mode_id' in r)) r.mode_id = 'm1'; }); _koyomiTayori.modeId = null;   // v0.83.5: 掲示板の書き込みは、その掲示板のものだけを出すため
        _koyomiTayori.tab = 'disaster'; _koyomiTayori.openOnly = true; _koyomiTayori.muni = '';
        _r647.openOnly = _tayoriVisibleRows().map(function(r) { return r.id; }).join() === 'b';
        _koyomiTayori.openOnly = false; _koyomiTayori.muni = '益城町';
