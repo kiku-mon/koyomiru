@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.78.11 ★ -->
+<!-- ★ CURRENT VERSION: v0.78.12 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.11';
+    const APP_VERSION = 'v0.78.12';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -46369,7 +46369,8 @@ function renderMonthlyMoneyLine() {
         var d = Math.min(parseInt(t.date.slice(8, 10), 10), lastDay);
         var to = targetY + '-' + p2(targetM + 1) + '-' + p2(d);
         var dup = (allTasks || []).some(function(x) { return x && !x.deleted && (x.kind || 'task') === 'task' && x.date === to && norm(x.text) === norm(t.text); });
-        return { src: t, to: to, dup: dup };
+        var rr = _parseMoneyLine(t.text || '');
+        return { src: t, to: to, dup: dup, dir: (rr.out > 0 || (rr.unreadable > 0 && rr['in'] === 0)) ? 'out' : 'in' };
       });
     }
     function koyomiMoneyCopyApply(cands) {
@@ -46395,13 +46396,20 @@ function renderMonthlyMoneyLine() {
         '<div style="padding:14px 16px 8px;"><div style="font-weight:800;font-size:1.02em;">💴 ' + sm + '月の支払いを、' + (tm + 1) + '月に写す</div>' +
         '<div style="font-size:0.82em;color:#666;margin-top:4px;">写したいものに✓を付けてください。同じ「◯日」に入ります。金額は、写したあとで直せます。</div></div>' +
         '<div data-mc-list style="overflow:auto;padding:0 16px;flex:1;">' +
-        (cands.length ? cands.map(function(c, i) {
+        // v0.78.12: 【権威】2026-11-18「入るも入れてる？10/20（火）のウーバー入金が11/20に移っている」
+        //   → 出る（支払い）は最初から✓。入る（入金）は別の見出しにして、最初は✓なし（毎週・曜日で決まる入金は、日付で写すとずれるため）
+        (cands.length ? [['out', '▲ 出る（支払い）', ''], ['in', '▽ 入る（入金）', '毎週の入金など、曜日で決まるものは日がずれます。写すときは日付を確かめてください。']].map(function(sec) {
+          var rows = cands.map(function(c, i) { return { c: c, i: i }; }).filter(function(x) { return x.c.dir === sec[0]; });
+          if (!rows.length) return '';
+          return '<div data-mc-sec="' + sec[0] + '" style="font-size:0.8em;font-weight:700;color:' + (sec[0] === 'out' ? '#c0392b' : '#1b5e20') + ';padding:10px 2px 2px;">' + sec[1] + '</div>' +
+            (sec[2] ? '<div style="font-size:0.74em;color:#a0700a;padding:0 2px 4px;">' + sec[2] + '</div>' : '') +
+            rows.map(function(x) { var c = x.c, i = x.i;
           var d1 = parseInt(c.src.date.slice(8, 10), 10), d2 = parseInt(c.to.slice(8, 10), 10);
           return '<label data-mc-row="' + i + '" style="display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid #eee;' + (c.dup ? 'opacity:0.5;' : 'cursor:pointer;') + '">' +
-            '<input type="checkbox" data-mc-i="' + i + '" ' + (c.dup ? 'disabled' : 'checked') + ' style="margin-top:3px;width:18px;height:18px;flex-shrink:0;">' +
+            '<input type="checkbox" data-mc-i="' + i + '" ' + (c.dup ? 'disabled' : (c.dir === 'out' ? 'checked' : '')) + ' style="margin-top:3px;width:18px;height:18px;flex-shrink:0;">' +
             '<span style="flex:1;min-width:0;"><span style="font-size:0.92em;word-break:break-word;">' + e(c.src.text || '') + '</span>' +
-            '<span style="display:block;font-size:0.76em;color:#888;margin-top:2px;">' + d1 + '日 → ' + (tm + 1) + '月' + d2 + '日' + (d1 !== d2 ? '（月末に寄せる）' : '') + (c.dup ? '　・もう入っています' : '') + '</span></span></label>';
-        }).join('') : '<div style="padding:18px 4px;color:#888;font-size:0.9em;">' + sm + '月に、▲▽の入った予定はありませんでした。</div>') +
+            '<span style="display:block;font-size:0.76em;color:#888;margin-top:2px;">' + (function() { var wk = ['日','月','火','水','木','金','土'], w1 = wk[new Date(c.src.date.replace(/-/g, '/')).getDay()], w2 = wk[new Date(c.to.replace(/-/g, '/')).getDay()]; return d1 + '日（' + w1 + '）→ ' + (tm + 1) + '月' + d2 + '日（' + w2 + '）'; })() + (d1 !== d2 ? '（月末に寄せる）' : '') + (c.dup ? '　・もう入っています' : '') + '</span></span></label>';
+        }).join(''); }).join('') : '<div style="padding:18px 4px;color:#888;font-size:0.9em;">' + sm + '月に、▲▽の入った予定はありませんでした。</div>') +
         '</div>' +
         '<div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid #eee;">' +
         '<button type="button" data-mc-cancel style="padding:10px 16px;border-radius:10px;border:1px solid #ccc;background:#fff;cursor:pointer;">やめる</button>' +
@@ -60897,6 +60905,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.78.12', date: '2026-11-18',
+    items: [
+      { icon:'💴', t:'先月から写すとき、入金は最初は選ばれないようにしました',
+        before:'出る（支払い）も入る（入金）も、最初から全部✓が付いていました。毎週の入金が、ずれた日に写ることがありました',
+        after:'「▲ 出る（支払い）」と「▽ 入る（入金）」に分けました。入るは最初は✓なしです。日付には曜日も出るので、ずれる入金に気づけます' }
+    ]
+  },
   {
     ver: 'v0.78.11', date: '2026-11-18',
     items: [
@@ -92081,10 +92097,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        allTasks = _bk631b.slice(); allTasks.push({ id: 'mc-8', kind: 'task', date: '2025-12-27', text: '▲15000 オリコ<b>x</b>', calendarId: 'default' }, { id: 'mc-9', kind: 'task', date: '2025-12-05', text: '会議', calendarId: 'default' });
        var _cmd = currentMonthDate; currentMonthDate = new Date(2026, 0, 1);
        var ov = openMoneyCopyModal();
-       var _ok2 = ov.querySelectorAll('[data-mc-i]').length === 1 && ov.querySelector('[data-mc-i]').checked && /2件|1件を写す/.test(ov.querySelector('[data-mc-ok]').textContent) && !ov.querySelector('b') && /<b>x<\/b>/.test(ov.textContent) && !/会議/.test(ov.textContent);
-       ov.remove(); currentMonthDate = _cmd;
+       var _ok2 = ov.querySelectorAll('[data-mc-i]').length === 1 && ov.querySelector('[data-mc-i]').checked && !!ov.querySelector('[data-mc-sec="out"]') && /2件|1件を写す/.test(ov.querySelector('[data-mc-ok]').textContent) && !ov.querySelector('b') && /<b>x<\/b>/.test(ov.textContent) && !/会議/.test(ov.textContent);
+       ov.remove();
+       // v0.78.12: 入る（入金）は別の見出しで、最初は✓なし。曜日も見せる
+       allTasks.push({ id: 'mc-10', kind: 'task', date: '2025-12-16', text: '▽30000 ウーバー', calendarId: 'default' });
+       var ov2 = openMoneyCopyModal();
+       var _inBox = ov2.querySelector('[data-mc-sec="in"]');
+       var _inChk = [].filter.call(ov2.querySelectorAll('[data-mc-i]'), function(c) { return /ウーバー/.test(c.parentNode.textContent); })[0];
+       _ok2 = _ok2 && !!_inBox && !!_inChk && !_inChk.checked && /16日（火）→ 1月16日（金）/.test(ov2.textContent) && /1件を写す/.test(ov2.querySelector('[data-mc-ok]').textContent);
+       ov2.remove(); currentMonthDate = _cmd;
        allTasks = _bk631b; window.saveAllTasks = _sv631b; saveAllTasks = _sv631b;
-       (_ok631b && _ok2) ? ok('ST-631: 支払いを先月から写す：▲▽の入った予定だけを選んで、同じ日に写す（無い日は月末に）。ふつうの予定として（繰り返しにしない・未完了）。同じものは二重に写さない。文字は文字として出す')
+       (_ok631b && _ok2) ? ok('ST-631: 支払いを先月から写す：▲▽の入った予定だけを選んで、同じ日に写す（無い日は月末に）。出るは最初から✓、入るは別の見出しで✓なし（曜日も見せる）。ふつうの予定として（繰り返しにしない・未完了）。同じものは二重に写さない。文字は文字として出す')
          : ng('ST-631: 支払いの写し方が違う', _txt + ' / ' + _ok2);
      } catch (e) { try { allTasks = _bk631b; window.saveAllTasks = _sv631b; saveAllTasks = _sv631b; } catch (e2) {} ng('ST-631: 例外', e.message); }
      // ===== ST-632: 金額のあとに通し番号を書いても、金額だけを読む（v0.78.8） =====
