@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.78.21 ★ -->
+<!-- ★ CURRENT VERSION: v0.78.22 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.78.21';
+    const APP_VERSION = 'v0.78.22';
   const APP_LAST_UPDATED = '2026-11-18'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -60993,6 +60993,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.78.22', date: '2026-11-18',
+    items: [
+      { icon:'🛠', t:'LINEでのログインの改修を進めています',
+        before:'LINEでのログインは改修中で、使えませんでした',
+        after:'つなぎ方を作り直しました。確かめが済んだら、改修中の表示を外してお知らせします' }
+    ]
+  },
+  {
     ver: 'v0.78.21', date: '2026-11-18',
     items: [
       { icon:'🔗', t:'招待コードの欄の案内を直しました',
@@ -70694,7 +70702,7 @@ async function openLinkMethodModal() {
     }
     var ids = await listLinkedIdentities();
     var has = {};
-    ids.forEach(function(i) { if (i && i.provider) has[i.provider] = true; });
+    ids.forEach(function(i) { if (i && i.provider) has[i.provider === 'custom:line' ? 'line' : i.provider] = true; });   // v0.78.22: 自分で足したLINEは custom:line で返る
     var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
     // v0.45.1610: 【権威】2026-08-16、連携したのに「連携する」が残る、との指摘。
     // 判定そのものは正しく、開き直せば更新されるが、戻ってきたときに
@@ -70703,7 +70711,7 @@ async function openLinkMethodModal() {
     // ✓が付いていれば済んでいる、と誰でも読み取れる形にする。
     // v0.45.1685: 全部つながっているかを先に見る。案内の文面を切り替えるため。
     // v0.50.4: LINEが改修中の間は、LINEをつないでいなくても「すべてつながっている」とみなす
-    var _lineRepair = !!window.LINE_LOGIN_UNDER_REPAIR;
+    var _lineRepair = (typeof _lineRepairForMe === 'function') ? _lineRepairForMe() : !!window.LINE_LOGIN_UNDER_REPAIR;
     var _allLinked = !!(has['google'] && has['discord'] && (has['line'] || _lineRepair) && has['email']);
     var rows = [
       { id: 'google',  name: 'Google',          icon: '🔵' },
@@ -70833,7 +70841,7 @@ window._takeOverAfterLink = _takeOverAfterLink;
 
 async function linkLoginMethod(provider) {
   // v0.50.4: LINEは改修中。ボタン以外から呼ばれても、LINEへは移動しない
-  if (provider === 'line' && window.LINE_LOGIN_UNDER_REPAIR) {
+  if (provider === 'line' && (typeof _lineRepairForMe === 'function' ? _lineRepairForMe() : window.LINE_LOGIN_UNDER_REPAIR)) {
     showToast('🛠 LINEとの連携は、ただいま改修中です', {type:'warn'});
     return;
   }
@@ -70844,7 +70852,7 @@ async function linkLoginMethod(provider) {
     // OAuthはページを離れるので、戻った後に「連携直後だ」と判断する手がかりが要る。
     try { sessionStorage.setItem('koyomiruLinkPending', provider); } catch(e) {}
     var r = await window.supabaseClient.auth.linkIdentity({
-      provider: provider,
+      provider: (provider === 'line' && window.LINE_OAUTH_PROVIDER) ? window.LINE_OAUTH_PROVIDER : provider,   // v0.78.22
       options: { redirectTo: window.location.origin + window.location.pathname }
     });
     if (r && r.error) {
@@ -70911,6 +70919,14 @@ window.cloudLoginWithGoogle = cloudLoginWithGoogle;
 // 直ったら、この印を false にし、ボタンの「（改修中）」と薄さ（opacity）を外せば元に戻る。
 var LINE_LOGIN_UNDER_REPAIR = true;
 window.LINE_LOGIN_UNDER_REPAIR = LINE_LOGIN_UNDER_REPAIR;
+// v0.78.22: 【権威】2026-11-18 LINEログインの再開。Supabase には LINE 専用の入口が無かった（上の「確認済み」は誤り）。
+//   2026-04 に出た「自分で足すログイン先」に LINE を登録した。呼び名は custom:line。
+//   LINE のチャネルが「開発中」の間は作った本人しか通れないので、改修中の印は残したまま、
+//   作った本人だけ「アカウント連携」から試せるようにする。公開に切り替えたら、印を false にする
+var LINE_OAUTH_PROVIDER = 'custom:line';
+window.LINE_OAUTH_PROVIDER = LINE_OAUTH_PROVIDER;
+function _lineRepairForMe() { return !!window.LINE_LOGIN_UNDER_REPAIR && !(window._koyomiruIsAdmin === true); }
+window._lineRepairForMe = _lineRepairForMe;
 async function cloudLoginWithLine() {
   if (LINE_LOGIN_UNDER_REPAIR) {
     _cloudLoginSetStatus('🛠 LINEでのログインは、ただいま改修中です。Google・Discord・メールでログインしてください。', 'error');
@@ -70920,7 +70936,7 @@ async function cloudLoginWithLine() {
   var btn = document.getElementById('cloudLoginLineBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'LINEへ移動中…'; }
   var r = await window.supabaseClient.auth.signInWithOAuth({
-    provider: 'line',
+    provider: LINE_OAUTH_PROVIDER,
     options: { redirectTo: window.location.origin + window.location.pathname }
   });
   if (r && r.error) {
@@ -85204,8 +85220,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          return window.cloudLoginWithLine();
        }).then(function() {
          window.LINE_LOGIN_UNDER_REPAIR = _st377repair;
-         (lastCallOptions && lastCallOptions.provider === 'line')
-           ? ok('ST-377·②: ログイン時、正しくprovider:\'line\'で呼ばれる')
+         (lastCallOptions && lastCallOptions.provider === 'custom:line')
+           ? ok('ST-377·②: ログイン時、正しくprovider:\'custom:line\'で呼ばれる（v0.78.22: Supabaseに自分で足したLINE）')
            : ng('ST-377·②: 呼び出し引数が違う', JSON.stringify(lastCallOptions));
          window._cloudIsLoggedIn = true;
          return window.openLinkMethodModal();
@@ -92345,6 +92361,19 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        !_bad634.length ? ok('ST-634: 繰り返しの予定を消すときは「この日だけ／この日より後も／全部」から選べる（件数つき）。繰り返しでない予定はいつもどおり。見出しの予定名は無害にして出す')
          : ng('ST-634: 繰り返しの消し方が違う', _bad634.join(','));
      } catch (e) { try { allTasks = _bk634; window.saveAllTasks = _sv634; saveAllTasks = _sv634; window._propagateDeletion = _pd634; _propagateDeletion = _pd634; } catch (e2) {} ng('ST-634: 例外', e.message); }
+     // ===== ST-642: LINEは自分で足したログイン先（custom:line）で呼ぶ・開発中は作った本人だけ試せる（v0.78.22） =====
+     try {
+       var _r642 = {}, _adm642 = window._koyomiruIsAdmin, _rp642 = window.LINE_LOGIN_UNDER_REPAIR;
+       _r642.prov = window.LINE_OAUTH_PROVIDER === 'custom:line' && /LINE_OAUTH_PROVIDER/.test(linkLoginMethod.toString()) && /custom:line/.test(openLinkMethodModal.toString());
+       window.LINE_LOGIN_UNDER_REPAIR = true;
+       window._koyomiruIsAdmin = false; _r642.userBlocked = _lineRepairForMe() === true;
+       window._koyomiruIsAdmin = true; _r642.adminOpen = _lineRepairForMe() === false;
+       window.LINE_LOGIN_UNDER_REPAIR = false; window._koyomiruIsAdmin = false; _r642.allOpen = _lineRepairForMe() === false;
+       window._koyomiruIsAdmin = _adm642; window.LINE_LOGIN_UNDER_REPAIR = _rp642;
+       var _bad642 = Object.keys(_r642).filter(function(k) { return !_r642[k]; });
+       !_bad642.length ? ok('ST-642: LINEは custom:line で呼ぶ（連携の一覧でも LINE とみなす）。改修中は作った本人だけ連携を試せる')
+         : ng('ST-642: LINEの呼び方が違う', _bad642.join(','));
+     } catch (e) { try { window._koyomiruIsAdmin = _adm642; window.LINE_LOGIN_UNDER_REPAIR = _rp642; } catch (e2) {} ng('ST-642: 例外', e.message); }
      // ===== ST-641: 招待コードの欄（v0.78.21） =====
      try {
        var _ph641 = (document.getElementById('sharedCalendarJoinCode') || {}).placeholder || '';
