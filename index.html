@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.89.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.90.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.89.2';
+    const APP_VERSION = 'v0.90.0';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61165,6 +61165,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.90.0', date: '2026-11-19',
+    items: [
+      { icon:'🏛', t:'災害復旧掲示板に、公式の情報へのリンクを置きました',
+        before:'町や気象庁の発表を見るには、自分で探す必要がありました',
+        after:'災害復旧掲示板の赤い帯に、町の公式サイト・気象庁のその町の警報と注意報・県の公式サイト・防災庁へのリンクを並べました。押すと、いちばん新しい発表が開きます' }
+    ]
+  },
+  {
     ver: 'v0.89.2', date: '2026-11-19',
     items: [
       { icon:'🖥', t:'パソコンの掲示板を、画面いっぱいに並べました',
@@ -71774,10 +71782,12 @@ function renderTayoriView() {
         (mode.w != null ? '<button type="button" data-tayori-fit style="flex-shrink:0;padding:4px 10px;border:1px solid rgba(255,255,255,0.7);border-radius:999px;background:transparent;color:#fff;font-size:0.76em;cursor:pointer;font-family:inherit;">地域を見る</button>' : '') + '</div>' +
         '<div style="font-size:0.78em;opacity:0.92;margin-top:3px;line-height:1.6;">対象：' + _tayoriEsc(mn.slice(0, 10).join('・') + (mn.length > 10 ? ' ほか' + (mn.length - 10) + 'か所' : '')) + '</div>' +
         '<div style="font-size:0.74em;opacity:0.88;margin-top:2px;line-height:1.6;">利用者どうしで知らせ合った情報です。自治体などの公式の発表もあわせてご確認ください。</div>' +
+        '<div data-tayori-official style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">' + _tayoriOfficialHtml(mode, null) + '</div>' +
         '</div>' +
         (mode.notice ? '<div style="background:#fff8e1;border:1px solid #f0dca0;border-radius:12px;padding:10px 14px;margin:-4px 0 12px;"><div style="font-size:0.74em;color:#8a6d1e;font-weight:700;">📢 運営からのお知らせ' + (mode.notice_at ? '（' + _tayoriEsc(koyomiTayoriAgo(mode.notice_at)) + 'に更新）' : '') + '</div>' +
           '<div style="font-size:0.86em;color:#3b3226;line-height:1.7;margin-top:3px;white-space:pre-wrap;">' + _tayoriEsc(mode.notice) + '</div></div>' : '');
       ban.innerHTML += _tayoriUserModeHtml(mode); _tayoriWireUserMode(ban, mode);
+      _tayoriOfficialLoad().then(function(lk) { var oe = ban.querySelector('[data-tayori-official]'); if (oe && lk) oe.innerHTML = _tayoriOfficialHtml(mode, lk); }, function() {});
       var fb = ban.querySelector('[data-tayori-fit]'); if (fb) fb.onclick = function() { if (_tayoriView() !== 'map') { _koyomiTayori.view = 'map'; renderTayoriView(); _tayoriDraw(); } _tayoriFitMode(); };
     } else { ban.innerHTML = _tayoriOthersNoticeHtml(); _tayoriWireOthers(ban); }
   }
@@ -72020,6 +72030,37 @@ window.addEventListener('resize', function() {
     if (v && v.style.display !== 'none' && _koyomiTayori.view !== 'map') { try { renderTayoriView(); _tayoriDraw(); } catch (e) {} }
   }, 200);
 });
+// v0.90.0: 【権威】2026-11-19（水俣市の「避難所の開設について」を見て）「公式のHPを掲示板に。事前に調べて GitHub に置いておけない？
+//   気象庁とか、防災庁とか」→ 最高峰会議：市の文章を写すと古いまま残り、閉まった避難所へ人を向かわせかねない。写さずに、公式ページへのリンクを置く。
+//   「いちばんいいのは、この赤いヘッダーに公式のリンク集をぶち込む」→ 赤い帯の中に、町・気象庁（その町の警報・注意報）・県・防災庁のリンクを並べる。
+//   町と県の公式サイトは、全国分を shelters/links.json に置く（出典：code4fukui/localgovjp、CC0）。気象庁は町のコードから作る
+var KOYOMI_OFFICIAL_URL = 'shelters/links.json', _koyomiOfficial = null;
+function _tayoriOfficialLoad() {
+  if (_koyomiOfficial) return _koyomiOfficial;
+  _koyomiOfficial = fetch(KOYOMI_OFFICIAL_URL, { credentials: 'omit' }).then(function(r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function(d) { return (d && d.m && d.p) ? d : null; });
+  _koyomiOfficial.catch(function() { _koyomiOfficial = null; });
+  return _koyomiOfficial;
+}
+function _tayoriSafeUrl(u) { u = String(u || ''); return /^https?:\/\/[A-Za-z0-9.\-]+(\/[^\s"'<>]*)?$/.test(u) ? u : ''; }
+function _tayoriJmaUrl(code7) { return /^\d{7}$/.test(String(code7 || '')) ? 'https://www.jma.go.jp/bosai/warning/#area_type=class20s&area_code=' + code7 + '&lang=ja' : ''; }
+function _tayoriOfficialHtml(mode, lk) {
+  var pill = function(href, label) { href = _tayoriSafeUrl(href); if (!href) return '';
+    return '<a href="' + _tayoriEsc(href) + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:4px;padding:5px 11px;border-radius:999px;background:#fff;color:#9f2a22;font-size:0.8em;font-weight:700;text-decoration:none;line-height:1.3;">' + _tayoriEsc(label) + ' ↗</a>'; };
+  var ms = ((mode && mode.munis) || []).filter(function(x) { return x && /^\d{5}/.test(String(x.code || '')); }).slice(0, 3);
+  var prefs = _tayoriShelterPrefs(mode), out = [], jmaDone = {};
+  ms.forEach(function(x) {
+    var c = String(x.code).slice(0, 5), e = lk && lk.m && lk.m[c], nm = String(x.name || '').slice(0, 20);
+    if (e) out.push(pill(e[0], '🏛 ' + nm + 'の公式サイト'));
+    var j = (e && e[1]) || (c + '00');
+    if (!jmaDone[j]) { jmaDone[j] = 1; out.push(pill(_tayoriJmaUrl(j), '☁️ 気象庁 ' + nm + 'の警報・注意報')); }
+  });
+  prefs.slice(0, 2).forEach(function(pc) {
+    var pn = (typeof KOYOMI_TAYORI_PREFS !== 'undefined' && KOYOMI_TAYORI_PREFS[Number(pc) - 1]) || '';
+    if (lk && lk.p && lk.p[pc] && pn) out.push(pill(lk.p[pc], '🏛 ' + pn + 'の公式サイト'));
+  });
+  out.push(pill('https://www.bousai.go.jp/', '🛡 防災庁'));
+  return '<div style="width:100%;font-size:0.72em;opacity:0.9;margin-bottom:-2px;">公式の情報（いちばん新しい発表は、こちらで）</div>' + out.join('');
+}
 // 災害復旧掲示板（PC）：分類ごとの箱
 function _tayoriDisBoardHtml(live, keys) {
   var by = {}; live.forEach(function(r) { (by[r.category] = by[r.category] || []).push(r); });
@@ -95552,6 +95593,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _bd654 = _tayoriDisBoardHtml.toString();
        _r654.wide = typeof _tayoriWide === 'function' && KOYOMI_TAYORI_WIDE === 900 && /data-tf-grid/.test(_tayoriDraw.toString()) &&
          /募集中/.test(_bd654) && !/data-td-wantpost/.test(_bd654) && /reqTab !== _tayoriTab\(\)/.test(_tayoriLoad.toString()) && /BOARD \? intro \+ _tayoriDisBoardHtml/.test(_tayoriRenderDisaster.toString()) && /tayoriWrap/.test(renderTayoriView.toString());
+       // v0.90.0: 赤い帯に公式のリンク（町・気象庁・県・防災庁）。市の文章は写さない
+       var _of654 = _tayoriOfficialHtml({ name: '熊本県 水俣市', munis: [{ code: '43205', name: '水俣市' }] }, { m: { '43205': ['https://www.city.minamata.lg.jp/', '4320500'] }, p: { '43': 'https://www.pref.kumamoto.jp/' } });
+       _r654.official = /水俣市の公式サイト/.test(_of654) && /area_code=4320500/.test(_of654) && /熊本県の公式サイト/.test(_of654) && /bousai\.go\.jp/.test(_of654) && /noopener noreferrer/.test(_of654) &&
+         !/javascript:/.test(_tayoriOfficialHtml({ munis: [{ code: '43205', name: 'x' }] }, { m: { '43205': ['javascript:void(0)', '4320500'] }, p: {} })) && _tayoriSafeUrl('javascript:x') === '' &&
+         /area_code=4320500/.test(_tayoriOfficialHtml({ munis: [{ code: '43205', name: '水俣市' }] }, null)) && /data-tayori-official/.test(renderTayoriView.toString());
        _r654.like = /👍/.test(_tayoriFeedCard({ id: 'l1', category: 'moon', created_at: new Date().toISOString(), confirmed_at: new Date().toISOString() })) && !/🙏/.test(_tayoriFeedCard({ id: 'l1', category: 'moon', created_at: new Date().toISOString(), confirmed_at: new Date().toISOString() })) &&
          /👍 いいね/.test(_tayoriPopupHtml({ id: 'l2', category: 'moon', confirmed_at: new Date().toISOString() }));
        var _bad654 = Object.keys(_r654).filter(function(k) { return !_r654[k]; });
