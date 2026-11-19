@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.86.8 ★ -->
+<!-- ★ CURRENT VERSION: v0.87.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.86.8';
+    const APP_VERSION = 'v0.87.0';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61163,6 +61163,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.87.0', date: '2026-11-19',
+    items: [
+      { icon:'🏫', t:'災害復旧掲示板で、避難所をいちばん上にしました',
+        before:'避難所のボタンや募集の窓が、水や食べもののあとに出ていました',
+        after:'避難所 → 水 → 食べもの → トイレ → お店の順に並べました。「通行止め・冠水」「決壊・がけ崩れ」も書けるようにします。書くときは、命に関わるなら119番・110番へ、と添えます' }
+    ]
+  },
+  {
+    ver: 'v0.86.9', date: '2026-11-19',
+    items: [
+      { icon:'📣', t:'災害復旧掲示板を知らせる文を、短くしました',
+        before:'XやLINEで知らせる文が長く、避難所のことも書かれていませんでした',
+        after:'文を短くし、知らせ合うものの先頭に「避難所」を入れました。ハッシュタグは、町・県・何が起きたか・避難所などを自動で付け、Xでは文字数に収まるだけ入れます' }
+    ]
+  },
+  {
     ver: 'v0.86.8', date: '2026-11-19',
     items: [
       { icon:'👍', t:'季節の掲示板の「ありがとう」を「いいね」にしました',
@@ -72599,14 +72615,29 @@ function _tayoriAdminComments(box) {
 //   → 最初の画面は「さがす（検索窓＋大きなボタン6つ）」と、今の情報の一覧（CMSの中身）だけ。
 //   さがす：何を → どのあたり（今いる近く／市区町村／どこでも）→ 結果。知らせる：1画面に1問、戻れる、最後に確認。
 //   並び：使えるものを上（その中は新しく確かめた順。今いる近くを選んだときは近い順）。終わった・古いものは下に畳む。
+// v0.87.0: 【権威】2026-11-19（水俣市の地震を見て）「避難所は一覧でも上じゃないの？通行止めとか河川決壊とかはないの？」
+//   → 避難所を先頭に。「通れない道」「危ない場所」を足す（分類がまだないときは、ボタンを出さない）
 var KOYOMI_TAYORI_QUICK = [
+  { id: 'shelter', emoji: '🏫', label: '避難所',     keys: ['shelter'] },
   { id: 'water',   emoji: '💧', label: '水',         keys: ['water'] },
   { id: 'food',    emoji: '🍙', label: '食べもの',   keys: ['food', 'supply'] },
-  { id: 'shop',    emoji: '🏪', label: 'お店',       keys: ['shop', 'fuel'] },
   { id: 'toilet',  emoji: '🚻', label: 'トイレ',     keys: ['toilet'] },
-  { id: 'shelter', emoji: '🏫', label: '避難所',     keys: ['shelter'] },
+  { id: 'shop',    emoji: '🏪', label: 'お店',       keys: ['shop', 'fuel'] },
+  { id: 'road',    emoji: '🚧', label: '通行止め',   keys: ['road'] },
+  { id: 'danger',  emoji: '⚠️', label: '決壊・がけ崩れ', keys: ['danger'] },
   { id: 'other',   emoji: '⋯',  label: 'ほかのもの', keys: null }
 ];
+// 災害の分類の並び（避難所 → 水 → 食べもの → トイレ → お店 → 通れない道 → 危ない場所 → そのほかは分類の並び順）
+var KOYOMI_TAYORI_DIS_ORDER = ['shelter', 'water', 'food', 'supply', 'toilet', 'shop', 'fuel', 'road', 'danger'];
+var KOYOMI_TAYORI_LIFE_CATS = ['road', 'danger'];   // 命に関わる分類（書くときに119番・110番と、自治体の指示を添える）
+function _tayoriDisOrder(cats) {
+  var rank = function(k) { var i = KOYOMI_TAYORI_DIS_ORDER.indexOf(k); return i === -1 ? 100 : i; };
+  return cats.slice().sort(function(a, b) { return rank(a.key) - rank(b.key) || (Number(a.sort) || 0) - (Number(b.sort) || 0); });
+}
+function _tayoriQuickNow() {
+  var have = {}; koyomiTayoriCatsNow(new Date(), 'disaster').forEach(function(c) { have[c.key] = 1; });
+  return KOYOMI_TAYORI_QUICK.filter(function(q) { return !q.keys || q.keys.some(function(k) { return have[k]; }); });
+}
 var KOYOMI_TAYORI_TIME_CATS = ['food', 'supply', 'volunteer', 'bath'];
 var KOYOMI_TAYORI_BIG = 'font-size:1.15em;';   // v0.81.1: お年寄りにも読める大きさに
 function _tdState() { return _koyomiTayori.d || (_koyomiTayori.d = { keys: null, label: '', area: '', near: null, stage: 'home', showOld: false }); }
@@ -72700,7 +72731,7 @@ function _tayoriRenderDisaster(host) {
       '<button type="button" data-td-reset style="flex-shrink:0;min-height:44px;padding:0 12px;border:1px solid #d9cfbf;border-radius:10px;background:#fff;color:#3b3226;font-size:0.9em;cursor:pointer;font-family:inherit;">さがし直す</button></div>';
   } else {
     head = _tayoriGuideHtml() + '<input type="search" data-td-q value="' + _tayoriEsc(_koyomiTayori.q || '') + '" placeholder="🔍 何をさがしていますか？（例：水、おにぎり）" style="width:100%;box-sizing:border-box;min-height:56px;padding:0 14px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;font-size:1.02em;font-family:inherit;margin:4px 0 10px;">' +
-      (_koyomiTayori.q ? '' : '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">' + KOYOMI_TAYORI_QUICK.map(function(x) { return _tayoriBigBtn('data-td-quick="' + x.id + '"', x.emoji, x.label); }).join('') + '</div>') +
+      (_koyomiTayori.q ? '' : '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">' + _tayoriQuickNow().map(function(x) { return _tayoriBigBtn('data-td-quick="' + x.id + '"', x.emoji, x.label); }).join('') + '</div>') +
       (_koyomiTayori.only ? '<div style="margin:0 0 8px;font-size:0.92em;color:#8a6d1e;">' + (_koyomiTayori.only === 'fav' ? '📌 覚えておいた場所だけを出しています' : '自分が書いたものだけを出しています') + '　<button type="button" data-td-only-off style="border:none;background:none;color:#3b6ea5;text-decoration:underline;cursor:pointer;font-size:1em;font-family:inherit;">すべてにもどす</button></div>' : '') +
       '<div style="font-size:0.95em;font-weight:700;color:#5a4e3c;margin:4px 2px 8px;">掲示板の書き込み（使えるもの・新しい順）</div>';
   }
@@ -72716,7 +72747,7 @@ function _tayoriRenderDisaster(host) {
   var _none = !(_koyomiTayori.rows || []).some(function(r) { var c = r && koyomiTayoriCat(r.category); return c && c.kind === 'disaster' && _tayoriInMode(r); });
   var _plain = !_koyomiTayori.q && !_koyomiTayori.only;
   var _have = {}; sorted.live.forEach(function(r) { _have[r.category] = 1; });
-  var _wantCats = koyomiTayoriCatsNow(new Date(), 'disaster').filter(function(c) { return !_have[c.key] && (!d.keys || d.keys.indexOf(c.key) !== -1); });
+  var _wantCats = _tayoriDisOrder(koyomiTayoriCatsNow(new Date(), 'disaster')).filter(function(c) { return !_have[c.key] && (!d.keys || d.keys.indexOf(c.key) !== -1); });
   var recruit = _plain ? _wantCats.map(function(c) {
     return '<div data-td-want="' + _tayoriEsc(c.key) + '" style="background:#fffdf8;border:1.5px dashed #e6b4ad;border-radius:14px;padding:12px 14px;margin-bottom:10px;">' +
       '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:1.7em;line-height:1;">' + _tayoriEsc(c.emoji) + '</span>' +
@@ -72791,7 +72822,7 @@ function _tayoriPostWizard(preCat) {
   function afterStatus() { if (KOYOMI_TAYORI_TIME_CATS.indexOf(st.cat) !== -1) go('time'); else go('words'); }
   function draw() {
     if (st.step === 'cat') {
-      var cats = koyomiTayoriCatsNow(new Date(), KIND);
+      var cats = SEA ? koyomiTayoriCatsNow(new Date(), KIND) : _tayoriDisOrder(koyomiTayoriCatsNow(new Date(), KIND));
       frame(SEA ? '何が見えましたか？' : '何を知らせますか？', '', '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;">' + cats.map(function(c) { return _tayoriBigBtn('data-wz-cat="' + _tayoriEsc(c.key) + '"', c.emoji, c.label); }).join('') + '</div>');
       [].forEach.call(box.querySelectorAll('[data-wz-cat]'), function(b) { b.onclick = function() { st.cat = b.getAttribute('data-wz-cat'); st.status = ''; go(afterCat()); }; });
     } else if (st.step === 'photo') {
@@ -72818,7 +72849,7 @@ function _tayoriPostWizard(preCat) {
         box.querySelector('[data-wz-next]').onclick = function() { go('place'); };
       }
     } else if (st.step === 'place') {
-      frame('場所はどこですか？', SEA ? '場所は約500mの範囲にぼかして載せます。家など、人に知られたくない場所は避けてください。' : '場所は約50mの範囲にまるめて載せます。', '<div style="display:grid;gap:8px;">' +
+      frame('場所はどこですか？', SEA ? '場所は約500mの範囲にぼかして載せます。家など、人に知られたくない場所は避けてください。' : (KOYOMI_TAYORI_LIFE_CATS.indexOf(st.cat) !== -1 ? '<b style="color:#9f2a22;">命に関わるときは、すぐに119番・110番へ。避難は自治体の指示に従ってください。</b><br>' : '') + '場所は約50mの範囲にまるめて載せます。', '<div style="display:grid;gap:8px;">' +
         '<button type="button" data-wz-here style="min-height:58px;border:none;border-radius:14px;background:#3b6ea5;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">📍 今いる場所</button>' +
         '<button type="button" data-wz-addr style="min-height:56px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;color:#3b3226;font-size:1em;font-weight:600;cursor:pointer;font-family:inherit;">🏠 住所や施設の名前で探す</button>' +
         '<button type="button" data-wz-map style="min-height:56px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;color:#3b3226;font-size:1em;font-weight:600;cursor:pointer;font-family:inherit;">🗺 地図で選ぶ</button></div>');
@@ -72997,28 +73028,38 @@ function _tayoriShareUrl(m) {
 // v0.83.2: 【権威】2026-11-18「XやLINEの文面も、寄り添った文面に。緊急災害掲示板だと、ちゃんと少し案内しないとダメ。優しい言葉で」
 //   → 何の掲示板か・登録なしで見られること・書き込みのお願い（押しつけない言い方）・確認中なら正直に。LINEには公式の発表も確かめて、を添える。
 //   Xは日本語1文字を2と数えて280まで（リンクは23）。長い町の名前でも収まる長さにする（ST-650で確かめる）
+// v0.86.9: 【権威】2026-11-19（水俣市の地震で実際に文面を出してみて）「避難所は？文が長い。ハッシュタグに県を入れる？
+//   熊本県地震・水俣市地震のように、検索が多そうなものを自動で作らないと」
+//   → 文は短く、知らせ合うものの先頭に「避難所」。ハッシュタグは 町・県・何が起きたか・町＋何が起きたか・避難所 を自動で作り、
+//     Xでは280に収まるだけ大事な順に入れる。「#熊本地震」のように過去の大きな災害の呼び名と重なるもの（県名＋地震）は作らない
+var KOYOMI_TAYORI_HZ_TAG = { jishin: '地震', ooame: '大雨', taifu: '台風', ooyuki: '大雪' };
 function _tayoriShareText(m, forLine, noReg) {
   var hz = _tayoriHazardLabel(m.hazard), unverified = m.kind === 'user' && !m.verified_at;
-  return '【緊急災害掲示板】' + m.name + (hz ? '（' + hz + '）' : '') + '\n' +
-    (unverified ? '※立ち上げたばかりで、確認中です\n' : '') +
-    '水・食べもの・トイレ・お店などを、町の人どうしで知らせ合う掲示板です。' + (noReg ? '' : forLine ? '登録しなくても見られます。' : '登録なしで見られます。') + '\n' +
-    '見かけたら、ひとことでも書いていただけると、近くの方の助けになります。' +
-    (forLine ? '\nつらいときは、見るだけでも大丈夫です。自治体などの公式の発表も、あわせてご確認ください。' : '');
+  return '【緊急災害掲示板】' + m.name + (hz ? '（' + hz + '）' : '') + (unverified ? '　※確認中' : '') + '\n' +
+    '避難所・水・食べもの・トイレ・開いているお店を、町の人どうしで知らせ合えます。' + (noReg ? '' : '登録なしで見られます。') + '\n' +
+    '見かけたら、ひとことお願いします。' +
+    (forLine ? '\n自治体などの公式の発表も、あわせてご確認ください。' : '');
 }
-// Xに入れる文：280に収まるように、大事な順に足していく（本文 → 登録なしで見られる → #町の名前 → #こよみる）
+// ハッシュタグ（大事な順）：#水俣市 #熊本県 #地震 #水俣市地震 #避難所 #こよみる
+function _tayoriTagList(m) {
+  var clean = function(t) { return String(t || '').replace(/[\s#＃、。・（）()]/g, ''); };
+  var ms = (m.munis || []), town = ms.length === 1 && ms[0] && ms[0].name ? clean(ms[0].name) : '';
+  var pref = clean(String(m.name || '').split(/[\s　]/)[0]); if (!/[都道府県]$/.test(pref)) pref = '';
+  var hz = KOYOMI_TAYORI_HZ_TAG[m.hazard] || '';
+  var out = [];
+  [town, pref, hz, (town && hz) ? town + hz : '', '避難所', 'こよみる'].forEach(function(t) { if (t && out.indexOf('#' + t) === -1) out.push('#' + t); });
+  return out;
+}
+// Xに入れる文：280に収まるように、大事な順に足していく（本文 → 登録なしで見られる → ハッシュタグを大事な順に）
 function _tayoriXText(m, url) {
-  var ms = (m.munis || []), town = ms.length === 1 && ms[0] && ms[0].name ? '#' + String(ms[0].name).replace(/[\s#＃、。・]/g, '') : '';
   var fit = function(t) { return _tayoriXLen(t + ' ' + url) <= 280; };
   var t = _tayoriShareText(m, false, true), t2 = _tayoriShareText(m, false, false);
   if (fit(t2)) t = t2;
-  [town, '#こよみる'].forEach(function(tag) { if (tag && fit(t + '\n' + tag)) t += (/#\S+$/.test(t) ? ' ' : '\n') + tag; });
+  _tayoriTagList(m).forEach(function(tag) { if (fit(t + ' ' + tag)) t += (/#\S+$/.test(t) ? ' ' : '\n') + tag; });
   return t;
 }
 function _tayoriXLen(t) { var n = 0; String(t).replace(/https?:\/\/\S+/g, function() { n += 23; return ''; }).split('').forEach(function(ch) { var c = ch.charCodeAt(0); n += (c <= 4351 || (c >= 8192 && c <= 8205) || (c >= 8208 && c <= 8223) || (c >= 8242 && c <= 8247)) ? 1 : 2; }); return n; }
-function _tayoriShareTags(m) {
-  var ms = (m.munis || []), t = ms.length === 1 && ms[0] && ms[0].name ? '#' + String(ms[0].name).replace(/[\s#＃、。・]/g, '') + ' ' : '';
-  return t + '#こよみる';
-}
+function _tayoriShareTags(m) { return _tayoriTagList(m).join(' '); }
 function _tayoriShare(m, how) {
   if (!m) return; var url = _tayoriShareUrl(m), text = _tayoriShareText(m, how !== 'x'), tags = _tayoriShareTags(m), go;
   if (how === 'x') go = 'https://x.com/intent/tweet?text=' + encodeURIComponent(_tayoriXText(m, url)) + '&url=' + encodeURIComponent(url);
@@ -95409,12 +95450,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _koyomiTayori.modes = [_um650, { id: 'a1', kind: 'admin', name: '令和8年 地震', munis: [] }];
        _r650.admin = _tayoriMode().id === 'a1'; _koyomiTayori.modeId = 'u1'; _r650.pick = _tayoriMode().id === 'u1'; _koyomiTayori.modeId = null;
        // 知らせる文：確認中・リンク・ハッシュタグ
-       _r650.share = /^【緊急災害掲示板】熊本県 益城町（地震）\n※立ち上げたばかりで、確認中です\n水・食べもの/.test(_tayoriShareText(_um650)) && /公式の発表/.test(_tayoriShareText(_um650, true)) && !/公式の発表/.test(_tayoriShareText(_um650)) && /\?saigai=ab12cd34ef$/.test(_tayoriShareUrl(_um650)) && _tayoriShareTags(_um650) === '#益城町 #こよみる';
+       _r650.share = /^【緊急災害掲示板】熊本県 益城町（地震）　※確認中\n避難所・水・食べもの/.test(_tayoriShareText(_um650)) && /公式の発表/.test(_tayoriShareText(_um650, true)) && !/公式の発表/.test(_tayoriShareText(_um650)) && /\?saigai=ab12cd34ef$/.test(_tayoriShareUrl(_um650)) && _tayoriShareTags(_um650) === '#益城町 #熊本県 #地震 #益城町地震 #避難所 #こよみる' && !/#熊本県地震|#熊本地震/.test(_tayoriShareTags(_um650));
        // Xは280まで（日本語は1文字2・リンクは23）。いちばん長い町の名前でも収まる
        var _lg650 = Object.assign({}, _um650, { name: '鹿児島県 ああああああああああ', hazard: 'ooame', munis: [{ name: 'ああああああああああ' }] }), _u650 = 'https://koyomiru.com/?saigai=ab12cd34ef';
        var _xs650 = _tayoriXText(_um650, _u650);
        _r650.xlen = _tayoriXLen(_tayoriXText(_lg650, _u650) + ' ' + _u650) <= 280 && _tayoriXLen('あa https://x.y/z') === 27 &&
-         /登録なしで見られます/.test(_xs650) && /#益城町 #こよみる$/.test(_xs650) && /登録しなくても見られます/.test(_tayoriShareText(_um650, true)) && /近くの方の助けになります/.test(_xs650);
+         /登録なしで見られます/.test(_xs650) && /#益城町 #熊本県 #地震 #益城町地震 #避難所 #こよみる$/.test(_xs650) && /公式の発表/.test(_tayoriShareText(_um650, true)) && /ひとことお願いします/.test(_xs650) &&
+         _tayoriXLen(_tayoriXText(_um650, _u650) + ' ' + _u650) <= 280;
        _r650.shareOk = !/確認中/.test(_tayoriShareText({ id: 'v', kind: 'user', name: 'x', verified_at: '2026-01-01T00:00:00Z' }));
        // 帯：確認中なら「私もここで被災しています」。始めた本人には「止める」
        var _h650 = _tayoriUserModeHtml(_um650);
@@ -95460,7 +95502,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r649.compact = /data-tayori-moretoggle/.test(_h649) && /data-tayori-more/.test(_h649) && /data-tayori-confirm/.test(_h649) && /data-tayori-gone/.test(_h649);
        var _w649 = _tayoriPostWizard.toString();
        _r649.wizard = /何を知らせますか/.test(_w649) && /場所はどこですか/.test(_w649) && /今の状況を教えてください/.test(_w649) && /何時から何時ですか/.test(_w649) && /決まっていれば、お願いします/.test(_w649) && /この内容で知らせる/.test(_w649) && /ありがとうございます/.test(_w649) && /近くに、同じ知らせがあります/.test(_w649);
-       _r649.quick = KOYOMI_TAYORI_QUICK.length === 6 && /どのあたりですか/.test(_tayoriRenderDisaster.toString());
+       _r649.quick = KOYOMI_TAYORI_QUICK.length === 8 && KOYOMI_TAYORI_QUICK[0].id === 'shelter' && typeof _tayoriQuickNow === 'function' && _tayoriDisOrder([{ key: 'water', sort: 1 }, { key: 'shelter', sort: 9 }])[0].key === 'shelter' && /119番/.test(_tayoriPostWizard.toString()) && /どのあたりですか/.test(_tayoriRenderDisaster.toString());
        _r649.addr = /住所や施設の名前で探す/.test(_w649) && /何日の、何時から何時ですか/.test(_w649) && /msearch\.gsi\.go\.jp\/address-search/.test(_tayoriAddressSearch.toString()) && /connect-src[^;]*https:\/\/msearch\.gsi\.go\.jp/.test((document.querySelector('meta[http-equiv="Content-Security-Policy"]') || {}).content || '');
        _koyomiTayori.cats = _bk649.cats; _koyomiTayori.rows = _bk649.rows;
        var _bad649 = Object.keys(_r649).filter(function(k) { return !_r649[k]; });
