@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.88.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.88.1 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.88.0';
+    const APP_VERSION = 'v0.88.1';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61163,6 +61163,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.88.1', date: '2026-11-19',
+    items: [
+      { icon:'🏫', t:'選んだ避難所を「〇〇は、ここです」と伝えるようにしました',
+        before:'一覧から避難所を選んだあと「この場所でよいですか？」と聞かれ、地図に建物の名前が出ないこともあって、決めにくくなっていました',
+        after:'「水俣市役所は、ここです」と名前を大きく出し、地図のピンにも名前の札を付けました。確かめたいときは「Google マップでも見る」で開けます' }
+    ]
+  },
+  {
     ver: 'v0.88.0', date: '2026-11-19',
     items: [
       { icon:'🏫', t:'避難所を、国の一覧から選べるようにしました',
@@ -72864,6 +72872,7 @@ function _tayoriPostWizard(preCat) {
         box.querySelector('[data-wz-next]').onclick = function() { go('place'); };
       }
     } else if (st.step === 'place') {
+      st.shel = null;   // v0.88.1: 避難所の一覧から選んだしるしは、場所を選び直すときに外す
       frame('場所はどこですか？', SEA ? '場所は約500mの範囲にぼかして載せます。家など、人に知られたくない場所は避けてください。' : (KOYOMI_TAYORI_LIFE_CATS.indexOf(st.cat) !== -1 ? '<b style="color:#9f2a22;">命に関わるときは、すぐに119番・110番へ。避難は自治体の指示に従ってください。</b><br>' : '') + '場所は約50mの範囲にまるめて載せます。', '<div style="display:grid;gap:8px;">' +
         (_tayoriShelterOk(st.cat, mode) ? '<button type="button" data-wz-shel style="min-height:58px;border:none;border-radius:14px;background:#9f2a22;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">🏫 国の避難所の一覧から選ぶ</button>' : '') +
         '<button type="button" data-wz-here style="min-height:58px;border:none;border-radius:14px;background:#3b6ea5;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">📍 今いる場所</button>' +
@@ -72904,7 +72913,7 @@ function _tayoriPostWizard(preCat) {
           return '<button type="button" data-wz-sh="' + all.indexOf(r) + '" style="display:block;width:100%;text-align:left;min-height:54px;margin-bottom:6px;padding:8px 12px;border:1.5px solid #e6dccb;border-radius:12px;background:#fff;color:#3b3226;cursor:pointer;font-family:inherit;">' +
             '<div style="font-weight:700;">' + _tayoriEsc(r.name) + '</div><div style="font-size:0.82em;color:#8a7d6b;margin-top:2px;">' + _tayoriEsc(_tayoriShelterKinds(r.f)) + (near ? '・約' + _tayoriDistText(_tayoriDistM(near.lat, near.lng, r.lat, r.lng)) : '') + '</div></button>';
         }).join('') + (list.length > 40 ? '<div style="font-size:0.85em;">ほかに' + (list.length - 40) + 'か所あります。名前で絞ってください。</div>' : '');
-        [].forEach.call(sl.querySelectorAll('[data-wz-sh]'), function(b) { b.onclick = function() { var r = all[Number(b.getAttribute('data-wz-sh'))]; st.pos = { lat: r.lat, lng: r.lng }; st.place = r.name.slice(0, 30); go('map'); }; });
+        [].forEach.call(sl.querySelectorAll('[data-wz-sh]'), function(b) { b.onclick = function() { var r = all[Number(b.getAttribute('data-wz-sh'))]; st.pos = { lat: r.lat, lng: r.lng }; st.place = r.name.slice(0, 30); st.shel = r.name.slice(0, 40); go('map'); }; });
       };
       sq.oninput = show;
       box.querySelector('[data-wz-snear]').onclick = function() {
@@ -72932,14 +72941,23 @@ function _tayoriPostWizard(preCat) {
       qi.onkeydown = function(e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); find(); } };
       setTimeout(function() { try { qi.focus(); } catch (e) {} }, 50);
     } else if (st.step === 'map') {
-      frame(st.pos ? 'この場所でよいですか？' : '地図で、場所を押してください', st.pos ? 'ちがうときは、地図の正しい場所を押してください。' : '', '<div data-wz-mapel style="height:46vh;min-height:280px;border-radius:12px;overflow:hidden;border:1px solid #e6dccb;background:#eef0ea;"></div>', st.pos ? 'この場所にする' : '');
+      // v0.88.1: 【権威】2026-11-19「パニックの時に『ここでいいですか？』と判断させるのは酷。『水俣市役所はここです』とか、変えて」
+      //   → 避難所の一覧から選んだときは、問いかけずに「〇〇は、ここです」と伝える。名前の札をピンに出し、建物が分かる近さにする。
+      //   確かめたい人だけ、Google マップを別の画面で開ける（リンクだけ。地図そのものは入れない）
+      var SH = st.shel && st.pos ? st.shel : '';
+      if (SH) frame('🏫 ' + _tayoriEsc(SH) + 'は、ここです', '国の避難所データの場所です。ちがうときだけ、地図の正しい場所を押してください。',
+        '<div data-wz-mapel style="height:42vh;min-height:260px;border-radius:12px;overflow:hidden;border:1px solid #e6dccb;background:#eef0ea;"></div>' +
+        '<a href="' + _tayoriEsc(_tayoriGmapViewUrl(st.pos)) + '" target="_blank" rel="noopener noreferrer" style="display:block;margin-top:10px;text-align:center;color:#3b6ea5;font-size:0.95em;">🧭 Google マップでも見る</a>',
+        '✓ ' + _tayoriEsc(SH) + 'で進む');
+      else frame(st.pos ? 'この場所でよいですか？' : '地図で、場所を押してください', st.pos ? 'ちがうときは、地図の正しい場所を押してください。' : '', '<div data-wz-mapel style="height:46vh;min-height:280px;border-radius:12px;overflow:hidden;border:1px solid #e6dccb;background:#eef0ea;"></div>', st.pos ? 'この場所にする' : '');
       _koyomiLoadLeaflet().then(function(L) {
         var el = box.querySelector('[data-wz-mapel]'); if (!el) return;
         var c = st.pos ? [st.pos.lat, st.pos.lng] : (mode && mode.w != null ? [(mode.s + mode.n) / 2, (mode.w + mode.e) / 2] : [36.2, 138.2]);
-        var map = L.map(el, { minZoom: 5, maxZoom: 18 }).setView(c, st.pos ? 17 : (mode ? 12 : 5)); st.map = map;
+        var map = L.map(el, { minZoom: 5, maxZoom: 18 }).setView(c, SH ? 18 : (st.pos ? 17 : (mode ? 12 : 5))); st.map = map;
         L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">出典：国土地理院</a>' }).addTo(map);
         try { map.attributionControl.setPrefix(''); } catch (e) {}
         var mk = st.pos ? L.marker([st.pos.lat, st.pos.lng], { icon: L.divIcon({ className: 'tayori-pin', html: '<div style="font-size:30px;line-height:1;">📍</div>', iconSize: [30, 30], iconAnchor: [15, 28] }) }).addTo(map) : null;
+        if (mk && SH) mk.bindTooltip('🏫 ' + _tayoriEsc(SH), { permanent: true, direction: 'top', offset: [0, -26], className: 'tayori-shel-tip' }).openTooltip();
         map.on('click', function(ev) {
           st.pos = { lat: ev.latlng.lat, lng: ev.latlng.lng };
           if (mk) mk.setLatLng(ev.latlng); else mk = L.marker(ev.latlng, { icon: L.divIcon({ className: 'tayori-pin', html: '<div style="font-size:30px;line-height:1;">📍</div>', iconSize: [30, 30], iconAnchor: [15, 28] }) }).addTo(map);
@@ -73456,6 +73474,12 @@ if (_tayoriTakeLink()) setTimeout(function() {
   } catch (e) {}
 }, 700);
 // 道案内はGoogleマップに任せる（APIは使わない。押した人の端末でGoogleマップが開くだけ）
+// v0.88.1: 場所を見るだけの Google マップ（道案内ではなく、その地点を開く）
+function _tayoriGmapViewUrl(r) {
+  var a = Number(r && r.lat), o = Number(r && r.lng);
+  if (!isFinite(a) || !isFinite(o) || Math.abs(a) > 90 || Math.abs(o) > 180) return '';
+  return 'https://www.google.com/maps/search/?api=1&query=' + a.toFixed(6) + ',' + o.toFixed(6);
+}
 function _tayoriGmapUrl(r) {
   var a = Number(r && r.lat), o = Number(r && r.lng);
   if (!isFinite(a) || !isFinite(o) || Math.abs(a) > 90 || Math.abs(o) > 180) return '';
@@ -95599,7 +95623,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _tayoriShelterPrefs({ munis: [{ code: '43205', name: '水俣市' }] }).join() === '43' && _tayoriShelterPrefs({ name: '千葉県 千葉テスト', munis: [] }).join() === '12' &&
          _tayoriShelterPrefs({ name: 'テスト', munis: [] }).length === 0 && _tayoriShelterOk('shelter', { munis: [{ code: '43205' }] }) && !_tayoriShelterOk('water', { munis: [{ code: '43205' }] }) &&
          _tayoriShelterKinds(1) === '避難所' && _tayoriShelterKinds(1 | 2 | 16) === '避難所／緊急避難場所（洪水・地震）' && _tayoriShelterKinds(0) === '避難所' &&
-         _tayoriDistText(240) === '240m' && _tayoriDistText(1260) === '1.3km';
+         _tayoriDistText(240) === '240m' && _tayoriDistText(1260) === '1.3km' &&
+         /は、ここです/.test(_w649) && /で進む/.test(_w649) && /bindTooltip/.test(_w649) && _tayoriGmapViewUrl({ lat: 32.2, lng: 130.4 }) === 'https://www.google.com/maps/search/?api=1&query=32.200000,130.400000' && _tayoriGmapViewUrl({ lat: 'x', lng: 1 }) === '';
        _koyomiTayori.cats = _bk649.cats; _koyomiTayori.rows = _bk649.rows;
        var _bad649 = Object.keys(_r649).filter(function(k) { return !_r649[k]; });
        !_bad649.length ? ok('ST-649: 生活情報のウィザード（使えるものを上・時間のある回は始まり順・終わった／古いものは下・今いる近くは近い順・一覧は2つのボタンだけ・知らせるは1問ずつ）')
