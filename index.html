@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.92.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.92.1 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.92.0';
+    const APP_VERSION = 'v0.92.1';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61165,6 +61165,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.92.1', date: '2026-11-19',
+    items: [
+      { icon:'🙋', t:'「私もここで被災しています」は、ログインなしで押せるようにしました',
+        before:'押すにはログインが必要で、被災している方には手間がかかりました',
+        after:'ログインしなくても、押すだけで伝わります。同じ回線からは1回だけ数えます' }
+    ]
+  },
+  {
     ver: 'v0.92.0', date: '2026-11-19',
     items: [
       { icon:'🏫', t:'災害復旧掲示板のカードを、すっきりさせました',
@@ -73606,14 +73614,9 @@ function _tayoriWireUserMode(el, m) {
     ] });
   };
 }
+// v0.92.1: 【権威】2026-11-19「被災していますでログインが必要は厳しすぎる。LINEを押したらメールとパスワードを求められて離脱した。ログインはいらない」
+//   → 最高峰会議で A に決定：ログインなしで押せる。同じ回線（同じWi-Fiやスマホの回線）からは1回だけ（サーバーで確かめる）。位置情報は求めない（町の外へ避難した人も押せるように）
 function _tayoriVouch(m, btn) {
-  if (!window._cloudIsLoggedIn) {
-    showChoiceModal({ title: 'ログインをお願いしています', desc: 'うその災害を防ぐため、「私もここで被災しています」はログインした方だけが押せます。LINEでもすぐに入れます。', buttons: [
-      { label: 'ログインする', style: 'primary', onClick: function() { try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {} } },
-      { label: 'やめる', style: 'cancel' }
-    ] });
-    return;
-  }
   if (btn) { btn.disabled = true; btn.textContent = '送っています…'; }
   rpcWithTimeout('koyomiru_tayori_vouch', { p_mode: m.id }, 10000).then(function(r) {
     if (r && !r.error) {
@@ -73621,6 +73624,10 @@ function _tayoriVouch(m, btn) {
       _tayoriSetFollow(m.id, true);
       if (typeof showToast === 'function') showToast(r.data && r.data.verified ? '確かめられました。ありがとうございます' : 'ありがとうございます。伝わりました', { type: 'success' });
       _tayoriLoadMeta().then(function() { renderTayoriView(); });
+    } else if (r && r.error && /already/.test(String(r.error.message || ''))) {
+      var a2 = _tayoriVouched(); if (a2.indexOf(m.id) === -1) a2.unshift(m.id); _tayoriLSSet('tayoriVouched', a2.slice(0, 50));
+      if (typeof showToast === 'function') showToast('この回線からは、もう押されています。ありがとうございます', { type: 'info' });
+      renderTayoriView();
     } else { if (btn) { btn.disabled = false; btn.textContent = '🙋 私もここで被災しています'; } if (typeof showToast === 'function') showToast('送れませんでした。もう一度お試しください', { type: 'warn' }); }
   }).catch(function() { if (btn) { btn.disabled = false; btn.textContent = '🙋 私もここで被災しています'; } });
 }
@@ -95939,7 +95946,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        _r650.shareOk = !/確認中/.test(_tayoriShareText({ id: 'v', kind: 'user', name: 'x', verified_at: '2026-01-01T00:00:00Z' }));
        // 帯：確認中なら「私もここで被災しています」。始めた本人には「止める」
        var _h650 = _tayoriUserModeHtml(_um650);
-       _r650.vouch = /data-tum-vouch/.test(_h650) && /確認中（いま1人）/.test(_h650) && /あと7[01]時間/.test(_h650) && /data-tum-follow/.test(_h650) && !/data-tum-end/.test(_h650);
+       _r650.vouch = !/ログインした方だけ/.test(_tayoriVouch.toString()) && /already/.test(_tayoriVouch.toString()) && /data-tum-vouch/.test(_h650) && /確認中（いま1人）/.test(_h650) && /あと7[01]時間/.test(_h650) && /data-tum-follow/.test(_h650) && !/data-tum-end/.test(_h650);
        var _hm650 = _tayoriUserModeHtml(Object.assign({}, _um650, { mine: true }));
        _r650.mine = /data-tum-end/.test(_hm650) && !/data-tum-vouch/.test(_hm650);
        _r650.verified = !/確認中/.test(_tayoriUserModeHtml(Object.assign({}, _um650, { verified_at: '2026-11-18T00:00:00Z' })));
