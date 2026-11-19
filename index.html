@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.89.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.89.1 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.89.0';
+    const APP_VERSION = 'v0.89.1';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -42652,9 +42652,11 @@ window._repairCloudCalendarIds();
       } else if (view === 'tayori' || view === 'saigai') {   // v0.79.0: 季節の便り。v0.84.0: 災害復旧掲示板は別のナビタブ（同じ画面の土台を使う）
         var _tyv = document.getElementById('tayoriView'); if (_tyv) _tyv.style.display = 'block';
         var _tyn = document.getElementById(view === 'saigai' ? 'navSaigai' : 'navTayori'); if (_tyn) _tyn.classList.add('active');
-        if (typeof _koyomiTayori !== 'undefined') { var _tyTab = view === 'saigai' ? 'disaster' : 'season'; if (_koyomiTayori.tab !== _tyTab) { _koyomiTayori.tab = _tyTab; _koyomiTayori.filter = ''; _koyomiTayori.view = ''; } }
+        if (typeof _koyomiTayori !== 'undefined') { var _tyTab = view === 'saigai' ? 'disaster' : 'season'; var _tyChanged = false; if (_koyomiTayori.tab !== _tyTab) { _koyomiTayori.tab = _tyTab; _koyomiTayori.filter = ''; _koyomiTayori.view = ''; _koyomiTayori.rows = []; _tyChanged = true; } }
         if (typeof renderTayoriView === 'function') renderTayoriView();
         if (typeof _tayoriDraw === 'function') { try { _tayoriDraw(); } catch (eTd) {} }
+        // v0.89.1: 【不具合】2026-11-19「季節の方、既存の投稿が全部消えた」→ 災害復旧掲示板から移ると、町の範囲で読んだ中身のまま季節を見ていた。移ったら読み直す
+        if (_tyChanged && typeof _tayoriLoad === 'function') { try { _tayoriLoad(false); } catch (eTl) {} }
       } else if (view === 'capsule') {   // v0.72.0: タイムカプセル委員会
         var _cv = document.getElementById('capsuleView'); if (_cv) _cv.style.display = 'block';
         var _cn = document.getElementById('navCapsule'); if (_cn) _cn.classList.add('active');
@@ -61163,6 +61165,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.89.1', date: '2026-11-19',
+    items: [
+      { icon:'🍁', t:'季節の掲示板の書き込みが出なくなることがあったのを直しました',
+        before:'災害復旧掲示板を見たあと季節の掲示板に移ると、書き込みが出ず、見本だけが並ぶことがありました',
+        after:'掲示板を移ったときは、移った先の書き込みを読み直すようにしました。パソコンの災害復旧掲示板の分類の箱からは「＋ 書く」をなくし、書くのは左下の ＋ からにしました' }
+    ]
+  },
+  {
     ver: 'v0.89.0', date: '2026-11-19',
     items: [
       { icon:'🖥', t:'パソコンでは、掲示板を横にも並べるようにしました',
@@ -71768,7 +71778,7 @@ function renderTayoriView() {
   if (tabs) {
     var tb = function(k, label) { var on = tab === k; return '<button type="button" data-tayori-tab="' + k + '" style="flex:1;padding:7px 0;border:none;border-radius:8px;background:' + (on ? '#fff' : 'transparent') + ';color:' + (on ? '#3b3226' : '#8a7d6b') + ';font-size:0.84em;font-weight:' + (on ? '700' : '500') + ';cursor:pointer;font-family:inherit;box-shadow:' + (on ? '0 1px 3px rgba(0,0,0,0.12)' : 'none') + ';">' + label + '</button>'; };
     tabs.innerHTML = '';   // v0.84.0: 左右の切り替えはやめた（ナビタブを分けた）
-    [].forEach.call(tabs.querySelectorAll('[data-tayori-tab]'), function(b) { b.onclick = function() { _koyomiTayori.tab = b.getAttribute('data-tayori-tab'); _koyomiTayori.filter = ''; _koyomiTayori.view = ''; renderTayoriView(); _tayoriDraw(); }; });
+    [].forEach.call(tabs.querySelectorAll('[data-tayori-tab]'), function(b) { b.onclick = function() { var nt = b.getAttribute('data-tayori-tab'), ch = _koyomiTayori.tab !== nt; _koyomiTayori.tab = nt; _koyomiTayori.filter = ''; _koyomiTayori.view = ''; if (ch) _koyomiTayori.rows = []; renderTayoriView(); _tayoriDraw(); if (ch) _tayoriLoad(false); }; });
   }
   var tt = document.getElementById('tayoriTitle'); if (tt) tt.textContent = dis ? '災害復旧掲示板' : '季節の掲示板';
   var sub = document.getElementById('tayoriSub');
@@ -71927,8 +71937,10 @@ function _tayoriLoad(force) {
     : (m && m.w != null ? { p_s: m.s, p_w: m.w, p_n: m.n, p_e: m.e } : null);
   if (!box) return;
   _koyomiTayori.loading = true;
+  var reqTab = _tayoriTab();
   rpcWithTimeout('koyomiru_tayori_list', box, 10000).then(function(r) {
     _koyomiTayori.loading = false;
+    if (reqTab !== _tayoriTab()) { _tayoriLoad(false); return; }   // v0.89.1: 読んでいる間に掲示板を移ったら、移った先で読み直す
     if (r && !r.error && Array.isArray(r.data)) { _koyomiTayori.rows = r.data; renderTayoriView(); _tayoriDraw(); _tayoriLoadComments(); _tayoriLoadPhotos(); }
     else if (force && typeof showToast === 'function') showToast('掲示板を読み込めませんでした', { type: 'warn' });
   }).catch(function() { _koyomiTayori.loading = false; });
@@ -71983,6 +71995,7 @@ function _tayoriRenderWant() {
 // v0.89.0: 【権威】2026-11-19「PCのときは、カードを9分割くらいに並べてもよくない？世界の暦のUIみたく。募集中のやつは募集中と出せばいい。
 //   季節の掲示板もPCのときは変えて」→ 世界の暦と同じく、幅900px以上のときだけ横に並べる（スマホは今のまま）。
 //   季節の掲示板：書き込みのカードを新しい順に3列ほどで。災害復旧掲示板：分類ごとの箱を急ぐ順に並べ、書き込みは新しい3件、ないものは「募集中」
+// v0.89.1: 【権威】2026-11-19「＋書くは圧迫感があって書いてくれなそう。左下の＋だけでよくね？書きたきゃ書くでしょ」→ 箱の「＋ 書く」は置かない
 var KOYOMI_TAYORI_WIDE = 900;
 var KOYOMI_TAYORI_GRID = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));column-gap:14px;align-items:start;';
 function _tayoriWide() { return (window.innerWidth || 0) >= KOYOMI_TAYORI_WIDE; }
@@ -72009,13 +72022,12 @@ function _tayoriDisBoardHtml(live, keys) {
           '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">' + _tayoriEsc(r.place_name || r.note || c.label) + '</span>' +
           (st ? _tayoriBadge(st) : '') + '<span style="flex-shrink:0;font-size:0.78em;color:#a39886;">' + _tayoriEsc(koyomiTayoriAgo(r.confirmed_at)) + '</span></button>';
       }).join('');
-      return '<div data-td-box="' + k + '" style="background:' + (rs.length ? '#fff' : '#fffdf8') + ';border:' + (rs.length ? '1px solid #eee3d0' : '1.5px dashed #e6b4ad') + ';border-radius:16px;padding:12px 12px 10px;display:flex;flex-direction:column;min-height:150px;box-sizing:border-box;">' +
+      return '<div data-td-box="' + k + '" style="background:' + (rs.length ? '#fff' : '#fffdf8') + ';border:' + (rs.length ? '1px solid #eee3d0' : '1.5px dashed #e6b4ad') + ';border-radius:16px;padding:12px 12px 10px;display:flex;flex-direction:column;box-sizing:border-box;">' +
         '<button type="button" data-td-boxopen="' + k + '" style="display:flex;align-items:center;gap:8px;border:none;background:none;padding:0 0 8px;text-align:left;cursor:pointer;font-family:inherit;color:#3b3226;">' +
           '<span style="font-size:1.5em;line-height:1;">' + _tayoriEsc(c.emoji) + '</span><span style="flex:1;font-weight:700;font-size:1.05em;">' + _tayoriEsc(c.label) + '</span>' +
           (rs.length ? '<span style="font-size:0.82em;color:#8a7d6b;">' + rs.length + '件 ›</span>' : '<span style="font-size:0.82em;color:#9f2a22;font-weight:700;">募集中</span>') + '</button>' +
         (rs.length ? lines + (rs.length > 3 ? '<button type="button" data-td-boxopen="' + k + '" style="border:none;background:none;color:#3b6ea5;font-size:0.88em;padding:6px 8px;text-align:left;cursor:pointer;font-family:inherit;">ほか' + (rs.length - 3) + '件を見る</button>' : '')
-          : '<div style="flex:1;font-size:0.88em;color:#8a7d6b;line-height:1.6;padding:2px 2px 8px;">まだ書き込みがありません。見かけたら知らせてください。</div>') +
-        '<button type="button" data-td-wantpost="' + k + '" style="margin-top:auto;min-height:44px;border:1.5px solid #9f2a22;border-radius:12px;background:#fff;color:#9f2a22;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;">＋ 書く</button></div>';
+          : '<div style="font-size:0.86em;color:#8a7d6b;line-height:1.6;padding:2px 2px 4px;">まだ書き込みがありません</div>') + '</div>';
     }).join('') + '</div>';
 }
 function _tayoriDraw() {
@@ -95529,7 +95541,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // v0.89.0: PCのときは横に並べる（季節：カードの格子・災害：分類ごとの箱、ないものは募集中）
        var _bd654 = _tayoriDisBoardHtml.toString();
        _r654.wide = typeof _tayoriWide === 'function' && KOYOMI_TAYORI_WIDE === 900 && /data-tf-grid/.test(_tayoriDraw.toString()) &&
-         /募集中/.test(_bd654) && /data-td-wantpost/.test(_bd654) && /BOARD \? intro \+ _tayoriDisBoardHtml/.test(_tayoriRenderDisaster.toString()) && /tayoriWrap/.test(renderTayoriView.toString());
+         /募集中/.test(_bd654) && !/data-td-wantpost/.test(_bd654) && /reqTab !== _tayoriTab\(\)/.test(_tayoriLoad.toString()) && /BOARD \? intro \+ _tayoriDisBoardHtml/.test(_tayoriRenderDisaster.toString()) && /tayoriWrap/.test(renderTayoriView.toString());
        _r654.like = /👍/.test(_tayoriFeedCard({ id: 'l1', category: 'moon', created_at: new Date().toISOString(), confirmed_at: new Date().toISOString() })) && !/🙏/.test(_tayoriFeedCard({ id: 'l1', category: 'moon', created_at: new Date().toISOString(), confirmed_at: new Date().toISOString() })) &&
          /👍 いいね/.test(_tayoriPopupHtml({ id: 'l2', category: 'moon', confirmed_at: new Date().toISOString() }));
        var _bad654 = Object.keys(_r654).filter(function(k) { return !_r654[k]; });
