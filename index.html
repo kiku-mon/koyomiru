@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.90.1 ★ -->
+<!-- ★ CURRENT VERSION: v0.91.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.90.1';
+    const APP_VERSION = 'v0.91.0';
   const APP_LAST_UPDATED = '2026-11-19'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61165,6 +61165,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.91.0', date: '2026-11-19',
+    items: [
+      { icon:'🏫', t:'開いている避難所を、まとめて知らせられるようにしました',
+        before:'市がいくつも避難所を開けても、1か所ずつ書く必要がありました',
+        after:'「国の避難所の一覧から選ぶ」で、「☑ いくつも選ぶ」から何か所でもチェックして、まとめて知らせられます。市の発表の文を貼れば、名前の合う避難所に自動でチェックが入ります' }
+    ]
+  },
+  {
     ver: 'v0.90.1', date: '2026-11-19',
     items: [
       { icon:'🔍', t:'災害復旧掲示板の検索の例を、急ぐものにしました',
@@ -73039,31 +73047,96 @@ function _tayoriPostWizard(preCat) {
       box.querySelector('[data-wz-map2]').onclick = function() { st.pos = null; go('map'); };
     } else if (st.step === 'shelter') {
       // v0.88.0: 国の避難所の一覧から選ぶ（押すと、その場所が正しく入る。地図で確かめてから決める）
+      // v0.91.0: 【権威】2026-11-19「避難所って一度に複数建つんだね。1つずつ立てるのは面倒。何か方法ある？」→ 最高峰会議で B に決定：
+      //   チェックでいくつも選んでまとめて知らせる。市の発表の文を貼ると、名前の合う避難所に自動でチェックが入る（当たらない名前は出して、手で選べる）。
+      //   サーバーの荒らし対策（ログインした人は1時間に10件、ログインなしは5件）はそのまま。1回に選べるのもその数まで
+      var MAXN = window._cloudIsLoggedIn ? 10 : 5;
+      if (!st.msel) st.msel = [];
       frame('どの避難所ですか？', '<span style="color:#9f2a22;">災害のさなかに逃げるときは「緊急避難場所」へ。</span>',
+        '<details data-wz-pastebox' + (st.multi ? ' open' : '') + ' style="margin-bottom:10px;border:1.5px solid #e6dccb;border-radius:12px;background:#fff;padding:0 12px;">' +
+          '<summary style="min-height:48px;display:flex;align-items:center;cursor:pointer;font-weight:700;color:#3b3226;">📋 市の発表を貼って、まとめて選ぶ</summary>' +
+          '<div style="font-size:0.86em;color:#8a7d6b;line-height:1.6;">市のサイトの「開設している避難所」の文を、そのまま貼ってください。名前の合う避難所に、チェックが入ります。</div>' +
+          '<textarea data-wz-paste rows="3" maxlength="2000" placeholder="例：水俣市役所、葛彩館、おれんじ館、愛林館" style="width:100%;box-sizing:border-box;margin-top:6px;padding:8px 10px;border:1.5px solid #d9cfbf;border-radius:10px;font-size:0.95em;font-family:inherit;resize:vertical;">' + _tayoriEsc(st.paste || '') + '</textarea>' +
+          '<button type="button" data-wz-pastego style="width:100%;min-height:46px;margin:6px 0 10px;border:none;border-radius:10px;background:#3b6ea5;color:#fff;font-size:0.98em;font-weight:700;cursor:pointer;font-family:inherit;">照らし合わせる</button>' +
+          '<div data-wz-pastemsg style="font-size:0.88em;line-height:1.6;margin-bottom:8px;"></div>' +
+        '</details>' +
         '<input data-wz-sq type="search" maxlength="30" placeholder="名前で絞る（例：小学校）" style="width:100%;box-sizing:border-box;min-height:50px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:1em;font-family:inherit;">' +
-        '<button type="button" data-wz-snear style="width:100%;min-height:48px;margin-top:8px;border:1.5px solid #d9cfbf;border-radius:12px;background:#fff;color:#3b3226;font-size:0.98em;font-weight:600;cursor:pointer;font-family:inherit;">📍 今いる場所から近い順にする</button>' +
+        '<div style="display:flex;gap:8px;margin-top:8px;">' +
+          '<button type="button" data-wz-snear style="flex:1;min-height:48px;border:1.5px solid #d9cfbf;border-radius:12px;background:#fff;color:#3b3226;font-size:0.95em;font-weight:600;cursor:pointer;font-family:inherit;">📍 近い順にする</button>' +
+          '<button type="button" data-wz-smulti style="flex:1;min-height:48px;border:1.5px solid ' + (st.multi ? '#9f2a22' : '#d9cfbf') + ';border-radius:12px;background:' + (st.multi ? '#fbeceb' : '#fff') + ';color:' + (st.multi ? '#9f2a22' : '#3b3226') + ';font-size:0.95em;font-weight:600;cursor:pointer;font-family:inherit;">☑ いくつも選ぶ</button></div>' +
         '<div data-wz-slist style="margin-top:10px;color:#8a7d6b;">読み込んでいます…</div>' +
-        '<div style="font-size:0.78em;color:#9aa3af;margin-top:10px;line-height:1.6;">出典：国土地理院「指定緊急避難場所・指定避難所データ」。市町村が国に出していない避難所は、ここに出ません。そのときは住所か地図で選んでください。</div>');
-      var sq = box.querySelector('[data-wz-sq]'), sl = box.querySelector('[data-wz-slist]'), all = null, near = null;
+        '<div style="font-size:0.78em;color:#9aa3af;margin-top:10px;line-height:1.6;">出典：国土地理院「指定緊急避難場所・指定避難所データ」。市町村が国に出していない避難所は、ここに出ません。そのときは住所か地図で選んでください。</div>' +
+        '<div data-wz-mbar style="position:sticky;bottom:-20px;background:#fffdf8;padding:10px 0 4px;display:' + (st.multi ? 'block' : 'none') + ';"><button type="button" data-wz-mnext style="width:100%;min-height:56px;border:none;border-radius:14px;background:#9f2a22;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;"></button></div>');
+      var sq = box.querySelector('[data-wz-sq]'), sl = box.querySelector('[data-wz-slist]'), all = null, near = st.snear || null;
+      var mbar = box.querySelector('[data-wz-mbar]'), mnext = box.querySelector('[data-wz-mnext]');
+      var key = function(r) { return r.name + '|' + r.lat + '|' + r.lng; };
+      var isSel = function(r) { return st.msel.some(function(x) { return key(x) === key(r); }); };
+      var syncBar = function() { mbar.style.display = st.multi ? 'block' : 'none'; mnext.disabled = !st.msel.length; mnext.style.opacity = st.msel.length ? '1' : '0.5'; mnext.textContent = st.msel.length ? '選んだ ' + st.msel.length + ' か所をまとめて知らせる' : '知らせる避難所を選んでください'; };
       var show = function() {
         if (!all) return;
         var q = (sq.value || '').trim(), list = all.filter(function(r) { return !q || r.name.indexOf(q) !== -1; });
-        if (near) list = list.slice().sort(function(a, b) { return _tayoriDistM(near.lat, near.lng, a.lat, a.lng) - _tayoriDistM(near.lat, near.lng, b.lat, b.lng); });
-        if (!list.length) { sl.innerHTML = '<div style="line-height:1.7;">' + (all.length ? '見つかりませんでした。' : 'この町の避難所のデータは、国に出ていません。') + '住所か地図で選んでください。</div>'; return; }
-        sl.innerHTML = list.slice(0, 40).map(function(r, i) {
-          return '<button type="button" data-wz-sh="' + all.indexOf(r) + '" style="display:block;width:100%;text-align:left;min-height:54px;margin-bottom:6px;padding:8px 12px;border:1.5px solid #e6dccb;border-radius:12px;background:#fff;color:#3b3226;cursor:pointer;font-family:inherit;">' +
-            '<div style="font-weight:700;">' + _tayoriEsc(r.name) + '</div><div style="font-size:0.82em;color:#8a7d6b;margin-top:2px;">' + _tayoriEsc(_tayoriShelterKinds(r.f)) + (near ? '・約' + _tayoriDistText(_tayoriDistM(near.lat, near.lng, r.lat, r.lng)) : '') + '</div></button>';
+        if (st.multi) list = list.filter(isSel).concat(list.filter(function(r) { return !isSel(r); }));   // 選んだものを上に
+        if (near) list = list.slice().sort(function(a, b) { return (st.multi ? (isSel(b) - isSel(a)) : 0) || (_tayoriDistM(near.lat, near.lng, a.lat, a.lng) - _tayoriDistM(near.lat, near.lng, b.lat, b.lng)); });
+        if (!list.length) { sl.innerHTML = '<div style="line-height:1.7;">' + (all.length ? '見つかりませんでした。' : 'この町の避難所のデータは、国に出ていません。') + '住所か地図で選んでください。</div>'; syncBar(); return; }
+        sl.innerHTML = list.slice(0, 40).map(function(r) {
+          var on = st.multi && isSel(r);
+          return '<button type="button" data-wz-sh="' + all.indexOf(r) + '" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;min-height:54px;margin-bottom:6px;padding:8px 12px;border:1.5px solid ' + (on ? '#9f2a22' : '#e6dccb') + ';border-radius:12px;background:' + (on ? '#fbeceb' : '#fff') + ';color:#3b3226;cursor:pointer;font-family:inherit;">' +
+            (st.multi ? '<span style="flex-shrink:0;width:24px;height:24px;border-radius:6px;border:2px solid ' + (on ? '#9f2a22' : '#cbbfae') + ';background:' + (on ? '#9f2a22' : '#fff') + ';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;">' + (on ? '✓' : '') + '</span>' : '') +
+            '<span style="min-width:0;"><span style="display:block;font-weight:700;">' + _tayoriEsc(r.name) + '</span><span style="display:block;font-size:0.82em;color:#8a7d6b;margin-top:2px;">' + _tayoriEsc(_tayoriShelterKinds(r.f)) + (near ? '・約' + _tayoriDistText(_tayoriDistM(near.lat, near.lng, r.lat, r.lng)) : '') + '</span></span></button>';
         }).join('') + (list.length > 40 ? '<div style="font-size:0.85em;">ほかに' + (list.length - 40) + 'か所あります。名前で絞ってください。</div>' : '');
-        [].forEach.call(sl.querySelectorAll('[data-wz-sh]'), function(b) { b.onclick = function() { var r = all[Number(b.getAttribute('data-wz-sh'))]; st.pos = { lat: r.lat, lng: r.lng }; st.place = r.name.slice(0, 30); st.shel = r.name.slice(0, 40); go('map'); }; });
+        [].forEach.call(sl.querySelectorAll('[data-wz-sh]'), function(b) { b.onclick = function() {
+          var r = all[Number(b.getAttribute('data-wz-sh'))];
+          if (!st.multi) { st.pos = { lat: r.lat, lng: r.lng }; st.place = r.name.slice(0, 30); st.shel = r.name.slice(0, 40); go('map'); return; }
+          if (isSel(r)) st.msel = st.msel.filter(function(x) { return key(x) !== key(r); });
+          else if (st.msel.length >= MAXN) { if (typeof showToast === 'function') showToast('1回にまとめて知らせられるのは ' + MAXN + ' か所までです', { type: 'warn' }); return; }
+          else st.msel.push(r);
+          show();
+        }; });
+        syncBar();
       };
       sq.oninput = show;
+      box.querySelector('[data-wz-smulti]').onclick = function() { st.multi = !st.multi; if (!st.multi) st.msel = []; draw(); };
+      mnext.onclick = function() { if (st.msel.length) go('mstatus'); };
+      box.querySelector('[data-wz-pastego]').onclick = function() {
+        var t = box.querySelector('[data-wz-paste]').value || '', msg = box.querySelector('[data-wz-pastemsg]');
+        st.paste = t.slice(0, 2000); if (!all) return;
+        var m = _tayoriShelterMatch(t, all), added = 0, over = 0;
+        m.picked.forEach(function(r) { if (isSel(r)) return; if (st.msel.length >= MAXN) { over++; return; } st.msel.push(r); added++; });
+        st.multi = true; st.fromCity = true;
+        msg.innerHTML = '<div style="color:#1e6b34;font-weight:700;">✓ ' + added + ' か所にチェックを入れました</div>' +
+          (over ? '<div style="color:#8a5a00;">1回に知らせられるのは ' + MAXN + ' か所までなので、' + over + ' か所は入れませんでした。あとでもう一度どうぞ。</div>' : '') +
+          (m.miss.length ? '<div style="color:#8a5a00;margin-top:4px;">見つからなかった名前：' + _tayoriEsc(m.miss.join('、')) + '<br>名前で絞って、手で選んでください。</div>' : '');
+        var tb = box.querySelector('[data-wz-smulti]'); tb.style.borderColor = '#9f2a22'; tb.style.background = '#fbeceb'; tb.style.color = '#9f2a22';
+        show();
+      };
       box.querySelector('[data-wz-snear]').onclick = function() {
-        var b = this; if (!navigator.geolocation) return; b.disabled = true; b.textContent = '今いる場所を確かめています…';
-        navigator.geolocation.getCurrentPosition(function(p) { near = { lat: p.coords.latitude, lng: p.coords.longitude }; b.textContent = '📍 近い順に並べました'; show(); },
-          function() { b.disabled = false; b.textContent = '📍 今いる場所から近い順にする'; if (typeof showToast === 'function') showToast('今いる場所が分かりませんでした', { type: 'warn' }); },
+        var b = this; if (!navigator.geolocation) return; b.disabled = true; b.textContent = '確かめています…';
+        navigator.geolocation.getCurrentPosition(function(p) { near = st.snear = { lat: p.coords.latitude, lng: p.coords.longitude }; b.textContent = '📍 近い順です'; show(); },
+          function() { b.disabled = false; b.textContent = '📍 近い順にする'; if (typeof showToast === 'function') showToast('今いる場所が分かりませんでした', { type: 'warn' }); },
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
       };
-      _tayoriShelterList(mode).then(function(list) { all = list; show(); }, function() { sl.innerHTML = '<div style="line-height:1.7;">いま一覧を読めません。住所か地図で選んでください。</div>'; });
+      _tayoriShelterList(mode).then(function(list) { all = list; st.msel = st.msel.filter(function(x) { return list.some(function(r) { return key(r) === key(x); }); }); show(); }, function() { sl.innerHTML = '<div style="line-height:1.7;">いま一覧を読めません。住所か地図で選んでください。</div>'; });
+    } else if (st.step === 'mstatus') {
+      var msts = (cat() && cat().states) || [];
+      if (!msts.length) { go('mconfirm'); return; }
+      frame('選んだ ' + st.msel.length + ' か所の、今の状況は？', 'まとめて同じ状況で知らせます。', '<div style="display:grid;gap:8px;">' + msts.map(function(s) { var t = KOYOMI_TAYORI_TONE[s.tone] || KOYOMI_TAYORI_TONE.ok;
+        return '<button type="button" data-wz-mst="' + _tayoriEsc(s.key) + '" style="min-height:56px;border:1.5px solid ' + t[1] + ';border-radius:14px;background:' + t[0] + ';color:' + t[1] + ';font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">' + _tayoriEsc(s.label) + '</button>'; }).join('') + '</div>');
+      [].forEach.call(box.querySelectorAll('[data-wz-mst]'), function(b) { b.onclick = function() { st.status = b.getAttribute('data-wz-mst'); go('mconfirm'); }; });
+    } else if (st.step === 'mconfirm') {
+      var mc = cat(), ms = _tayoriState(mc, st.status);
+      if (st.mnote == null) { var _n = new Date(); st.mnote = st.fromCity ? '市の発表より（' + _n.getHours() + '時' + String(_n.getMinutes()).padStart(2, '0') + '分に確認）' : ''; }
+      frame('この ' + st.msel.length + ' か所を知らせますか？', ms ? 'どれも「' + _tayoriEsc(ms.label) + '」として知らせます。' : '',
+        '<div style="max-height:34vh;overflow:auto;border:1px solid #eee3d0;border-radius:12px;background:#fff;">' + st.msel.map(function(r) { return '<div style="padding:9px 12px;border-bottom:1px solid #f1ece4;font-weight:600;color:#3b3226;">🏫 ' + _tayoriEsc(r.name) + '</div>'; }).join('') + '</div>' +
+        '<label style="display:block;font-size:0.9em;color:#8a7d6b;margin:12px 0 4px;">ひとこと（どれにも付きます。なくても大丈夫です）</label>' +
+        '<input data-wz-mnote type="text" maxlength="60" value="' + _tayoriEsc(st.mnote) + '" style="width:100%;box-sizing:border-box;min-height:50px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:1em;font-family:inherit;">',
+        'まとめて知らせる');
+      box.querySelector('[data-wz-next]').onclick = function() { st.mnote = box.querySelector('[data-wz-mnote]').value.trim().slice(0, 60); sendMany(this); };
+    } else if (st.step === 'mdone') {
+      var ok = st.mres.filter(function(x) { return x.ok; }), ng = st.mres.filter(function(x) { return !x.ok; });
+      box.innerHTML = '<div style="text-align:center;padding:16px 6px;"><div style="font-size:2.4em;">🙏</div><div style="font-size:1.15em;font-weight:700;color:#3b3226;margin-top:8px;line-height:1.6;">' + ok.length + ' か所を知らせました。<br>ありがとうございます。</div>' +
+        (ng.length ? '<div style="text-align:left;font-size:0.9em;color:#8a5a00;background:#fff3d6;border-radius:12px;padding:10px 12px;margin-top:12px;line-height:1.7;">知らせられなかったもの：' + _tayoriEsc(ng.map(function(x) { return x.name; }).join('、')) + '<br>' + _tayoriEsc(st.mwhy || '') + '</div>' : '') +
+        '<button type="button" data-wz-ok style="width:100%;min-height:56px;margin-top:16px;border:none;border-radius:14px;background:#3b3226;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">閉じる</button></div>';
+      box.querySelector('[data-wz-ok]').onclick = close;
     } else if (st.step === 'addr') {
       // v0.81.1: 【権威】2026-11-18「住所でも入れられるように」→ 国土地理院の住所検索で場所を出し、地図で確かめてから決める
       frame('住所や、施設の名前を入れてください', '例：益城町宮園、〇〇小学校', '<div style="display:flex;gap:6px;"><input data-wz-q type="search" maxlength="60" style="flex:1;min-width:0;min-height:54px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:1em;font-family:inherit;">' +
@@ -73152,6 +73225,25 @@ function _tayoriPostWizard(preCat) {
         '<button type="button" data-wz-ok style="width:100%;min-height:56px;margin-top:16px;border:none;border-radius:14px;background:#3b3226;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">閉じる</button></div>';
       box.querySelector('[data-wz-ok]').onclick = close;
     }
+  }
+  // v0.91.0: 選んだ避難所を1か所ずつ順に送る（同時に送らない）。荒らし対策で止められたら、そこでやめて、残りを知らせる
+  function sendMany(btn) {
+    btn.disabled = true; st.mres = []; st.mwhy = '';
+    var list = st.msel.slice(), i = 0;
+    var next = function() {
+      if (i >= list.length) { _tayoriLoad(true); go('mdone'); return; }
+      var r = list[i++]; btn.textContent = '送っています… ' + i + ' / ' + list.length;
+      var args = { p_category: st.cat, p_lat: r.lat, p_lng: r.lng, p_place: r.name.slice(0, 30), p_note: st.mnote || null };
+      if (st.status) args.p_status = st.status;
+      rpcWithTimeout('koyomiru_tayori_post', args, 12000).then(function(res) {
+        if (res && !res.error && res.data) { if (res.data.token) _tayoriSaveToken(res.data.id, res.data.token); st.mres.push({ name: r.name, ok: true }); next(); return; }
+        st.mwhy = _koyomiTayoriErrText(res && res.error);
+        st.mres.push({ name: r.name, ok: false });
+        if (/rate_limit|login/.test(String((res && res.error && res.error.message) || ''))) { list.slice(i).forEach(function(x) { st.mres.push({ name: x.name, ok: false }); }); i = list.length; }
+        next();
+      }, function() { st.mres.push({ name: r.name, ok: false }); st.mwhy = '通信がうまくいきませんでした。'; next(); });
+    };
+    next();
   }
   function send(btn) {
     if (!st.skipSame) {
@@ -73244,6 +73336,28 @@ function _tayoriShelterList(mode) {
     if (mode && mode.w != null) return all.filter(function(r) { return r.lat >= mode.s && r.lat <= mode.n && r.lng >= mode.w && r.lng <= mode.e; });
     return all;
   });
+}
+// v0.91.0: 市の発表の文と、国の避難所の名前を照らし合わせる（ひらがな・カタカナ、全角・半角、かっこや空白の違いはそろえる）
+//   ぴったり同じ名前があればそれ。なければ、名前を含むものが1つだけのときにそれ。いくつも当たるときは選ばない（手で選んでもらう）
+function _tayoriNameNorm(t) {
+  t = String(t || ''); try { t = t.normalize('NFKC'); } catch (e) {}
+  return t.replace(/[\u30a1-\u30f6]/g, function(ch) { return String.fromCharCode(ch.charCodeAt(0) - 0x60); }).replace(/[\s()（）［］\[\]「」『』【】〈〉《》<>・･]/g, '').toLowerCase();
+}
+function _tayoriShelterMatch(text, all) {
+  var src = String(text || '').slice(0, 2000), picked = [], miss = [], seen = {};
+  try { src = src.normalize('NFKC'); } catch (e) {}
+  var toks = src.split(/[、,，。\n\r\t 　／\/：:；;]+/).map(function(x) { return x.replace(/^[【\[（(]+|[】\]）)]+$/g, '').trim(); }).filter(Boolean);
+  var names = (all || []).map(function(r) { return _tayoriNameNorm(r.name); });
+  toks.forEach(function(tok) {
+    var n = _tayoriNameNorm(tok); if (n.length < 2 || seen[n]) return; seen[n] = 1;
+    var hit = -1, ex = names.indexOf(n);
+    if (ex !== -1) hit = ex;
+    else if (n.length >= 3) { var inc = []; names.forEach(function(nm, i) { if (nm.indexOf(n) !== -1 || (nm.length >= 3 && n.indexOf(nm) !== -1 && n.length - nm.length <= 4)) inc.push(i); }); if (inc.length === 1) hit = inc[0]; }
+    if (hit !== -1) { if (picked.indexOf(all[hit]) === -1) picked.push(all[hit]); return; }
+    // 施設らしい名前で、当たらなかったものだけを知らせる（「開設避難所」「7か所」のような見出しは出さない）
+    if (tok.length <= 16 && !/避難|か所|箇所|開設|発令|警戒|レベル|指示|最終更新|震度/.test(tok) && /(館|所|校|園|センター|ホール|会館|場|堂|庁舎|ドーム|プラザ|アリーナ|院|寺|神社|集会所)$/.test(tok)) miss.push(tok);
+  });
+  return { picked: picked, miss: miss };
 }
 function _tayoriShelterKinds(f) {
   var a = []; if (f & 1) a.push('避難所');
@@ -95780,6 +95894,12 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _tayoriShelterKinds(1) === '避難所' && _tayoriShelterKinds(1 | 2 | 16) === '避難所／緊急避難場所（洪水・地震）' && _tayoriShelterKinds(0) === '避難所' &&
          _tayoriDistText(240) === '240m' && _tayoriDistText(1260) === '1.3km' &&
          /function _outside\(\) \{ if \(SEA\) return false;/.test(_w649) && /は、ここです/.test(_w649) && /で進む/.test(_w649) && /bindTooltip/.test(_w649) && _tayoriGmapViewUrl({ lat: 32.2, lng: 130.4 }) === 'https://www.google.com/maps/search/?api=1&query=32.200000,130.400000' && _tayoriGmapViewUrl({ lat: 'x', lng: 1 }) === '';
+       // v0.91.0: 市の発表を貼って、まとめて選ぶ
+       var _all649 = [{ name: '水俣市役所' }, { name: '葛彩館' }, { name: 'おれんじ館' }, { name: '総合体育館（本館）' }, { name: '武道館' }, { name: '第一中学校武道館' }, { name: '愛林館' }];
+       var _m649 = _tayoriShelterMatch('【開設避難所　7か所】\n水俣市役所、葛彩館、オレンジ館、愛林館、もやい館、武道館、総合体育館（本館）\n※避難する際は、水や食料などを各自で持参', _all649);
+       _r649.multi = _m649.picked.length === 6 && _m649.picked.map(function(r) { return r.name; }).join() === '水俣市役所,葛彩館,おれんじ館,愛林館,武道館,総合体育館（本館）' &&
+         _m649.miss.join() === 'もやい館' && _tayoriShelterMatch('館', _all649).picked.length === 0 && _tayoriShelterMatch('武道', _all649).picked.length === 0 &&
+         /sendMany/.test(_w649) && /まとめて知らせる/.test(_w649) && /市の発表を貼って/.test(_w649) && /_cloudIsLoggedIn \? 10 : 5/.test(_w649) && /rate_limit\|login/.test(_w649);
        _koyomiTayori.cats = _bk649.cats; _koyomiTayori.rows = _bk649.rows;
        var _bad649 = Object.keys(_r649).filter(function(k) { return !_r649[k]; });
        !_bad649.length ? ok('ST-649: 生活情報のウィザード（使えるものを上・時間のある回は始まり順・終わった／古いものは下・今いる近くは近い順・一覧は2つのボタンだけ・知らせるは1問ずつ）')
