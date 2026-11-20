@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v1.1.8 ★ -->
+<!-- ★ CURRENT VERSION: v1.1.9 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v1.1.8';
+    const APP_VERSION = 'v1.1.9';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61176,6 +61176,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v1.1.9', date: '2026-11-20',
+    items: [
+      { icon:'🍃', t:'町全体が復旧したあとは、開いたときにいつもの季節の風だよりを出すようにしました',
+        before:'町全体が復旧したと知らされたあとも、開くたびに災害復旧掲示板へ案内していました',
+        after:'復旧の知らせのあとは、いつもどおり季節の風だよりを出します。掲示板は、ナビタブからいつでも開けます' }
+    ]
+  },
+  {
     ver: 'v1.1.8', date: '2026-11-20',
     items: [
       { icon:'📣', t:'知らせる画面の言葉を見直しました',
@@ -72543,6 +72551,7 @@ function _tayoriPhaseSet(mode, phase, url, btn, quiet) {
     if (res && !res.error && res.data) {
       var d = res.data, prev = mode.phase || '', prevUrl = mode.phase_url || '';
       mode.phase = d.phase || null; mode.phase_at = d.phase_at || null; mode.phase_url = d.phase_url || null;
+      try { _tayoriRememberRelated(); } catch (eRm) {}
       renderTayoriView();
       if (quiet || typeof showToast !== 'function') return;
       if (d.result === 'same') { showToast(phase && phase !== 'back' ? 'もう切り替わっています' : 'もう元に戻っています', { type: 'info' }); return; }
@@ -74617,13 +74626,15 @@ function _tayoriDrawMoon(box) {
 // 起動のとき：関わっている掲示板があれば、風だよりの代わりに案内を出す（覚えておくのは、名前と時刻だけ）
 function _tayoriRememberRelated() {
   var m = _tayoriMode();
-  if (m) _tayoriLSSet('tayoriLastRelated', { id: m.id, name: String(m.name || '').slice(0, 40), at: Date.now() });
+  if (m) _tayoriLSSet('tayoriLastRelated', { id: m.id, name: String(m.name || '').slice(0, 40), at: Date.now(), phase: m.phase || '' });   // v1.1.9: 段階も覚える
   else { try { localStorage.removeItem('tayoriLastRelated'); } catch (e) {} }
 }
 function koyomiSaigaiStartupInstead() {
   if (window._koyomiruEntryMode === 'saigai') return true;   // リンクから来た人には、もともと出さない
   var r = _tayoriLS('tayoriLastRelated', null);
   if (!r || !r.id || !(Date.now() - Number(r.at) < 72 * KOYOMI_TAYORI_H)) return false;
+  // v1.1.9: 【権威】2026-11-20「季節の風だよりが、復旧したのに掲示板に誘導しようとしてくる」→ 町全体が復旧した知らせのあとは、いつもの季節の風だよりに戻す
+  if (r.phase === 'recovered') return false;
   showChoiceModal({ title: '🆘 ' + _tayoriEsc(r.name) + 'の災害復旧掲示板', desc: '大変な中、おつかれさまです。水・食べもの・トイレ・開いているお店などを、町の人どうしで知らせ合っています。見かけたことがあれば、ひとことでも書いていただけると助かります。', buttons: [
     { label: '掲示板を開く', style: 'primary', onClick: function() { _tayoriLoadMeta().then(function() { if (_tayoriModeActive(r.id)) _tayoriOpenMode(r.id); else { try { switchView('tayori'); } catch (e) {} } }); } },
     { label: '🍃 季節の風だよりを読む', style: 'cancel', onClick: function() { if (typeof showKazedayoriModal === 'function') showKazedayoriModal(); } },
@@ -96810,6 +96821,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-664: 広めることを勧めていない', '');
      } catch(e) {
        ng('ST-664: 例外', e.message);
+     }
+
+     // ===== ST-665: 町全体が復旧したら、起動のときに掲示板へ誘わない（v1.1.9） =====
+     try {
+       var _ls665 = null; try { _ls665 = localStorage.getItem('tayoriLastRelated'); } catch (e) {}
+       var _ss665 = window.showChoiceModal, _shown665 = 0, _em665 = window._koyomiruEntryMode;
+       window.showChoiceModal = function() { _shown665++; }; window._koyomiruEntryMode = '';
+       var _r1, _r2;
+       try {
+         localStorage.setItem('tayoriLastRelated', JSON.stringify({ id: 'x', name: '水俣市', at: Date.now(), phase: 'recovered' })); _r1 = koyomiSaigaiStartupInstead();
+         localStorage.setItem('tayoriLastRelated', JSON.stringify({ id: 'x', name: '水俣市', at: Date.now(), phase: 'shelter_closed' })); _r2 = koyomiSaigaiStartupInstead();
+       } finally { window.showChoiceModal = _ss665; window._koyomiruEntryMode = _em665; try { if (_ls665 == null) localStorage.removeItem('tayoriLastRelated'); else localStorage.setItem('tayoriLastRelated', _ls665); } catch (e) {} }
+       (_r1 === false && _r2 === true && _shown665 === 1)
+         ? ok('ST-665: 町全体が復旧した知らせのあとは、起動のとき掲示板へ誘わず、季節の風だよりを出す')
+         : ng('ST-665: 復旧後も掲示板へ誘っている', [_r1, _r2, _shown665].join(','));
+     } catch(e) {
+       ng('ST-665: 例外', e.message);
      }
 
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
