@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.57 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.59 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.57';
+    const APP_VERSION = 'v0.99.59';
   const APP_LAST_UPDATED = '2026-11-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61207,6 +61207,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.59', date: '2026-11-21',
+    items: [
+      { icon:'🛠', t:'「更新を確認」で、何も出ずに終わることがあったのを直しました',
+        before:'サーバーの返事が遅い・うまく返らないとき、「確かめています」のあと何も出ませんでした',
+        after:'20秒で打ち切り、うまくいかなかったときは、その理由を知らせます' }
+    ]
+  },
+  {
+    ver: 'v0.99.58', date: '2026-11-21',
+    items: [
+      { icon:'🔎', t:'災害復旧掲示板で、町の病院や薬局などの「場所」も探せるようにしました',
+        before:'検索の欄で探せるのは、掲示板の書き込みだけでした',
+        after:'「病院」などと入れると、「この町で『病院』を探す」が出ます。「📍 地図に出す」で、その町の病院を地図に印で出し、一覧と道案内も出します。「🗺 Googleマップ」で、Googleマップの検索も開けます。ふだんの場所の一覧なので、開いているかは書き込みやその場所に確かめてください' }
+    ]
+  },
+  {
     ver: 'v0.99.57', date: '2026-11-21',
     items: [
       { icon:'🛠', t:'災害復旧掲示板の検索の欄で、日本語が打てなくなることがあったのを直しました',
@@ -67088,12 +67104,18 @@ function _checkForNewVersion(byHand) {
     if (window._verCheckedAt && now - window._verCheckedAt < _VER_CHECK_MIN_INTERVAL) return;
     window._verCheckedAt = now;
     if (window._isTesting || window._smokeTestRunning) return;
-    fetch('index.html?_v=' + now, { cache: 'no-store' })
-      .then(function(r) { return r.ok ? r.text() : null; })
+    // v0.99.59: 【不具合】2026-11-21「更新を押すと『新しい版を確かめています』が出たあと、静かに消えて何も出ない」
+    //   原因：サーバーが返事をしない・失敗を返す・中身が途中までのときに、何も言わずに終わっていた（押した以上、必ず返事をする＝第7条に反していた）
+    //   → 20秒で打ち切る。どの失敗でも、押したときは理由を短く知らせる
+    var _say = function(t) { if (byHand && typeof showToast === 'function') showToast(t, { type: 'warn' }); };
+    var _ac = (typeof AbortController === 'function') ? new AbortController() : null;
+    var _to = setTimeout(function() { try { if (_ac) _ac.abort(); } catch (e) {} }, 20000);
+    fetch('index.html?_v=' + now, _ac ? { cache: 'no-store', signal: _ac.signal } : { cache: 'no-store' })
+      .then(function(r) { clearTimeout(_to); if (!r.ok) { _say('⚠️ サーバーから正しい返事がありませんでした（' + r.status + '）。少し待ってから、もう一度お試しください'); return null; } return r.text(); })
       .then(function(html) {
         if (!html) return;
         var m = html.match(/APP_VERSION = '(v[0-9.]+)'/);
-        if (!m || !m[1]) return;
+        if (!m || !m[1]) { _say('⚠️ 新しい版を読み切れませんでした。少し待ってから、もう一度お試しください'); return; }
         // v0.48.0: 【権威】2026-09-25、文字列としての大小比較（<）をやめる。
         // "v0.47.9" と "v0.47.10" のように、桁数の違う数字を含む版どうしを
         // 文字だけで比べると、'1' < '9' の1文字目だけで負けて取り違える。
@@ -67125,6 +67147,7 @@ function _checkForNewVersion(byHand) {
         _showNewVersionBar(m[1], _forced, _newsTopFromHtml(html, m[1]));   // v0.55.9: 新しい版自身のお知らせを添える
       })
       .catch(function(e) {
+        clearTimeout(_to);
         console.warn('[版] 確認できませんでした:', e && e.message);
         if (byHand && typeof showToast === 'function') {
           showToast('⚠️ 確かめられませんでした。通信の具合かもしれません', {type:'warn'});
@@ -74183,6 +74206,89 @@ function _tayoriShowPosted(id) {
   setTimeout(step, 250);
 }
 window._tayoriShowPosted = _tayoriShowPosted;
+// v0.99.58: 【権威】2026-11-21 C「病院の掲示板を探すより、病院を探す。千代田区の病院はこれです、とずらっと出たら安心する。地図にバッと出て、Googleマップもそこを指す」
+//   → 検索したら、掲示板の書き込みの上に「この町で『病院』を探す」を出す。
+//     ①📍 こよみるの地図に出す：OpenStreetMap（みんなで作る地図）から、その町の範囲にある場所を印で出す（押したときだけ読む）
+//     ②🗺 Googleマップで探す：その町の名前と言葉で、Googleマップの検索を開く
+//     ふだんの場所の一覧なので、開いているかは書き込みやその場所に確かめて、と添える
+var KOYOMI_PLACE_TAGS = [
+  [/病院/, ['amenity=hospital']],
+  [/医院|クリニック|診療所/, ['amenity=clinic', 'amenity=doctors']],
+  [/薬局|ドラッグ|くすり|薬/, ['amenity=pharmacy', 'shop=chemist']],
+  [/コンビニ/, ['shop=convenience']],
+  [/スーパー/, ['shop=supermarket']],
+  [/ガソリン|給油|スタンド/, ['amenity=fuel']],
+  [/トイレ/, ['amenity=toilets']],
+  [/給水|水飲み|水道/, ['amenity=drinking_water', 'amenity=water_point']],
+  [/銭湯|風呂|入浴/, ['amenity=public_bath']],
+  [/コインランドリー|ランドリー/, ['shop=laundry']],
+  [/郵便/, ['amenity=post_office']],
+  [/銀行|ATM/i, ['amenity=bank', 'amenity=atm']],
+  [/交番|警察/, ['amenity=police']],
+  [/消防/, ['amenity=fire_station']],
+  [/役所|役場|区役所|市役所/, ['amenity=townhall']],
+  [/学校|小学校|中学校/, ['amenity=school']],
+  [/公園/, ['leisure=park']]
+];
+function _tayoriPlaceTown(mode) { var mn = (mode && mode.munis) || []; return mn.length === 1 && mn[0].name ? mn[0].name : String((mode && mode.name) || '').replace(/^\S+[都道府県]\s*/, ''); }
+function _tayoriPlaceBoxHtml(mode) {
+  var q = String(_koyomiTayori.q || '').trim(); if (!q || !mode || mode.closed) return '';
+  var town = _tayoriPlaceTown(mode), pf = String((mode && mode.name) || '').split(/\s+/)[0] || '';
+  var g = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent((pf && pf !== town ? pf + ' ' : '') + town + ' ' + q);
+  var st = _koyomiTayori.placeRes && _koyomiTayori.placeRes.key === mode.id + '|' + q ? _koyomiTayori.placeRes : null;
+  var bs = 'min-height:48px;padding:0 12px;border-radius:12px;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box;';
+  return '<div data-td-place style="margin:0 0 12px;padding:12px;border:1.5px solid #cfe0f2;border-radius:14px;background:#f5f9fd;">' +
+    '<div style="font-weight:700;color:#24496e;">🔎 ' + _tayoriEsc(town) + 'で「' + _tayoriEsc(q.slice(0, 20)) + '」を探す</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">' +
+      '<button type="button" data-td-placemap style="' + bs + 'border:1.5px solid #3b6ea5;background:#fff;color:#3b6ea5;">📍 地図に出す</button>' +
+      '<a data-td-placeg href="' + _tayoriEsc(g) + '" target="_blank" rel="noopener noreferrer" style="' + bs + 'border:none;background:#3b6ea5;color:#fff;">🗺 Googleマップ ↗</a></div>' +
+    (st ? '<div data-td-placeres style="margin-top:8px;font-size:0.9em;color:#24496e;line-height:1.7;">' + (st.err ? _tayoriEsc(st.err) : st.list.length ? _tayoriEsc(st.list.length + 'か所を、下の地図に出しました。') + '<div style="max-height:220px;overflow:auto;margin-top:4px;">' + st.list.slice(0, 30).map(function(x) { return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-top:1px solid #e1ebf5;"><span style="flex:1;min-width:0;overflow-wrap:anywhere;">' + _tayoriEsc(x.name) + '</span><a href="' + _tayoriEsc(_bosaiWalkUrl(null, x)) + '" target="_blank" rel="noopener noreferrer" style="white-space:nowrap;color:#1a5fb4;font-size:0.9em;">🧭 道案内</a></div>'; }).join('') + '</div>' : '見つかりませんでした。Googleマップで探してみてください。') + '</div>' : '') +
+    '<div style="font-size:0.78em;color:#6b7c8f;margin-top:8px;line-height:1.6;">ふだんの場所の一覧です。いま開いているかは、掲示板の書き込みや、その場所に確かめてください。こよみるの地図のデータ：© OpenStreetMap の協力者</div>' +
+  '</div>';
+}
+function _tayoriPlaceFind(mode, q) {
+  var key = mode.id + '|' + q, box = (mode.w != null) ? [mode.s, mode.w, mode.n, mode.e] : null;
+  if (!box && _koyomiTayori.map) { try { var b = _koyomiTayori.map.getBounds(); box = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]; } catch (e) {} }
+  if (!box) return Promise.resolve({ key: key, list: [], err: '町の範囲が分からないので、探せませんでした。Googleマップで探してみてください。' });
+  var bb = box.map(function(v) { return Number(v).toFixed(5); }).join(',');
+  var tags = []; KOYOMI_PLACE_TAGS.forEach(function(t) { if (t[0].test(q)) tags = tags.concat(t[1]); });
+  var nm = q.replace(/[^\p{L}\p{N}ー・ 　]/gu, '').trim().slice(0, 20);
+  var parts = tags.map(function(t) { var kv = t.split('='); return 'nwr["' + kv[0] + '"="' + kv[1] + '"](' + bb + ');'; });
+  if (nm) parts.push('nwr["name"~"' + nm + '"](' + bb + ');');
+  if (!parts.length) return Promise.resolve({ key: key, list: [], err: '探せる言葉ではありませんでした。Googleマップで探してみてください。' });
+  var ql = '[out:json][timeout:20];(' + parts.join('') + ');out center 200;';
+  return fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(ql), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, credentials: 'omit' })
+    .then(function(r) { if (!r.ok) throw new Error('http'); return r.json(); })
+    .then(function(d) {
+      var seen = {}, list = ((d && d.elements) || []).map(function(e) {
+        var t = e.tags || {}, lat = e.lat != null ? e.lat : (e.center && e.center.lat), lng = e.lon != null ? e.lon : (e.center && e.center.lon);
+        var name = String(t['name:ja'] || t.name || '').slice(0, 60);
+        if (!name || !isFinite(lat) || !isFinite(lng)) return null;
+        var k = name + '|' + Number(lat).toFixed(4); if (seen[k]) return null; seen[k] = 1;
+        return { name: name, lat: Number(lat), lng: Number(lng) };
+      }).filter(Boolean);
+      return { key: key, list: list };
+    })
+    .catch(function() { return { key: key, list: [], err: '地図のデータを読めませんでした。電波のよいところで、もう一度。Googleマップでも探せます。' }; });
+}
+function _tayoriPlaceShow(res) {
+  var go = function(n) {
+    var map = _koyomiTayori.map, L = window.L;
+    if (!map || !L) { if (n < 30) setTimeout(function() { go(n + 1); }, 300); return; }
+    if (_koyomiTayori.placeLayer) { try { _koyomiTayori.placeLayer.remove(); } catch (e) {} }
+    var lg = L.layerGroup(), pts = [];
+    (res.list || []).forEach(function(x) {
+      pts.push([x.lat, x.lng]);
+      L.circleMarker([x.lat, x.lng], { radius: 8, color: '#1a5fb4', weight: 2, fillColor: '#5b9bd5', fillOpacity: 0.85 })
+        .bindPopup('<div style="font-weight:700;">' + _tayoriEsc(x.name) + '</div><div style="font-size:0.85em;color:#666;margin:2px 0 6px;">ふだんの場所（開いているかは確かめてください）</div><a href="' + _tayoriEsc(_bosaiWalkUrl(null, x)) + '" target="_blank" rel="noopener noreferrer">🧭 Googleマップで道案内</a>')
+        .addTo(lg);
+    });
+    lg.addTo(map); _koyomiTayori.placeLayer = lg;
+    if (pts.length) { try { map.fitBounds(pts, { padding: [30, 30], maxZoom: 16 }); } catch (e) {} }
+    var mw = document.querySelector('[data-tayori-mapwrap]'); if (mw) { try { mw.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { mw.scrollIntoView(); } }
+  };
+  _tayoriInitMap(); go(0);
+}
 function _tayoriDisRows() {
   var d = _tdState(), q = String(_koyomiTayori.q || '').trim().toLowerCase(), fav = _tayoriFavs(), tok = _tayoriTokens();
   return (_koyomiTayori.rows || []).filter(function(r) {
@@ -74408,6 +74514,7 @@ function _tayoriRenderDisaster(host) {
   } else {
     // v0.90.1: 【権威】2026-11-19「例に"おにぎり"は間抜け。おにぎりを探す人はいない。避難所と水ならわかる」→ 例は、急ぐものから
     head = _tayoriGuideHtml() + '<input type="search" data-td-q value="' + _tayoriEsc(_koyomiTayori.q || '') + '" placeholder="🔍 さがす（例：避難所、水）" style="width:100%;box-sizing:border-box;min-height:56px;padding:0 14px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;font-size:1.02em;font-family:inherit;margin:4px 0 10px;">' +
+      _tayoriPlaceBoxHtml(mode) +   // v0.99.58: 書き込みだけでなく、その町の「場所」も探せる
       (_koyomiTayori.q || (_tayoriWide() && !_koyomiTayori.only) ? '' : '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">' + (function() { var qn = _tayoriQuickNow(), cn = _tayoriQuickCounts(qn); return qn.map(function(x) { return _tayoriBigBtn('data-td-quick="' + x.id + '"', x.emoji, x.label, '', cn[x.id]); }).join(''); })() + '</div>') +
       (_koyomiTayori.only ? '<div style="margin:0 0 8px;font-size:0.92em;color:#8a6d1e;">' + (_koyomiTayori.only === 'fav' ? '📌 覚えておいた場所だけを出しています' : '自分が書いたものだけを出しています') + '　<button type="button" data-td-only-off style="border:none;background:none;color:#3b6ea5;text-decoration:underline;cursor:pointer;font-size:1em;font-family:inherit;">すべてにもどす</button></div>' : '') +
       '<div style="font-size:1.05em;font-weight:700;color:#5a4e3c;margin:6px 2px 10px;">' + (_tayoriWide() && !_koyomiTayori.q && !_koyomiTayori.only ? '掲示板の書き込み（急ぐものから・それぞれ新しい順）' : '掲示板の書き込み（使えるもの・新しい順）') + '</div>';
@@ -74477,6 +74584,15 @@ function _tayoriRenderDisaster(host) {
     qi.addEventListener('compositionend', function() { qi._ime = false; _koyomiTayori.q = qi.value; _qGo(); });
     qi.oninput = function(e) { _koyomiTayori.q = qi.value; if (qi._ime || (e && e.isComposing)) return; _qGo(); };
   }
+  // v0.99.58: 町の「場所」を探す（押したときだけ、地図のデータを読む）
+  var pmb = box.querySelector('[data-td-placemap]');
+  if (pmb) pmb.onclick = function() {
+    var m0 = _tayoriMode(), q0 = String(_koyomiTayori.q || '').trim(); if (!m0 || !q0) return;
+    var cached = _koyomiTayori.placeRes && _koyomiTayori.placeRes.key === m0.id + '|' + q0 ? _koyomiTayori.placeRes : null;
+    if (cached) { _tayoriPlaceShow(cached); return; }
+    pmb.disabled = true; pmb.textContent = '探しています…';
+    _tayoriPlaceFind(m0, q0).then(function(res) { _koyomiTayori.placeRes = res; _tayoriRenderDisaster(host); if (res.list.length) _tayoriPlaceShow(res); });
+  };
   [].forEach.call(box.querySelectorAll('[data-td-quick]'), function(b) { b.onclick = function() {
     var x = KOYOMI_TAYORI_QUICK.filter(function(y) { return y.id === b.getAttribute('data-td-quick'); })[0];
     if (!x.keys) { d.stage = 'other'; } else { d.keys = x.keys; d.label = x.emoji + ' ' + x.label; d.stage = 'area'; }
@@ -98152,6 +98268,40 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-683: 変換中に検索の欄を作り直している', '');
      } catch(e) {
        ng('ST-683: 例外', e.message);
+     }
+
+     // ===== ST-684: 町の「場所」も探せる（v0.99.58） =====
+     // 【権威】2026-11-21 C「病院の掲示板を探すより、病院を探す。千代田区の病院はこれです、とずらっと出たら安心する。地図にバッと出て、Googleマップもそこを指す」
+     try {
+       var _r684 = {}, _sq684 = _koyomiTayori.q;
+       try {
+         _koyomiTayori.q = '病院';
+         var _h684 = _tayoriPlaceBoxHtml({ id: 'p', name: '東京都 千代田区', munis: [{ name: '千代田区', code: '13101' }], w: 139.73, s: 35.67, e: 139.78, n: 35.70 });
+         _r684.box = /千代田区で「病院」を探す/.test(_h684) && /地図に出す/.test(_h684) && /Googleマップ ↗/.test(_h684) && /OpenStreetMap/.test(_h684) && /開いているかは/.test(_h684);
+         _r684.google = _h684.indexOf('https://www.google.com/maps/search/?api=1&amp;query=' + encodeURIComponent('東京都 千代田区 病院')) !== -1;
+         _koyomiTayori.q = '<img src=x>';
+         _r684.esc = !/<img/.test(_tayoriPlaceBoxHtml({ id: 'p', name: '東京都 千代田区', munis: [{ name: '千代田区' }] }));
+         _koyomiTayori.q = '';
+         _r684.empty = _tayoriPlaceBoxHtml({ id: 'p', name: 'x', munis: [] }) === '';
+         _r684.tags = KOYOMI_PLACE_TAGS.some(function(t) { return t[0].test('病院') && t[1].indexOf('amenity=hospital') !== -1; });
+         _r684.onPress = /data-td-placemap/.test(_tayoriRenderDisaster.toString()) && !/overpass/.test(_tayoriRenderDisaster.toString());
+       } finally { _koyomiTayori.q = _sq684; }
+       var _x684 = Object.keys(_r684).filter(function(k) { return !_r684[k]; });
+       !_x684.length
+         ? ok('ST-684: 検索すると「この町で○○を探す」（こよみるの地図に出す＝押したときだけ読む／Googleマップで探す）・ふだんの場所だと添える')
+         : ng('ST-684: 町の場所探しが違う', _x684.join(','));
+     } catch(e) {
+       ng('ST-684: 例外', e.message);
+     }
+
+     // ===== ST-685: 「更新を確認」は、どの失敗でも黙らない（v0.99.59） =====
+     try {
+       var _cv685 = _checkForNewVersion.toString();
+       (/AbortController/.test(_cv685) && /20000/.test(_cv685) && /正しい返事がありませんでした/.test(_cv685) && /読み切れませんでした/.test(_cv685) && !/if \(!m \|\| !m\[1\]\) return;/.test(_cv685))
+         ? ok('ST-685: 「更新を確認」は、返事がない・失敗・途中までのどれでも、押した人に理由を知らせる（20秒で打ち切る）')
+         : ng('ST-685: 更新の確認が黙って終わることがある', '');
+     } catch(e) {
+       ng('ST-685: 例外', e.message);
      }
 
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
