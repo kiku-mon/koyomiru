@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v1.4.5 ★ -->
+<!-- ★ CURRENT VERSION: v1.5.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v1.4.5';
+    const APP_VERSION = 'v1.5.0';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -42233,6 +42233,7 @@ window._repairCloudCalendarIds();
       'deviceNickname', 'loginCount', 'lastLoginAt', 'unifiedMigrationDone', 'lastActivityAt',
       'mig_travel_items_to_tasks_v1',
       'mig_pinned_matrix_default_v1', // v0.45.1399
+      'bosaiNote', // v1.5.0 マイ防災ノート（この端末の中だけ）
       // leveling3SetCheckBox_YYYY-MM-DD（日次チェック進捗）は動的キーのためプレフィックスで許容
     ]);
     window.KEY_WHITELIST = KEY_WHITELIST;
@@ -61178,6 +61179,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v1.5.0', date: '2026-11-20',
+    items: [
+      { icon:'📒', t:'「マイ防災ノート」を作りました',
+        before:'近くの避難場所を調べるには、市区町村のサイトや地図をそれぞれ開く必要がありました',
+        after:'家と職場（学校）を登録すると、近くの指定緊急避難場所を近い順に出します。洪水・地震・津波など、どの災害に使える場所かの印と、歩いた時間の目安、Googleマップの道案内つき。備蓄のチェックリストもあり、期限をカレンダーに入れられます。登録した場所は、この端末の中だけに置きます。緊急災害復旧モードのいちばん上と、季節の風だよりの「⋯」から開けます' }
+    ]
+  },
+  {
     ver: 'v1.4.5', date: '2026-11-20',
     items: [
       { icon:'🪟', t:'選ぶ窓が縦に長いときも、下まで押せるようにしました',
@@ -74929,7 +74938,8 @@ window.koyomiSaigaiStartupInstead = koyomiSaigaiStartupInstead;
 function openKoyomiSaigaiHub() {
   var show = function() {
     var ms = (_koyomiTayori.modes || []).filter(_tayoriVisibleMode);
-    var bs = [{ label: '🆘 自分の町の災害復旧掲示板を立ち上げる', style: 'primary', onClick: function() { _tayoriStartWizard(); } }];
+    // v1.5.0: 【権威】2026-11-20 C「マイ防災ノートの入口は、ここのいちばん上と、季節の風だよりの⋯」
+    var bs = [{ label: '📒 マイ防災ノート（近くの避難場所・備蓄）', style: 'cancel', onClick: openKoyomiBosaiNote }, { label: '🆘 自分の町の災害復旧掲示板を立ち上げる', style: 'primary', onClick: function() { _tayoriStartWizard(); } }];
     ms.slice(0, 6).forEach(function(m) { bs.push({ label: '📋 ' + _tayoriEsc(_tayoriModeLine(m)) + 'の掲示板を見る', style: 'cancel', onClick: function() { _tayoriOpenMode(m.id); } }); });
     // v1.2.2: 【権威】2026-11-20 A「記録としてずっと残す。全国の過去の掲示板の枠を作って、検索で探せたら」→ 入口に「過去の掲示板（記録）」を1つ
     bs.push({ label: '🗂 過去の掲示板（記録）', style: 'cancel', onClick: _tayoriArchiveShelf });
@@ -74942,6 +74952,180 @@ function openKoyomiSaigaiHub() {
   _tayoriLoadMeta().then(show, show);
 }
 window.openKoyomiSaigaiHub = openKoyomiSaigaiHub;
+// ===== v1.5.0: マイ防災ノート =====
+// 【権威】2026-11-20「緊急避難場所、全国版のやつ…マイ防災ノートみたいな感じで」→ 最高峰会議で B・C に決定：
+//   家と職場（学校）の近くの指定緊急避難場所を、国のデータ（国土地理院）から近い順に出す。災害の種類ごとの印・歩いた目安・Googleマップの道案内つき。
+//   備蓄のチェックリストと、期限をカレンダーに入れる仕組みも足す。
+//   場所は、この端末の中だけに置く（サーバーには送らない）。入口は、緊急災害復旧モードのいちばん上と、季節の風だよりの「⋯」。
+var KOYOMI_BOSAI_KEY = 'bosaiNote';
+var KOYOMI_BOSAI_STOCK = ['水（1人1日3リットル×3日分）', '食べ物（3日分）', '携帯トイレ', '懐中電灯と電池', 'モバイルバッテリー', 'ふだん飲んでいる薬', '救急セット', '現金（小銭も）', 'ラップ・ポリ袋', 'カセットコンロとボンベ'];
+function _bosaiLoad() {
+  var o = _tayoriLS(KOYOMI_BOSAI_KEY, null);
+  if (!o || typeof o !== 'object') o = {};
+  ['home', 'work'].forEach(function(k) { var p = o[k]; if (!p || !isFinite(p.lat) || !isFinite(p.lng)) o[k] = null; });
+  if (!Array.isArray(o.stock)) o.stock = KOYOMI_BOSAI_STOCK.map(function(n, i) { return { id: 's' + i, name: n, have: false, exp: '', tid: '' }; });
+  o.stock = o.stock.filter(function(s) { return s && typeof s.name === 'string'; }).slice(0, 60);
+  if (KOYOMI_SHELTER_HZ.indexOf(o.hz) === -1) o.hz = '';
+  return o;
+}
+function _bosaiSave(o) { _tayoriLSSet(KOYOMI_BOSAI_KEY, o); }
+function _bosaiDist(a, b) {
+  var R = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r;
+  var h = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+// 歩いた時間の目安：まっすぐの距離の1.3倍を、1分80メートルで歩くとして
+function _bosaiWalkMin(m) { return Math.max(1, Math.ceil(m * 1.3 / 80)); }
+function _bosaiDistText(m) { return m < 1000 ? Math.round(m / 10) * 10 + 'm' : (m / 1000).toFixed(1) + 'km'; }
+function _bosaiHzList(f) { var a = []; KOYOMI_SHELTER_HZ.forEach(function(n, i) { if (f & (1 << (i + 1))) a.push(n); }); return a; }
+function _bosaiWalkUrl(from, to) {
+  var u = _tayoriGmapUrl(to); if (!u) return '';
+  if (from && isFinite(from.lat) && isFinite(from.lng)) u += '&origin=' + Number(from.lat).toFixed(5) + ',' + Number(from.lng).toFixed(5);
+  return u + '&travelmode=walking';
+}
+// その地点の都道府県（2けた）。町を調べる仕組みを使い、だめなら住所の頭の県名から
+function _bosaiPrefAt(p) {
+  var byTitle = function() { var t = String((p && p.label) || ''); for (var i = 0; i < KOYOMI_TAYORI_PREFS.length; i++) if (t.indexOf(KOYOMI_TAYORI_PREFS[i]) === 0) return String(i + 1).padStart(2, '0'); return ''; };
+  if (p && /^\d{2}$/.test(p.pref || '')) return Promise.resolve(p.pref);
+  return rpcWithTimeout('koyomiru_tayori_muni_at', { p_lat: p.lat, p_lng: p.lng }, 10000).then(function(r) {
+    var x = r && !r.error && Array.isArray(r.data) && r.data[0];
+    return (x && /^\d{2}/.test(String(x.code || ''))) ? String(x.code).slice(0, 2) : byTitle();
+  }, byTitle);
+}
+function _bosaiNearest(p, hz, n) {
+  return _bosaiPrefAt(p).then(function(pc) {
+    if (!pc) throw new Error('pref');
+    p.pref = pc;
+    return _tayoriShelterFile(pc).then(function(rows) {
+      var hi = KOYOMI_SHELTER_HZ.indexOf(hz);
+      return rows.filter(function(r) { return hi === -1 ? (r.f > 1) : !!(r.f & (1 << (hi + 1))); })
+        .map(function(r) { return { r: r, d: _bosaiDist(p, r) }; })
+        .sort(function(a, b) { return a.d - b.d; }).slice(0, n || 5);
+    });
+  });
+}
+function openKoyomiBosaiNote() {
+  var old = document.getElementById('bosaiNote'); if (old) old.remove();
+  var note = _bosaiLoad();
+  var ov = document.createElement('div'); ov.id = 'bosaiNote';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
+  ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;max-width:560px;width:100%;max-height:92vh;max-height:92dvh;display:flex;flex-direction:column;box-sizing:border-box;color:#3b3226;' + KOYOMI_TAYORI_BIG + '">' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:16px 18px 8px;"><div style="flex:1;font-weight:700;font-size:1.15em;">📒 マイ防災ノート</div><button type="button" data-bn-x aria-label="閉じる" style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;color:#6b6155;">✕</button></div>' +
+    '<div data-bn-body style="overflow:auto;padding:0 18px 18px;min-height:0;flex:1;"></div></div>';
+  document.body.appendChild(ov);
+  var close = function() { try { ov.remove(); } catch (e) {} };
+  ov.onclick = function(e) { if (e.target === ov) close(); };
+  ov.querySelector('[data-bn-x]').onclick = close;
+  var body = ov.querySelector('[data-bn-body]');
+  var btnS = 'min-height:44px;padding:0 14px;border-radius:10px;font-size:0.95em;font-family:inherit;cursor:pointer;';
+  var place = function(k) {
+    var p = note[k], ttl = k === 'home' ? '🏠 家' : '🏢 職場・学校';
+    var h = '<div data-bn-place="' + k + '" style="margin-top:14px;padding:12px;border:1.5px solid #e8dfd0;border-radius:12px;background:#fff;">' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><b style="font-size:1.05em;">' + ttl + '</b>' +
+      (p ? '<span style="flex:1;min-width:0;color:#6b6155;font-size:0.88em;overflow-wrap:anywhere;">' + _tayoriEsc(p.label || '') + '</span><button type="button" data-bn-edit style="' + btnS + 'min-height:36px;border:1px solid #d9cfbf;background:#fff;color:#3b3226;">変える・消す</button>' : '') + '</div>';
+    if (!p) {
+      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><button type="button" data-bn-here style="' + btnS + 'border:none;background:#2e6b4f;color:#fff;">📍 今いる場所にする</button></div>' +
+        '<div style="display:flex;gap:6px;margin-top:8px;"><input type="search" data-bn-q placeholder="住所や施設の名前" maxlength="60" style="flex:1;min-width:0;min-height:44px;padding:0 10px;border:1.5px solid #d9cfbf;border-radius:10px;font-size:1em;font-family:inherit;box-sizing:border-box;"><button type="button" data-bn-find style="' + btnS + 'border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">🔍 探す</button></div><div data-bn-hits></div>';
+    } else h += '<div data-bn-list style="margin-top:6px;color:#8a7d6b;font-size:0.9em;">近くの緊急避難場所を探しています…</div>';
+    return h + '</div>';
+  };
+  var stockHtml = function() {
+    var have = note.stock.filter(function(s) { return s.have; }).length;
+    return '<div style="margin-top:22px;display:flex;align-items:baseline;gap:8px;"><b style="font-size:1.1em;">🧺 備蓄のチェックリスト</b><span style="color:#8a7d6b;font-size:0.88em;">' + have + ' / ' + note.stock.length + ' そろった</span></div>' +
+      '<div style="font-size:0.85em;color:#6b6155;margin-top:2px;line-height:1.6;">期限を入れると、その日をカレンダーに入れられます。</div>' +
+      note.stock.map(function(s) {
+        var inCal = !!(s.tid && (window.allTasks || (typeof allTasks !== 'undefined' ? allTasks : [])).some(function(t) { return t && t.id === s.tid && !t.deleted; }));
+        return '<div data-bn-item="' + _tayoriEsc(s.id) + '" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #f1ece4;">' +
+          '<label style="display:flex;align-items:center;gap:8px;flex:1 1 200px;min-width:0;cursor:pointer;"><input type="checkbox" data-bn-have' + (s.have ? ' checked' : '') + ' style="width:22px;height:22px;flex:none;"><span style="overflow-wrap:anywhere;' + (s.have ? 'color:#8a7d6b;' : '') + '">' + _tayoriEsc(s.name) + '</span></label>' +
+          '<span style="display:flex;align-items:center;gap:6px;"><span style="font-size:0.8em;color:#8a7d6b;">期限</span><input type="date" data-bn-exp value="' + _tayoriEsc(s.exp || '') + '" style="min-height:36px;border:1px solid #d9cfbf;border-radius:8px;padding:0 6px;font-family:inherit;">' +
+          (s.exp ? (inCal ? '<span style="font-size:0.8em;color:#2e6b4f;">📅 入っています</span>' : '<button type="button" data-bn-cal style="' + btnS + 'min-height:36px;padding:0 10px;border:1px solid #2e6b4f;background:#fff;color:#2e6b4f;font-size:0.85em;">📅 カレンダーに入れる</button>') : '') +
+          (/^u/.test(s.id) ? '<button type="button" data-bn-rm aria-label="この行を消す" style="min-width:36px;min-height:36px;border:none;background:none;color:#8a7d6b;cursor:pointer;">✕</button>' : '') + '</span></div>';
+      }).join('') +
+      '<div style="display:flex;gap:6px;margin-top:10px;"><input type="text" data-bn-new placeholder="ほかに備えるもの（例：ペットのごはん）" maxlength="40" style="flex:1;min-width:0;min-height:44px;padding:0 10px;border:1.5px solid #d9cfbf;border-radius:10px;font-size:1em;font-family:inherit;box-sizing:border-box;"><button type="button" data-bn-add style="' + btnS + 'border:none;background:#3b3226;color:#fff;">足す</button></div>';
+  };
+  var draw = function() {
+    body.innerHTML = '<div style="font-size:0.88em;color:#6b6155;line-height:1.7;">家と職場の近くの、国が決めた<b>指定緊急避難場所</b>を、近い順に出します。<br>登録した場所は、<b>この端末の中だけ</b>に置きます。サーバーには送りません。</div>' +
+      '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-size:0.9em;">どの災害に備える？</span><select data-bn-hz style="min-height:40px;border:1.5px solid #d9cfbf;border-radius:10px;padding:0 8px;font-size:0.95em;font-family:inherit;background:#fff;"><option value="">どれでも</option>' +
+      KOYOMI_SHELTER_HZ.map(function(n) { return '<option value="' + _tayoriEsc(n) + '"' + (note.hz === n ? ' selected' : '') + '>' + _tayoriEsc(n) + '</option>'; }).join('') + '</select></div>' +
+      place('home') + place('work') + stockHtml() +
+      '<div style="margin-top:16px;font-size:0.78em;color:#8a7d6b;line-height:1.6;">避難場所は、国土地理院「指定緊急避難場所・指定避難所データ」より。歩いた時間は、まっすぐの距離から出した目安です。実際の道や、その日の状況は、市区町村の発表で確かめてください。</div>';
+    wire();
+  };
+  var listOf = function(k, el) {
+    var p = note[k];
+    _bosaiNearest(p, note.hz, 5).then(function(hits) {
+      _bosaiSave(note);
+      if (!el.isConnected) return;
+      if (!hits.length) { el.innerHTML = '近くに見つかりませんでした。'; return; }
+      el.innerHTML = hits.map(function(x) {
+        var r = x.r, hz = _bosaiHzList(r.f), url = _bosaiWalkUrl(p, r);
+        return '<div style="padding:8px 0;border-top:1px solid #f1ece4;color:#3b3226;">' +
+          '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;"><b style="flex:1;min-width:0;overflow-wrap:anywhere;">' + _tayoriEsc(r.name) + '</b><span style="font-size:0.85em;color:#6b6155;white-space:nowrap;">歩いて約' + _bosaiWalkMin(x.d) + '分（' + _bosaiDistText(x.d) + '）</span></div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;align-items:center;">' + hz.map(function(n) { return '<span style="font-size:0.75em;padding:1px 8px;border-radius:999px;background:' + (n === note.hz ? '#2e6b4f;color:#fff' : '#eef3ee;color:#2e6b4f') + ';">' + _tayoriEsc(n) + '</span>'; }).join('') +
+          ((r.f & 1) ? '<span style="font-size:0.75em;padding:1px 8px;border-radius:999px;background:#f3ede3;color:#6b6155;">指定避難所も</span>' : '') +
+          (url ? '<a href="' + _tayoriEsc(url) + '" target="_blank" rel="noopener noreferrer" style="margin-left:auto;font-size:0.85em;color:#1a5fb4;">🧭 道を見る</a>' : '') + '</div></div>';
+      }).join('');
+    }).catch(function() { if (el.isConnected) el.innerHTML = '避難場所を読み込めませんでした。電波のよいところで、もう一度開いてください。'; });
+  };
+  var setPlace = function(k, p) { note[k] = { lat: Number(p.lat), lng: Number(p.lng), label: String(p.label || '').slice(0, 60) }; _bosaiSave(note); draw(); };
+  var wire = function() {
+    body.querySelector('[data-bn-hz]').onchange = function() { note.hz = this.value; _bosaiSave(note); draw(); };
+    [].forEach.call(body.querySelectorAll('[data-bn-place]'), function(box) {
+      var k = box.getAttribute('data-bn-place'), el;
+      if ((el = box.querySelector('[data-bn-list]'))) listOf(k, el);
+      if ((el = box.querySelector('[data-bn-edit]'))) el.onclick = function() { note[k] = null; _bosaiSave(note); draw(); };
+      if ((el = box.querySelector('[data-bn-here]'))) el.onclick = function() {
+        var b = this; b.disabled = true; b.textContent = '今いる場所を確かめています…';
+        var fail = function() { b.disabled = false; b.textContent = '📍 今いる場所にする'; if (typeof showToast === 'function') showToast('今いる場所が分かりませんでした。住所で探してください', { type: 'warn' }); };
+        if (!navigator.geolocation) { fail(); return; }
+        navigator.geolocation.getCurrentPosition(function(pos) { setPlace(k, { lat: pos.coords.latitude, lng: pos.coords.longitude, label: '登録したときにいた場所' }); }, fail, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+      };
+      var q = box.querySelector('[data-bn-q]'), hits = box.querySelector('[data-bn-hits]');
+      if (q) {
+        var find = function() {
+          var v = String(q.value || '').trim(); if (!v) return;
+          hits.innerHTML = '<div style="padding:8px 2px;color:#8a7d6b;font-size:0.9em;">探しています…</div>';
+          _tayoriAddressSearch(v).then(function(ls) {
+            ls = ls.slice(0, 6);
+            hits.innerHTML = ls.length ? ls.map(function(x, i) { return '<button type="button" data-bn-hit="' + i + '" style="display:block;width:100%;text-align:left;min-height:44px;padding:8px 6px;border:none;border-bottom:1px solid #f1ece4;background:none;cursor:pointer;font-family:inherit;font-size:0.95em;color:#3b3226;">📍 ' + _tayoriEsc(x.title) + '</button>'; }).join('') : '<div style="padding:8px 2px;color:#8a7d6b;font-size:0.9em;">見つかりませんでした。町名から書いてみてください。</div>';
+            [].forEach.call(hits.querySelectorAll('[data-bn-hit]'), function(hb) { hb.onclick = function() { var x = ls[+hb.getAttribute('data-bn-hit')]; setPlace(k, { lat: x.lat, lng: x.lng, label: x.title }); }; });
+          }, function() { hits.innerHTML = '<div style="padding:8px 2px;color:#8a7d6b;font-size:0.9em;">探せませんでした。電波のよいところで、もう一度。</div>'; });
+        };
+        box.querySelector('[data-bn-find]').onclick = find;
+        q.onkeydown = function(e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); find(); } };
+      }
+    });
+    [].forEach.call(body.querySelectorAll('[data-bn-item]'), function(row) {
+      var id = row.getAttribute('data-bn-item'), s = note.stock.filter(function(x) { return x.id === id; })[0]; if (!s) return;
+      row.querySelector('[data-bn-have]').onchange = function() { s.have = this.checked; _bosaiSave(note); draw(); };
+      row.querySelector('[data-bn-exp]').onchange = function() { s.exp = /^\d{4}-\d{2}-\d{2}$/.test(this.value) ? this.value : ''; s.tid = ''; _bosaiSave(note); draw(); };
+      var cb = row.querySelector('[data-bn-cal]'); if (cb) cb.onclick = function() { _bosaiToCal(s, note); draw(); };
+      var rm = row.querySelector('[data-bn-rm]'); if (rm) rm.onclick = function() { note.stock = note.stock.filter(function(x) { return x !== s; }); _bosaiSave(note); draw(); };
+    });
+    var nw = body.querySelector('[data-bn-new]'), add = function() {
+      var v = String(nw.value || '').trim().slice(0, 40); if (!v || note.stock.length >= 60) return;
+      note.stock.push({ id: 'u' + Date.now().toString(36), name: v, have: false, exp: '', tid: '' }); _bosaiSave(note); draw();
+    };
+    body.querySelector('[data-bn-add]').onclick = add;
+    nw.onkeydown = function(e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); add(); } };
+  };
+  draw();
+}
+// 備蓄の期限を、カレンダーの予定にする（自分のカレンダーに。同じ品の予定は2つ作らない）
+function _bosaiToCal(s, note) {
+  try {
+    if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s.exp || '')) return null;
+    var task = createTask({ text: '🧺 備蓄の期限：' + String(s.name).slice(0, 40), date: s.exp, displayScope: 'both', calendarId: (typeof getMainCalendarId === 'function' ? getMainCalendarId() : null), memo: 'マイ防災ノート' });
+    if (!task) return null;
+    s.tid = task.id; _bosaiSave(note);
+    if (typeof saveAllTasks === 'function') saveAllTasks();
+    if (typeof renderMonthlyView === 'function') try { renderMonthlyView(); } catch (e) {}
+    if (typeof showToast === 'function') showToast('📅 ' + s.exp.replace(/^(\d{4})-0?(\d+)-0?(\d+)$/, '$2月$3日') + 'に入れました', { type: 'info' });
+    return task;
+  } catch (e) { return null; }
+}
+window.openKoyomiBosaiNote = openKoyomiBosaiNote;
+// ===== END v1.5.0 =====
 // 共有リンク（?saigai=…）から来たとき：そのモードを開き、見守るに入れる
 function _tayoriTakeLink() {
   var slug = '';
@@ -75402,6 +75586,7 @@ function _tayoriSeasonMenu() {
   if (munis.length) bs.push({ label: '📍 地域で絞る', style: 'cancel', onClick: function() {
     showChoiceModal({ title: '地域で絞る', desc: '', buttons: munis.sort().slice(0, 30).map(function(n) { return { label: _tayoriEsc(n), style: 'cancel', onClick: function() { _koyomiTayori.muni = n; renderTayoriView(); _tayoriDraw(); } }; }).concat([{ label: '閉じる', style: 'cancel' }]) });
   } });
+  bs.push({ label: '📒 マイ防災ノート（近くの避難場所・備蓄）', style: 'cancel', onClick: openKoyomiBosaiNote });
   bs.push({ label: '🆘 災害のとき：町の掲示板を立ち上げる', style: 'cancel', onClick: _tayoriStartWizard });
   bs.push({ label: '💬 ご意見・ご要望を送る', style: 'cancel', onClick: function() { _tayoriFeedback(false); } });
   bs.push({ label: 'ℹ️ この掲示板について', style: 'cancel', onClick: _tayoriAbout });
@@ -97285,6 +97470,39 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-669: テストとして試すが違う', _x669.slice(0, 40));
      } catch(e) {
        ng('ST-669: 例外', e.message);
+     }
+
+     // ===== ST-670: マイ防災ノート（v1.5.0） =====
+     // 【権威】2026-11-20 B・C「家と職場の近くの緊急避難場所・災害の種類の印・歩いた目安・道案内、備蓄と期限をカレンダーへ。場所は端末の中だけ」
+     try {
+       var _r670 = {};
+       var _sv670 = localStorage.getItem('bosaiNote');
+       try {
+         localStorage.removeItem('bosaiNote');
+         var _n670 = _bosaiLoad();
+         _r670.def = _n670.home === null && _n670.work === null && _n670.stock.length === KOYOMI_BOSAI_STOCK.length && _n670.hz === '';
+         _r670.hz = _bosaiHzList(1 | 2 | 16).join(',') === '洪水,地震' && _bosaiHzList(1).length === 0;
+         var _d670 = _bosaiDist({ lat: 35.6, lng: 140.1 }, { lat: 35.609, lng: 140.1 });
+         _r670.dist = _d670 > 990 && _d670 < 1010 && _bosaiWalkMin(_d670) === 17 && _bosaiDistText(_d670) === '1.0km' && _bosaiDistText(234) === '230m';
+         var _u670 = _bosaiWalkUrl({ lat: 35.6, lng: 140.1 }, { lat: 35.61, lng: 140.11 });
+         _r670.url = /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&destination=35\.61000,140\.11000&origin=35\.60000,140\.10000&travelmode=walking$/.test(_u670) && _bosaiWalkUrl(null, { lat: 'x' }) === '';
+         _bosaiSave({ home: { lat: 'bad' }, stock: [{ name: '<img src=x onerror=1>', id: 'u1' }], hz: '核' });
+         var _b670 = _bosaiLoad();
+         _r670.sanitize = _b670.home === null && _b670.hz === '' && _b670.stock.length === 1;
+         openKoyomiBosaiNote();
+         var _ov670 = document.getElementById('bosaiNote'), _t670 = _ov670 ? _ov670.textContent : '';
+         _r670.dom = !!_ov670 && /この端末の中だけ/.test(_t670) && /サーバーには送りません/.test(_t670) && /🏠 家/.test(_t670) && /職場・学校/.test(_t670) && /備蓄のチェックリスト/.test(_t670) && /国土地理院/.test(_t670) && !_ov670.querySelector('img') && !!_ov670.querySelector('[data-bn-here]') && !!_ov670.querySelector('[data-bn-hz]');
+         if (_ov670) _ov670.remove();
+         _r670.entry = /openKoyomiBosaiNote/.test(openKoyomiSaigaiHub.toString()) && /openKoyomiBosaiNote/.test(_tayoriSeasonMenu.toString()) && window.KEY_WHITELIST.has('bosaiNote');
+         _r670.noServer = !/rpcWithTimeout\('koyomiru_(?!tayori_muni_at)/.test(_bosaiPrefAt.toString() + openKoyomiBosaiNote.toString() + _bosaiNearest.toString());
+         _r670.cal = /createTask\(/.test(_bosaiToCal.toString()) && /saveAllTasks/.test(_bosaiToCal.toString()) && /data-bn-cal/.test(openKoyomiBosaiNote.toString());
+       } finally { if (_sv670 == null) localStorage.removeItem('bosaiNote'); else localStorage.setItem('bosaiNote', _sv670); }
+       var _x670 = Object.keys(_r670).filter(function(k) { return !_r670[k]; });
+       !_x670.length
+         ? ok('ST-670: マイ防災ノート（近い緊急避難場所・災害の印・歩いた目安・道案内・備蓄の期限をカレンダーへ・場所は端末の中だけ）')
+         : ng('ST-670: マイ防災ノートが違う', _x670.join(','));
+     } catch(e) {
+       ng('ST-670: 例外', e.message);
      }
 
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
