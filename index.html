@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.96.2 ★ -->
+<!-- ★ CURRENT VERSION: v0.97.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.96.2';
+    const APP_VERSION = 'v0.97.0';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61176,6 +61176,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.97.0', date: '2026-11-20',
+    items: [
+      { icon:'🆘', t:'「今もある」「今はない」を、押したらすぐ分かるように・まちがえても戻せるようにしました',
+        before:'押しても何も出ないことがあり、まちがえて押すと戻せませんでした。「今はない」を押すと、「今もある」の数まで増えていました。ログインしていないと、同じ情報は30分に1回しか押せませんでした',
+        after:'押すと「送っています…」と出て、終わるとひとこと出ます。「取り消す」で戻せます。「今もある」は30分以内にもう一度押しても取り消せます。終わった情報に「今もある」を押すと、はじめの状況に戻ります。「今はない」で数は増えません。ログインしていなくても続けて押せます（1時間に30回まで）' }
+    ]
+  },
+  {
     ver: 'v0.96.2', date: '2026-11-20',
     items: [
       { icon:'🧹', t:'開いた一瞬、左上に「緊急かつ重要」などの文字が出るのを直しました',
@@ -72492,17 +72500,38 @@ function _tayoriNeedLogin(r) {
   try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {}
   return true;
 }
-function _tayoriSendConfirm(r, status, btn) {
+// v0.97.0: 【権威】2026-11-20「押したら何か反応しろ」「まちがって押しても1回になるのはどうか。今は気軽さを優先」との指示。
+//   押した瞬間に「送っています…」、終わったら必ずひとこと。今もあるは30分以内にもう一度押すと取り消し、今はないは［取り消す］で戻せる。
+//   今はないを押しても、今もあるの数は増やさない（サーバーで）。終わったカードで今もある→はじめの状況に戻る（サーバーで）
+function _tayoriStLabel(r, key) { var c = koyomiTayoriCat(r.category), a = (c && c.states) || []; for (var i = 0; i < a.length; i++) if (a[i].key === key) return a[i].label; return ''; }
+function _tayoriSendConfirm(r, status, btn, quiet) {
   if (_tayoriNeedLogin(r)) return;
-  if (btn) btn.disabled = true;
+  var old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.55'; btn.textContent = '送っています…'; }
+  var restore = function() { if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.innerHTML = old; } };
+  var toast = function(msg, type, undo) { if (typeof showToast === 'function') showToast(msg, undo ? { type: type || 'ok', duration: 10000, action: { label: '取り消す', fn: undo } } : { type: type || 'ok' }); };
   var args = { p_id: r.id }; if (status) args.p_status = status;
-  rpcWithTimeout('koyomiru_tayori_confirm', args, 10000).then(function(res) {
+  return rpcWithTimeout('koyomiru_tayori_confirm', args, 10000).then(function(res) {
     if (res && !res.error && res.data) {
-      r.confirm_count = res.data.count; r.confirmed_at = res.data.confirmed_at; if (res.data.status !== undefined) r.status = res.data.status; r.confirmed_by_me = true;
-      if (typeof showToast === 'function') showToast(res.data.again ? 'さきほどの分は届いています' : (status ? '状況を知らせました。ありがとうございます' : '確かめました。ありがとうございます'), { type: 'ok' });
+      var d = res.data, prev = d.prev !== undefined ? d.prev : r.status;
+      r.confirm_count = d.count; r.confirmed_at = d.confirmed_at; if (d.status !== undefined) r.status = d.status;
+      if (!status) r.confirmed_by_me = d.result !== 'off';
       try { if (_koyomiTayori.map) _koyomiTayori.map.closePopup(); } catch (e) {}
       _tayoriDraw();
-    } else { if (btn) btn.disabled = false; if (typeof showToast === 'function') showToast(_koyomiTayoriErrText(res && res.error), { type: 'warn' }); }
+      if (quiet) return;
+      var dis = ((koyomiTayoriCat(r.category) || {}).kind === 'disaster');
+      if (d.result === 'same') toast(_tayoriStLabel(r, status) ? 'もう「' + _tayoriStLabel(r, status) + '」になっています' : 'もうその状況になっています', 'info');
+      else if (d.result === 'off') toast('取り消しました', 'info');
+      else if (status) toast(_tayoriStLabel(r, status) ? '「' + _tayoriStLabel(r, status) + '」にしました' : '状況を知らせました', 'ok', prev && prev !== status ? function() { _tayoriSendConfirm(r, prev, null, true); toast('取り消しました', 'info'); } : null);
+      else if (d.reopened) toast(_tayoriStLabel(r, d.status) ? '「' + _tayoriStLabel(r, d.status) + '」に戻しました' : 'はじめの状況に戻しました', 'ok', function() { var pr = _tayoriSendConfirm(r, null, null, true); if (pr && pr.then) pr.then(function() { _tayoriSendConfirm(r, prev, null, true); }); toast('取り消しました', 'info'); });
+      else toast(dis ? '今もある、と知らせました' : '今も見られる、と知らせました', 'ok', function() { _tayoriSendConfirm(r, null, null, true); toast('取り消しました', 'info'); });
+    } else {
+      restore();
+      var m = String((res && res.error && res.error.message) || (res && res.error) || '');
+      if (/rate_limit/.test(m)) toast('続けて押せるのは1時間に30回までです（いたずら防止のため）。少し待ってから押してください', 'warn');
+      else if (!res || /timeout|時間切れ|クラウド|Failed to fetch|NetworkError|network/i.test(m) || !m) toast('送れませんでした。電波のよいところで、もう一度押してください', 'warn');
+      else toast(_koyomiTayoriErrText(res && res.error), 'warn');
+    }
   });
 }
 function _tayoriWirePopup(el, r) {
@@ -96035,6 +96064,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        !_bad634.length ? ok('ST-634: 繰り返しの予定を消すときは「この日だけ／この日より後も／全部」から選べる（件数つき）。繰り返しでない予定はいつもどおり。見出しの予定名は無害にして出す')
          : ng('ST-634: 繰り返しの消し方が違う', _bad634.join(','));
      } catch (e) { try { allTasks = _bk634; window.saveAllTasks = _sv634; saveAllTasks = _sv634; window._propagateDeletion = _pd634; _propagateDeletion = _pd634; } catch (e2) {} ng('ST-634: 例外', e.message); }
+     // ===== ST-655: 今もある・今はないは、押したら必ず反応・取り消せる（v0.97.0） =====
+     // 【権威】2026-11-20「ボタンをクリックしたら、何か反応しろよ」「今は気軽に使ってもらう方を優先」
+     try {
+       var _src655 = String(_tayoriSendConfirm), _rw655 = window.rpcWithTimeout, _nl655 = window._cloudIsLoggedIn, _b655 = document.createElement('button');
+       _b655.innerHTML = '✕ 今はない';
+       window._cloudIsLoggedIn = true;
+       window.rpcWithTimeout = function() { return new Promise(function() {}); };
+       try { _tayoriSendConfirm({ id: 'z655', category: 'shelter' }, 'closed', _b655); } finally { window.rpcWithTimeout = _rw655; window._cloudIsLoggedIn = _nl655; }
+       (_b655.textContent === '送っています…' && _b655.disabled === true &&
+        /取り消す/.test(_src655) && /取り消しました/.test(_src655) && /いたずら防止/.test(_src655) && /1時間に30回/.test(_src655) &&
+        /電波のよいところで/.test(_src655) && /もう「/.test(_src655) && /reopened/.test(_src655))
+         ? ok('ST-655: 今もある・今はないは、押した瞬間に「送っています…」、終わったら必ずひとこと（取り消す・もうなっている・いたずら防止の上限・電波）')
+         : ng('ST-655: 今もある・今はないの反応が足りない', _b655.textContent);
+     } catch(e) {
+       ng('ST-655: 例外', e.message);
+     }
+
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
      try {
        var _r654 = {};
