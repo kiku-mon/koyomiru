@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v1.2.1 ★ -->
+<!-- ★ CURRENT VERSION: v1.2.2 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v1.2.1';
+    const APP_VERSION = 'v1.2.2';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61176,6 +61176,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v1.2.2', date: '2026-11-20',
+    items: [
+      { icon:'🗂', t:'「過去の掲示板（記録）」を作りました',
+        before:'閉じた災害復旧掲示板は、30日たつと見られなくなる作りでした',
+        after:'閉じた掲示板は、ずっと記録として残します。緊急災害復旧モードの入口（アカウントのメニュー・設定）の「🗂 過去の掲示板（記録）」から、町の名前や年月で探して見られます' }
+    ]
+  },
+  {
     ver: 'v1.2.1', date: '2026-11-20',
     items: [
       { icon:'🗂', t:'閉じた掲示板の記録で、古い書き込みも見られるようにしました',
@@ -72442,6 +72450,35 @@ function _tayoriLoadClosed() {
     return _koyomiTayori.closedModes;
   });
 }
+// v1.2.2: 過去の掲示板（記録）の棚。町の名前・年月で探せる。閉じた掲示板はずっと見られる
+function _tayoriArchiveShelf() {
+  var old = document.getElementById('tayoriShelf'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'tayoriShelf';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
+  ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;max-width:520px;width:100%;max-height:88vh;display:flex;flex-direction:column;padding:18px;box-sizing:border-box;' + KOYOMI_TAYORI_BIG + '">' +
+    '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;font-weight:700;font-size:1.1em;color:#3b3226;">🗂 過去の掲示板（記録）</div><button type="button" data-shelf-x aria-label="閉じる" style="width:40px;height:40px;border:none;background:none;font-size:1.2em;cursor:pointer;color:#8a7d6b;">✕</button></div>' +
+    '<div style="font-size:0.85em;color:#6b6155;margin-top:4px;line-height:1.6;">閉じた災害復旧掲示板の記録です。書き込みはできませんが、ずっと見られます。</div>' +
+    '<input type="search" data-shelf-q placeholder="🔍 町の名前・年月で探す" style="width:100%;box-sizing:border-box;min-height:48px;margin-top:10px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;">' +
+    '<div data-shelf-list style="margin-top:8px;overflow:auto;min-height:0;flex:1;"><div style="padding:14px 4px;color:#8a7d6b;">読み込んでいます…</div></div></div>';
+  document.body.appendChild(ov);
+  var close = function() { try { ov.remove(); } catch (e) {} };
+  ov.onclick = function(e) { if (e.target === ov) close(); };
+  ov.querySelector('[data-shelf-x]').onclick = close;
+  var q = ov.querySelector('[data-shelf-q]'), list = ov.querySelector('[data-shelf-list]'), all = [];
+  var ym = function(t) { var d = new Date(t); return isNaN(d) ? '' : d.getFullYear() + '年' + (d.getMonth() + 1) + '月'; };
+  var draw = function() {
+    var w = String(q.value || '').trim().replace(/\s+/g, ' ').split(' ').filter(Boolean);
+    var hit = all.filter(function(m) { var hay = [m.name, (m.munis || []).map(function(x) { return x && x.name; }).join(' '), _tayoriHazardLabel(m.hazard) || '', ym(m.started_at), ym(m.closed_at)].join(' '); return w.every(function(k) { return hay.indexOf(k) !== -1; }); });
+    list.innerHTML = hit.length ? hit.map(function(m) {
+      return '<button type="button" data-shelf-open="' + _tayoriEsc(m.id) + '" style="display:block;width:100%;text-align:left;padding:10px 6px;border:none;border-bottom:1px solid #f1ece4;background:none;cursor:pointer;font-family:inherit;color:#2b2620;">' +
+        '<div style="font-weight:700;">' + _tayoriEsc(m.name) + (m.hazard && _tayoriHazardLabel(m.hazard) ? '（' + _tayoriEsc(_tayoriHazardLabel(m.hazard)) + '）' : '') + '</div>' +
+        '<div style="font-size:0.84em;color:#8a7d6b;margin-top:2px;">' + _tayoriEsc(_tayoriPhaseWhen(m.started_at).split(' ')[0]) + ' 立ち上げ → ' + _tayoriEsc(_tayoriPhaseWhen(m.closed_at).split(' ')[0]) + ' 閉じた　' + _tayoriEsc(ym(m.started_at)) + '</div></button>'; }).join('')
+      : '<div style="padding:14px 4px;color:#8a7d6b;">' + (all.length ? '見つかりませんでした。' : 'まだ過去の掲示板はありません。') + '</div>';
+    [].forEach.call(list.querySelectorAll('[data-shelf-open]'), function(b) { b.onclick = function() { var m = all.filter(function(x) { return String(x.id) === b.getAttribute('data-shelf-open'); })[0]; close(); _tayoriOpenArchive(m); }; });
+  };
+  q.oninput = draw;
+  _tayoriLoadClosed().then(function(r) { all = r || []; draw(); }, function() { list.innerHTML = '<div style="padding:14px 4px;color:#8a7d6b;">読み込めませんでした。電波のよいところで、もう一度開いてください。</div>'; });
+}
 function _tayoriOpenArchive(m) {
   if (!m) return;
   m.closed = true; _koyomiTayori.archive = m; _koyomiTayori.modeId = m.id; _koyomiTayori.tab = 'disaster'; _koyomiTayori.view = ''; _koyomiTayori.rows = [];
@@ -72456,14 +72493,14 @@ function _tayoriCloseArchive() {
   try { switchView('tayori'); } catch (e) {}
 }
 function _tayoriCloseBoard(m) {
-  showChoiceModal({ title: 'この掲示板を閉じますか？', desc: _tayoriEsc(m.name) + 'の災害復旧掲示板を閉じます。<br>閉じたあとは書き込めなくなりますが、30日のあいだ「記録」として見られます。', dangerConfirm: false, buttons: [
+  showChoiceModal({ title: 'この掲示板を閉じますか？', desc: _tayoriEsc(m.name) + 'の災害復旧掲示板を閉じます。<br>閉じたあとは書き込めなくなりますが、「過去の掲示板（記録）」からずっと見られます。', dangerConfirm: false, buttons: [
     { label: '🔒 閉じる', style: 'danger', onClick: function() {
       rpcWithTimeout('koyomiru_tayori_mode_close', { p_mode: m.id }, 10000).then(function(r) {
         if (r && !r.error && r.data) {
           try { _tayoriSetFollow(m.id, false); } catch (e) {}
           try { localStorage.removeItem('tayoriLastRelated'); } catch (e) {}
           _koyomiTayori.modeId = null;
-          if (typeof showToast === 'function') showToast('掲示板を閉じました。30日のあいだ、記録として見られます', { type: 'success' });
+          if (typeof showToast === 'function') showToast('掲示板を閉じました。「過去の掲示板（記録）」から見られます', { type: 'success' });
           _tayoriLoadMeta().then(function() { _tayoriSyncNav(); try { switchView('tayori'); } catch (e) {} });
         } else if (typeof showToast === 'function') showToast(/forbidden/.test(String((r && r.error && r.error.message) || '')) ? '閉じられるのは、この掲示板を立ち上げた人と作った本人だけです' : '閉じられませんでした。少し待ってからお試しください', { type: 'warn' });
       });
@@ -74724,12 +74761,13 @@ function openKoyomiSaigaiHub() {
     var ms = (_koyomiTayori.modes || []).filter(Boolean);
     var bs = [{ label: '🆘 自分の町の災害復旧掲示板を立ち上げる', style: 'primary', onClick: function() { _tayoriStartWizard(); } }];
     ms.slice(0, 6).forEach(function(m) { bs.push({ label: '📋 ' + _tayoriEsc(_tayoriModeLine(m)) + 'の掲示板を見る', style: 'cancel', onClick: function() { _tayoriOpenMode(m.id); } }); });
-    (_koyomiTayori.closedModes || []).slice(0, 4).forEach(function(m) { bs.push({ label: '🗂 ' + _tayoriEsc(m.name) + '（' + _tayoriEsc(_tayoriPhaseWhen(m.closed_at).split(' ')[0]) + ' に閉じた記録）', style: 'cancel', onClick: function() { _tayoriOpenArchive(m); } }); });
+    // v1.2.2: 【権威】2026-11-20 A「記録としてずっと残す。全国の過去の掲示板の枠を作って、検索で探せたら」→ 入口に「過去の掲示板（記録）」を1つ
+    bs.push({ label: '🗂 過去の掲示板（記録）', style: 'cancel', onClick: _tayoriArchiveShelf });
     if (ms.length > 6) bs.push({ label: 'ほかの地域も見る', style: 'cancel', onClick: function() { try { switchView('tayori'); } catch (e) {} _tayoriPickOtherMode(); } });
     bs.push({ label: '閉じる', style: 'cancel' });
     showChoiceModal({ title: '🆘 緊急災害復旧モード', desc: '大きな災害が起きたとき、だれでも、自分の市区町村の「災害復旧掲示板」を立ち上げられます。水が出る場所・炊き出し・開いているお店などを、町の人どうしで知らせ合えます。使い方は自由帳の「🆘 緊急災害復旧モードの使い方」にあります。' + (ms.length ? '' : '<br>いま立ち上がっている掲示板はありません。'), buttons: bs });
   };
-  _tayoriLoadMeta().then(function() { return _tayoriLoadClosed(); }).then(show, show);
+  _tayoriLoadMeta().then(show, show);
 }
 window.openKoyomiSaigaiHub = openKoyomiSaigaiHub;
 // 共有リンク（?saigai=…）から来たとき：そのモードを開き、見守るに入れる
@@ -96925,7 +96963,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        var _css666 = (document.getElementById('tdcCss') || {}).textContent || ''; if (!_css666) { _tayoriCardCss(); _css666 = (document.getElementById('tdcCss') || {}).textContent || ''; }
        (_ro666 === true && _mm666 && _mm666.id === 'a666' && /\[data-tayori-ro\] \.tdc-acts/.test(_css666) && /\[data-tayori-ro\] \[data-tv-form\]/.test(_css666) &&
         /koyomiru_tayori_mode_close/.test(_tayoriCloseBoard.toString()) && /この掲示板を閉じる/.test(_tayoriDisMenu.toString()) && /_pm\.mine \|\| adm/.test(_tayoriDisMenu.toString()) &&
-        /記録として見られます/.test(renderTayoriView.toString()) && /_tayoriReadOnly\(\)/.test(_tayoriPostWizard.toString()) && /koyomiru_tayori_modes_closed/.test(_tayoriLoadClosed.toString()) && /koyomiru_tayori_list_mode/.test(_tayoriLoad.toString()))
+        /記録として見られます/.test(renderTayoriView.toString()) && /_tayoriReadOnly\(\)/.test(_tayoriPostWizard.toString()) && /koyomiru_tayori_modes_closed/.test(_tayoriLoadClosed.toString()) && /koyomiru_tayori_list_mode/.test(_tayoriLoad.toString()) && /_tayoriArchiveShelf/.test(openKoyomiSaigaiHub.toString()) && /data-shelf-q/.test(_tayoriArchiveShelf.toString()) && !/30日/.test(_tayoriCloseBoard.toString()))
          ? ok('ST-666: 掲示板を閉じる（立ち上げた人・作った本人だけ）・閉じた掲示板は記録として見るだけ（押す・書くは出さない）')
          : ng('ST-666: 掲示板を閉じる・記録の見せ方が足りない', '');
      } catch(e) {
