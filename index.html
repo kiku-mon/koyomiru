@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.43 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.44 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.43';
+    const APP_VERSION = 'v0.99.44';
   const APP_LAST_UPDATED = '2026-11-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61207,6 +61207,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.44', date: '2026-11-21',
+    items: [
+      { icon:'🛠', t:'災害復旧掲示板の表示を、確かめやすくしました',
+        before:'表示のずれが起きたとき、原因を確かめる手立てがありませんでした',
+        after:'中の確認のための仕組みを足しました。使う人の画面は変わりません' }
+    ]
+  },
+  {
     ver: 'v0.99.43', date: '2026-11-21',
     items: [
       { icon:'🛠', t:'災害復旧掲示板のナビタブで、一覧が出ないことがあったのを直しました',
@@ -72392,6 +72400,8 @@ function _tayoriLoadMeta() {
     rpcWithTimeout('koyomiru_tayori_modes_active', {}, 8000)
   ]).then(function(rs) {
     if (rs[0] && !rs[0].error && Array.isArray(rs[0].data) && rs[0].data.length) _koyomiTayori.cats = rs[0].data.map(_tayoriFromServerCat);
+    // v0.99.44: 【不具合】2026-11-21 スマホに掲示板が1つしか届かない件の切り分け用に、最後に読んだ結果を覚えておく（画面には作った本人にだけ出す）
+    try { _koyomiTayori.metaDiag = { at: Date.now(), err: (rs[1] && rs[1].error) ? String(rs[1].error.message || rs[1].error).slice(0, 120) : '', n: (rs[1] && Array.isArray(rs[1].data)) ? rs[1].data.length : -1, ver: (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') }; } catch (eD) {}
     if (rs[1] && !rs[1].error && Array.isArray(rs[1].data)) { _koyomiTayori.modes = rs[1].data; _koyomiTayori.metaOk = true; try { if (!window._isTesting && !window._smokeTestRunning) _tayoriRememberRelated(); } catch (eR) {} }
     try { _tayoriSyncNav(); } catch (e) {}
   }).catch(function() {});
@@ -72670,6 +72680,7 @@ function _tayoriDisMenu() {
   var bs = [];
   groups.forEach(function(g) { var it = g[1].filter(Boolean); if (!it.length) return; bs.push({ heading: g[0] }); bs = bs.concat(it); });
   if (adm) bs.push({ label: '🛡 見張り' + KOYOMI_ONLY_YOU_TAG, style: 'cancel', onClick: function() { _tayoriOpenAdmin(); } });
+  if (adm) bs.push({ label: '🔍 この端末に届いている掲示板' + KOYOMI_ONLY_YOU_TAG, style: 'cancel', onClick: _tayoriDiag });   // v0.99.44
   if (adm && _pm) bs = bs.concat(_tayoriAdminItems(_pm));
   bs.push({ label: '閉じる', style: 'cancel' });
   showChoiceModal({ title: 'そのほか', desc: '', buttons: bs, align: 'left' });
@@ -74872,6 +74883,16 @@ function _tayoriPickOtherMode() {
   bs.push({ label: '閉じる', style: 'cancel' });
   showChoiceModal({ align: 'left', title: 'どの掲示板を見ますか？', desc: (L.real.length || L.test.length) ? '' : 'いま立ち上がっている掲示板はありません', buttons: bs });
 }
+// v0.99.44: 切り分け用（作った本人だけ）。この端末がサーバーから受け取った掲示板と、それぞれ一覧に出すかどうか
+function _tayoriDiag() {
+  var d = _koyomiTayori.metaDiag || {}, ms = _koyomiTayori.modes || [], cur = _tayoriMode();
+  var rows = ms.map(function(m) { return '・' + _tayoriEsc(m.name || '?') + (m.is_test ? '（テスト）' : '') + '　mine=' + (m.mine ? 'はい' : 'いいえ') + '　一覧に出す=' + (_tayoriVisibleMode(m) ? 'はい' : 'いいえ') + '　見守る=' + (_tayoriFollows().indexOf(m.id) !== -1 ? 'はい' : 'いいえ'); }).join('<br>');
+  var w = d.at ? new Date(d.at) : null;
+  showChoiceModal({ align: 'left', title: '🔍 この端末に届いている掲示板', desc: '<div style="font-size:0.9em;line-height:1.7;">版：' + _tayoriEsc(d.ver || (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '')) + '<br>最後に読んだ時刻：' + (w ? _tayoriEsc(w.getHours() + ':' + ('0' + w.getMinutes()).slice(-2) + ':' + ('0' + w.getSeconds()).slice(-2)) : 'まだ読んでいない') + '<br>受け取った数：' + _tayoriEsc(String(d.n == null ? '?' : d.n)) + (d.err ? '<br>エラー：' + _tayoriEsc(d.err) : '') + '<br>いま開いている：' + _tayoriEsc(cur ? cur.name : 'なし') + '<br><br>' + (rows || '（なし）') + '</div>', buttons: [
+    { label: '🔄 いま読み直す', style: 'cancel', onClick: function() { _tayoriLoadMeta().then(_tayoriDiag, _tayoriDiag); } },
+    { label: '閉じる', style: 'cancel' } ] });
+}
+window._tayoriDiag = _tayoriDiag;
 // ナビタブ「災害復旧掲示板」：見られる掲示板が2つ以上なら、まず一覧から選んでもらう。1つだけなら、そのまま開く
 function koyomiSaigaiNav() {
   try { switchView('saigai'); } catch (e) {}
