@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.98.0 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v0.98.0';
+    const APP_VERSION = 'v0.99.0';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61176,6 +61176,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.0', date: '2026-11-20',
+    items: [
+      { icon:'🕘', t:'災害復旧掲示板の情報に、押された回数と履歴を出すようにしました',
+        before:'「今もある」の数だけが出ていて、「今はない」や取り消しが何回押されたかは分かりませんでした',
+        after:'情報ごとに「押された回数：✓ 今もある 3　✕ 今はない 1　↩ 取り消し 1」のように、0回も含めて全部出します。「🕘 履歴」で、いつ何が押されたかを見られます。誰が押したかは出しません。11/20 より前の分は記録がありません' }
+    ]
+  },
+  {
+    ver: 'v0.98.1', date: '2026-11-20',
+    items: [
+      { icon:'✅', t:'「復旧しました」などのよい知らせを、たたまずに上に出すようにしました',
+        before:'断水・停電の「復旧しました」も、閉じた避難所も、しばらく確かめられていない情報も、まとめて「終わった・古い情報」にたたまれていました',
+        after:'「復旧しました」などのよい知らせは、掲示板が続くあいだずっと上に出し、灰色にもしません。たたむものは「閉じた・終わったもの」と「しばらく確かめられていないもの」に分けました。確かめられていないものは、まだあるかもしれないので、「今もある」「今はない」を押してもらうよう呼びかけます' }
+    ]
+  },
+  {
     ver: 'v0.98.0', date: '2026-11-20',
     items: [
       { icon:'🏫', t:'市が避難所の閉鎖・避難指示の解除を発表したら、掲示板で知らせられるようにしました',
@@ -72232,7 +72248,7 @@ function _tayoriLoad(force) {
   rpcWithTimeout('koyomiru_tayori_list', box, 10000).then(function(r) {
     _koyomiTayori.loading = false;
     if (reqTab !== _tayoriTab()) { _tayoriLoad(false); return; }   // v0.89.1: 読んでいる間に掲示板を移ったら、移った先で読み直す
-    if (r && !r.error && Array.isArray(r.data)) { _koyomiTayori.rows = r.data; renderTayoriView(); _tayoriDraw(); _tayoriLoadComments(); _tayoriLoadPhotos(); }
+    if (r && !r.error && Array.isArray(r.data)) { _koyomiTayori.rows = r.data; renderTayoriView(); _tayoriDraw(); _tayoriLoadComments(); _tayoriLoadPhotos(); try { _tayoriLoadCounts(); } catch (eCn) {} }
     else if (force && typeof showToast === 'function') showToast('掲示板を読み込めませんでした', { type: 'warn' });
   }).catch(function() { _koyomiTayori.loading = false; });
 }
@@ -72490,7 +72506,7 @@ function _tayoriDraw() {
     if (r.lat == null || r.lng == null) return;   // v0.93.1: 場所を書かない／都道府県だけの書き込みは、地図に出さない
     var cat = koyomiTayoriCat(r.category);
     var fr = koyomiTayoriFreshness(r.category, r.confirmed_at, now), st = _tayoriState(cat, r.status);
-    var dim = fr === 1 || _tayoriClosed(cat, r.status);
+    var dim = fr === 1 || (_tayoriClosed(cat, r.status) && !_tayoriGoodNews(cat, r.status));
     // 同じ升目に重なるピンは、画面の上で22pxずつ輪のようにずらす（表示だけ。保存している位置は変えない）
     var k = r.lat + ',' + r.lng, n = seen[k] = (seen[k] || 0) + 1;
     var ang = (n - 2) * 1.05, px = n > 1 ? 22 : 0, dx = Math.round(Math.cos(ang) * px), dy = Math.round(Math.sin(ang) * px);
@@ -72562,11 +72578,56 @@ function _tayoriCardCss() {
     '.tsh-bot{display:none}@media (max-width:640px){.tsh-top{display:none!important}.tsh-bot{display:block}}';
   document.head.appendChild(el);
 }
+// v0.99.0: 【権威】2026-11-20「正直に、全部、クリック数を出そう。透明化したい。クリック数少なくても恥ではない」「クリック履歴も見せたい。間違えても取り消せるように」
+//   → 災害のカードに、押された回数（今もある・今はない・取り消し。0も出す）と、押された履歴（時刻とボタンだけ。誰が押したかは出さない）
+var KOYOMI_TAYORI_LOG_SINCE = '11/20';
+function _tayoriLoadCounts(ids) {
+  if (typeof rpcWithTimeout !== 'function' || !window.supabaseClient) return;
+  var all = !ids;
+  ids = (ids || (_koyomiTayori.rows || []).filter(function(r) { var c = r && koyomiTayoriCat(r.category); return c && c.kind === 'disaster'; }).map(function(r) { return r.id; })).slice(0, 300);
+  if (!ids.length) return;
+  rpcWithTimeout('koyomiru_tayori_spot_counts', { p_ids: ids }, 10000).then(function(res) {
+    if (!res || res.error || !Array.isArray(res.data)) return;
+    var m = _koyomiTayori.counts = (_koyomiTayori.counts || {});
+    res.data.forEach(function(x) { if (x && x.spot_id) m[x.spot_id] = { yes: Number(x.yes) || 0, undo: Number(x.undo) || 0, st: x.st || {} }; });
+    _tayoriDraw();
+    try { var _db = document.getElementById('tayoriDis'), _hv = document.getElementById('tayoriView');
+      if (_db && _hv && _db.style.display !== 'none') { var _sy = window.scrollY; _tayoriRenderDisaster(_hv); window.scrollTo(0, _sy); } } catch (eR) {}
+  });
+}
+function _tayoriCountsHtml(r, cat) {
+  var c = (_koyomiTayori.counts || {})[r.id]; if (!c) return '';
+  var stop = _tayoriStopState(cat), st = c.st || {}, no = stop ? (Number(st[stop.key]) || 0) : 0, other = 0;
+  Object.keys(st).forEach(function(k) { if (!stop || k !== stop.key) other += Number(st[k]) || 0; });
+  var parts = ['✓ 今もある ' + c.yes];
+  if (stop) parts.push('✕ 今はない ' + no);
+  if (other) parts.push('状況を変えた ' + other);
+  parts.push('↩ 取り消し ' + c.undo);
+  return '<div style="display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin-top:8px;font-size:0.82em;color:#7a6f5f;">' +
+    '<span>押された回数：' + _tayoriEsc(parts.join('　')) + '</span>' +
+    '<button type="button" data-tayori-log style="padding:2px 0;border:none;background:none;color:#3b6ea5;font-size:1em;text-decoration:underline;cursor:pointer;font-family:inherit;">🕘 履歴</button></div>';
+}
+function _tayoriSpotLog(r) {
+  var cat = koyomiTayoriCat(r.category), stop = _tayoriStopState(cat);
+  var draw = function(rows, err) {
+    var body = err ? '<div>読み込めませんでした。電波のよいところで、もう一度開いてください。</div>' : (!rows.length ? '<div>まだ押されていません。</div>' : rows.map(function(x) {
+      var t = x.action === 'yes' ? '✓ 今もある' + (x.status ? '（「' + (_tayoriStLabel(r, x.status) || x.status) + '」に戻った）' : '')
+        : x.action === 'undo' ? '↩ 取り消し' + (x.status ? '（「' + (_tayoriStLabel(r, x.status) || x.status) + '」に戻した）' : '')
+        : (stop && x.status === stop.key) ? '✕ 今はない（「' + stop.label + '」にした）'
+        : '状況を「' + (_tayoriStLabel(r, x.status) || x.status || '') + '」にした';
+      return '<div style="padding:7px 0;border-top:1px solid #f1ece4;"><b>' + _tayoriEsc(_tayoriPhaseWhen(x.at)) + '</b>　' + _tayoriEsc(t) + '</div>'; }).join(''));
+    showChoiceModal({ title: '🕘 押された履歴', desc: '<div style="text-align:left;font-size:0.92em;line-height:1.6;max-height:50vh;overflow:auto;">' +
+      '<div style="font-weight:700;margin-bottom:4px;">' + _tayoriEsc((cat ? cat.label + '：' : '') + (r.place_name || '')) + '</div>' + body +
+      '<div style="font-size:0.85em;color:#8a7d6b;margin-top:8px;">誰が押したかは出しません。時刻と、押されたボタンだけを残しています。<br>' + KOYOMI_TAYORI_LOG_SINCE + ' より前の分は記録がありません。</div></div>', buttons: [{ label: '閉じる', style: 'cancel' }] });
+  };
+  rpcWithTimeout('koyomiru_tayori_spot_log_list', { p_id: r.id }, 10000).then(function(res) { draw((res && !res.error && Array.isArray(res.data)) ? res.data : [], !(res && !res.error)); });
+}
 function _tayoriDisCardHtml(r, cat, st, states, fav, canEdit, cm, when, fr) {
   _tayoriCardCss();
   var btn = 'min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;justify-content:center;gap:3px;min-height:44px;padding:0 8px;border:1.5px solid #d9cfbf;border-radius:10px;background:#fff;color:#3b3226;font-size:0.88em;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;box-sizing:border-box;';
   var n = Number(r.confirm_count) || 1, me = !!r.confirmed_by_me, gm = _tayoriGmapUrl(r);
-  var ago = _tayoriCanStillSee(r.category) ? koyomiTayoriAgo(r.confirmed_at) + '・' + n + '人' : koyomiTayoriAgo(r.created_at || r.confirmed_at);
+  // v0.99.0: 「・N人」は、下の「押された回数」と数字が二重になるので出さない
+  var ago = _tayoriCanStillSee(r.category) ? koyomiTayoriAgo(r.confirmed_at) : koyomiTayoriAgo(r.created_at || r.confirmed_at);
   return '<div class="tdc" style="font-family:inherit;">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-weight:700;color:#3b3226;">' + _tayoriEsc(cat.emoji + ' ' + cat.label) + '</span>' + _tayoriBadge(st) +
       (fav ? '<span style="font-size:0.8em;color:#8a6d1e;">📌</span>' : '') +
@@ -72577,11 +72638,11 @@ function _tayoriDisCardHtml(r, cat, st, states, fav, canEdit, cm, when, fr) {
     (cm.length ? '<div style="margin-top:6px;border-left:3px solid #eadfcd;padding-left:8px;">' + cm.map(function(c) {
       return '<div style="font-size:0.84em;color:#444;line-height:1.55;margin-top:2px;">' + _tayoriEsc(c.body) + ' <span style="color:#a39886;font-size:0.9em;">' + _tayoriEsc(koyomiTayoriAgo(c.created_at)) + '</span></div>'; }).join('') + '</div>' : '') +
     '<div class="tdc-acts" style="margin-top:10px;max-width:520px;">' +
-      (_tayoriCanStillSee(r.category) ? '<button type="button" class="tdc-a" data-tayori-confirm style="' + btn + (me ? 'border-color:#9cc9a5;color:#2e7d32;' : '') + '">✓ 今もある' + (n > 1 || me ? ' ' + n : '') + '</button>' : '') +
+      (_tayoriCanStillSee(r.category) ? '<button type="button" class="tdc-a" data-tayori-confirm style="' + btn + (me ? 'border-color:#9cc9a5;color:#2e7d32;' : '') + '">✓ 今もある</button>' : '') +
       (_tayoriStopState(cat) ? '<button type="button" class="tdc-b" data-tayori-gone style="' + btn + 'color:#5f6b73;">✕ 今はない</button>' : '') +
       (gm ? '<a class="tdc-n" href="' + _tayoriEsc(gm) + '" target="_blank" rel="noopener noreferrer" style="' + btn + '">🧭 道案内</a>' : '') +
       '<button type="button" class="tdc-m" data-tayori-moretoggle title="そのほか" aria-label="そのほか" style="' + btn + 'padding:0;font-size:1.1em;">⋯</button>' +
-    '</div>' +
+    '</div>' + _tayoriCountsHtml(r, cat) +
     '<div data-tayori-more style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #f1ece4;">' +
       (states.length > 1 ? '<div style="font-size:0.78em;color:#8a7d6b;">いまの状況を選んで知らせる</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">' +
         states.map(function(s) { var t = KOYOMI_TAYORI_TONE[s.tone] || KOYOMI_TAYORI_TONE.ok, on = s.key === r.status;
@@ -72601,6 +72662,13 @@ function _tayoriDisCardHtml(r, cat, st, states, fav, canEdit, cm, when, fr) {
 function _tayoriStopState(cat) { var a = (cat && cat.states) || [], l = a[a.length - 1]; return (l && l.tone === 'stop') ? l : null; }
 // 終わったもの（灰色にする・使えるところだけで外す）：状況が最後のもの（終了・充足しました・復旧しました・解決しました）
 function _tayoriClosed(cat, status) { var c = (typeof cat === 'string') ? koyomiTayoriCat(cat) : cat, a = (c && c.states) || []; return !!(status && a.length > 1 && a[a.length - 1].key === status); }
+// v0.98.1: 【権威】2026-11-20「終わった情報でも、人によっては生きてる情報がある。いちいち掘ってもらうの？」→ B（掲示板が続くあいだ、ずっと上に）
+//   断水・停電の「復旧しました」、通行止めの解除などは、よい知らせ＝生きた情報。終わったものに入れず、灰色にもしない
+function _tayoriGoodNews(cat, status) {
+  var c = (typeof cat === 'string') ? koyomiTayoriCat(cat) : cat; if (!_tayoriClosed(c, status)) return false;
+  var a = (c && c.states) || [], l = a[a.length - 1];
+  return !!(l && l.tone === 'ok' && /復旧|解除|通れる|再開/.test(String(l.label || '')));
+}
 function _tayoriNeedLogin(r) {
   if (window._cloudIsLoggedIn) return false;
   // 始まっている災害モードの便りは、ログインしていなくても確かめ・通報できる（サーバーでも確かめる）
@@ -72613,18 +72681,19 @@ function _tayoriNeedLogin(r) {
 //   押した瞬間に「送っています…」、終わったら必ずひとこと。今もあるは30分以内にもう一度押すと取り消し、今はないは［取り消す］で戻せる。
 //   今はないを押しても、今もあるの数は増やさない（サーバーで）。終わったカードで今もある→はじめの状況に戻る（サーバーで）
 function _tayoriStLabel(r, key) { var c = koyomiTayoriCat(r.category), a = (c && c.states) || []; for (var i = 0; i < a.length; i++) if (a[i].key === key) return a[i].label; return ''; }
-function _tayoriSendConfirm(r, status, btn, quiet) {
+function _tayoriSendConfirm(r, status, btn, quiet, undo) {
   if (_tayoriNeedLogin(r)) return;
   var old = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.style.opacity = '0.55'; btn.textContent = '送っています…'; }
   var restore = function() { if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.innerHTML = old; } };
   var toast = function(msg, type, undo) { if (typeof showToast === 'function') showToast(msg, undo ? { type: type || 'ok', duration: 10000, action: { label: '取り消す', fn: undo } } : { type: type || 'ok' }); };
-  var args = { p_id: r.id }; if (status) args.p_status = status;
+  var args = { p_id: r.id }; if (status) args.p_status = status; if (undo) args.p_undo = true;
   return rpcWithTimeout('koyomiru_tayori_confirm', args, 10000).then(function(res) {
     if (res && !res.error && res.data) {
       var d = res.data, prev = d.prev !== undefined ? d.prev : r.status;
       r.confirm_count = d.count; r.confirmed_at = d.confirmed_at; if (d.status !== undefined) r.status = d.status;
       if (!status) r.confirmed_by_me = d.result !== 'off';
+      try { _tayoriLoadCounts([r.id]); } catch (eCn) {}
       try { if (_koyomiTayori.map) _koyomiTayori.map.closePopup(); } catch (e) {}
       // v0.97.1: 【権威】2026-11-20「送っていますから変わらん」との報告。災害復旧掲示板の画面は _tayoriDraw では描き直されない。
       //   ボタンを必ず元に戻し、掲示板の画面も描き直す（スクロールの位置は保つ）
@@ -72636,8 +72705,8 @@ function _tayoriSendConfirm(r, status, btn, quiet) {
       var dis = ((koyomiTayoriCat(r.category) || {}).kind === 'disaster');
       if (d.result === 'same') toast(_tayoriStLabel(r, status) ? 'もう「' + _tayoriStLabel(r, status) + '」になっています' : 'もうその状況になっています', 'info');
       else if (d.result === 'off') toast('取り消しました', 'info');
-      else if (status) toast(_tayoriStLabel(r, status) ? '「' + _tayoriStLabel(r, status) + '」にしました' : '状況を知らせました', 'ok', prev && prev !== status ? function() { _tayoriSendConfirm(r, prev, null, true); toast('取り消しました', 'info'); } : null);
-      else if (d.reopened) toast(_tayoriStLabel(r, d.status) ? '「' + _tayoriStLabel(r, d.status) + '」に戻しました' : 'はじめの状況に戻しました', 'ok', function() { var pr = _tayoriSendConfirm(r, null, null, true); if (pr && pr.then) pr.then(function() { _tayoriSendConfirm(r, prev, null, true); }); toast('取り消しました', 'info'); });
+      else if (status) toast(_tayoriStLabel(r, status) ? '「' + _tayoriStLabel(r, status) + '」にしました' : '状況を知らせました', 'ok', prev && prev !== status ? function() { _tayoriSendConfirm(r, prev, null, true, true); toast('取り消しました', 'info'); } : null);
+      else if (d.reopened) toast(_tayoriStLabel(r, d.status) ? '「' + _tayoriStLabel(r, d.status) + '」に戻しました' : 'はじめの状況に戻しました', 'ok', function() { var pr = _tayoriSendConfirm(r, null, null, true); if (pr && pr.then) pr.then(function() { _tayoriSendConfirm(r, prev, null, true, true); }); toast('取り消しました', 'info'); });
       else toast(dis ? '今もある、と知らせました' : '今も見られる、と知らせました', 'ok', function() { _tayoriSendConfirm(r, null, null, true); toast('取り消しました', 'info'); });
     } else {
       restore();
@@ -72656,6 +72725,7 @@ function _tayoriWirePopup(el, r) {
   var mt = el.querySelector('[data-tayori-moretoggle]');
   if (mt) mt.onclick = function() { var open = mt.getAttribute('data-open') !== '1'; mt.setAttribute('data-open', open ? '1' : '0'); if (mt.getAttribute('aria-label') !== 'そのほか') mt.textContent = open ? 'ほかの操作をとじる ▴' : 'ほかの操作（状況・ありがとう・追記など）▾'; [].forEach.call(el.querySelectorAll('[data-tayori-more]'), function(x) { x.style.display = open ? '' : 'none'; }); };
   [].forEach.call(el.querySelectorAll('[data-tayori-status]'), function(b) { b.onclick = function() { _tayoriSendConfirm(r, b.getAttribute('data-tayori-status'), b); }; });
+  var lgb = el.querySelector('[data-tayori-log]'); if (lgb) lgb.onclick = function() { _tayoriSpotLog(r); };
   var gb = el.querySelector('[data-tayori-gone]');
   if (gb) gb.onclick = function() { var ss = _tayoriStopState(koyomiTayoriCat(r.category)); if (ss) _tayoriSendConfirm(r, ss.key, gb); };
   var fb = el.querySelector('[data-tayori-fav]');
@@ -73236,11 +73306,14 @@ function _tdState() { return _koyomiTayori.d || (_koyomiTayori.d = { keys: null,
 // 生活情報の並び：使えるもの（終わっていない・新しい）を上。その中は、今いる近くなら近い順、そうでなければ新しく確かめた順
 function _tayoriDisSorted(rows, near) {
   var now = Date.now();
-  var live = [], old = [];
+  var live = [], old = [], stale = [];
   rows.forEach(function(r) {
     var cat = koyomiTayoriCat(r.category);
     var ended = r.ends_at && new Date(r.ends_at) < now;
-    (!_tayoriClosed(cat, r.status) && !ended && koyomiTayoriFreshness(r.category, r.confirmed_at, now) === 0 ? live : old).push(r);
+    // v0.98.1: 閉じた・終わったもの（old）と、しばらく確かめられていないもの（stale）を分ける。よい知らせ（復旧など）はずっと上に
+    if (_tayoriGoodNews(cat, r.status) && !ended) live.push(r);
+    else if (_tayoriClosed(cat, r.status) || ended) old.push(r);
+    else (koyomiTayoriFreshness(r.category, r.confirmed_at, now) === 0 ? live : stale).push(r);
   });
   var byTime = function(a, b) { return new Date(b.confirmed_at) - new Date(a.confirmed_at); };
   if (near) {
@@ -73252,8 +73325,8 @@ function _tayoriDisSorted(rows, near) {
     var rest = live.filter(function(r) { return !r.starts_at; }).sort(byTime);
     live = ev.concat(rest);
   }
-  old.sort(byTime);
-  return { live: live, old: old };
+  old.sort(byTime); stale.sort(byTime);
+  return { live: live, old: old, stale: stale };
 }
 function _tayoriDisRows() {
   var d = _tdState(), q = String(_koyomiTayori.q || '').trim().toLowerCase(), fav = _tayoriFavs(), tok = _tayoriTokens();
@@ -73337,8 +73410,8 @@ function _tayoriRenderDisaster(host) {
   }
   var cardOf = function(r) {
     var dist = (d.stage === 'results' && d.near && r._dist != null) ? '<div style="font-size:0.85em;color:#3b6ea5;font-weight:700;margin-bottom:4px;">📍 ここから約' + (r._dist < 1000 ? Math.round(r._dist / 10) * 10 + 'm' : (r._dist / 1000).toFixed(1) + 'km') + '</div>' : '';
-    var closed = _tayoriClosed(r.category, r.status);
-    return '<div data-tayori-card="' + _tayoriEsc(r.id) + '" style="font-size:1.06em;background:' + (closed ? '#f3f3f1' : '#fff') + ';border:1px solid ' + (closed ? '#e2e2de' : '#eee3d0') + ';border-radius:14px;padding:14px;margin-bottom:10px;' + (closed ? 'opacity:0.75;' : '') + '">' + dist + _tayoriPopupHtml(r, { compact: true }) + '</div>';
+    var closed = _tayoriClosed(r.category, r.status) && !_tayoriGoodNews(r.category, r.status);   // v0.98.1: よい知らせは灰色にしない
+    return '<div data-tayori-card=""' + _tayoriEsc(r.id) + '" style="font-size:1.06em;background:' + (closed ? '#f3f3f1' : '#fff') + ';border:1px solid ' + (closed ? '#e2e2de' : '#eee3d0') + ';border-radius:14px;padding:14px;margin-bottom:10px;' + (closed ? 'opacity:0.75;' : '') + '">' + dist + _tayoriPopupHtml(r, { compact: true }) + '</div>';
   };
   // v0.83.0: 【権威】2026-11-18「立ち上げのときは何が何だか分からない。うその情報を流すのではなく、
   //   災害復旧時の情報を募集中です、作るのはこちら、とボタンへ誘導する親切設計に」→ まだ1件もないときは、募集の案内と大きな「書く」ボタンを出す
@@ -73366,7 +73439,11 @@ function _tayoriRenderDisaster(host) {
   var body = BOARD ? intro + _tayoriDisBoardHtml(sorted.live, d.keys) : intro + (sorted.live.length ? (_tayoriWide() ? '<div style="' + KOYOMI_TAYORI_GRID + '">' + sorted.live.map(cardOf).join('') + '</div>' : sorted.live.map(cardOf).join('')) : '') +
     (recruit ? (sorted.live.length ? '<div style="font-size:0.95em;font-weight:700;color:#5a4e3c;margin:14px 2px 8px;">まだ書き込みのないもの</div>' : '') + recruit
       : (sorted.live.length ? '' : '<div style="padding:22px 12px;text-align:center;color:#8a7d6b;line-height:1.8;background:#fff;border:1px dashed #e1d8c8;border-radius:14px;">' + (d.stage === 'results' ? 'いまは、まだ書き込みがありません。<br>見つけたら、書いていただけると助かります。' : 'まだ書き込みがありません。') + '</div>'));
-  if (sorted.old.length) body += '<button type="button" data-td-old style="width:100%;min-height:50px;margin:6px 0 8px;border:1px dashed #d9cfbf;border-radius:12px;background:transparent;color:#8a7d6b;font-size:0.95em;cursor:pointer;font-family:inherit;">' + (d.showOld ? '▾ ' : '▸ ') + '終わった・古い情報（' + sorted.old.length + '）</button>' + (d.showOld ? sorted.old.map(cardOf).join('') : '');
+  // v0.98.1: 「終わった・古い情報」を2つに分ける（しばらく確かめられていないものは、まだあるかもしれない）
+  var _fold = function(attr, open, label, list, lead) { return '<button type="button" ' + attr + ' style="width:100%;min-height:50px;margin:6px 0 8px;border:1px dashed #d9cfbf;border-radius:12px;background:transparent;color:#8a7d6b;font-size:0.95em;cursor:pointer;font-family:inherit;">' + (open ? '▾ ' : '▸ ') + label + '（' + list.length + '）</button>' +
+    (open ? (lead ? '<div style="font-size:0.9em;color:#8a7d6b;margin:0 4px 8px;line-height:1.6;">' + lead + '</div>' : '') + list.map(cardOf).join('') : ''); };
+  if ((sorted.stale || []).length) body += _fold('data-td-stale', d.showStale, 'しばらく確かめられていないもの', sorted.stale, 'まだあるかもしれません。見かけたら「今もある」を、なくなっていたら「今はない」を押してください。');
+  if (sorted.old.length) body += _fold('data-td-old', d.showOld, '閉じた・終わったもの', sorted.old, '');
   var foot = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 6px;">' +
     '<button type="button" data-td-map style="min-height:56px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;color:#3b3226;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">🗺 地図で見る</button>' +
     '<button type="button" data-td-post style="min-height:56px;border:none;border-radius:14px;background:#2e6b4f;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">＋ 掲示板に書く</button></div>';
@@ -73384,6 +73461,7 @@ function _tayoriRenderDisaster(host) {
   var rs = box.querySelector('[data-td-reset]'); if (rs) rs.onclick = function() { d.stage = 'home'; d.keys = null; d.label = ''; d.area = ''; d.near = null; _tayoriRenderDisaster(host); };
   var oo = box.querySelector('[data-td-only-off]'); if (oo) oo.onclick = function() { _koyomiTayori.only = ''; _tayoriRenderDisaster(host); };
   var ob = box.querySelector('[data-td-old]'); if (ob) ob.onclick = function() { d.showOld = !d.showOld; _tayoriRenderDisaster(host); };
+  var sb = box.querySelector('[data-td-stale]'); if (sb) sb.onclick = function() { d.showStale = !d.showStale; _tayoriRenderDisaster(host); };
   box.querySelector('[data-td-map]').onclick = function() { _koyomiTayori.view = 'map'; renderTayoriView(); _tayoriDraw(); };
   box.querySelector('[data-td-post]').onclick = function() { _tayoriPostWizard(); };
   [].forEach.call(box.querySelectorAll('[data-td-wantpost]'), function(b) { b.onclick = function() { _tayoriPostWizard(b.getAttribute('data-td-wantpost')); }; });
@@ -96219,6 +96297,49 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-656: 例外', e.message);
      }
 
+     // ===== ST-657: よい知らせ（復旧）は上に・たたむものは2つに分ける（v0.98.1） =====
+     // 【権威】2026-11-20「終わった情報でも、人によっては生きてる情報がある」→ B（ずっと上に）
+     try {
+       var _kc657 = window.koyomiTayoriCat, _fr657 = window.koyomiTayoriFreshness;
+       var _cats657 = { lifeline: { key: 'lifeline', kind: 'disaster', states: [{ key: 'out', label: '断水中', tone: 'stop' }, { key: 'back', label: '復旧しました', tone: 'ok' }] },
+                        shelter: { key: 'shelter', kind: 'disaster', states: [{ key: 'open', label: '受け入れ中', tone: 'ok' }, { key: 'closed', label: '受け入れ終了', tone: 'stop' }] } };
+       var _s657;
+       window.koyomiTayoriCat = function(k) { return _cats657[k] || null; };
+       window.koyomiTayoriFreshness = function(k, at) { return at === 'old' ? 1 : 0; };
+       try {
+         _s657 = _tayoriDisSorted([
+           { id: 'a', category: 'lifeline', status: 'back', confirmed_at: 'old' },
+           { id: 'b', category: 'shelter', status: 'closed', confirmed_at: new Date().toISOString() },
+           { id: 'c', category: 'shelter', status: 'open', confirmed_at: 'old' },
+           { id: 'd', category: 'shelter', status: 'open', confirmed_at: new Date().toISOString() } ], null);
+       } finally { window.koyomiTayoriCat = _kc657; window.koyomiTayoriFreshness = _fr657; }
+       var _ids657 = function(l) { return l.map(function(x) { return x.id; }).sort().join(''); };
+       (_ids657(_s657.live) === 'ad' && _ids657(_s657.old) === 'b' && _ids657(_s657.stale) === 'c' &&
+        /しばらく確かめられていないもの/.test(_tayoriRenderDisaster.toString()) && /閉じた・終わったもの/.test(_tayoriRenderDisaster.toString()) && !/終わった・古い情報（/.test(_tayoriRenderDisaster.toString()))
+         ? ok('ST-657: 復旧などのよい知らせは上に出す・たたむのは「閉じた・終わったもの」と「しばらく確かめられていないもの」に分ける')
+         : ng('ST-657: よい知らせ・たたむものの分け方が違う', JSON.stringify(_s657 && [_ids657(_s657.live), _ids657(_s657.old), _ids657(_s657.stale || [])]));
+     } catch(e) {
+       ng('ST-657: 例外', e.message);
+     }
+
+     // ===== ST-658: 押された回数と履歴を、全部見せる（v0.99.0） =====
+     // 【権威】2026-11-20「正直に、全部、クリック数をだそうよ。透明化したい」
+     try {
+       var _c658 = { key: 'shelter', kind: 'disaster', label: '避難所', states: [{ key: 'open', label: '受け入れ中', tone: 'ok' }, { key: 'closed', label: '受け入れ終了', tone: 'stop' }] };
+       var _sv658 = _koyomiTayori.counts;
+       _koyomiTayori.counts = { z1: { yes: 0, undo: 0, st: {} }, z2: { yes: 3, undo: 1, st: { closed: 2, open: 1 } } };
+       var _h1 = _tayoriCountsHtml({ id: 'z1' }, _c658), _h2 = _tayoriCountsHtml({ id: 'z2' }, _c658), _h0 = _tayoriCountsHtml({ id: 'none' }, _c658);
+       _koyomiTayori.counts = _sv658;
+       (/今もある 0/.test(_h1) && /今はない 0/.test(_h1) && /取り消し 0/.test(_h1) &&
+        /今もある 3/.test(_h2) && /今はない 2/.test(_h2) && /状況を変えた 1/.test(_h2) && /取り消し 1/.test(_h2) && /data-tayori-log/.test(_h2) && _h0 === '' &&
+        /誰が押したかは出しません/.test(_tayoriSpotLog.toString()) && /より前の分は記録がありません/.test(_tayoriSpotLog.toString()) &&
+        /args\.p_undo = true/.test(_tayoriSendConfirm.toString()) && /_tayoriCountsHtml\(r, cat\)/.test(_tayoriDisCardHtml.toString()))
+         ? ok('ST-658: 押された回数（0回も）と履歴を見せる・誰が押したかは出さない・取り消しも数える')
+         : ng('ST-658: 回数と履歴の見せ方が違う', _h2);
+     } catch(e) {
+       ng('ST-658: 例外', e.message);
+     }
+
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
      try {
        var _r654 = {};
@@ -96436,7 +96557,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          { id: 'mid', category: 'water', status: 'ok', confirmed_at: _iso(_now649 - 3600000), lat: 35.001, lng: 140 },
          { id: 'ev', category: 'food', status: 'ok', confirmed_at: _iso(_now649 - 7200000), starts_at: _iso(_now649 + 3600000), lat: 35, lng: 140 }];
        var _s649 = _tayoriDisSorted(_rows649, null);
-       _r649.orderB = _s649.live.map(function(r) { return r.id; }).join() === 'ev,new,mid' && _s649.old.map(function(r) { return r.id; }).join() === 'end,old';
+       _r649.orderB = _s649.live.map(function(r) { return r.id; }).join() === 'ev,new,mid' && _s649.old.map(function(r) { return r.id; }).join() === 'end' && (_s649.stale || []).map(function(r) { return r.id; }).join() === 'old';   // v0.98.1: 古いだけのものは stale に分けた
        var _n649 = _tayoriDisSorted(_rows649, { lat: 35, lng: 140 });
        _r649.near = _n649.live[0].id === 'ev' || _n649.live[0].id === 'mid';
        _r649.near = _r649.near && _n649.live[_n649.live.length - 1].id === 'new';
