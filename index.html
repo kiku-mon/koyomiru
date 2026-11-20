@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v1.1.6 ★ -->
+<!-- ★ CURRENT VERSION: v1.1.7 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v1.1.6';
+    const APP_VERSION = 'v1.1.7';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61176,6 +61176,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v1.1.7', date: '2026-11-20',
+    items: [
+      { icon:'📣', t:'復旧などに切り替えたとき、その場でXやLINEで広められるようにしました',
+        before:'状況を切り替えたあと、わざわざ「知らせる」のボタンを探して押す必要がありました',
+        after:'「避難所の閉鎖・避難指示の解除」「町全体が復旧した」に切り替えたときや、情報を「復旧しました」にしたときは、「この知らせを広めませんか？」と聞きます。その状況に合った文で、Xなどにすぐ知らせられます' }
+    ]
+  },
+  {
     ver: 'v1.1.6', date: '2026-11-20',
     items: [
       { icon:'📣', t:'XやLINEで知らせる文を、掲示板の状況に合わせて変えるようにしました',
@@ -72505,6 +72513,18 @@ function _tayoriWirePhase(root, mode) {
   var u = root.querySelector('[data-tayori-phaseundo]'); if (u) u.onclick = function() { _tayoriPhaseSet(mode, 'back', '', u); };   // v1.0.0: ひとつ前の段階へ
   var l = root.querySelector('[data-tayori-phaselog]'); if (l) l.onclick = function() { _tayoriPhaseLog(mode); };
 }
+// v1.1.7: 【権威】2026-11-20「Xの投稿をサジェストしてくれないんだ？わざわざXのボタンを押しにいった。Xはサジェストしないと」
+//   → 避難所の閉鎖・町全体の復旧に切り替えたとき、「復旧しました」にしたときは、その場で「広めませんか？」と聞く（文はその状況のもの）
+function _tayoriSuggestShare(m, item, what) {
+  if (!m || !m.slug) return;
+  setTimeout(function() {
+    showChoiceModal({ title: '📣 この知らせを広めませんか？', desc: _tayoriEsc(what) + '<br>町の人に届くよう、XやLINEで知らせられます。', buttons: [
+      { label: '𝕏 で知らせる', style: 'primary', onClick: function() { _tayoriShare(m, 'x', item); } },
+      { label: 'LINEで知らせる', style: 'cancel', onClick: function() { _tayoriShare(m, 'line', item); } },
+      { label: '🔗 文とリンクをコピー', style: 'cancel', onClick: function() { _tayoriShare(m, 'copy', item); } },
+      { label: 'あとで', style: 'cancel' } ] });
+  }, 350);
+}
 function _tayoriPhaseSet(mode, phase, url, btn, quiet) {
   var old = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.style.opacity = '0.55'; btn.textContent = '送っています…'; }
@@ -72517,6 +72537,7 @@ function _tayoriPhaseSet(mode, phase, url, btn, quiet) {
       renderTayoriView();
       if (quiet || typeof showToast !== 'function') return;
       if (d.result === 'same') { showToast(phase && phase !== 'back' ? 'もう切り替わっています' : 'もう元に戻っています', { type: 'info' }); return; }
+      if (d.result === 'changed' && (mode.phase === 'shelter_closed' || mode.phase === 'recovered') && phase !== 'back') _tayoriSuggestShare(mode, null, mode.phase === 'recovered' ? '「町全体が復旧した」に切り替えました。' : '「避難所の閉鎖・避難指示の解除」に切り替えました。');
       showToast(phase && phase !== 'back' ? '切り替えました。知らせてくださり、ありがとうございます' : '元に戻しました', { type: 'ok', duration: 10000, action: { label: '取り消す', fn: function() { _tayoriPhaseSet(mode, prev || 'back', prevUrl, null, true); showToast('取り消しました', { type: 'info' }); } } });
     } else {
       var m = String((res && res.error && res.error.message) || (res && res.error) || '');
@@ -72889,6 +72910,7 @@ function _tayoriSendConfirm(r, status, btn, quiet, undo) {
       var dis = ((koyomiTayoriCat(r.category) || {}).kind === 'disaster');
       if (d.result === 'same') toast(_tayoriStLabel(r, status) ? 'もう「' + _tayoriStLabel(r, status) + '」になっています' : 'もうその状況になっています', 'info');
       else if (d.result === 'off') toast('取り消しました', 'info');
+      else if (status && d.result === 'status' && !undo && _tayoriGoodNews(koyomiTayoriCat(r.category), status) && _tayoriMode()) { toast('「' + (_tayoriStLabel(r, status) || '復旧しました') + '」にしました', 'ok', prev && prev !== status ? function() { _tayoriSendConfirm(r, prev, null, true, true); toast('取り消しました', 'info'); } : null); _tayoriSuggestShare(_tayoriMode(), r, (r.place_name ? r.place_name + '：' : '') + '「' + (_tayoriStLabel(r, status) || '復旧しました') + '」にしました。'); }
       else if (status) toast(_tayoriStLabel(r, status) ? '「' + _tayoriStLabel(r, status) + '」にしました' : '状況を知らせました', 'ok', prev && prev !== status ? function() { _tayoriSendConfirm(r, prev, null, true, true); toast('取り消しました', 'info'); } : null);
       else if (d.reopened) toast(_tayoriStLabel(r, d.status) ? '「' + _tayoriStLabel(r, d.status) + '」に戻しました' : 'はじめの状況に戻しました', 'ok', function() { var pr = _tayoriSendConfirm(r, null, null, true); if (pr && pr.then) pr.then(function() { _tayoriSendConfirm(r, prev, null, true, true); }); toast('取り消しました', 'info'); });
       else toast(dis ? '今もある、と知らせました' : '今も見られる、と知らせました', 'ok', function() { _tayoriSendConfirm(r, null, null, true); toast('取り消しました', 'info'); });
@@ -96769,6 +96791,16 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-663: 知らせる文が段階に合っていない', _t1);
      } catch(e) {
        ng('ST-663: 例外', e.message);
+     }
+
+     // ===== ST-664: 状況が復旧に変わったら、その場で広めることを勧める（v1.1.7） =====
+     try {
+       (/_tayoriSuggestShare\(mode, null/.test(_tayoriPhaseSet.toString()) && /_tayoriSuggestShare\(_tayoriMode\(\), r/.test(_tayoriSendConfirm.toString()) && /phase !== 'back'/.test(_tayoriPhaseSet.toString()) &&
+        /𝕏 で知らせる/.test(_tayoriSuggestShare.toString()) && /あとで/.test(_tayoriSuggestShare.toString()))
+         ? ok('ST-664: 避難所の閉鎖・町全体の復旧・「復旧しました」に変えたら、その場でXなどで広めることを勧める（戻したときは勧めない）')
+         : ng('ST-664: 広めることを勧めていない', '');
+     } catch(e) {
+       ng('ST-664: 例外', e.message);
      }
 
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
