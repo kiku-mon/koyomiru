@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v1.0.4 ★ -->
+<!-- ★ CURRENT VERSION: v1.1.0 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -261,7 +261,7 @@
       } catch(e) {}
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
-    const APP_VERSION = 'v1.0.4';
+    const APP_VERSION = 'v1.1.0';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61176,6 +61176,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v1.1.0', date: '2026-11-20',
+    items: [
+      { icon:'💬', t:'災害復旧掲示板に「町のひとこと」を置きました',
+        before:'分類の枠に入らないこと（お店の営業時間、道の注意、貸し借りのお願いなど）を書く場所がなく、コメントもほとんど目に入りませんでした',
+        after:'誰でも自由に140文字まで書ける「💬 町のひとこと」を置きました。パソコンでは右側に、スマホでは上の帯のすぐ下に出ます。情報ごとのコメントも、ここに新しい順で一緒に流れ、押すとその情報へ移ります。ログインしなくても書けます' }
+    ]
+  },
+  {
     ver: 'v1.0.4', date: '2026-11-20',
     items: [
       { icon:'🏘', t:'「町の一部が復旧した」を知らせられるようにしました',
@@ -73342,7 +73350,7 @@ function _tayoriLoadComments() {
   rpcWithTimeout('koyomiru_tayori_comments_of', { p_ids: ids }, 10000).then(function(r) {
     if (!r || r.error || !Array.isArray(r.data)) return;
     var m = {}; r.data.forEach(function(c) { (m[c.spot_id] = m[c.spot_id] || []).push(c); });
-    _koyomiTayori.comments = m; _tayoriDraw();
+    _koyomiTayori.comments = m; _tayoriDraw(); try { _tayoriRedrawDis(); } catch (eV) {}
   });
 }
 // 運営からのお知らせと、このモードで使う分類（CMS）
@@ -73461,6 +73469,99 @@ function _tayoriBigBtn(attr, emoji, label, extra) {
   return '<button type="button" ' + attr + ' style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:84px;padding:10px 6px;border-radius:14px;border:1.5px solid #eadfcd;background:#fff;cursor:pointer;font-family:inherit;' + (extra || '') + '">' +
     '<span style="font-size:1.9em;line-height:1;">' + _tayoriEsc(emoji) + '</span><span style="font-size:1.02em;color:#3b3226;font-weight:700;line-height:1.3;text-align:center;">' + _tayoriEsc(label) + '</span></button>';
 }
+// v1.1.0: 町のひとこと（自由に書ける。140文字まで。ログインなしでも書ける）。カードへのコメントも一緒に流す
+function _tayoriLoadVoices(mode) {
+  if (!mode || typeof rpcWithTimeout !== 'function' || !window.supabaseClient) return;
+  _koyomiTayori.voicesLoading = true;
+  rpcWithTimeout('koyomiru_tayori_voice_list', { p_mode: mode.id }, 10000).then(function(res) {
+    _koyomiTayori.voicesLoading = false;
+    _koyomiTayori.voicesFor = mode.id;
+    _koyomiTayori.voices = (res && !res.error && Array.isArray(res.data)) ? res.data : [];
+    _tayoriRedrawDis();
+  });
+}
+function _tayoriRedrawDis() {
+  try { var _db = document.getElementById('tayoriDis'), _hv = document.getElementById('tayoriView');
+    if (_db && _hv && _db.style.display !== 'none') { var _sy = window.scrollY; _tayoriRenderDisaster(_hv); window.scrollTo(0, _sy); } } catch (eR) {}
+}
+function _tayoriVoiceItems() {
+  var out = (_koyomiTayori.voices || []).map(function(v) { return { kind: 'v', id: v.id, body: v.body, at: v.created_at, mine: v.mine }; });
+  var rows = {}; (_koyomiTayori.rows || []).forEach(function(r) { if (r && _tayoriInMode(r)) rows[r.id] = r; });
+  var cm = _koyomiTayori.comments || {};
+  Object.keys(cm).forEach(function(sid) { var r = rows[sid]; if (!r) return; var c = koyomiTayoriCat(r.category);
+    (cm[sid] || []).forEach(function(x) { out.push({ kind: 'c', id: x.id, body: x.body, at: x.created_at, spot: sid, where: ((c && c.emoji ? c.emoji + ' ' : '') + ((c && c.label) || '') + (r.place_name ? '・' + r.place_name : '')) }); }); });
+  return out.sort(function(a, b) { return new Date(b.at) - new Date(a.at); });
+}
+function _tayoriVoicesHtml(mode, wide) {
+  var d = _tdState(), all = _tayoriVoiceItems(), list = wide ? all.slice(0, 60) : (d.voicesAll ? all.slice(0, 60) : all.slice(0, 3));
+  var item = function(x) {
+    return '<div style="padding:9px 2px;border-bottom:1px solid #f1ece4;">' +
+      (x.kind === 'c' ? '<button type="button" data-tv-spot="' + _tayoriEsc(x.spot) + '" style="display:block;border:none;background:none;padding:0;margin-bottom:2px;color:#2e6b4f;font-size:0.8em;font-weight:700;cursor:pointer;font-family:inherit;text-align:left;">💬 ' + _tayoriEsc(x.where) + ' へのコメント ›</button>' : '') +
+      '<div style="font-size:0.95em;color:#2b2620;line-height:1.65;white-space:pre-wrap;word-break:break-word;">' + _tayoriEsc(x.body) + '</div>' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-top:2px;font-size:0.78em;color:#a39886;"><span>' + _tayoriEsc(_tayoriPhaseWhen(x.at)) + '</span>' +
+        (x.kind === 'v' && !x.mine ? '<button type="button" data-tv-report="' + _tayoriEsc(x.id) + '" style="border:none;background:none;padding:0;color:#b4a892;font-size:1em;text-decoration:underline;cursor:pointer;font-family:inherit;">誤情報</button>' : '') +
+        (x.kind === 'c' ? '<button type="button" data-tayori-creport="' + _tayoriEsc(x.id) + '" style="border:none;background:none;padding:0;color:#b4a892;font-size:1em;text-decoration:underline;cursor:pointer;font-family:inherit;">誤情報</button>' : '') + '</div></div>';
+  };
+  var form = '<div style="display:flex;gap:6px;margin:8px 0 4px;"><textarea data-tv-input maxlength="140" rows="2" placeholder="町のみんなへ、ひとこと（例：〇〇スーパー、今日は14時まで）" style="flex:1;min-width:0;min-height:52px;padding:8px 10px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;resize:vertical;box-sizing:border-box;">' + _tayoriEsc(_koyomiTayori.voiceDraft || '') + '</textarea>' +
+    '<button type="button" data-tv-send style="flex-shrink:0;min-width:64px;min-height:52px;border:none;border-radius:12px;background:#2e6b4f;color:#fff;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;">送る</button></div>' +
+    '<div style="font-size:0.76em;color:#a39886;">140文字まで。ログインしなくても書けます</div>';
+  var empty = '<div style="padding:12px 2px;color:#8a7d6b;font-size:0.9em;line-height:1.7;">' + (_koyomiTayori.voicesFor === mode.id ? 'まだひとことはありません。最初のひとことをどうぞ。' : '読み込んでいます…') + '</div>';
+  return '<section data-tv-panel style="background:#fff;border:1px solid #eee3d0;border-radius:16px;padding:14px 14px 8px;margin-bottom:14px;box-sizing:border-box;' + (wide ? 'position:sticky;top:12px;max-height:calc(100vh - 24px);display:flex;flex-direction:column;' : '') + '">' +
+    '<div style="font-weight:800;font-size:1.08em;color:#3b3226;">💬 町のひとこと' + (all.length ? ' <span style="font-weight:400;font-size:0.8em;color:#8a7d6b;">' + all.length + '件</span>' : '') + '</div>' +
+    form +
+    '<div data-tv-list style="margin-top:6px;' + (wide ? 'overflow:auto;min-height:0;flex:1;' : '') + '">' + (list.length ? list.map(item).join('') : empty) + '</div>' +
+    (!wide && all.length > 3 ? '<button type="button" data-tv-more style="width:100%;min-height:44px;margin-top:4px;border:none;background:none;color:#3b6ea5;font-size:0.92em;cursor:pointer;font-family:inherit;">' + (d.voicesAll ? '▴ たたむ' : '▾ もっと見る（' + all.length + '件）') + '</button>' : '') +
+  '</section>';
+}
+function _tayoriWireVoices(box, mode) {
+  var ip = box.querySelector('[data-tv-input]'), sb = box.querySelector('[data-tv-send]');
+  if (ip) ip.oninput = function() { _koyomiTayori.voiceDraft = ip.value; };
+  if (ip && sb) ip.onkeydown = function(e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); sb.click(); } };
+  if (sb) sb.onclick = function() {
+    var body = ((ip && ip.value) || '').trim().slice(0, 140); if (!body) { if (ip) try { ip.focus(); } catch (e) {} return; }
+    sb.disabled = true; sb.style.opacity = '0.55'; sb.textContent = '送信中…';
+    rpcWithTimeout('koyomiru_tayori_voice_add', { p_mode: mode.id, p_body: body }, 10000).then(function(res) {
+      if (res && !res.error && res.data) {
+        (_koyomiTayori.voices = _koyomiTayori.voices || []).unshift({ id: res.data.id, body: body, created_at: res.data.created_at || new Date().toISOString(), mine: true });
+        _koyomiTayori.voiceDraft = '';
+        if (typeof showToast === 'function') showToast('書き込みました', { type: 'ok' });
+        _tayoriRedrawDis();
+      } else {
+        sb.disabled = false; sb.style.opacity = ''; sb.textContent = '送る';
+        var m = String((res && res.error && res.error.message) || (res && res.error) || '');
+        if (typeof showToast !== 'function') return;
+        if (/^body$/.test(m)) showToast('1文字以上、140文字までで書いてください', { type: 'warn' });
+        else if (/rate_limit/.test(m)) showToast('続けて書けるのは1時間に' + (window._cloudIsLoggedIn ? 30 : 10) + '回までです（いたずら防止のため）。少し待ってからどうぞ', { type: 'warn' });
+        else if (!res || /timeout|時間切れ|クラウド|Failed to fetch|NetworkError|network/i.test(m) || !m) showToast('送れませんでした。電波のよいところで、もう一度押してください', { type: 'warn' });
+        else showToast(_koyomiTayoriErrText(res && res.error), { type: 'warn' });
+      }
+    });
+  };
+  var mo = box.querySelector('[data-tv-more]'); if (mo) mo.onclick = function() { var d = _tdState(); d.voicesAll = !d.voicesAll; _tayoriRedrawDis(); };
+  [].forEach.call(box.querySelectorAll('[data-tv-spot]'), function(b) { b.onclick = function() {
+    var el = box.querySelector('[data-tayori-card="' + String(b.getAttribute('data-tv-spot')).replace(/["\\]/g, '') + '"]');
+    if (el) { try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.boxShadow = '0 0 0 3px #9cc9a5'; setTimeout(function() { el.style.boxShadow = ''; }, 1600); } catch (e) {} }
+    else if (typeof showToast === 'function') showToast('その情報は、いまの一覧の中にはありません。「さがす」で探せます', { type: 'info' });
+  }; });
+  [].forEach.call(box.querySelectorAll('[data-tv-panel] [data-tayori-creport]'), function(b) { b.onclick = function() {
+    var cid = b.getAttribute('data-tayori-creport');
+    showChoiceModal({ title: 'このコメントの誤情報を知らせる', desc: '事実とちがう、いたずら、ふさわしくない書き込みのときに押してください。作った本人が確かめます。', buttons: [
+      { label: '誤情報を知らせる', style: 'danger', dangerConfirm: false, onClick: function() {
+        rpcWithTimeout('koyomiru_tayori_comment_report', { p_cid: cid }, 10000).then(function(res) {
+          if (typeof showToast === 'function') showToast(res && !res.error ? 'お知らせありがとうございます。作った本人が確かめます' : _koyomiTayoriErrText(res && res.error), { type: res && !res.error ? 'ok' : 'warn' });
+        }); } },
+      { label: 'やめる', style: 'cancel' } ] });
+  }; });
+  [].forEach.call(box.querySelectorAll('[data-tv-report]'), function(b) { b.onclick = function() {
+    var id = b.getAttribute('data-tv-report');
+    showChoiceModal({ title: 'このひとことの誤情報を知らせる', desc: '事実とちがう、いたずら、ふさわしくない書き込みのときに押してください。作った本人が確かめます。', buttons: [
+      { label: '誤情報を知らせる', style: 'danger', dangerConfirm: false, onClick: function() {
+        rpcWithTimeout('koyomiru_tayori_voice_report', { p_id: id }, 10000).then(function(res) {
+          if (typeof showToast === 'function') showToast(res && !res.error ? (res.data && res.data.again ? 'さきほどの分は届いています' : 'お知らせありがとうございます。作った本人が確かめます') : _koyomiTayoriErrText(res && res.error), { type: res && !res.error ? 'ok' : 'warn' });
+        }); } },
+      { label: 'やめる', style: 'cancel' } ] });
+  }; });
+}
 function _tayoriRenderDisaster(host) {
   var box = document.getElementById('tayoriDis'); if (!box) return;
   var d = _tdState(), mode = _tayoriMode();
@@ -73559,13 +73660,21 @@ function _tayoriRenderDisaster(host) {
       : (sorted.live.length ? '' : '<div style="padding:22px 12px;text-align:center;color:#8a7d6b;line-height:1.8;background:#fff;border:1px dashed #e1d8c8;border-radius:14px;">' + (d.stage === 'results' ? 'いまは、まだ書き込みがありません。<br>見つけたら、書いていただけると助かります。' : 'まだ書き込みがありません。') + '</div>'));
   // v0.98.1: 「終わった・古い情報」を2つに分ける（しばらく確かめられていないものは、まだあるかもしれない）
   var _fold = function(attr, open, label, list, lead) { return '<button type="button" ' + attr + ' style="width:100%;min-height:50px;margin:6px 0 8px;border:1px dashed #d9cfbf;border-radius:12px;background:transparent;color:#8a7d6b;font-size:0.95em;cursor:pointer;font-family:inherit;">' + (open ? '▾ ' : '▸ ') + label + '（' + list.length + '）</button>' +
-    (open ? (lead ? '<div style="font-size:0.9em;color:#8a7d6b;margin:0 4px 8px;line-height:1.6;">' + lead + '</div>' : '') + list.map(cardOf).join('') : ''); };
+    (open ? (lead ? '<div style="font-size:0.9em;color:#8a7d6b;margin:0 4px 8px;line-height:1.6;">' + lead + '</div>' : '') + (_tayoriWide() ? '<div style="' + KOYOMI_TAYORI_GRID + '">' + list.map(cardOf).join('') + '</div>' : list.map(cardOf).join('')) : ''); };   // v1.1.0: たたんだものも同じ幅でならべる
   if ((sorted.stale || []).length) body += _fold('data-td-stale', d.showStale, 'しばらく確かめられていないもの', sorted.stale, 'まだあるかもしれません。見かけたら「今もある」を、なくなっていたら「今はない」を押してください。');
   if (sorted.old.length) body += _fold('data-td-old', d.showOld, '閉じた・終わったもの', sorted.old, '');
   var foot = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 6px;">' +
     '<button type="button" data-td-map style="min-height:56px;border:1.5px solid #d9cfbf;border-radius:14px;background:#fff;color:#3b3226;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">🗺 地図で見る</button>' +
     '<button type="button" data-td-post style="min-height:56px;border:none;border-radius:14px;background:#2e6b4f;color:#fff;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">＋ 掲示板に書く</button></div>';
-  w(head + body + foot + _tayoriMoonHtml());
+  // v1.1.0: 【権威】2026-11-20「コメントの曝露が少なすぎ」「全く自由にコメント投稿できて、既存UIにフィットする形」→ A
+  //   パソコン：左に今のカード、右に「💬 町のひとこと」（自由なひとこと＋カードへのコメントが新しい順に流れる）。スマホ：帯のすぐ下に新しい3件と書く欄
+  var _vFocus = document.activeElement && document.activeElement.hasAttribute && document.activeElement.hasAttribute('data-tv-input');
+  if (mode && _koyomiTayori.voicesFor !== mode.id && !_koyomiTayori.voicesLoading) _tayoriLoadVoices(mode);
+  var _vp = mode ? _tayoriVoicesHtml(mode, _tayoriWide()) : '';
+  if (_tayoriWide() && _vp) w('<div style="display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;align-items:start;"><div style="min-width:0;">' + head + body + foot + '</div>' + _vp + '</div>' + _tayoriMoonHtml());
+  else w(_vp + head + body + foot + _tayoriMoonHtml());
+  if (_vp) _tayoriWireVoices(box, mode);
+  if (_vFocus) { var _vi = box.querySelector('[data-tv-input]'); if (_vi) { try { _vi.focus(); _vi.setSelectionRange(_vi.value.length, _vi.value.length); } catch (eF) {} } }
   _tayoriDrawMoon(box);
   var go = box.querySelector('[data-td-guideoff]'); if (go) go.onclick = function() { _tayoriLSSet('tayoriGuideOff', 1); _tayoriRenderDisaster(host); };
   [].forEach.call(box.querySelectorAll('[data-tayori-card]'), function(el) { var id = el.getAttribute('data-tayori-card'); var r = rows.filter(function(x) { return String(x.id) === id; })[0]; if (r) _tayoriWirePopup(el, r); });
@@ -96492,6 +96601,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-660: 復旧を知らせる・コメントの見せ方が足りない', '');
      } catch(e) {
        ng('ST-660: 例外', e.message);
+     }
+
+     // ===== ST-661: 町のひとこと（v1.1.0） =====
+     // 【権威】2026-11-20「コメントの曝露が少なすぎ」「全く自由にコメント投稿できて、既存UIにフィットする形」→ A
+     try {
+       var _sv661 = [_koyomiTayori.voices, _koyomiTayori.voicesFor, _koyomiTayori.comments, _koyomiTayori.rows];
+       _koyomiTayori.voices = [{ id: 'v1', body: '<img src=x onerror=y>スーパー14時まで', created_at: new Date(Date.now() - 60000).toISOString(), mine: false }];
+       _koyomiTayori.voicesFor = 'm661'; _koyomiTayori.comments = {}; _koyomiTayori.rows = [];
+       var _pw661 = _tayoriVoicesHtml({ id: 'm661' }, true), _pn661 = _tayoriVoicesHtml({ id: 'm661' }, false);
+       _koyomiTayori.voices = _sv661[0]; _koyomiTayori.voicesFor = _sv661[1]; _koyomiTayori.comments = _sv661[2]; _koyomiTayori.rows = _sv661[3];
+       (/町のひとこと/.test(_pw661) && _pw661.indexOf('<img') === -1 && /data-tv-input/.test(_pw661) && /maxlength="140"/.test(_pw661) && /data-tv-report="v1"/.test(_pw661) &&
+        /position:sticky/.test(_pw661) && !/position:sticky/.test(_pn661) && /ログインしなくても書けます/.test(_pn661) &&
+        /minmax\(0,1fr\) 380px/.test(_tayoriRenderDisaster.toString()) && /_tayoriVoiceItems/.test(_tayoriVoicesHtml.toString()))
+         ? ok('ST-661: 町のひとこと（誰でも140文字まで・パソコンは右・スマホは帯の下・コメントも一緒に流す・誤情報を知らせる・文字は無害化）')
+         : ng('ST-661: 町のひとことが足りない', '');
+     } catch(e) {
+       ng('ST-661: 例外', e.message);
      }
 
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
