@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.39 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.40 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.39';
+    const APP_VERSION = 'v0.99.40';
   const APP_LAST_UPDATED = '2026-11-20'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61207,6 +61207,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.40', date: '2026-11-20',
+    items: [
+      { icon:'🛠', t:'新しく立ち上げた掲示板が出ず、前からある町の掲示板が出ていたのを直しました',
+        before:'災害復旧掲示板をいくつも見ているとき、新しく立ち上げても、開き直すと、いちばん古い町の掲示板が出ていました',
+        after:'立ち上げた掲示板・最後に見ていた掲示板が出ます。町の名前のすぐ下の「🔁 ほかの町の掲示板に切り替える」から、見ている掲示板どうしを行き来できます' }
+    ]
+  },
+  {
     ver: 'v0.99.39', date: '2026-11-20',
     items: [
       { icon:'📋', t:'災害復旧掲示板の「⋯」を、使う順に並べ直しました',
@@ -72337,8 +72345,18 @@ function _tayoriMode() {
   // v0.99.18: 閉じた掲示板を「記録」として開いているときは、それを返す（書き込みはできない）
   if (_koyomiTayori.archive && _koyomiTayori.modeId === _koyomiTayori.archive.id) return _koyomiTayori.archive;
   var all = _koyomiTayori.modes || [];
-  if (_koyomiTayori.modeId) { var p = all.filter(function(m) { return m && m.id === _koyomiTayori.modeId; })[0]; if (p) return p; }
-  return all.filter(function(m) { return typeof _tayoriRelated === 'function' ? _tayoriRelated(m) : true; })[0] || null;
+  if (_koyomiTayori.modeId) {
+    var p = all.filter(function(m) { return m && m.id === _koyomiTayori.modeId; })[0]; if (p) return p;
+    // v0.99.40: 【不具合】2026-11-20「テストで東京都中央区、本番で千代田区を立ち上げても、スマホだといつまでも熊本の水俣市しか出ない」
+    //   → ①立ち上げたばかりで、まだ一覧に載っていない掲示板でも、ほかの町（いちばん古い水俣市）にすり替えない
+    if (_koyomiTayori.made && _koyomiTayori.made.id === _koyomiTayori.modeId && (Date.now() - (_koyomiTayori.made._at || 0)) < 10 * 60 * 1000) return _koyomiTayori.made;
+  }
+  var rel = all.filter(function(m) { return typeof _tayoriRelated === 'function' ? _tayoriRelated(m) : true; });
+  //   ②開き直したときは、最後に見ていた掲示板を開く（端末に覚えておく）
+  var cur = _tayoriLS('tayoriCurrent', null);
+  if (cur) { var c = rel.filter(function(m) { return m && m.id === cur; })[0]; if (c) return c; }
+  //   ③覚えていなければ、いちばん新しく立ち上がった掲示板（いちばん古いものではなく）
+  return rel.slice().sort(function(a, b) { return String(b.started_at || '').localeCompare(String(a.started_at || '')); })[0] || null;
 }
 function _tayoriModeActive(id) { return !!id && (_koyomiTayori.modes || []).some(function(m) { return m.id === id; }); }
 function _tayoriTab() { return _koyomiTayori.tab === 'disaster' ? 'disaster' : 'season'; }   // v0.84.0: どちらかはナビタブで決まる（季節のたより／災害復旧掲示板）
@@ -72424,7 +72442,9 @@ function renderTayoriView() {
         var _aa = ban.querySelector('[data-tayori-arcadmin]'); if (_aa) _aa.onclick = _tayoriDisMenu;
       } else {
       ban.innerHTML = '<div data-tayori-band="' + (calm ? 'calm' : 'red') + '" style="' + (calm ? 'background:#f8e7e4;color:#5a2a24;border:2px solid #e6bdb6;' : 'background:#9f2a22;color:#fff;') + 'border-radius:14px;padding:14px 18px;margin-bottom:14px;font-size:1.08em;">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;"><div style="min-width:0;flex:1 1 210px;"><div style="font-size:0.82em;letter-spacing:0.08em;opacity:0.9;">緊急災害復旧モード</div><div style="font-weight:700;font-size:clamp(1.12em, 4.2vw, 1.35em);margin-top:2px;">' + _tayoriEsc(mode.name) + (mode.hazard ? '（' + _tayoriEsc(_tayoriHazardLabel(mode.hazard)) + '）' : '') + '</div></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;"><div style="min-width:0;flex:1 1 210px;"><div style="font-size:0.82em;letter-spacing:0.08em;opacity:0.9;">緊急災害復旧モード</div><div style="font-weight:700;font-size:clamp(1.12em, 4.2vw, 1.35em);margin-top:2px;">' + _tayoriEsc(mode.name) + (mode.hazard ? '（' + _tayoriEsc(_tayoriHazardLabel(mode.hazard)) + '）' : '') + '</div>' +
+        // v0.99.40: ほかにも見ている掲示板があれば、町の名前のすぐ下から切り替えられる
+        (function() { var n = _tayoriOtherModes().length; return n ? '<button type="button" data-tayori-switch style="margin-top:4px;padding:2px 0;border:none;background:none;color:inherit;opacity:0.9;font-size:0.86em;text-decoration:underline;cursor:pointer;font-family:inherit;min-height:30px;">🔁 ほかの町の掲示板に切り替える（' + n + '）</button>' : ''; })() + '</div>' +
         '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">' + (mode.kind === 'user' ? '<span class="tsh-top">' + _tayoriShareMini('data-tum-share', !calm) + '</span>' : '') +
         (mode.w != null ? '<button type="button" data-tayori-fit style="flex-shrink:0;padding:4px 10px;border:1px solid ' + (calm ? '#d9a9a1' : 'rgba(255,255,255,0.7)') + ';border-radius:999px;background:transparent;color:' + (calm ? '#9f2a22' : '#fff') + ';font-size:0.88em;cursor:pointer;font-family:inherit;min-height:34px;">地域を見る</button>' : '') +
         '<button type="button" data-tayori-menuban title="そのほか" aria-label="そのほか" style="flex-shrink:0;width:40px;height:36px;border:1px solid ' + (calm ? '#d9a9a1' : 'rgba(255,255,255,0.7)') + ';border-radius:999px;background:transparent;color:' + (calm ? '#9f2a22' : '#fff') + ';font-size:1.1em;line-height:1;cursor:pointer;font-family:inherit;">⋯</button>' + '</div></div>' +
@@ -72446,6 +72466,7 @@ function renderTayoriView() {
       _tayoriWirePhase(ban, mode);
       var mnb = ban.querySelector('[data-tayori-menuban]'); if (mnb) mnb.onclick = function() { _tayoriDisMenu(); };
       var rcb = ban.querySelector('[data-tayori-recover]'); if (rcb) rcb.onclick = function() { _tayoriRecoverAsk(mode); };
+      var swb = ban.querySelector('[data-tayori-switch]'); if (swb) swb.onclick = _tayoriPickOtherMode;   // v0.99.40
       var fb = ban.querySelector('[data-tayori-fit]'); if (fb) fb.onclick = function() { if (_tayoriView() !== 'map') { _koyomiTayori.view = 'map'; renderTayoriView(); _tayoriDraw(); } _tayoriFitMode(); };
       }
       // v0.99.25: 【権威】2026-11-20「テスト用は説明を長くして、本当にテスト感を出して」→ テスト用の掲示板には、いちばん上に長めの説明
@@ -74788,6 +74809,7 @@ function _tayoriShareMini(attr, onRed) {
 function _tayoriWireShare(el, attr, m, item) { [].forEach.call(el.querySelectorAll('[' + attr + ']'), function(b) { b.onclick = function() { _tayoriShare(m, b.getAttribute(attr), item); }; }); }
 // そのモードを開く（ほかの地域・リンクから）
 function _tayoriOpenMode(id) {
+  _tayoriLSSet('tayoriCurrent', id);   // v0.99.40: 最後に見ていた掲示板を覚える（開き直しても同じ町）
   _koyomiTayori.modeId = id; _koyomiTayori.tab = 'disaster'; _koyomiTayori.view = ''; _koyomiTayori.filter = ''; _koyomiTayori.rows = []; _koyomiTayori.autoTried = false;
   var d = _tdState(); d.stage = 'home'; d.keys = null; d.area = ''; d.near = null;
   try { _tayoriSyncNav(); } catch (e) {}
@@ -74832,7 +74854,8 @@ function _tayoriUserModeHtml(m) {
       '</div>';
   }
   var links = [];
-  if (others) links.push('<button type="button" data-tum-others style="border:none;background:none;color:#3b6ea5;text-decoration:underline;font-size:0.84em;cursor:pointer;font-family:inherit;padding:2px 0;">ほかの地域を見る（' + others + '）</button>');
+  // v0.99.40: 切り替えは、帯の町の名前のすぐ下（🔁 ほかの町の掲示板に切り替える）に移した。ここには出さない（同じものが2つ並ぶため）
+  if (false && others) links.push('<button type="button" data-tum-others style="border:none;background:none;color:#3b6ea5;text-decoration:underline;font-size:0.84em;cursor:pointer;font-family:inherit;padding:2px 0;">ほかの地域を見る（' + others + '）</button>');
   if (user && !m.mine) links.push('<button type="button" data-tum-follow style="border:none;background:none;color:#5a4e3c;text-decoration:underline;font-size:0.84em;cursor:pointer;font-family:inherit;padding:2px 0;">' + (followed ? '見守るのをやめる' : '👀 この町を見守る') + '</button>');
   if (user && m.mine && unv) links.push('<button type="button" data-tum-end style="border:none;background:none;color:#8a7d6b;text-decoration:underline;font-size:0.84em;cursor:pointer;font-family:inherit;padding:2px 0;">間違えて始めたので止める</button>');
   if (links.length) h += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:-2px 0 10px;">' + links.join('') + '</div>';
@@ -74969,8 +74992,12 @@ function _tayoriStartWizard(opts) {
       box.querySelector('[data-wz-next]').onclick = function() {
         var b = this; b.disabled = true; b.textContent = '立ち上げています…';
         rpcWithTimeout('koyomiru_tayori_user_start', TEST ? { p_code: m.code, p_hazard: st.hazard, p_test: true } : { p_code: m.code, p_hazard: st.hazard }, 15000).then(function(r) {
+          if (r && !r.error && Array.isArray(r.data) && r.data[0]) r.data = r.data[0];   // v0.99.40: 1行の表で返ってきても受け取る
           if (r && !r.error && r.data && r.data.id) {
             st.res = r.data; _tayoriSetFollow(r.data.id, true); _koyomiTayori.modeId = r.data.id; _koyomiTayori.tab = 'disaster';
+            // v0.99.40: 【不具合】2026-11-20「テストで東京都中央区、本番で千代田区を立ち上げても、スマホだといつまでも熊本の水俣市しか出ない」 → 立ち上げた掲示板を覚え、一覧に載る前でもそれを出す
+            _tayoriLSSet('tayoriCurrent', r.data.id);
+            _koyomiTayori.made = { id: r.data.id, slug: r.data.slug, name: st.muni.pref + ' ' + st.muni.name, hazard: st.hazard, kind: 'user', mine: true, munis: [{ name: st.muni.name, code: m.code }], is_test: !!TEST, verified_at: TEST ? new Date().toISOString() : null, started_at: new Date().toISOString(), _at: Date.now() };
             _tayoriLoadMeta().then(function() { go('done'); });
             return;
           }
@@ -97715,6 +97742,33 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        } finally { if (_bx675) _bx675.remove(); _koyomiTayori.modes = _sv675.modes; _koyomiTayori.modeId = _sv675.id; }
      } catch(e) {
        ng('ST-675: 例外', e.message);
+     }
+
+     // ===== ST-676: 新しく立ち上げた・最後に見た掲示板が出る（水俣市にすり替わらない）（v0.99.40） =====
+     // 【不具合】2026-11-20「テストで東京都中央区、本番で千代田区を立ち上げても、スマホだといつまでも熊本の水俣市しか出ない」
+     try {
+       var _sv676 = { modes: _koyomiTayori.modes, id: _koyomiTayori.modeId, made: _koyomiTayori.made, cur: localStorage.getItem('tayoriCurrent') }, _r676 = {};
+       try {
+         localStorage.removeItem('tayoriCurrent');
+         _koyomiTayori.modes = [{ id: 'old', name: '熊本県 水俣市', kind: 'user', mine: true, started_at: '2026-11-18T00:00:00Z' }, { id: 'new', name: '東京都 千代田区', kind: 'user', mine: true, started_at: '2026-11-20T14:00:00Z' }];
+         _koyomiTayori.modeId = null; _koyomiTayori.made = null;
+         _r676.newest = _tayoriMode().id === 'new';
+         _tayoriLSSet('tayoriCurrent', 'old'); _r676.remember = _tayoriMode().id === 'old';
+         _tayoriLSSet('tayoriCurrent', 'gone'); _r676.goneFallback = _tayoriMode().id === 'new';
+         _koyomiTayori.made = { id: 'fresh', name: '東京都 中央区', kind: 'user', mine: true, is_test: true, _at: Date.now() }; _koyomiTayori.modeId = 'fresh';
+         _r676.made = _tayoriMode().id === 'fresh';
+         _koyomiTayori.modeId = 'old'; _r676.switchLink = /data-tayori-switch/.test(renderTayoriView.toString()) && _tayoriOtherModes().length === 1;
+         _r676.openRemembers = /tayoriCurrent/.test(_tayoriOpenMode.toString());
+       } finally {
+         _koyomiTayori.modes = _sv676.modes; _koyomiTayori.modeId = _sv676.id; _koyomiTayori.made = _sv676.made;
+         if (_sv676.cur == null) localStorage.removeItem('tayoriCurrent'); else localStorage.setItem('tayoriCurrent', _sv676.cur);
+       }
+       var _x676 = Object.keys(_r676).filter(function(k) { return !_r676[k]; });
+       !_x676.length
+         ? ok('ST-676: 新しく立ち上げた掲示板・最後に見た掲示板が出る（いちばん古い水俣市にすり替わらない）・町の名前の下から切り替えられる')
+         : ng('ST-676: 掲示板の選び方が違う', _x676.join(','));
+     } catch(e) {
+       ng('ST-676: 例外', e.message);
      }
 
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
