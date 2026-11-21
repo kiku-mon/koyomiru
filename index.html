@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.62 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.64 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.62';
+    const APP_VERSION = 'v0.99.64';
   const APP_LAST_UPDATED = '2026-11-21'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61222,6 +61222,22 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.64', date: '2026-11-21',
+    items: [
+      { icon:'🍜', t:'おいしいお店の「お店を探す」を強くしました',
+        before:'「ラーメン」で探しても、見つからないと出ることがありました',
+        after:'「中華そば」「つけ麺」などの言い換えもまとめて、5kmの範囲で探します。地図のデータの窓口が混んでいるときは、別の窓口で探し直します。読めなかったときは、そうと分かるように出します。結果には、いつも「Googleマップで見る」と「見つからないお店を登録する」があります' }
+    ]
+  },
+  {
+    ver: 'v0.99.63', date: '2026-11-21',
+    items: [
+      { icon:'📷', t:'おいしいお店のレビューに、写真を1枚付けられるようにしました',
+        before:'レビューは文字と★だけでした',
+        after:'レビューを書くとき（直すときも）、写真を1枚選べます。撮った場所などの情報は消してから送ります。はじめての1枚は、確かめてから載ります。写真の通報もできます' }
+    ]
+  },
+  {
     ver: 'v0.99.62', date: '2026-11-21',
     items: [
       { icon:'⭐', t:'おいしいお店の★は、1人からでも平均を出すようにしました',
@@ -74290,6 +74306,22 @@ function _tayoriPlaceBoxHtml(mode) {
     '<div style="font-size:0.78em;color:#6b7c8f;margin-top:8px;line-height:1.6;">ふだんの場所の一覧です。いま開いているかは、掲示板の書き込みや、その場所に確かめてください。こよみるの地図のデータ：© OpenStreetMap の協力者</div>' +
   '</div>';
 }
+// v0.99.64: 【権威】2026-11-21 C「千葉市中央区でラーメンを探したら、ありませんと言われた。ないわけない。お金のかからないやり方で」
+//   → 地図のデータ（OpenStreetMap）の窓口が混んでいる・返事がないときは、別の窓口で探し直す。どこもだめなら「読めなかった」と分けて返す（「ない」とは言わない）
+var KOYOMI_OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+function _koyomiOverpass(ql) {
+  var i = 0;
+  var one = function() {
+    if (i >= KOYOMI_OVERPASS.length) return Promise.reject(new Error('overpass'));
+    var url = KOYOMI_OVERPASS[i++], ac = (typeof AbortController === 'function') ? new AbortController() : null;
+    var to = setTimeout(function() { try { if (ac) ac.abort(); } catch (e) {} }, 25000);
+    return fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(ql), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, credentials: 'omit', signal: ac ? ac.signal : undefined })
+      .then(function(r) { clearTimeout(to); if (!r.ok) throw new Error('http'); return r.json(); })
+      .then(function(d) { if (!d || !Array.isArray(d.elements) || (d.remark && /runtime error|timed out/i.test(d.remark) && !d.elements.length)) throw new Error('remark'); return d; })
+      .catch(function() { clearTimeout(to); return one(); });
+  };
+  return one();
+}
 function _tayoriPlaceFind(mode, q) {
   var key = mode.id + '|' + q, box = (mode.w != null) ? [mode.s, mode.w, mode.n, mode.e] : null;
   if (!box && _koyomiTayori.map) { try { var b = _koyomiTayori.map.getBounds(); box = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]; } catch (e) {} }
@@ -74301,8 +74333,7 @@ function _tayoriPlaceFind(mode, q) {
   if (nm) parts.push('nwr["name"~"' + nm + '"](' + bb + ');');
   if (!parts.length) return Promise.resolve({ key: key, list: [], err: '探せる言葉ではありませんでした。Googleマップで探してみてください。' });
   var ql = '[out:json][timeout:20];(' + parts.join('') + ');out center 200;';
-  return fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(ql), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, credentials: 'omit' })
-    .then(function(r) { if (!r.ok) throw new Error('http'); return r.json(); })
+  return _koyomiOverpass(ql)
     .then(function(d) {
       var seen = {}, list = ((d && d.elements) || []).map(function(e) {
         var t = e.tags || {}, lat = e.lat != null ? e.lat : (e.center && e.center.lat), lng = e.lon != null ? e.lon : (e.center && e.center.lon);
@@ -75595,7 +75626,8 @@ function renderShopsView() {
   host.innerHTML = '<div style="max-width:760px;margin:0 auto;padding:14px 12px 0;color:#3b3226;">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><div style="flex:1;min-width:0;"><div style="font-size:0.85em;color:#8a7d6b;">🍜 おいしいお店</div>' +
       '<div style="font-size:1.35em;font-weight:800;line-height:1.35;">' + (t ? _shopEsc(t.name) + 'のおいしいお店' : 'おいしいお店') + '</div></div>' +
-      '<button type="button" data-sh-town style="' + btn + 'border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">📍 ' + (t ? '町を変える' : '町を選ぶ') + '</button></div>' +
+      '<button type="button" data-sh-town style="' + btn + 'border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">📍 ' + (t ? '町を変える' : '町を選ぶ') + '</button>' +
+      ((typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? '<button type="button" data-sh-pq style="' + btn + 'border:1.5px solid #c9a227;background:#fff7d6;color:#6b5200;">📷 確かめ待ち' + KOYOMI_ONLY_YOU_TAG + '</button>' : '') + '</div>' +
     (t ? '<div style="display:flex;gap:6px;align-items:center;margin-top:12px;flex-wrap:wrap;">' +
         '<span style="display:inline-flex;border:1.5px solid #d9cfbf;border-radius:999px;overflow:hidden;background:#fff;"><button type="button" data-sh-cycle style="min-height:40px;padding:0 12px;border:none;background:none;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;color:#3b3226;">' + (g ? g[1] + ' ' + _shopEsc(g[2]) : '🍽 すべての種類') + ' ⟳</button><button type="button" data-sh-pick aria-label="種類を一覧から選ぶ" style="min-height:40px;padding:0 10px;border:none;border-left:1px solid #e6dccb;background:none;cursor:pointer;color:#8a7d6b;">▾</button></span>' +
         '<button type="button" data-sh-add style="' + btn + 'border:none;background:#b5541c;color:#fff;margin-left:auto;">＋ お店を探してレビュー</button></div>' +
@@ -75609,6 +75641,7 @@ function renderShopsView() {
   var q = function(s) { return host.querySelector(s); };
   if (q('[data-sh-town]')) q('[data-sh-town]').onclick = _shopPickTown;
   if (q('[data-sh-town2]')) q('[data-sh-town2]').onclick = _shopPickTown;
+  if (q('[data-sh-pq]')) q('[data-sh-pq]').onclick = _shopPhotoQueue;
   if (q('[data-sh-here]')) q('[data-sh-here]').onclick = function() { _shopTownHere(this); };
   if (q('[data-sh-cycle]')) q('[data-sh-cycle]').onclick = function() {
     var ks = [''].concat(KOYOMI_SHOP_GENRES.map(function(x) { return x[0]; })), i = ks.indexOf(_koyomiShops.genre || '');
@@ -75710,40 +75743,76 @@ function _shopFindWizard() {
   _tayoriAskText({ title: '🍜 お店を探す', desc: _shopEsc(t.name) + 'のあたりで探します。お店の名前の一部や「ラーメン」などで探せます。', placeholder: '例：ラーメン、〇〇食堂', ok: '探す', onOk: function(v) {
     v = String(v || '').trim(); if (!v) return;
     if (typeof showToast === 'function') showToast('探しています…', { type: 'info' });
-    _shopOsmSearch(t, v).then(function(ls) {
-      var bs = ls.slice(0, 40).map(function(x) { return { label: '🍽 ' + _shopEsc(x.name) + '<span style="display:block;font-size:0.8em;color:#888;margin-top:2px;">' + _shopEsc(_shopGenre(x.genre)[2]) + (x.dist != null ? '・' + (x.dist < 1000 ? Math.round(x.dist / 10) * 10 + 'm' : (x.dist / 1000).toFixed(1) + 'km') : '') + '</span>', style: 'cancel', onClick: function() { _shopEnsureThen(x.key, x.name, x.lat, x.lng, x.genre); } }; });
-      bs.push({ label: '✍️ 見つからないので、自分で登録する', style: 'cancel', onClick: function() { _shopRegister(v); } });
-      bs.push({ label: '閉じる', style: 'cancel' });
-      showChoiceModal({ align: 'left', title: ls.length ? '「' + _shopEsc(v.slice(0, 20)) + '」のお店（' + ls.length + '件）' : '見つかりませんでした', desc: ls.length ? 'レビューを書くお店を選んでください。' : '地図のデータにないお店は、自分で登録できます。', buttons: bs });
+    _shopOsmSearch(t, v).then(function(res) {
+      var ls = res.list || [];
+      var g = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v + ' ' + (t.pref && t.pref !== t.name ? t.pref + ' ' : '') + t.name);
+      // v0.99.64: 見つからないときの道を、いつもいちばん上に（Googleで確かめて、名前と住所を入れれば★を付けられる）
+      var top = [
+        { heading: ls.length ? 'ほかの探し方' : '' },
+        { label: '🗺 Googleマップで「' + _shopEsc(v.slice(0, 20)) + ' ' + _shopEsc(t.name) + '」を見る ↗', style: 'cancel', onClick: function() { window.open(g, '_blank', 'noopener'); } },
+        { label: '✍️ 見つからないお店を登録する（名前と住所だけ）', style: 'cancel', onClick: function() { _shopRegister(v); } }
+      ];
+      if (!ls.length) top.shift();
+      var bs = ls.slice(0, 60).map(function(x) { return { label: '🍽 ' + _shopEsc(x.name) + '<span style="display:block;font-size:0.8em;color:#888;margin-top:2px;">' + _shopEsc(_shopGenre(x.genre)[2]) + (x.dist != null ? '・' + (x.dist < 1000 ? Math.round(x.dist / 10) * 10 + 'm' : (x.dist / 1000).toFixed(1) + 'km') : '') + '</span>', style: 'cancel', onClick: function() { _shopEnsureThen(x.key, x.name, x.lat, x.lng, x.genre); } }; });
+      if (ls.length) bs = [{ heading: '近い順（地図のデータより）' }].concat(bs);
+      bs = (ls.length ? bs.concat(top) : top).concat([{ label: '閉じる', style: 'cancel' }]);
+      showChoiceModal({ align: 'left',
+        title: res.err ? 'お店のデータを読めませんでした' : ls.length ? '「' + _shopEsc(v.slice(0, 20)) + '」のお店（' + ls.length + '件）' : '地図のデータには見つかりませんでした',
+        desc: res.err ? '地図のデータの窓口が混んでいるようです。少し待ってからもう一度探すか、Googleマップで確かめて、名前と住所で登録してください。'
+          : ls.length ? 'レビューを書くお店を選んでください。ないときは、いちばん下から。' : '地図のデータは有志が作っているので、載っていないお店もあります。Googleマップで確かめて、名前と住所で登録すれば★を付けられます。',
+        buttons: bs });
     });
   } });
 }
+// v0.99.64: 言い換えもまとめて探す（名前に「ラーメン」がない店も拾う）。半径5km。読めなかったときは err を返す
+var KOYOMI_SHOP_SYNONYMS = [
+  [/ラーメン|らーめん|拉麺|中華そば|つけ麺|担々麺/, 'ラーメン|らーめん|拉麺|中華そば|つけ麺|担々麺|麺屋|麺処', '["cuisine"~"ramen|noodle"]'],
+  [/寿司|すし|鮨|鮓/, '寿司|すし|鮨|鮓', '["cuisine"~"sushi"]'],
+  [/カレー/, 'カレー|カリー', '["cuisine"~"curry|indian|nepalese"]'],
+  [/焼肉|焼き肉|ホルモン/, '焼肉|焼き肉|ホルモン', '["cuisine"~"yakiniku|korean|barbecue"]'],
+  [/カフェ|喫茶|珈琲|コーヒー/, 'カフェ|喫茶|珈琲|コーヒー|cafe|Cafe|CAFE', '["amenity"="cafe"]'],
+  [/居酒屋|酒場|バー/, '居酒屋|酒場|酒処', '["amenity"~"^(pub|bar)$"]'],
+  [/中華|餃子|ぎょうざ/, '中華|餃子|ぎょうざ|飯店|菜館', '["cuisine"~"chinese|dumpling"]'],
+  [/定食|食堂/, '定食|食堂', '["cuisine"~"japanese"]'],
+  [/そば|蕎麦/, 'そば|蕎麦', '["cuisine"~"soba"]'],
+  [/うどん/, 'うどん|饂飩', '["cuisine"~"udon"]'],
+  [/とんかつ|カツ/, 'とんかつ|豚かつ|カツ', '["cuisine"~"tonkatsu"]'],
+  [/ハンバーガー|バーガー/, 'バーガー', '["cuisine"~"burger"]'],
+  [/ケーキ|洋菓子|スイーツ|甘味/, 'ケーキ|洋菓子|パティスリー|甘味', '["cuisine"~"cake|dessert"]'],
+  [/パン|ベーカリー/, 'パン|ベーカリー', null]
+];
+function KOYOMI_SHOP_GENRE_OF_SYN(syn) {
+  var m = [[/ラーメン/, 'ramen'], [/寿司/, 'sushi'], [/カレー/, 'curry'], [/焼肉/, 'yakiniku'], [/カフェ/, 'cafe'], [/居酒屋/, 'izakaya'], [/中華/, 'chuka'], [/定食|そば|うどん|とんかつ/, 'teishoku'], [/バーガー/, 'fastfood'], [/ケーキ|パン/, 'sweets']];
+  for (var i = 0; i < m.length; i++) if (m[i][0].test(syn[1])) return m[i][1];
+  return '';
+}
 function _shopOsmSearch(t, kw) {
   var nm = String(kw).replace(/[^\p{L}\p{N}ー・ 　]/gu, '').trim().slice(0, 20);
-  var gq = { 'ラーメン': '["cuisine"~"ramen"]', '寿司': '["cuisine"~"sushi"]', 'すし': '["cuisine"~"sushi"]', 'カレー': '["cuisine"~"curry|indian"]', '焼肉': '["cuisine"~"yakiniku|korean|barbecue"]', 'カフェ': '["amenity"="cafe"]', '喫茶': '["amenity"="cafe"]', '居酒屋': '["amenity"~"pub|bar"]', '中華': '["cuisine"~"chinese"]', '定食': '["cuisine"~"japanese"]', 'そば': '["cuisine"~"soba"]', 'うどん': '["cuisine"~"udon"]', 'ハンバーガー': '["cuisine"~"burger"]', 'パン': '["shop"="bakery"]', 'ケーキ': '["cuisine"~"cake"]' };
-  var around = '(around:3000,' + Number(t.lat).toFixed(5) + ',' + Number(t.lng).toFixed(5) + ')';
+  if (!nm || !isFinite(t && t.lat)) return Promise.resolve({ list: [], err: false });
+  var around = '(around:5000,' + Number(t.lat).toFixed(5) + ',' + Number(t.lng).toFixed(5) + ')';
   var food = '["amenity"~"^(restaurant|cafe|fast_food|pub|bar|food_court|ice_cream)$"]';
-  var parts = [];
-  if (nm) parts.push('nwr' + food + '["name"~"' + nm + '"]' + around + ';');
-  if (gq[nm]) parts.push('nwr' + (/amenity|shop/.test(gq[nm]) ? '' : food) + gq[nm] + around + ';');
-  if (!parts.length || !isFinite(t.lat)) return Promise.resolve([]);
-  var ql = '[out:json][timeout:20];(' + parts.join('') + ');out center 150;';
-  return fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(ql), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, credentials: 'omit' })
-    .then(function(r) { if (!r.ok) throw new Error('http'); return r.json(); })
+  var syn = KOYOMI_SHOP_SYNONYMS.filter(function(x) { return x[0].test(nm); })[0];
+  var parts = ['nwr' + food + '["name"~"' + (syn ? syn[1] : nm) + '"]' + around + ';'];
+  if (syn && syn[2]) parts.push('nwr' + (/amenity/.test(syn[2]) ? '' : food) + syn[2] + around + ';');
+  if (syn && /パン/.test(syn[1])) parts.push('nwr["shop"="bakery"]' + around + ';');
+  var ql = '[out:json][timeout:25];(' + parts.join('') + ');out center 200;';
+  return _koyomiOverpass(ql)
     .then(function(d) {
       var seen = {};
-      return ((d && d.elements) || []).map(function(e) {
+      var list = ((d && d.elements) || []).map(function(e) {
         var tg = e.tags || {}, lat = e.lat != null ? e.lat : (e.center && e.center.lat), lng = e.lon != null ? e.lon : (e.center && e.center.lon);
         var name = String(tg['name:ja'] || tg.name || '').slice(0, 60);
         if (!name || !isFinite(lat) || !isFinite(lng) || !/^(node|way|relation)$/.test(e.type) || !isFinite(e.id)) return null;
         var key = e.type + '/' + e.id; if (seen[key]) return null; seen[key] = 1;
-        return { key: key, name: name, lat: Number(lat), lng: Number(lng), genre: _shopGuessGenre(tg), dist: typeof _bosaiDist === 'function' ? _bosaiDist({ lat: t.lat, lng: t.lng }, { lat: lat, lng: lng }) : null };
+        var gg = _shopGuessGenre(tg); if (gg === 'other' && syn) { var sg = KOYOMI_SHOP_GENRE_OF_SYN(syn); if (sg) gg = sg; }   // 種類が入っていない店は、探した言葉から
+        return { key: key, name: name, lat: Number(lat), lng: Number(lng), genre: gg, dist: typeof _bosaiDist === 'function' ? _bosaiDist({ lat: t.lat, lng: t.lng }, { lat: lat, lng: lng }) : null };
       }).filter(Boolean).sort(function(a, b) { return (a.dist || 0) - (b.dist || 0); });
+      return { list: list, err: false };
     })
-    .catch(function() { if (typeof showToast === 'function') showToast('お店のデータを読めませんでした。少し待ってからお試しください', { type: 'warn' }); return []; });
+    .catch(function() { return { list: [], err: true }; });
 }
 function _shopRegister(kw) {
-  _tayoriAskText({ title: '✍️ お店を登録する', desc: 'お店の名前を入れてください（60字まで）。場所は、このあと住所で選びます。', value: String(kw || '').slice(0, 60), placeholder: 'お店の名前', ok: '次へ', onOk: function(name) {
+  _tayoriAskText({ title: '✍️ お店を登録する', desc: 'お店の名前を入れてください（60字まで）。場所は、このあと住所で選びます。Googleマップで見つけたお店も、ここで登録できます。', value: String(kw || '').slice(0, 60), placeholder: 'お店の名前', ok: '次へ', onOk: function(name) {
     name = String(name || '').trim().slice(0, 60); if (!name) return;
     _tayoriAskText({ title: 'お店の場所', desc: '住所や、近くの目印を入れてください。', placeholder: '例：千葉市中央区富士見2丁目', ok: '探す', onOk: function(addr) {
       _tayoriAddressSearch(String(addr || '').trim()).then(function(ls) {
@@ -75786,7 +75855,7 @@ function _shopOpen(id) {
             (x.is_me ? '' : '<button type="button" data-ss-report="' + _shopEsc(x.id) + '" style="border:none;background:none;color:#a39886;font-size:0.8em;cursor:pointer;">通報</button>') + '</div>' +
             (x.hidden ? '<div style="font-size:0.85em;color:#b3261e;margin-top:4px;">このレビューは、通報が重なったため隠れています（あなたにだけ見えています）</div>' : '') +
             (x.title ? '<div style="font-weight:800;margin-top:6px;overflow-wrap:anywhere;">' + _shopEsc(x.title) + '</div>' : '') +
-            (x.body ? '<div style="margin-top:4px;">' + _tayoriLongText(x.body, '0.95em') + '</div>' : '') + '</div>';
+            (x.body ? '<div style="margin-top:4px;">' + _tayoriLongText(x.body, '0.95em') + '</div>' : '') + _shopPhotoHtml(x) + '</div>';
         }).join('') : '<div style="margin-top:10px;color:#8a7d6b;">まだレビューはありません。</div>') +
       '</div></div>';
     document.body.appendChild(ov);
@@ -75798,6 +75867,14 @@ function _shopOpen(id) {
       if (!window._cloudIsLoggedIn) { if (typeof showToast === 'function') showToast('レビューを書くには、ログインをお願いします', { type: 'warn' }); return; }
       close(); _shopReviewForm({ id: s.id, name: s.name, genre: mine ? mine.genre : s.genre }, mine);
     };
+    [].forEach.call(ov.querySelectorAll('[data-ss-preport]'), function(b) { b.onclick = function() {
+      if (!window._cloudIsLoggedIn) { if (typeof showToast === 'function') showToast('通報するには、ログインをお願いします', { type: 'warn' }); return; }
+      var _pm = showChoiceModal({ title: 'この写真を通報しますか？', desc: 'お店と関係のない写真・人の顔がはっきり写っている写真・ふさわしくない写真など。重なると、ぼかします。', buttons: [
+        { label: '通報する', style: 'danger', dangerConfirm: false, onClick: function() { rpcWithTimeout('koyomiru_shop_photo_report', { p_review: b.getAttribute('data-ss-preport') }, 10000).then(function(r) { if (typeof showToast === 'function') showToast(r && !r.error ? '通報しました。ありがとうございます' : (/limit/.test(String(r && r.error && r.error.message)) ? '今日は、ここまでです' : '送れませんでした'), { type: r && !r.error ? 'success' : 'warn' }); }); } },
+        { label: 'やめる', style: 'cancel' } ] });
+      if (_pm) _pm.style.zIndex = '100002';
+    }; });
+    [].forEach.call(ov.querySelectorAll('[data-sp-img="1"]'), function(a) { a.onclick = function(e) { if (!a._seen) { e.preventDefault(); a._seen = 1; var im = a.querySelector('img'); if (im) im.style.filter = ''; var sp = a.querySelector('span'); if (sp) sp.remove(); } }; });
     [].forEach.call(ov.querySelectorAll('[data-ss-report]'), function(b) { b.onclick = function() {
       if (!window._cloudIsLoggedIn) { if (typeof showToast === 'function') showToast('通報するには、ログインをお願いします', { type: 'warn' }); return; }
       var _rm = showChoiceModal({ title: 'このレビューを通報しますか？', desc: '中傷・うそ・お店と関係のない書き込みなど。3人が通報すると、自動で隠れます。', buttons: [
@@ -75824,6 +75901,8 @@ function _shopReviewForm(shop, mine) {
     '<div style="margin-top:12px;font-weight:700;">本文<span style="font-weight:400;color:#8a7d6b;font-size:0.85em;">（5,000字まで・なくても可）</span></div>' +
     '<textarea data-sf-body maxlength="5000" rows="7" placeholder="味・量・お店の雰囲気・季節のおすすめなど" style="' + inp + 'margin-top:4px;resize:vertical;">' + _shopEsc((mine && mine.body) || '') + '</textarea>' +
     '<div data-sf-count style="text-align:right;font-size:0.8em;color:#8a7d6b;"></div>' +
+    '<div style="margin-top:8px;font-weight:700;">写真<span style="font-weight:400;color:#8a7d6b;font-size:0.85em;">（1枚・なくても可）</span></div>' +
+    '<div data-sf-photo style="margin-top:6px;"></div>' +
     '<div style="font-size:0.8em;color:#8a7d6b;line-height:1.6;margin-top:6px;">自分や身内のお店には、★を付けないでください。お店の人を傷つける書き方は、通報で隠れることがあります。</div>' +
     '<button type="button" data-sf-save style="width:100%;min-height:54px;margin-top:12px;border:none;border-radius:12px;background:#b5541c;color:#fff;font-size:1.05em;font-weight:800;cursor:pointer;font-family:inherit;">' + (mine ? '直して送る' : '送る') + '</button>' +
     (mine ? '<button type="button" data-sf-del style="width:100%;min-height:44px;margin-top:8px;border:none;background:none;color:#b3261e;cursor:pointer;font-family:inherit;">このレビューを消す</button>' : '') +
@@ -75840,13 +75919,34 @@ function _shopReviewForm(shop, mine) {
     [].forEach.call(ov.querySelectorAll('[data-sf-g]'), function(b) { b.onclick = function() { st.genre = b.getAttribute('data-sf-g'); drawG(); }; });
   };
   drawG();
+  // v0.99.63: 写真1枚（いまの写真を外す・新しく選ぶ）
+  st.photo = null; st.dropPhoto = false;
+  var drawP = function() {
+    var box = q('[data-sf-photo]'), has = mine && mine.photo_path && !st.dropPhoto;
+    var lbl = 'display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border-radius:10px;border:1.5px solid #b5541c;color:#b5541c;background:#fff;font-weight:700;cursor:pointer;';
+    if (st.photo) box.innerHTML = '<img src="' + _shopEsc(st.photo.preview) + '" alt="" style="display:block;max-width:220px;width:100%;border-radius:10px;"><button type="button" data-sf-pclear style="margin-top:6px;border:none;background:none;color:#b3261e;cursor:pointer;">この写真をやめる</button>';
+    else if (has) box.innerHTML = '<img src="' + _shopEsc(_tayoriPhotoUrl(mine.photo_path, true)) + '" alt="" style="display:block;max-width:220px;width:100%;border-radius:10px;"><button type="button" data-sf-pdrop style="margin-top:6px;border:none;background:none;color:#b3261e;cursor:pointer;">いまの写真を外す</button>';
+    else box.innerHTML = '<label style="' + lbl + '">📷 写真を選ぶ<input type="file" data-sf-file accept="image/*" style="display:none;"></label><div style="font-size:0.78em;color:#8a7d6b;margin-top:4px;line-height:1.6;">撮った場所などの情報は消してから送ります。はじめての1枚は、確かめてから載ります。人の顔が写らないようにお願いします。</div>';
+    var fi = box.querySelector('[data-sf-file]'); if (fi) fi.onchange = function() { var f = fi.files && fi.files[0]; if (!f) return; box.innerHTML = '<div style="color:#8a7d6b;">写真を整えています…</div>'; _tayoriMakePhoto(f).then(function(ph) { st.photo = ph; drawP(); }, function() { if (typeof showToast === 'function') showToast('この写真は使えませんでした', { type: 'warn' }); drawP(); }); };
+    var pc = box.querySelector('[data-sf-pclear]'); if (pc) pc.onclick = function() { st.photo = null; drawP(); };
+    var pd = box.querySelector('[data-sf-pdrop]'); if (pd) pd.onclick = function() { st.dropPhoto = true; drawP(); };
+  };
+  drawP();
   var tb = q('[data-sf-body]'), cnt = q('[data-sf-count]'); var cc = function() { cnt.textContent = tb.value.length + ' / 5,000字'; }; tb.oninput = cc; cc();
   q('[data-sf-save]').onclick = function() {
     var b = this; b.disabled = true; b.textContent = '送っています…';
     rpcWithTimeout('koyomiru_shop_review_save', { p_shop: shop.id, p_stars: st.stars, p_genre: st.genre, p_title: q('[data-sf-title]').value.slice(0, 30), p_body: tb.value.slice(0, 5000) }, 12000).then(function(r) {
       if (!r || r.error) { b.disabled = false; b.textContent = 'もう一度送る'; if (typeof showToast === 'function') showToast(_shopErr(r && r.error), { type: 'warn' }); return; }
-      close(); if (typeof showToast === 'function') showToast(r.data && r.data.updated ? 'レビューを直しました' : 'レビューを載せました。ありがとうございます', { type: 'success' });
-      _shopLoad(true); _shopOpen(shop.id);
+      var rid = r.data && r.data.id, msg = r.data && r.data.updated ? 'レビューを直しました' : 'レビューを載せました。ありがとうございます';
+      var after = function(extra) { close(); if (typeof showToast === 'function') showToast(msg + (extra ? '。' + extra : ''), { type: 'success' }); _shopLoad(true); _shopOpen(shop.id); };
+      var hadPhoto = mine && mine.photo_path;
+      var step1 = (hadPhoto && (st.dropPhoto || st.photo)) ? _shopPhotoRemove(rid) : Promise.resolve(true);
+      step1.then(function() {
+        if (!st.photo || !rid) { after(''); return; }
+        b.textContent = '写真を送っています…';
+        _shopPhotoUpload(rid, st.photo).then(function(ps) { after(ps === 'pending' ? '写真は、確かめてから載ります（はじめての1枚だけです）' : '写真も載せました'); },
+          function(e) { after(/banned/.test(String(e && e.message)) ? '写真は載せられませんでした' : '写真は送れませんでした。あとで、直すから付けられます'); });
+      });
     });
   };
   var del = q('[data-sf-del]'); if (del) del.onclick = function() {
@@ -75855,6 +75955,65 @@ function _shopReviewForm(shop, mine) {
       { label: 'やめる', style: 'cancel' } ] });
     if (_dm) _dm.style.zIndex = '100002';
   };
+}
+// v0.99.63: 【権威】2026-11-21 最高峰会議 C「レビューに写真1枚。はじめの1枚は確かめてから載せる（季節の掲示板と同じ）」
+//   写真の置き場所・はじめの1枚の確かめ・通報の重さは、季節の掲示板と同じしくみを使う
+function _shopPhotoHtml(x) {
+  if (!x || !x.photo_path) return '';
+  var small = _tayoriPhotoUrl(x.photo_path, true), big = _tayoriPhotoUrl(x.photo_path, false); if (!small) return '';
+  var st = x.photo_status, blur = st === 'blur', note = '';
+  if (x.is_me && st === 'pending') note = '📷 写真は、確かめてから載ります（はじめての1枚だけです）。いまは、あなたにだけ見えています';
+  else if (x.is_me && st === 'ng') note = '📷 この写真は、載せないことになりました（あなたにだけ見えています）';
+  else if (blur) note = '通報が重なったため、ぼかしています';
+  return '<div style="margin-top:8px;">' +
+    '<a href="' + _shopEsc(big) + '" target="_blank" rel="noopener noreferrer" data-sp-img="' + (blur ? '1' : '') + '" style="display:block;position:relative;border-radius:12px;overflow:hidden;background:#eee;max-width:420px;">' +
+      '<img src="' + _shopEsc(small) + '" alt="お店の写真" loading="lazy" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;' + (blur || st === 'pending' || st === 'ng' ? 'filter:' + (blur ? 'blur(18px)' : 'grayscale(0.6)') + ';' : '') + '">' +
+      (blur ? '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,0.6);">押すと見られます</span>' : '') + '</a>' +
+    (note ? '<div style="font-size:0.8em;color:#8a7d6b;margin-top:4px;">' + _shopEsc(note) + '</div>' : '') +
+    (!x.is_me && (st === 'ok' || st === 'blur') ? '<button type="button" data-ss-preport="' + _shopEsc(x.id) + '" style="border:none;background:none;color:#a39886;font-size:0.8em;cursor:pointer;padding:4px 0;">写真を通報</button>' : '') +
+  '</div>';
+}
+function _shopPhotoUpload(reviewId, photo) {
+  var uid = window._cloudUserId;
+  if (!uid || !window.supabaseClient || !supabaseClient.storage) return Promise.reject(new Error('login'));
+  var base = uid + '/' + _tayoriRandHex(16), bucket = supabaseClient.storage.from('tayori-photos');
+  var put = function(name, blob) { return bucket.upload(name, blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' }).then(function(r) { if (r && r.error) throw r.error; }); };
+  return put(base + '.jpg', photo.big).then(function() { return put(base + '_s.jpg', photo.small); }).then(function() {
+    return rpcWithTimeout('koyomiru_shop_photo_attach', { p_review: reviewId, p_path: base }, 12000).then(function(r) {
+      if (!r || r.error) { bucket.remove([base + '.jpg', base + '_s.jpg']); throw (r && r.error) || new Error('attach'); }
+      return r.data;
+    });
+  });
+}
+function _shopPhotoRemove(reviewId) {
+  return rpcWithTimeout('koyomiru_shop_photo_remove', { p_review: reviewId }, 10000).then(function(r) {
+    var path = r && !r.error ? r.data : null;
+    if (path && KOYOMI_TAYORI_PHOTO_RE.test(String(path)) && window.supabaseClient && supabaseClient.storage) { try { supabaseClient.storage.from('tayori-photos').remove([path + '.jpg', path + '_s.jpg']); } catch (e) {} }
+    return !(r && r.error);
+  });
+}
+// 作った本人：確かめ待ち・ぼかし中の写真
+function _shopPhotoQueue() {
+  rpcWithTimeout('koyomiru_shop_photo_pending', {}, 10000).then(function(r) {
+    var ls = (r && !r.error && Array.isArray(r.data)) ? r.data : [];
+    var old = document.getElementById('shopPhotoQ'); if (old) old.remove();
+    var ov = document.createElement('div'); ov.id = 'shopPhotoQ';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
+    ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:16px;box-sizing:border-box;color:#3b3226;">' +
+      '<div style="display:flex;align-items:center;"><b style="flex:1;font-size:1.1em;">📷 確かめ待ちの写真（' + ls.length + '）</b><button type="button" data-pq-x style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;">✕</button></div>' +
+      (ls.length ? ls.map(function(x) {
+        return '<div style="margin-top:12px;padding:10px;border:1px solid #eadfcd;border-radius:12px;background:#fff;"><div style="font-weight:700;">' + _shopEsc(x.shop_name) + '<span style="font-weight:400;font-size:0.8em;color:#8a7d6b;">・' + (x.status === 'blur' ? 'ぼかし中（通報の重さ ' + x.weight + '）' : 'はじめての1枚') + '</span></div>' +
+          '<img src="' + _shopEsc(_tayoriPhotoUrl(x.path, false)) + '" alt="" style="display:block;width:100%;margin-top:6px;border-radius:10px;">' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><button type="button" data-pq-ok="' + _shopEsc(x.review_id) + '" style="min-height:44px;border:none;border-radius:10px;background:#2e6b4f;color:#fff;font-weight:700;cursor:pointer;">載せる</button><button type="button" data-pq-ng="' + _shopEsc(x.review_id) + '" style="min-height:44px;border:1.5px solid #b3261e;border-radius:10px;background:#fff;color:#b3261e;font-weight:700;cursor:pointer;">載せない</button></div></div>';
+      }).join('') : '<div style="margin-top:12px;color:#8a7d6b;">いまは、確かめ待ちの写真はありません。</div>') + '</div>';
+    document.body.appendChild(ov);
+    ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
+    ov.querySelector('[data-pq-x]').onclick = function() { ov.remove(); };
+    [].forEach.call(ov.querySelectorAll('[data-pq-ok],[data-pq-ng]'), function(b) { b.onclick = function() {
+      var ok = b.hasAttribute('data-pq-ok'), id = b.getAttribute(ok ? 'data-pq-ok' : 'data-pq-ng');
+      rpcWithTimeout('koyomiru_shop_photo_judge', { p_review: id, p_ok: ok }, 10000).then(function(r) { if (typeof showToast === 'function') showToast(r && !r.error ? (ok ? '載せました' : '載せないことにしました') : '送れませんでした', { type: r && !r.error ? 'success' : 'warn' }); _shopPhotoQueue(); });
+    }; });
+  });
 }
 window.renderShopsView = renderShopsView;
 // ===== END v0.99.61 =====
@@ -98712,6 +98871,44 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-686: おいしいお店が違う', _x686.join(','));
      } catch(e) {
        ng('ST-686: 例外', e.message);
+     }
+
+     // ===== ST-687: おいしいお店のレビューに写真1枚（v0.99.63） =====
+     try {
+       var _r687 = {}, _pp = '00000000-0000-0000-0000-000000000000/0123456789abcdef0123456789abcdef';
+       var _h1 = _shopPhotoHtml({ id: 'r', photo_path: _pp, photo_status: 'ok', is_me: false });
+       _r687.ok = /_s\.jpg/.test(_h1) && /写真を通報/.test(_h1) && !/blur\(/.test(_h1);
+       var _h2 = _shopPhotoHtml({ id: 'r', photo_path: _pp, photo_status: 'blur', is_me: false });
+       _r687.blur = /blur\(18px\)/.test(_h2) && /押すと見られます/.test(_h2);
+       var _h3 = _shopPhotoHtml({ id: 'r', photo_path: _pp, photo_status: 'pending', is_me: true });
+       _r687.pending = /確かめてから載ります/.test(_h3) && !/写真を通報/.test(_h3);
+       _r687.badPath = _shopPhotoHtml({ id: 'r', photo_path: '../x', photo_status: 'ok' }) === '' && _shopPhotoHtml({ id: 'r' }) === '';
+       _r687.flow = /koyomiru_shop_photo_attach/.test(_shopPhotoUpload.toString()) && /tayori-photos/.test(_shopPhotoUpload.toString()) && /_shopPhotoRemove/.test(_shopReviewForm.toString()) && /_tayoriMakePhoto/.test(_shopReviewForm.toString());
+       _r687.queue = /koyomiru_shop_photo_judge/.test(_shopPhotoQueue.toString()) && /isKoyomiruAdminMode/.test(renderShopsView.toString());
+       var _x687 = Object.keys(_r687).filter(function(k) { return !_r687[k]; });
+       !_x687.length
+         ? ok('ST-687: おいしいお店のレビューに写真1枚（はじめの1枚は確かめてから・ぼかしは押すと見られる・写真を通報・作った本人の確かめ待ち）')
+         : ng('ST-687: レビューの写真が違う', _x687.join(','));
+     } catch(e) {
+       ng('ST-687: 例外', e.message);
+     }
+
+     // ===== ST-688: お店探しは言い換え・別の窓口・読めなかったと分ける・Googleと登録がいつもある（v0.99.64） =====
+     // 【権威】2026-11-21 C「千葉市中央区でラーメンを探したら、ありませんと言われた。ないわけない。お金のかからないやり方で」
+     try {
+       var _r688 = {};
+       _r688.syn = KOYOMI_SHOP_SYNONYMS.some(function(x) { return x[0].test('ラーメン') && /中華そば/.test(x[1]) && /ramen/.test(x[2]); });
+       _r688.mirrors = KOYOMI_OVERPASS.length >= 2 && /AbortController/.test(_koyomiOverpass.toString()) && /return one\(\)/.test(_koyomiOverpass.toString());
+       _r688.r5 = /around:5000/.test(_shopOsmSearch.toString()) && /err: true/.test(_shopOsmSearch.toString());
+       var _fw688 = _shopFindWizard.toString();
+       _r688.ways = /Googleマップで「/.test(_fw688) && /見つからないお店を登録する/.test(_fw688) && /お店のデータを読めませんでした/.test(_fw688) && _fw688.indexOf("? '見つかりませんでした'") === -1;
+       _r688.shared = /_koyomiOverpass\(ql\)/.test(_tayoriPlaceFind.toString());
+       var _x688 = Object.keys(_r688).filter(function(k) { return !_r688[k]; });
+       !_x688.length
+         ? ok('ST-688: お店探しは言い換えもまとめて半径5km・窓口が混めば別の窓口・読めなかったと「ない」を分ける・Googleマップと自分で登録がいつもある')
+         : ng('ST-688: お店探しが違う', _x688.join(','));
+     } catch(e) {
+       ng('ST-688: 例外', e.message);
      }
 
      // ===== ST-654: 季節の掲示板を「ひと目で掲示板」に（v0.86.0） =====
