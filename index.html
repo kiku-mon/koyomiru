@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.83 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.84 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.83';
+    const APP_VERSION = 'v0.99.84';
   const APP_LAST_UPDATED = '2026-11-24'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61327,6 +61327,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.84', date: '2026-11-24',
+    items: [
+      { icon:'🍜', t:'Googleマップのリンクを貼るだけで、お店の名前と場所が入るようにしました',
+        before:'「共有」→「コピー」したのがリンクだけだと、名前と住所を自分で打ち直す必要があり、Googleマップと行ったり来たりしていました',
+        after:'リンクを貼ると、お店の名前と場所をこよみるが読み取ります。住所の入力はいりません' }
+    ]
+  },
+  {
     ver: 'v0.99.83', date: '2026-11-24',
     items: [
       { icon:'📣', t:'お知らせの新着が、いちばん新しいものから出るようにしました',
@@ -76256,6 +76264,15 @@ function _shopParseShare(text) {
     if (d && out.lat == null) { var la = Number(d[1]), ln = Number(d[2]); if (la >= 20 && la <= 46 && ln >= 122 && ln <= 154) { out.lat = la; out.lng = ln; } }
     var pm = u.match(/\/maps\/place\/([^\/@?]+)/);
     if (pm && !out.name) { try { out.name = decodeURIComponent(pm[1].replace(/\+/g, ' ')).trim(); } catch (e) {} }
+    // v0.99.84: 短いリンクの飛び先が「?q=お店の名前, 住所」の形のとき（数字だけの q は場所なので除く）
+    var qm = u.match(/[?&](?:q|query)=([^&#]+)/);
+    if (qm && !out.name) {
+      var qv = ''; try { qv = decodeURIComponent(qm[1].replace(/\+/g, ' ')).trim(); } catch (e) {}
+      if (qv && !/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(qv)) {
+        var cut = qv.search(/[,、]\s*(日本|〒|\S+[都道府県])/);
+        if (cut > 0) { out.name = qv.slice(0, cut).trim(); if (!out.addr) out.addr = qv.slice(cut + 1).trim(); } else out.name = qv;
+      }
+    }
   });
   var lines = s.replace(/https?:\/\/[^\s]+/g, '\n').replace(/\s+\u00b7\s+/g, '\n').split('\n').map(function(x) { return x.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
   var isAddr = function(x) { return /〒|^日本|[都道府県].*[市区町村郡]|丁目|番地|\d+-\d+/.test(x); };
@@ -76287,6 +76304,23 @@ function _shopGeocode(addr) {
 function _shopGQuery(q) { return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(q || '').trim() || 'グルメ'); }
 function _shopGRecent() { var a = _tayoriLS('shopGWords', []); return Array.isArray(a) ? a.filter(function(x) { return typeof x === 'string' && x.trim(); }).slice(0, 4) : []; }
 function _shopGRemember(q) { q = String(q || '').trim().slice(0, 40); if (!q) return; var a = _shopGRecent().filter(function(x) { return x !== q; }); a.unshift(q); _tayoriLSSet('shopGWords', a.slice(0, 4)); }
+// 短いリンクの飛び先を、サーバーで確かめる（ページの中身は読まない。ログインしている人だけ）。分からなければ ''
+function _shopResolveShortLink(url) {
+  try {
+    if (!window.supabaseClient || !window.supabaseClient.functions) return Promise.resolve('');
+    return window.supabaseClient.functions.invoke('shop-resolve-link', { body: { url: url } }).then(function(r) {
+      return (r && !r.error && r.data && typeof r.data.finalUrl === 'string') ? r.data.finalUrl : '';
+    }, function() { return ''; });
+  } catch (e) { return Promise.resolve(''); }
+}
+window._shopResolveShortLink = _shopResolveShortLink;
+function _shopGoParsed(p, close) {
+  if (!p.name && !p.addr && p.lat == null) {
+    if (typeof showToast === 'function') showToast(p.url ? 'リンクだけでは、お店が分かりませんでした。お店の名前と住所を入れてください' : 'お店の名前と住所が読み取れませんでした', { type: 'warn' });
+    if (!p.url) return;
+  }
+  close(); _shopConfirmPlace(p);
+}
 function _shopFromGoogle() {
   var gq = _shopGQuery('');
   var old = document.getElementById('shopGSheet'); if (old) old.remove();
@@ -76313,11 +76347,19 @@ function _shopFromGoogle() {
   q('[data-sg-x]').onclick = close;
   var go = function(text) {
     var p = _shopParseShare(text);
-    if (!p.name && !p.addr && p.lat == null) {
-      if (typeof showToast === 'function') showToast(p.url ? 'リンクだけでは、お店が分かりませんでした。お店の名前と住所を入れてください' : 'お店の名前と住所が読み取れませんでした', { type: 'warn' });
-      if (!p.url) return;
+    // v0.99.84: 【権威】2026-11-24「名前も住所も聞かれて、もう一回Googleマップを開かなきゃいけない。めんどくさい」
+    //   → コピーした文が短いリンクだけ（maps.app.goo.gl）なら、飛び先のアドレスをサーバー（shop-resolve-link）で確かめ、名前と場所を読み取る
+    if (p.url && (p.lat == null || !p.name) && /maps\.app\.goo\.gl|goo\.gl\//.test(p.url) && !go._busy) {
+      go._busy = true;
+      var pb = q('[data-sg-paste]'); if (pb) { pb.disabled = true; pb.textContent = 'お店を確かめています…'; }
+      _shopResolveShortLink(p.url).then(function(fin) {
+        go._busy = false; if (pb) { pb.disabled = false; pb.textContent = '📋 貼り付ける'; }
+        if (fin) { var p2 = _shopParseShare(fin + '\n' + String(text || '').replace(/https?:\/\/[^\s]+/g, '')); p2.url = p.url; if (p2.name || p2.lat != null) { if (!p2.name) p2.name = p.name; if (!p2.addr) p2.addr = p.addr; close(); _shopConfirmPlace(p2); return; } }
+        _shopGoParsed(p, close);
+      });
+      return;
     }
-    close(); _shopConfirmPlace(p);
+    _shopGoParsed(p, close);
   };
   q('[data-sg-next]').onclick = function() { go(q('[data-sg-text]').value); };
   // どこで・何を：書いた言葉をそのままGoogleマップへ。前に使った言葉と、選んでいる町は札で出す（押すと欄に入る）
@@ -76346,8 +76388,9 @@ function _shopConfirmPlace(p) {
     '<div style="display:flex;align-items:center;"><div style="flex:1;font-size:1.2em;font-weight:800;">このお店ですか？</div><button type="button" data-sg-x aria-label="閉じる" style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;color:#6b6155;">✕</button></div>' +
     '<div style="font-size:0.9em;color:#8a7d6b;margin-top:2px;">違っていたら、ここで直せます。</div>' +
     '<div style="margin-top:12px;font-weight:700;">お店の名前</div><input data-sg-name maxlength="60" style="' + inp + 'margin-top:4px;">' +
-    '<div style="margin-top:10px;font-weight:700;">住所</div><input data-sg-addr maxlength="120" placeholder="例：〇〇県〇〇市〇〇町1丁目" style="' + inp + 'margin-top:4px;">' +
-    (p.lat != null ? '<div style="font-size:0.85em;color:#2e6b4f;margin-top:6px;">📍 リンクから場所も分かりました</div>' : '') +
+    // v0.99.84: 場所が分かっているときは、住所は聞かない（直したいときだけ開く）
+    '<div data-sg-addrbox' + (p.lat != null ? ' style="display:none;"' : '') + '><div style="margin-top:10px;font-weight:700;">住所</div><input data-sg-addr maxlength="120" placeholder="例：〇〇県〇〇市〇〇町1丁目" style="' + inp + 'margin-top:4px;"></div>' +
+    (p.lat != null ? '<div style="font-size:0.85em;color:#2e6b4f;margin-top:8px;">📍 リンクから場所も分かりました（住所の入力はいりません）</div>' : '') +
     '<button type="button" data-sg-ok style="display:block;width:100%;min-height:54px;margin-top:14px;border:none;border-radius:14px;background:#b5541c;color:#fff;font-size:1.05em;font-weight:800;cursor:pointer;font-family:inherit;">このお店に★を付ける</button>' +
   '</div>';
   document.body.appendChild(ov);
@@ -99694,6 +99737,29 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-697: 注文票の並びか決めるボタンが違う', _x697.join(','));
      } catch(e) {
        ng('ST-697: 例外', e.message);
+     }
+
+     // ===== ST-702: Googleマップの短いリンクから、名前と場所を読み取る（v0.99.84） =====
+     // 【権威】2026-11-24「名前も住所も聞かれて、もう一回Googleマップを開かなきゃいけない。めんどくさい」
+     try {
+       var _x702 = [];
+       var _a702 = _shopParseShare('https://www.google.com/maps/place/%E3%82%89%E3%83%BC%E3%82%81%E3%82%93%E3%80%87%E3%80%87+%E5%87%BA%E5%A2%A8%E6%B8%AF%E5%BA%97/@35.6,140.1,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d35.61!4d140.12');
+       if (_a702.name !== 'らーめん〇〇 出墨港店' || _a702.lat !== 35.61 || _a702.lng !== 140.12) _x702.push('place');
+       var _b702 = _shopParseShare('https://maps.google.com/?q=%E3%82%89%E3%83%BC%E3%82%81%E3%82%93%E3%80%87%E3%80%87,+%E6%97%A5%E6%9C%AC%E3%80%81%E3%80%87%E3%80%87%E7%9C%8C%E3%80%87%E3%80%87%E5%B8%82&ftid=0x0:0x1');
+       if (_b702.name !== 'らーめん〇〇' || !/〇〇県/.test(_b702.addr)) _x702.push('q');
+       if (_shopParseShare('https://maps.google.com/?q=35.6,140.1').name) _x702.push('qNum');
+       var _c702 = _shopParseShare('https://maps.app.goo.gl/AbCd1234');
+       if (_c702.url !== 'https://maps.app.goo.gl/AbCd1234' || _c702.name) _x702.push('short');
+       // 場所が分かっているときは、住所の欄を出さない
+       _shopConfirmPlace({ name: 'らーめん〇〇', addr: '', lat: 35.61, lng: 140.12, url: '' });
+       var _ov702 = document.getElementById('shopGSheet'), _box702 = _ov702 && _ov702.querySelector('[data-sg-addrbox]');
+       if (!_box702 || _box702.style.display !== 'none') _x702.push('addrHidden');
+       if (_ov702) _ov702.remove();
+       _x702.length === 0
+         ? ok('ST-702: Googleマップの共有リンク（飛び先の place・?q= の形）から名前と場所を読み、場所が分かれば住所は聞かない')
+         : ng('ST-702: リンクからの読み取りが違う', _x702.join(','));
+     } catch(e) {
+       ng('ST-702: 例外', e.message);
      }
 
      // ===== ST-701: お知らせの新着は、いまの版より新しい版を出さない（v0.99.83） =====
