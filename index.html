@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.74 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.75 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.74';
+    const APP_VERSION = 'v0.99.75';
   const APP_LAST_UPDATED = '2026-11-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61313,6 +61313,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.75', date: '2026-11-23',
+    items: [
+      { icon:'🆘', t:'災害復旧掲示板の立ち上げは「どの町ですか？」から、文字で探せるようにしました',
+        before:'最初に「何が起きましたか？」を聞き、町は今いる場所か、都道府県から順に選ぶしかありませんでした',
+        after:'最初に「どの町ですか？」を聞きます。「千葉市中央区」のように打って探せます。今いる場所や都道府県からも選べます。町が決まってから「何が起きましたか？」を聞きます' }
+    ]
+  },
+  {
     ver: 'v0.99.74', date: '2026-11-23',
     items: [
       { icon:'🆘', t:'「どの掲示板を見ますか？」に、テストの立ち上げを並べました',
@@ -75605,6 +75613,47 @@ function _tayoriSinceText(m) {
   var d = m && m.started_at ? new Date(m.started_at) : null;
   return d && !isNaN(d.getTime()) ? (d.getMonth() + 1) + '月' + d.getDate() + '日から' : '';
 }
+// v0.99.75: 【権威】2026-11-23「どこですかを先に。地図から選ぶより先に、千葉市中央区のようにテキストで打たせろ。何が起きましたかを一番初めに聞くのは間抜け」
+//   → 町を文字で探す。都道府県が書いてあればその県から、なければ住所検索で県を割り出して、その県の市区町村の名前と照らし合わせる。最後の手段は、住所検索の場所から町を出す
+function _tayoriNormTown(s) { return String(s || '').replace(/[\s　]+/g, '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); }).replace(/駅$/, ''); }
+function _tayoriTownPrefOf(s) { s = _tayoriNormTown(s); var hit = -1; KOYOMI_TAYORI_PREFS.forEach(function(n, i) { if (hit < 0 && s.indexOf(n) === 0) hit = i; }); return hit; }
+// 県の市区町村の一覧（all）から、書いた名前（rest）に合うものを返す。ぴったりがあればそれだけ。「千葉市中央区富士見」のように町名まで書いたときは、長く一致する名前を先に
+function _tayoriTownMatch(all, rest) {
+  rest = _tayoriNormTown(rest); if (!rest) return [];
+  var exact = all.filter(function(x) { return _tayoriNormTown(x.name) === rest; });
+  if (exact.length) return exact;
+  var a = all.filter(function(x) { var n = _tayoriNormTown(x.name); return n.indexOf(rest) !== -1 || (rest.indexOf(n) === 0 && n.length >= 2); });
+  a.sort(function(x, y) { return _tayoriNormTown(y.name).length - _tayoriNormTown(x.name).length; });
+  return a.slice(0, 8);
+}
+function _tayoriTownSearch(text) {
+  var q = _tayoriNormTown(text); if (!q) return Promise.resolve([]);
+  var prefOf = _tayoriTownPrefOf;
+  var match = function(prefIdx, rest) {
+    var pc = String(prefIdx + 1).padStart(2, '0'), pn = KOYOMI_TAYORI_PREFS[prefIdx];
+    return _tayoriLoadPrefMunis(pc).then(function(fs) {
+      var all = fs.map(function(f) { return { code: String(f.id), pref: pn, name: String((f.properties && f.properties.displayName) || f.id).slice(0, 40) }; }).filter(function(x) { return /^[0-9]{5}$/.test(x.code); });
+      return _tayoriTownMatch(all, rest);
+    }, function() { return []; });
+  };
+  var pi = prefOf(q);
+  if (pi >= 0) return match(pi, q.slice(KOYOMI_TAYORI_PREFS[pi].length));
+  return _tayoriAddressSearch(q).then(function(ls) {
+    ls = ls || [];
+    var prefs = [];
+    ls.forEach(function(x) { var i = prefOf(_tayoriNormTown(x.title)); if (i >= 0 && prefs.indexOf(i) === -1) prefs.push(i); });
+    return Promise.all(prefs.slice(0, 4).map(function(i) { return match(i, q); })).then(function(rs) {
+      var seen = {}, out = [];
+      rs.forEach(function(r) { r.forEach(function(x) { if (!seen[x.code]) { seen[x.code] = 1; out.push(x); } }); });
+      if (out.length || !ls.length || typeof rpcWithTimeout !== 'function') return out.slice(0, 8);
+      // 駅名や町名だけのとき：住所検索の場所から町を出す
+      return rpcWithTimeout('koyomiru_tayori_muni_at', { p_lat: ls[0].lat, p_lng: ls[0].lng }, 10000).then(function(r) {
+        var x = r && !r.error && Array.isArray(r.data) && r.data[0];
+        return x && x.code ? [{ code: String(x.code), pref: String(x.pref || ''), name: String(x.name || '') }] : [];
+      }, function() { return []; });
+    });
+  }, function() { return []; });
+}
 function _tayoriStartWizard(opts) {
   var TEST = !!(opts && opts.test);   // v0.99.26: テストとして試す
   var old = document.getElementById('tayoriWizOverlay'); if (old) old.remove();
@@ -75612,7 +75661,7 @@ function _tayoriStartWizard(opts) {
   ov.style.cssText = 'position:fixed;inset:0;z-index:99500;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:12px;';
   ov.innerHTML = '<div data-wz style="background:#fffdf8;border-radius:18px;padding:20px 18px;max-width:480px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25);' + KOYOMI_TAYORI_BIG + '"></div>';
   document.body.appendChild(ov);
-  var box = ov.querySelector('[data-wz]'), st = { step: window._cloudIsLoggedIn ? 'hazard' : 'login', hazard: '', muni: null, pref: '' }, hist = [];
+  var box = ov.querySelector('[data-wz]'), st = { step: window._cloudIsLoggedIn ? 'town' : 'login', hazard: '', muni: null, pref: '' }, hist = [];   // v0.99.75: どこですか？が先
   var close = function() { ov.remove(); };
   ov.onclick = function(e) { if (e.target === ov) close(); };
   var go = function(step) { hist.push(st.step); st.step = step; draw(); };
@@ -75631,7 +75680,7 @@ function _tayoriStartWizard(opts) {
     st.muni = m;
     frame('確かめています…', 'この町の掲示板が、もう立ち上がっていないか見ています。', '');
     var tok = st.step, done = false, next = function() { if (done) return; done = true; if (st.step !== tok || !ov.isConnected) return;   // もどる・閉じるを押したあとは動かない
-      st.dup = _tayoriSameTown(m.code, TEST); st.near = st.dup ? [] : _tayoriSameCity(m.code, TEST); go(st.dup ? 'exists' : 'confirm'); };
+      st.dup = _tayoriSameTown(m.code, TEST); st.near = st.dup ? [] : _tayoriSameCity(m.code, TEST); go(st.dup ? 'exists' : (st.hazard ? 'confirm' : 'hazard')); };   // v0.99.75: 町が決まってから、何が起きたか
     setTimeout(next, 9000);   // 一覧が取れなくても止めない（立ち上げのときにサーバーでも合流させる）
     _tayoriLoadMeta().then(next, next);
   };
@@ -75640,13 +75689,31 @@ function _tayoriStartWizard(opts) {
       frame('立ち上げるには、ログインをお願いしています', 'うその災害を防ぐためです。LINEでもすぐに入れます。', '<button type="button" data-wz-login style="' + btnS + 'border:none;background:#06C755;color:#fff;">ログインする</button>');
       box.querySelector('[data-wz-login]').onclick = function() { close(); try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {} };
     } else if (st.step === 'hazard') {
-      frame('何が起きましたか？', '', '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;">' + KOYOMI_TAYORI_HAZARDS.map(function(h) { return _tayoriBigBtn('data-wz-hz="' + h[0] + '"', h[1], h[2]); }).join('') + '</div>');
-      [].forEach.call(box.querySelectorAll('[data-wz-hz]'), function(b) { b.onclick = function() { st.hazard = b.getAttribute('data-wz-hz'); go('town'); }; });
+      frame(_tayoriEsc((st.muni ? st.muni.pref + ' ' + st.muni.name : '') + 'で、') + '何が起きましたか？', '', '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;">' + KOYOMI_TAYORI_HAZARDS.map(function(h) { return _tayoriBigBtn('data-wz-hz="' + h[0] + '"', h[1], h[2]); }).join('') + '</div>');
+      [].forEach.call(box.querySelectorAll('[data-wz-hz]'), function(b) { b.onclick = function() { st.hazard = b.getAttribute('data-wz-hz'); go('confirm'); }; });
     } else if (st.step === 'town') {
       frame('どの町ですか？', '市区町村ごとに始めます。ほかの町には広がりません。',
-        '<button type="button" data-wz-here style="' + btnS + 'margin-top:0;border:none;background:#2e6b4f;color:#fff;">📍 今いる場所から調べる</button>' +
-        '<button type="button" data-wz-choose style="' + btnS + 'border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">🗾 都道府県と市区町村を選ぶ</button>');
+        '<div style="display:flex;gap:6px;"><input type="search" data-wz-tq maxlength="40" placeholder="例：千葉市中央区" enterkeyhint="search" style="flex:1;min-width:0;box-sizing:border-box;min-height:56px;padding:0 12px;border:2px solid #2e6b4f;border-radius:12px;font-size:16px;font-family:inherit;">' +
+        '<button type="button" data-wz-tgo style="min-width:76px;min-height:56px;border:none;border-radius:12px;background:#2e6b4f;color:#fff;font-weight:700;font-size:1em;cursor:pointer;font-family:inherit;">探す</button></div>' +
+        '<div data-wz-tl style="margin-top:8px;"></div>' +
+        '<button type="button" data-wz-here style="' + btnS + 'margin-top:10px;border:1.5px solid #2e6b4f;background:#fff;color:#2e6b4f;">📍 今いる場所から調べる</button>' +
+        '<button type="button" data-wz-choose style="' + btnS + 'border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">🗾 都道府県から選ぶ</button>');
       box.querySelector('[data-wz-choose]').onclick = function() { go('pref'); };
+      // v0.99.75: 文字で探す（いちばん上）
+      var tq = box.querySelector('[data-wz-tq]'), tl = box.querySelector('[data-wz-tl]'), tgo = box.querySelector('[data-wz-tgo]'), tok2 = 0;
+      var find = function() {
+        var v = tq.value.trim(); if (!v) { tq.focus(); return; }
+        var my = ++tok2; tl.innerHTML = '<div style="color:#8a7d6b;padding:6px 2px;">探しています…</div>';
+        _tayoriTownSearch(v).then(function(rs) {
+          if (my !== tok2 || !ov.isConnected) return;
+          if (!rs.length) { tl.innerHTML = '<div style="color:#7a2a22;padding:6px 2px;line-height:1.7;">見つかりませんでした。「千葉県千葉市中央区」のように、県の名前から書いてみてください。</div>'; return; }
+          tl.innerHTML = rs.map(function(x, i) { return '<button type="button" data-wz-tr="' + i + '" style="display:block;width:100%;text-align:left;min-height:54px;padding:8px 14px;margin-bottom:6px;border:1.5px solid #2e6b4f;border-radius:12px;background:#f1f7f3;color:#1f4a36;font-size:1.05em;font-weight:700;cursor:pointer;font-family:inherit;">📍 ' + _tayoriEsc(x.pref + ' ' + x.name) + '</button>'; }).join('');
+          [].forEach.call(tl.querySelectorAll('[data-wz-tr]'), function(b) { b.onclick = function() { setMuni(rs[+b.getAttribute('data-wz-tr')]); }; });
+        });
+      };
+      tgo.onclick = find;
+      tq.onkeydown = function(e) { if (e.key === 'Enter') { e.preventDefault(); find(); } };
+      setTimeout(function() { try { if (window.innerWidth >= 760) tq.focus(); } catch (eF) {} }, 50);
       box.querySelector('[data-wz-here]').onclick = function() {
         var b = this; b.disabled = true; b.textContent = '今いる場所を確かめています…';
         var fail = function(msg) { if (typeof showToast === 'function') showToast(msg, { type: 'warn' }); go('pref'); };
@@ -75741,7 +75808,7 @@ function _tayoriStartWizard(opts) {
   }
   if (TEST) { var _dr = draw; draw = function() { _dr(); box.insertAdjacentHTML('afterbegin', '<div data-wz-testribbon style="margin:-6px -4px 12px;padding:8px 12px;border:2px dashed #c9a227;border-radius:12px;background:#fff7d6;color:#5a4500;font-weight:700;font-size:0.92em;">🧪 テストとして試しています（本物の災害ではないとき）</div>'); }; }
   draw();
-  if (opts && opts._stMuni) { st.hazard = opts._stHazard || 'earthquake'; setMuni(opts._stMuni); }   // v0.99.66: スモークテスト用（町を選んだところから始める）
+  if (opts && opts._stMuni) { st.hazard = ('_stHazard' in opts) ? opts._stHazard : 'earthquake'; setMuni(opts._stMuni); }   // v0.99.66: スモークテスト用（町を選んだところから始める）
 }
 // ===== v0.83.4: 掲示板の使い方のカード・月・起動のときの案内 =====
 // 【権威】2026-11-18 最高峰会議の切り分けに「いいと思う」。「一行だけじゃなく月の形も出して。月の形が励みになる人もいる」
@@ -99365,6 +99432,45 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-688: お店探しが違う', _x688.join(','));
      } catch(e) {
        ng('ST-688: 例外', e.message);
+     }
+
+     // ===== ST-696: 立ち上げは「どの町ですか？」から、文字で探せる（v0.99.75） =====
+     // 【権威】2026-11-23「どこですかを先に。テキストで千葉市中央区と打たせろ。何が起きましたかを一番初めに聞くのは間抜け」
+     try {
+       var _r696 = {};
+       var all696 = [{ code: '12101', pref: '千葉県', name: '千葉市中央区' }, { code: '12102', pref: '千葉県', name: '千葉市花見川区' }, { code: '12221', pref: '千葉県', name: '八千代市' }, { code: '12100', pref: '千葉県', name: '千葉市' }];
+       var m1 = _tayoriTownMatch(all696, '千葉市中央区');
+       _r696.exact = m1.length === 1 && m1[0].code === '12101';
+       var m2 = _tayoriTownMatch(all696, '千葉市 中央区富士見２丁目');
+       _r696.longer = m2.length >= 1 && m2[0].code === '12101';
+       _r696.part = _tayoriTownMatch(all696, '八千代').length === 1 && _tayoriTownMatch(all696, '').length === 0;
+       _r696.pref = _tayoriTownPrefOf('千葉県千葉市中央区') === 11 && _tayoriTownPrefOf('東京都中央区') === 12 && _tayoriTownPrefOf('中央区') === -1;
+       _r696.norm = _tayoriNormTown('八千代台駅') === '八千代台' && _tayoriNormTown('千葉市　中央区') === '千葉市中央区';
+       // 画面の順番：どこですか → 何が起きましたか → 確かめ
+       var _li696 = window._cloudIsLoggedIn, _lm696 = window._tayoriLoadMeta, _md696 = _koyomiTayori.modes, _mk696 = _koyomiTayori.made;
+       try {
+         window._cloudIsLoggedIn = true; _koyomiTayori.modes = []; _koyomiTayori.made = null;
+         window._tayoriLoadMeta = function() { return { then: function(f) { f(); } }; }; _tayoriLoadMeta = window._tayoriLoadMeta;
+         _tayoriStartWizard();
+         var o1 = document.getElementById('tayoriWizOverlay');
+         _r696.townFirst = !!o1 && /どの町ですか/.test(o1.textContent) && !/何が起きましたか/.test(o1.textContent) && !!o1.querySelector('[data-wz-tq]') &&
+           !!(o1.querySelector('[data-wz-tq]').compareDocumentPosition(o1.querySelector('[data-wz-here]')) & Node.DOCUMENT_POSITION_FOLLOWING);   // 文字で探すが、今いる場所より上
+         o1.remove();
+         _tayoriStartWizard({ _stMuni: { code: '12101', pref: '千葉県', name: '千葉市中央区' }, _stHazard: '' });
+         var o2 = document.getElementById('tayoriWizOverlay');
+         _r696.hazardAfter = !!o2 && /千葉市中央区で、何が起きましたか/.test(o2.textContent) && !!o2.querySelector('[data-wz-hz]');
+         var hz = o2 && o2.querySelector('[data-wz-hz]'); if (hz) hz.click();
+         _r696.confirm = !!o2 && /立ち上げますか/.test(o2.textContent) && !!o2.querySelector('[data-wz-next]');
+       } finally {
+         var ox = document.getElementById('tayoriWizOverlay'); if (ox) ox.remove();
+         window._cloudIsLoggedIn = _li696; window._tayoriLoadMeta = _lm696; _tayoriLoadMeta = _lm696; _koyomiTayori.modes = _md696; _koyomiTayori.made = _mk696;
+       }
+       var _x696 = Object.keys(_r696).filter(function(k) { return !_r696[k]; });
+       !_x696.length
+         ? ok('ST-696: 立ち上げは「どの町ですか？」から。いちばん上で文字で探せる（県名ありでも無しでも・町名まで書いても）。町が決まってから「何が起きましたか？」')
+         : ng('ST-696: 立ち上げの順番か、町の探し方が違う', _x696.join(','));
+     } catch(e) {
+       ng('ST-696: 例外', e.message);
      }
 
      // ===== ST-695: 一度でも注文した人は、出てくる時のとおりに注文票が先に出る（v0.99.70） =====
