@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.65 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.66 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,8 +262,8 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.65';
-  const APP_LAST_UPDATED = '2026-11-22'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.99.66';
+  const APP_LAST_UPDATED = '2026-11-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -61222,6 +61222,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.66', date: '2026-11-23',
+    items: [
+      { icon:'🆘', t:'同じ町の災害復旧掲示板を、2つ作らないようにしました',
+        before:'同じ町の掲示板がもうあっても、立ち上げる最後のボタンを押すまで分かりませんでした',
+        after:'町を選んだところで確かめます。もうあれば「もう立ち上がっています」と出て、その掲示板を開けます。千葉市のような大きな市は区ごとに見て、同じ市のほかの区の掲示板も「近くの掲示板」として出します' }
+    ]
+  },
+  {
     ver: 'v0.99.65', date: '2026-11-22',
     items: [
       { icon:'🆘', t:'緊急災害復旧モードの入口の並びを変えました',
@@ -75399,6 +75407,38 @@ function _tayoriWireOthers(el) {
   var a = el.querySelector('[data-tayori-others-all]'); if (a) a.onclick = _tayoriPickOtherMode;
 }
 // 始める：何が起きましたか → どの町ですか → 始める → 知らせる
+// ===== v0.99.66: 立ち上げる前に、同じ町（区）の掲示板がもうないか確かめる =====
+// 【権威】2026-11-21 最高峰会議「立ち上げボタンはいちばん上。そのかわり、押した後で、同じ町の掲示板がもうあればそこへ案内する（2つ目を作らない）」
+//   「千葉市中央区・花見川区まで見てくれてるの？」→ A「政令指定都市は必ず区まで（千葉市全体は作れない）。重複は同じ区で判定。同じ市のほかの区の掲示板は『近くの掲示板』として一緒に出す」
+//   作った人の名前は出さない（被災した人の名前が知らない人に広がらないように）。かわりに、いつから・何が起きたか・いまの様子を出す
+var KOYOMI_TAYORI_SEIREI = { '01100': '札幌市', '04100': '仙台市', '11100': 'さいたま市', '12100': '千葉市', '14100': '横浜市', '14130': '川崎市', '14150': '相模原市', '15100': '新潟市', '22100': '静岡市', '22130': '浜松市', '23100': '名古屋市', '26100': '京都市', '27100': '大阪市', '27140': '堺市', '28100': '神戸市', '33100': '岡山市', '34100': '広島市', '40100': '北九州市', '40130': '福岡市', '43100': '熊本市' };
+// 区のコードから、その政令指定都市のコードを返す（区でなければ ''）。東京の23区は、それぞれが市区町村なので区として扱わない
+function _tayoriSeireiOf(code) {
+  code = String(code || '').slice(0, 5); if (!/^\d{5}$/.test(code)) return '';
+  var best = '';
+  Object.keys(KOYOMI_TAYORI_SEIREI).forEach(function(k) { if (k.slice(0, 2) === code.slice(0, 2) && k < code && Number(code) - Number(k) < 40 && (!best || k > best)) best = k; });
+  return best;
+}
+function _tayoriModeCodes(m) { return ((m && m.munis) || []).map(function(x) { return String((x && x.code) || '').slice(0, 5); }).filter(function(x) { return /^\d{5}$/.test(x); }); }
+function _tayoriAllKnownModes() {
+  var seen = {}, a = (_koyomiTayori.modes || []).slice(), mk = _koyomiTayori.made;
+  if (mk && mk.id) a.push(mk);
+  return a.filter(function(m) { if (!m || !m.id || seen[m.id] || !_tayoriVisibleMode(m)) return false; seen[m.id] = 1; return true; });
+}
+// 同じ町（区）で、いま立ち上がっている掲示板。本物はテストに、テストは本物に、ぶつからない
+function _tayoriSameTown(code, test) {
+  code = String(code || '').slice(0, 5);
+  return _tayoriAllKnownModes().filter(function(m) { return !!m.is_test === !!test && _tayoriModeCodes(m).indexOf(code) !== -1; })[0] || null;
+}
+// 同じ政令指定都市の、ほかの区の掲示板
+function _tayoriSameCity(code, test) {
+  code = String(code || '').slice(0, 5); var city = _tayoriSeireiOf(code); if (!city) return [];
+  return _tayoriAllKnownModes().filter(function(m) { return !!m.is_test === !!test && _tayoriModeCodes(m).some(function(x) { return x !== code && _tayoriSeireiOf(x) === city; }); });
+}
+function _tayoriSinceText(m) {
+  var d = m && m.started_at ? new Date(m.started_at) : null;
+  return d && !isNaN(d.getTime()) ? (d.getMonth() + 1) + '月' + d.getDate() + '日から' : '';
+}
 function _tayoriStartWizard(opts) {
   var TEST = !!(opts && opts.test);   // v0.99.26: テストとして試す
   var old = document.getElementById('tayoriWizOverlay'); if (old) old.remove();
@@ -75420,7 +75460,15 @@ function _tayoriStartWizard(opts) {
       (nextLabel ? '<button type="button" data-wz-next style="' + btnS + 'margin-top:14px;border:none;background:#2e6b4f;color:#fff;">' + nextLabel + '</button>' : '');
     box.querySelector('[data-wz-back]').onclick = back; box.querySelector('[data-wz-close]').onclick = close;
   };
-  var setMuni = function(m) { st.muni = m; go('confirm'); };
+  // v0.99.66: 町が決まったら、いちばん新しい一覧を取り直してから、同じ町（区）の掲示板がもうないか確かめる
+  var setMuni = function(m) {
+    st.muni = m;
+    frame('確かめています…', 'この町の掲示板が、もう立ち上がっていないか見ています。', '');
+    var tok = st.step, done = false, next = function() { if (done) return; done = true; if (st.step !== tok || !ov.isConnected) return;   // もどる・閉じるを押したあとは動かない
+      st.dup = _tayoriSameTown(m.code, TEST); st.near = st.dup ? [] : _tayoriSameCity(m.code, TEST); go(st.dup ? 'exists' : 'confirm'); };
+    setTimeout(next, 9000);   // 一覧が取れなくても止めない（立ち上げのときにサーバーでも合流させる）
+    _tayoriLoadMeta().then(next, next);
+  };
   function draw() {
     if (st.step === 'login') {
       frame('立ち上げるには、ログインをお願いしています', 'うその災害を防ぐためです。LINEでもすぐに入れます。', '<button type="button" data-wz-login style="' + btnS + 'border:none;background:#06C755;color:#fff;">ログインする</button>');
@@ -75464,6 +75512,16 @@ function _tayoriStartWizard(opts) {
         list = fs.map(function(f) { return { c: String(f.id), n: String((f.properties && f.properties.displayName) || f.id).slice(0, 40) }; }).filter(function(x) { return /^[0-9]{5}$/.test(x.c); });
         paint();
       }).catch(function() { ml.textContent = '読み込めませんでした。少しおいて、もう一度お試しください'; });
+    } else if (st.step === 'exists') {
+      // v0.99.66: 同じ町（区）の掲示板がもうある → 2つ目は作らず、そこへ案内する
+      var dm = st.dup, since = _tayoriSinceText(dm), dunv = !TEST && dm.kind === 'user' && !dm.verified_at;
+      frame(_tayoriEsc(st.muni.pref + ' ' + st.muni.name) + (TEST ? 'のテスト用の掲示板は、もう立ち上がっています' : 'の掲示板は、もう立ち上がっています'),
+        _tayoriEsc([_tayoriHazardLabel(dm.hazard), since, _tayoriBoardState(dm)].filter(Boolean).join('・')) + '<br>' +
+        '同じ町に2つ作らず、ここに集まると、情報が見つけやすくなります。' + (TEST ? '' : '起きたことが違っても（地震のあとの津波など）、この掲示板に書いてください。'),
+        '<button type="button" data-wz-open style="' + btnS + 'margin-top:0;border:none;background:#2e6b4f;color:#fff;">' + (TEST ? '🧪 ' : '🆘 ') + 'この掲示板を開く</button>' +
+        (dunv && _tayoriVouched().indexOf(dm.id) === -1 ? '<button type="button" data-wz-vouch style="' + btnS + 'border:1.5px solid #2e6b4f;background:#fff;color:#2e6b4f;">🙋 私もここで被災しています</button>' : ''));
+      box.querySelector('[data-wz-open]').onclick = function() { close(); _tayoriOpenMode(dm.id); };
+      var dvb = box.querySelector('[data-wz-vouch]'); if (dvb) dvb.onclick = function() { _tayoriVouch(dm, dvb); };
     } else if (st.step === 'confirm') {
       var m = st.muni;
       if (TEST) frame(_tayoriEsc(m.pref + ' ' + m.name) + 'で、テスト用の掲示板を立ち上げますか？',
@@ -75473,6 +75531,17 @@ function _tayoriStartWizard(opts) {
         '立ち上げるとすぐ、この町の水・食べもの・開いているお店などを、利用者どうしで知らせ合えるようになります。<br>' +
         'この町にいる方が3人「私もここで被災しています」を押すまでは「確認中」と出ます。確かめられないときは、72時間で自動で終わります。<br>' +
         '<b style="color:#7a2a22;">本当に災害が起きているときだけ、立ち上げてください。</b>', '', '立ち上げる');
+      // v0.99.66: 同じ市のほかの区の掲示板があれば、近くの掲示板として見せる（区ごとに作るのはそのまま）
+      if (st.near && st.near.length) {
+        var nb = document.createElement('div'); nb.setAttribute('data-wz-near', '');
+        nb.style.cssText = 'margin-top:12px;padding:10px 12px;border:1.5px solid #c9d9ea;border-radius:12px;background:#f4f8fc;line-height:1.7;';
+        var city = KOYOMI_TAYORI_SEIREI[_tayoriSeireiOf(m.code)] || '';
+        nb.innerHTML = '<div style="font-weight:700;color:#234d7a;">同じ' + _tayoriEsc(city) + 'で、ほかの区の掲示板があります</div>' +
+          st.near.slice(0, 3).map(function(x) { return '<button type="button" data-wz-nearopen="' + _tayoriEsc(x.id) + '" style="display:block;width:100%;text-align:left;min-height:48px;margin-top:6px;padding:8px 12px;border:1.5px solid #d9cfbf;border-radius:12px;background:#fff;color:#3b3226;font-size:0.98em;cursor:pointer;font-family:inherit;">' + (TEST ? '🧪 ' : '🆘 ') + _tayoriEsc(_tayoriModeLine(x)) + ' を見る</button>'; }).join('') +
+          '<div style="font-size:0.9em;color:#5a4e3c;margin-top:6px;">' + _tayoriEsc(m.name) + 'として新しく立ち上げるときは、下のボタンを押してください。</div>';
+        var nx = box.querySelector('[data-wz-next]'); nx.parentNode.insertBefore(nb, nx);
+        [].forEach.call(nb.querySelectorAll('[data-wz-nearopen]'), function(b) { b.onclick = function() { close(); _tayoriOpenMode(b.getAttribute('data-wz-nearopen')); }; });
+      }
       box.querySelector('[data-wz-next]').onclick = function() {
         var b = this; b.disabled = true; b.textContent = '立ち上げています…';
         rpcWithTimeout('koyomiru_tayori_user_start', TEST ? { p_code: m.code, p_hazard: st.hazard, p_test: true } : { p_code: m.code, p_hazard: st.hazard }, 15000).then(function(r) {
@@ -75506,6 +75575,7 @@ function _tayoriStartWizard(opts) {
   }
   if (TEST) { var _dr = draw; draw = function() { _dr(); box.insertAdjacentHTML('afterbegin', '<div data-wz-testribbon style="margin:-6px -4px 12px;padding:8px 12px;border:2px dashed #c9a227;border-radius:12px;background:#fff7d6;color:#5a4500;font-weight:700;font-size:0.92em;">🧪 テストとして試しています（本物の災害ではないとき）</div>'); }; }
   draw();
+  if (opts && opts._stMuni) { st.hazard = opts._stHazard || 'earthquake'; setMuni(opts._stMuni); }   // v0.99.66: スモークテスト用（町を選んだところから始める）
 }
 // ===== v0.83.4: 掲示板の使い方のカード・月・起動のときの案内 =====
 // 【権威】2026-11-18 最高峰会議の切り分けに「いいと思う」。「一行だけじゃなく月の形も出して。月の形が励みになる人もいる」
@@ -98923,6 +98993,54 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-688: お店探しが違う', _x688.join(','));
      } catch(e) {
        ng('ST-688: 例外', e.message);
+     }
+
+     // ===== ST-690: 立ち上げる前に、同じ町（区）の掲示板がもうないか確かめる（v0.99.66） =====
+     // 【権威】2026-11-21「千葉市中央区とか花見川区とかあるじゃん。そこまでちゃんと見てくれてるの」→ 区で判定・同じ市のほかの区は近くの掲示板として出す・2つ目は作らない
+     try {
+       var _r690 = {};
+       _r690.seirei = _tayoriSeireiOf('12101') === '12100' && _tayoriSeireiOf('121011') === '12100' && _tayoriSeireiOf('12202') === '' && _tayoriSeireiOf('13101') === '' && _tayoriSeireiOf('12100') === '' &&
+         _tayoriSeireiOf('27128') === '27100' && _tayoriSeireiOf('27141') === '27140' && _tayoriSeireiOf('22140') === '22130' && _tayoriSeireiOf('40131') === '40130' && _tayoriSeireiOf('14151') === '14150' && _tayoriSeireiOf('14131') === '14130';
+       var _md690 = _koyomiTayori.modes, _mk690 = _koyomiTayori.made, _lm690 = window._tayoriLoadMeta, _om690 = window._tayoriOpenMode;
+       try {
+         _koyomiTayori.made = null;
+         _koyomiTayori.modes = [
+           { id: 'st690-a', name: '千葉県 千葉市中央区', hazard: 'earthquake', kind: 'user', verified_at: null, started_at: '2026-11-21T13:00:00Z', munis: [{ code: '121011', name: '千葉市中央区' }] },
+           { id: 'st690-t', name: '東京都 千代田区', hazard: 'earthquake', kind: 'user', is_test: true, mine: true, munis: [{ code: '13101', name: '千代田区' }] }
+         ];
+         _r690.same = !!_tayoriSameTown('12101', false) && _tayoriSameTown('12101', false).id === 'st690-a' && !_tayoriSameTown('12101', true) && !_tayoriSameTown('12102', false);
+         _r690.testApart = !_tayoriSameTown('13101', false) && !!_tayoriSameTown('13101', true);
+         _r690.city = _tayoriSameCity('12102', false).length === 1 && _tayoriSameCity('12101', false).length === 0 && _tayoriSameCity('13102', true).length === 0;
+         window._tayoriLoadMeta = function() { return { then: function(f) { f(); } }; }; _tayoriLoadMeta = window._tayoriLoadMeta;
+         // 中央区を選ぶ → 「もう立ち上がっています」・開くと同じ掲示板
+         var _opened690 = '';
+         window._tayoriOpenMode = function(id) { _opened690 = id; }; _tayoriOpenMode = window._tayoriOpenMode;
+         _tayoriStartWizard({ _stMuni: { code: '12101', pref: '千葉県', name: '千葉市中央区' } });
+         var ov1 = document.getElementById('tayoriWizOverlay'), t1 = ov1 ? ov1.textContent : '';
+         _r690.exists = /もう立ち上がっています/.test(t1) && !ov1.querySelector('[data-wz-next]') && !!ov1.querySelector('[data-wz-vouch]') && /11月2\d日から/.test(t1);
+         var ob = ov1 && ov1.querySelector('[data-wz-open]'); if (ob) ob.click();
+         _r690.open = _opened690 === 'st690-a' && !document.getElementById('tayoriWizOverlay');
+         // 花見川区を選ぶ → 立ち上げられる・近くの掲示板に中央区
+         _tayoriStartWizard({ _stMuni: { code: '12102', pref: '千葉県', name: '千葉市花見川区' } });
+         var ov2 = document.getElementById('tayoriWizOverlay'), nr = ov2 && ov2.querySelector('[data-wz-near]');
+         _r690.near = !!ov2 && !!ov2.querySelector('[data-wz-next]') && !!nr && /同じ千葉市/.test(nr.textContent) && /中央区/.test(nr.textContent) && /花見川区として新しく/.test(nr.textContent);
+         if (ov2) ov2.remove();
+         // 銚子市（区ではない） → 近くの掲示板は出ない
+         _tayoriStartWizard({ _stMuni: { code: '12202', pref: '千葉県', name: '銚子市' } });
+         var ov3 = document.getElementById('tayoriWizOverlay');
+         _r690.noNear = !!ov3 && !!ov3.querySelector('[data-wz-next]') && !ov3.querySelector('[data-wz-near]');
+         if (ov3) ov3.remove();
+       } finally {
+         var o9 = document.getElementById('tayoriWizOverlay'); if (o9) o9.remove();
+         _koyomiTayori.modes = _md690; _koyomiTayori.made = _mk690;
+         window._tayoriLoadMeta = _lm690; _tayoriLoadMeta = _lm690; window._tayoriOpenMode = _om690; _tayoriOpenMode = _om690;
+       }
+       var _x690 = Object.keys(_r690).filter(function(k) { return !_r690[k]; });
+       !_x690.length
+         ? ok('ST-690: 町を選んだら、同じ区の掲示板がもうないか確かめる（あれば開くだけ・2つ目は作らない）。千葉市などは区ごと、同じ市のほかの区は近くの掲示板として出す。本物とテストはぶつからない')
+         : ng('ST-690: 同じ町の確かめが違う', _x690.join(','));
+     } catch(e) {
+       ng('ST-690: 例外', e.message);
      }
 
      // ===== ST-689: 緊急災害復旧モードの入口は「立ち上げる」がいちばん上（v0.99.65） =====
