@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.85 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.86 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.85';
+    const APP_VERSION = 'v0.99.86';
   const APP_LAST_UPDATED = '2026-11-24'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61327,6 +61327,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.86', date: '2026-11-24',
+    items: [
+      { icon:'🗺', t:'Appleマップのリンクを貼ると、お店の名前と場所が自動で入るようにしました',
+        before:'地図アプリのリンクを貼っても、お店の名前と住所を自分で入れる必要がありました',
+        after:'Appleマップでお店の「共有」→「コピー」して貼ると、名前と場所が入り、★を付けるだけで記録できます。Googleマップのリンクには名前と場所が入っていないため、そのときは自分で入れます' }
+    ]
+  },
+  {
     ver: 'v0.99.85', date: '2026-11-24',
     items: [
       { icon:'🍜', t:'おいしいお店を、1つの画面にまとめました',
@@ -76258,7 +76266,7 @@ function _shopDrawMine() {
 function _shopRecordStart() {
   if (!window._cloudIsLoggedIn) { if (typeof showToast === 'function') showToast('記録するには、ログインをお願いします', { type: 'warn' }); try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {} return; }
   showChoiceModal({ align: 'left', title: '＋ お店を記録する', desc: 'どの方法で、お店を見つけますか？', buttons: [
-    { label: '🗺 Googleマップで探す（おすすめ）<span style="display:block;font-size:0.8em;color:#888;margin-top:2px;">お店の「共有」→「コピー」して、ここに貼るだけ</span>', style: 'primary', onClick: _shopFromGoogle },
+    { label: '🗺 地図アプリで探す（おすすめ）<span style="display:block;font-size:0.8em;color:#888;margin-top:2px;">Appleマップでお店の「共有」→「コピー」して、ここに貼るだけ</span>', style: 'primary', onClick: _shopFromGoogle },
     { label: '🔍 その場で探す<span style="display:block;font-size:0.8em;color:#888;margin-top:2px;">地図のデータ（OpenStreetMap）から。載っていないお店もあります</span>', style: 'cancel', onClick: _shopFindWizard },
     { label: '✍️ 名前と住所で登録する', style: 'cancel', onClick: function() { _shopRegister(''); } },
     { label: '閉じる', style: 'cancel' } ] });
@@ -76269,9 +76277,16 @@ function _shopRecordStart() {
 function _shopParseShare(text) {
   var s = String(text || '').replace(/\r/g, '').slice(0, 2000), out = { name: '', addr: '', lat: null, lng: null, url: '' };
   var urls = s.match(/https?:\/\/[^\s]+/g) || [];
-  out.url = urls.filter(function(u) { return /google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\./.test(u); })[0] || '';
+  out.url = urls.filter(function(u) { return /google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.|maps\.apple(\.com)?\//.test(u); })[0] || '';
   urls.forEach(function(u) {
-    var d = u.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/) || u.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || u.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+    var d = u.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/) || u.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || u.match(/[?&](?:q|query|ll|coordinate|sll)=(-?\d+(?:\.\d+)?)(?:,|%2C)(-?\d+(?:\.\d+)?)/i);
+    // v0.99.86: Appleマップの共有リンク（maps.apple.com/place?name=…&coordinate=…&address=… や ?q=…&ll=…&address=…）
+    if (/maps\.apple(\.com)?\//.test(u)) {
+      var ap = function(k) { var m = u.match(new RegExp('[?&]' + k + '=([^&#]+)')); if (!m) return ''; try { return decodeURIComponent(m[1].replace(/\+/g, ' ')).trim(); } catch (e) { return ''; } };
+      var an = ap('name') || ap('q'), aa = ap('address');
+      if (an && !/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(an) && !out.name) out.name = an;
+      if (aa && !out.addr) out.addr = aa.replace(/^日本[、,]?\s*/, '').replace(/,\s*日本$/, '');
+    }
     if (d && out.lat == null) { var la = Number(d[1]), ln = Number(d[2]); if (la >= 20 && la <= 46 && ln >= 122 && ln <= 154) { out.lat = la; out.lng = ln; } }
     var pm = u.match(/\/maps\/place\/([^\/@?]+)/);
     if (pm && !out.name) { try { out.name = decodeURIComponent(pm[1].replace(/\+/g, ' ')).trim(); } catch (e) {} }
@@ -76312,6 +76327,8 @@ function _shopGeocode(addr) {
 }
 // v0.99.68: 【権威】2026-11-23「津田沼で、これから行く八千代台のお店を調べようと思ったら千葉市中央区が出た。検索ワードを上手くして、検索しやすくしたい」
 //   → 前の町に決め打ちしない。「どこで・何を」を自分で書ける欄（前に使った言葉は札で出す）と、「今いる場所の近く」をGoogleマップに渡す
+// Appleマップで探す（iPhoneではAppleマップのアプリが開く。ほかの端末ではWeb版）。ことばが無ければ、今いる場所のまわり
+function _shopAQuery(q) { return 'https://maps.apple.com/?q=' + encodeURIComponent(String(q || '').trim() || 'グルメ'); }
 function _shopGQuery(q) { return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(q || '').trim() || 'グルメ'); }
 function _shopGRecent() { var a = _tayoriLS('shopGWords', []); return Array.isArray(a) ? a.filter(function(x) { return typeof x === 'string' && x.trim(); }).slice(0, 4) : []; }
 function _shopGRemember(q) { q = String(q || '').trim().slice(0, 40); if (!q) return; var a = _shopGRecent().filter(function(x) { return x !== q; }); a.unshift(q); _tayoriLSSet('shopGWords', a.slice(0, 4)); }
@@ -76339,15 +76356,18 @@ function _shopFromGoogle() {
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
   var bt = 'display:block;width:100%;min-height:54px;border-radius:14px;font-size:1.02em;font-weight:800;cursor:pointer;font-family:inherit;';
   ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;max-width:520px;width:100%;max-height:92vh;max-height:92dvh;overflow:auto;padding:16px 18px 18px;color:#3b3226;">' +
-    '<div style="display:flex;align-items:center;"><div style="flex:1;font-size:1.2em;font-weight:800;">🗺 Googleマップで探す</div><button type="button" data-sg-x aria-label="閉じる" style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;color:#6b6155;">✕</button></div>' +
+    '<div style="display:flex;align-items:center;"><div style="flex:1;font-size:1.2em;font-weight:800;">🗺 地図アプリで探す</div><button type="button" data-sg-x aria-label="閉じる" style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;color:#6b6155;">✕</button></div>' +
     '<ol style="margin:8px 0 0;padding-left:1.4em;line-height:1.9;">' +
-      '<li>どこで・何を食べたいかを書いて、Googleマップを開く</li>' +
+      '<li>どこで・何を食べたいかを書いて、地図アプリを開く</li>' +
       '<li>お店の画面で「<b>共有</b>」→「<b>コピー</b>」</li>' +
       '<li>こよみるに戻って「<b>📋 貼り付ける</b>」</li></ol>' +
+    // v0.99.86: 【権威】2026-11-24 A「Appleマップのリンクも受け付ける」。Googleの短いリンクは名前も場所も入っていない（?ftid=番号だけ）と分かった
+    '<div style="margin-top:8px;padding:8px 10px;border-radius:10px;background:#f0f6ef;color:#2e6b4f;font-size:0.88em;line-height:1.6;">Appleマップなら、お店の名前と場所が自動で入ります。Googleマップのリンクでは名前と場所が分からないため、自分で入れることになります。</div>' +
     '<input data-sg-q type="search" maxlength="40" placeholder="例：〇〇駅 ラーメン" style="width:100%;box-sizing:border-box;min-height:50px;margin-top:12px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;">' +
     '<div data-sg-chips style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>' +
-    '<a data-sg-open href="' + _shopEsc(gq) + '" target="_blank" rel="noopener noreferrer" style="' + bt + 'margin-top:10px;display:flex;align-items:center;justify-content:center;text-decoration:none;border:1.5px solid #1a5fb4;background:#fff;color:#1a5fb4;">Googleマップで探す ↗</a>' +
-    '<a data-sg-near href="' + _shopEsc(_shopGQuery('グルメ')) + '" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin-top:6px;padding:8px;color:#1a5fb4;font-size:0.92em;font-weight:700;text-decoration:none;">📍 今いる場所の近くで探す ↗</a>' +
+    '<a data-sg-apple href="' + _shopEsc(_shopAQuery('')) + '" target="_blank" rel="noopener noreferrer" style="' + bt + 'margin-top:10px;display:flex;align-items:center;justify-content:center;text-decoration:none;border:none;background:#1a5fb4;color:#fff;">Appleマップで探す ↗</a>' +
+    '<a data-sg-open href="' + _shopEsc(gq) + '" target="_blank" rel="noopener noreferrer" style="' + bt + 'margin-top:8px;display:flex;align-items:center;justify-content:center;text-decoration:none;border:1.5px solid #1a5fb4;background:#fff;color:#1a5fb4;">Googleマップで探す ↗</a>' +
+    '<a data-sg-near href="' + _shopEsc(_shopAQuery('グルメ')) + '" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin-top:6px;padding:8px;color:#1a5fb4;font-size:0.92em;font-weight:700;text-decoration:none;">📍 今いる場所の近くで探す ↗</a>' +
     '<button type="button" data-sg-paste style="' + bt + 'margin-top:10px;border:none;background:#b5541c;color:#fff;">📋 貼り付ける</button>' +
     '<textarea data-sg-text rows="4" placeholder="うまく貼れないときは、ここを長押しして「ペースト」" style="width:100%;box-sizing:border-box;margin-top:10px;padding:10px 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;line-height:1.6;"></textarea>' +
     '<button type="button" data-sg-next style="' + bt + 'margin-top:8px;border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">この内容で次へ</button>' +
@@ -76360,12 +76380,14 @@ function _shopFromGoogle() {
     var p = _shopParseShare(text);
     // v0.99.84: 【権威】2026-11-24「名前も住所も聞かれて、もう一回Googleマップを開かなきゃいけない。めんどくさい」
     //   → コピーした文が短いリンクだけ（maps.app.goo.gl）なら、飛び先のアドレスをサーバー（shop-resolve-link）で確かめ、名前と場所を読み取る
-    if (p.url && (p.lat == null || !p.name) && /maps\.app\.goo\.gl|goo\.gl\//.test(p.url) && !go._busy) {
+    if (p.url && (p.lat == null || !p.name) && /maps\.app\.goo\.gl|goo\.gl\/|maps\.apple(\.com)?\//.test(p.url) && !go._busy) {
       go._busy = true;
       var pb = q('[data-sg-paste]'); if (pb) { pb.disabled = true; pb.textContent = 'お店を確かめています…'; }
       _shopResolveShortLink(p.url).then(function(fin) {
         go._busy = false; if (pb) { pb.disabled = false; pb.textContent = '📋 貼り付ける'; }
         if (fin) { var p2 = _shopParseShare(fin + '\n' + String(text || '').replace(/https?:\/\/[^\s]+/g, '')); p2.url = p.url; if (p2.name || p2.lat != null) { if (!p2.name) p2.name = p.name; if (!p2.addr) p2.addr = p.addr; close(); _shopConfirmPlace(p2); return; } }
+        // Googleの短いリンクは、名前も場所も教えてくれない（?ftid=番号だけ）。そのことを、はっきり伝える
+        if (/goo\.gl/.test(p.url) && !p.name && !p.addr) { if (typeof showToast === 'function') showToast('Googleマップのリンクには、お店の名前と場所が入っていません。Appleマップで「共有」→「コピー」すると自動で入ります（このまま名前と住所を入れても記録できます）', { type: 'warn' }); close(); _shopConfirmPlace(p); return; }
         _shopGoParsed(p, close);
       });
       return;
@@ -76375,13 +76397,15 @@ function _shopFromGoogle() {
   q('[data-sg-next]').onclick = function() { go(q('[data-sg-text]').value); };
   // どこで・何を：書いた言葉をそのままGoogleマップへ。前に使った言葉と、選んでいる町は札で出す（押すと欄に入る）
   var qi = q('[data-sg-q]'), op = q('[data-sg-open]'), t0 = _shopTown();
-  var sync = function() { op.href = _shopGQuery(qi.value || 'グルメ'); };
+  var ap = q('[data-sg-apple]');
+  var sync = function() { op.href = _shopGQuery(qi.value || 'グルメ'); if (ap) ap.href = _shopAQuery(qi.value || 'グルメ'); };
   var chips = _shopGRecent(); if (t0 && t0.name && chips.indexOf(t0.name) === -1) chips.push(t0.name);
   q('[data-sg-chips]').innerHTML = chips.slice(0, 5).map(function(w) { return '<button type="button" data-sg-chip="' + _shopEsc(w) + '" style="min-height:36px;padding:0 12px;border:1px solid #d9cfbf;border-radius:999px;background:#fff;color:#3b3226;font-size:0.9em;cursor:pointer;font-family:inherit;">' + _shopEsc(w) + '</button>'; }).join('');
   [].forEach.call(q('[data-sg-chips]').querySelectorAll('[data-sg-chip]'), function(b) { b.onclick = function() { qi.value = b.getAttribute('data-sg-chip') + ' '; sync(); qi.focus(); }; });
   qi.oninput = sync;
   qi.onkeydown = function(e) { if (e.key === 'Enter') { e.preventDefault(); sync(); op.click(); } };
   op.addEventListener('click', function() { sync(); _shopGRemember(qi.value); });
+  if (ap) ap.addEventListener('click', function() { sync(); _shopGRemember(qi.value); });
   q('[data-sg-paste]').onclick = function() {
     var b = this;
     if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
@@ -99703,6 +99727,23 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-697: 例外', e.message);
      }
 
+     // ===== ST-703: Appleマップの共有リンクから、名前・場所・住所を読み取る（v0.99.86） =====
+     // 【権威】2026-11-24 A「Appleマップのリンクも受け付ける」（Googleの短いリンクは ?ftid=番号 にしか飛ばず、名前も場所も取れない）
+     try {
+       var _x703 = [], _e703 = encodeURIComponent;
+       var _a703 = _shopParseShare('https://maps.apple.com/place?address=' + _e703('〒260-0013 千葉県千葉市中央区中央1丁目2-3, 日本') + '&coordinate=35.61,140.12&name=' + _e703('らーめん〇〇 出墨港店') + '&place-id=I1A2B3&map=explore');
+       if (_a703.name !== 'らーめん〇〇 出墨港店' || _a703.lat !== 35.61 || _a703.lng !== 140.12 || !/千葉県千葉市中央区中央1丁目2-3/.test(_a703.addr) || /〒|日本/.test(_a703.addr)) _x703.push('place:' + JSON.stringify(_a703));
+       var _b703 = _shopParseShare('https://maps.apple.com/?address=' + _e703('千葉県千葉市中央区中央') + '&auid=123&ll=35.61,140.12&lsp=9902&q=' + _e703('らーめん〇〇') + '&t=m');
+       if (_b703.name !== 'らーめん〇〇' || _b703.lat !== 35.61 || !_b703.url) _x703.push('old');
+       if (!_shopParseShare('https://maps.apple/p/AbCdEf').url) _x703.push('short');
+       if (!/^https:\/\/maps\.apple\.com\/\?q=/.test(_shopAQuery('〇〇駅 ラーメン'))) _x703.push('search');
+       _x703.length === 0
+         ? ok('ST-703: Appleマップの共有リンク（新しい形・前の形・短いリンク）から名前と場所と住所を読み、Appleマップで探すボタンがある')
+         : ng('ST-703: Appleマップのリンクの読み取りが違う', _x703.join(','));
+     } catch(e) {
+       ng('ST-703: 例外', e.message);
+     }
+
      // ===== ST-702: Googleマップの短いリンクから、名前と場所を読み取る（v0.99.84） =====
      // 【権威】2026-11-24「名前も住所も聞かれて、もう一回Googleマップを開かなきゃいけない。めんどくさい」
      try {
@@ -99919,7 +99960,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var g693 = document.getElementById('shopGSheet'), op693 = g693.querySelector('[data-sg-open]'), qi693 = g693.querySelector('[data-sg-q]');
          _r693.noForce = !/%E5%8D%83%E8%91%89/.test(op693.href);   // 書く前から「千葉市中央区」に決め打ちしない
          _r693.hint = qi693.getAttribute('placeholder') === '例：〇〇駅 ラーメン';   // v0.99.76: 【権威】2026-11-23 お手本に実在の町を入れない
-         _r693.near = /query=%E3%82%B0%E3%83%AB%E3%83%A1/.test(g693.querySelector('[data-sg-near]').href);
+         _r693.near = /maps\.apple\.com\/\?q=%E3%82%B0%E3%83%AB%E3%83%A1/.test(g693.querySelector('[data-sg-near]').href) && !!g693.querySelector('[data-sg-apple]');   // v0.99.86: 今いる場所の近くはAppleマップで（名前と場所が自動で入るため）
          _r693.chipTown = !!g693.querySelector('[data-sg-chip="千葉市中央区"]');
          qi693.value = '八千代台駅 ラーメン'; qi693.dispatchEvent(new Event('input'));
          _r693.typed = op693.href.indexOf(encodeURIComponent('八千代台駅 ラーメン')) !== -1;
