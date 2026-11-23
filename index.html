@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.68 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.69 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.68';
+    const APP_VERSION = 'v0.99.69';
   const APP_LAST_UPDATED = '2026-11-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -28162,6 +28162,54 @@ function koyomiKazeAutoDecision() {
   return d;
 }
 window.koyomiKazeAutoDecision = koyomiKazeAutoDecision;
+// v0.99.69: 【権威】2026-11-23「出てくる時が『開くたびに』になってるのに、開いてこない」→ C：
+//   iPhoneは、アプリを離れて戻っても読み込み直さないので、今までは「開いた」と数えていなかった。
+//   1分以上離れて戻ってきたら「開いた」と数える。「開くたびに」なら出す。「その日の最初に開いたとき」は、まだ今日出ていなければ出す。ほかの決め方は今までどおり（起動のときだけ）
+//   ほかの窓（注文票・お店の記録・掲示板の立ち上げなど）を開いたまま離れたとき、文字を打っている途中のときは、じゃましない
+var KOYOMI_KAZE_RESUME_MS = 60 * 1000;
+function koyomiKazeResumeShould(order, awayMs, shownToday) {
+  if (!(awayMs >= KOYOMI_KAZE_RESUME_MS)) return false;
+  var t = order && order.timing;
+  if (t === 'everyOpen') return true;
+  if (t === 'firstOfDay') return !shownToday;
+  return false;
+}
+window.koyomiKazeResumeShould = koyomiKazeResumeShould;
+function _koyomiAnyOverlayOpen() {
+  var ae = document.activeElement;
+  if (ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable)) return true;
+  var kids = document.body ? document.body.children : [];
+  for (var i = 0; i < kids.length; i++) {
+    var el = kids[i], cs;
+    try { cs = getComputedStyle(el); } catch (e) { continue; }
+    if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if ((parseInt(cs.zIndex, 10) || 0) < 9000) continue;
+    if (el.offsetWidth >= window.innerWidth * 0.9 && el.offsetHeight >= window.innerHeight * 0.9) return true;
+  }
+  return false;
+}
+window._koyomiAnyOverlayOpen = _koyomiAnyOverlayOpen;
+(function() {
+  var hiddenAt = 0;
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+    if (!hiddenAt) return;
+    var away = Date.now() - hiddenAt; hiddenAt = 0;
+    try {
+      if (window._isTesting || window._smokeTestRunning || window._koyomiruEntryMode) return;
+      if (typeof showKazedayoriModal !== 'function' || typeof getKoyomiOrder !== 'function') return;
+      var last = ''; try { last = localStorage.getItem(KOYOMI_TODAY_KEY) || ''; } catch (eL) {}
+      if (!koyomiKazeResumeShould(getKoyomiOrder(), away, last === getLocalDateStr(new Date()))) return;
+      if (_koyomiAnyOverlayOpen()) return;
+      whenStartupClear(function() {
+        if (_koyomiAnyOverlayOpen()) return;
+        _koyomiMarkKazeShown();
+        if (typeof window.koyomiSaigaiStartupInstead === 'function' && window.koyomiSaigaiStartupInstead()) return;
+        showKazedayoriModal();
+      });
+    } catch (e) {}
+  });
+})();
 function _koyomiMarkKazeShown() {
   window._koyomiTodayShownNow = true;   // 同じ日の「新しい候へ」のトーストは控える
   if (window._isTesting) return;
@@ -61236,6 +61284,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.69', date: '2026-11-23',
+    items: [
+      { icon:'🍃', t:'「開くたびに」の季節の風だよりが、アプリに戻ってきたときにも出るようにしました',
+        before:'スマホでこよみるを離れて戻ってきても、読み込み直していないので「開いた」と数えず、季節の風だよりが出ませんでした',
+        after:'1分以上ほかのアプリにいて戻ってきたら、「開いた」と数えます。注文票やお店の記録などを開いたまま離れたとき、文字を打っている途中のときは出しません' }
+    ]
+  },
   {
     ver: 'v0.99.68', date: '2026-11-23',
     items: [
@@ -99229,6 +99285,28 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-688: お店探しが違う', _x688.join(','));
      } catch(e) {
        ng('ST-688: 例外', e.message);
+     }
+
+     // ===== ST-694: アプリに戻ってきたときも「開いた」と数える（v0.99.69） =====
+     // 【権威】2026-11-23「出てくる時が『開くたびに』になってるのに、開いてこない」→ C：1分以上離れて戻ったら開いたと数える
+     try {
+       var _r694 = {}, M = 60 * 1000;
+       _r694.every = koyomiKazeResumeShould({ timing: 'everyOpen' }, M, true) === true && koyomiKazeResumeShould({ timing: 'everyOpen' }, M - 1, false) === false && koyomiKazeResumeShould({ timing: 'everyOpen' }, 3600000, true) === true;
+       _r694.first = koyomiKazeResumeShould({ timing: 'firstOfDay' }, M * 5, false) === true && koyomiKazeResumeShould({ timing: 'firstOfDay' }, M * 5, true) === false;
+       _r694.others = koyomiKazeResumeShould({ timing: 'basic' }, M * 99, false) === false && koyomiKazeResumeShould({ timing: 'whimsical' }, M * 99, false) === false && koyomiKazeResumeShould({ timing: 'onlyChip' }, M * 99, false) === false;
+       var d694 = document.createElement('div'); d694.style.cssText = 'position:fixed;inset:0;z-index:99999;';
+       var was = _koyomiAnyOverlayOpen();
+       document.body.appendChild(d694);
+       try { _r694.overlay = _koyomiAnyOverlayOpen() === true; } finally { d694.remove(); }
+       _r694.clear = _koyomiAnyOverlayOpen() === was;
+       var i694 = document.createElement('input'); document.body.appendChild(i694); i694.focus();
+       try { _r694.typing = _koyomiAnyOverlayOpen() === true; } finally { i694.blur(); i694.remove(); }
+       var _x694 = Object.keys(_r694).filter(function(k) { return !_r694[k]; });
+       !_x694.length
+         ? ok('ST-694: 1分以上離れて戻ったら「開いた」と数える（開くたびに＝出す・その日の最初に＝今日まだなら出す・ほかは起動のときだけ）。ほかの窓や文字を打っている途中は、じゃましない')
+         : ng('ST-694: 戻ってきたときの数え方が違う', _x694.join(','));
+     } catch(e) {
+       ng('ST-694: 例外', e.message);
      }
 
      // ===== ST-693: Googleマップで探すとき、どこで・何をを自分で書ける（v0.99.68） =====
