@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.66 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.67 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.66';
+    const APP_VERSION = 'v0.99.67';
   const APP_LAST_UPDATED = '2026-11-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61222,6 +61222,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.67', date: '2026-11-23',
+    items: [
+      { icon:'🍜', t:'おいしいお店を作り直しました',
+        before:'お店を探しても見つからないことが多く、★を付けても自分の地図に出てきませんでした',
+        after:'いちばん上の「＋ お店を記録する」から、Googleマップでお店を探して「共有」→「コピー」し、こよみるに貼るだけで記録できます。開いたときは「わたしの記録」で、★を付けたお店が町に関係なく地図と一覧にすぐ出ます。町ごとのランキングは「みんなの★」で見られます' }
+    ]
+  },
+  {
     ver: 'v0.99.66', date: '2026-11-23',
     items: [
       { icon:'🆘', t:'同じ町の災害復旧掲示板を、2つ作らないようにしました',
@@ -75671,7 +75679,7 @@ var KOYOMI_SHOP_GENRES = [
   ['cafe', '☕', 'カフェ'], ['sweets', '🍰', '甘いもの'], ['izakaya', '🍺', '居酒屋'], ['yoshoku', '🍝', '洋食'],
   ['chuka', '🥟', '中華'], ['teishoku', '🍱', '定食'], ['fastfood', '🍔', 'ファストフード'], ['other', '🍽', 'そのほか']
 ];
-var _koyomiShops = { town: null, genre: '', rows: [], loading: false, map: null, layer: null, loadedFor: '' };
+var _koyomiShops = { town: null, genre: '', rows: [], loading: false, map: null, layer: null, loadedFor: '', tab: '', mine: null, mineAt: 0, mineErr: '' };   // v0.99.67: tab・mine を足した
 function _shopGenre(k) { return KOYOMI_SHOP_GENRES.filter(function(g) { return g[0] === k; })[0] || KOYOMI_SHOP_GENRES[11]; }
 function _shopEsc(s) { return _tayoriEsc(s); }
 function _shopStars(v) { var n = Number(v); return isFinite(n) && n > 0 ? '<span style="color:#e0a000;">★</span>' + n.toFixed(1) : ''; }
@@ -75703,29 +75711,215 @@ function _shopLoad(force) {
     _shopDrawList(); _shopDrawMarkers();
   }, function() { _koyomiShops.loading = false; _koyomiShops.err = '読み込めませんでした'; _shopDrawList(); });
 }
+// ===== v0.99.67: 🍜 おいしいお店を作り直し =====
+// 【権威】2026-11-23「美味しい店やって調べても、結局自分のマップには載ってこない。一発目でGoogleマップで調べさせちゃえば。ゼロベースでUIも考えて作り直して」
+//   最高峰会議で B：①いちばん上に「＋ お店を記録する」（Googleマップで探す＝共有の文を貼る／その場で探す／名前と住所で登録）
+//   ②開いたときは「わたしの記録」（自分が★を付けたお店が町に関係なく地図と一覧に出る）③「みんなの★」は切り替え（町ごとの★の高い順）
+//   食べログを読み込んで取り込むのは規約（転用の禁止）に触れるのでしない。ホットペッパーの窓口も、保存は24時間まで・ほかへの複製禁止なので使わない
+function _shopTab() { return _koyomiShops.tab || (window._cloudIsLoggedIn ? 'mine' : 'town'); }
 function renderShopsView() {
   var host = document.getElementById('shopsView'); if (!host) return;
+  var tab = _shopTab(), mine = _koyomiShops.mine;
+  var tb = function(k, label) { var on = tab === k; return '<button type="button" data-sh-tab="' + k + '" aria-pressed="' + on + '" style="flex:1;min-height:46px;border:none;border-radius:10px;font-size:0.98em;font-weight:800;cursor:pointer;font-family:inherit;background:' + (on ? '#fff' : 'transparent') + ';color:' + (on ? '#3b3226' : '#8a7d6b') + ';box-shadow:' + (on ? '0 1px 3px rgba(0,0,0,0.12)' : 'none') + ';">' + label + '</button>'; };
+  host.innerHTML = '<div style="max-width:760px;margin:0 auto;padding:14px 12px 0;color:#3b3226;">' +
+    '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;font-size:1.35em;font-weight:800;">🍜 おいしいお店</div>' + ((typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? '<button type="button" data-sh-pq style="' + 'min-height:40px;padding:0 12px;border-radius:12px;font-size:0.9em;font-weight:700;cursor:pointer;font-family:inherit;' + 'border:1.5px solid #c9a227;background:#fff7d6;color:#6b5200;">📷 確かめ待ち' + KOYOMI_ONLY_YOU_TAG + '</button>' : '') + '</div>' +
+    '<button type="button" data-sh-rec style="display:block;width:100%;min-height:58px;margin-top:10px;border:none;border-radius:14px;background:#b5541c;color:#fff;font-size:1.12em;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 2px 6px rgba(181,84,28,0.25);">＋ お店を記録する</button>' +
+    '<div style="display:flex;gap:4px;margin-top:12px;padding:4px;border-radius:12px;background:#efe7d8;">' +
+      tb('mine', '📒 わたしの記録' + (mine && mine.length ? '（' + mine.length + '）' : '')) + tb('town', '⭐ みんなの★') + '</div>' +
+    '<div data-sh-body style="margin-top:12px;"></div>' +
+    '<div style="font-size:0.75em;color:#a39886;line-height:1.7;margin:10px 2px 90px;">★とレビューは、こよみるを使う人が書いたものです。自分や身内のお店には★を付けないでください。</div>' +
+  '</div>';
+  host.querySelector('[data-sh-rec]').onclick = _shopRecordStart;
+  var pqb = host.querySelector('[data-sh-pq]'); if (pqb) pqb.onclick = _shopPhotoQueue;   // 管理者だけ：写真の確かめ待ち
+  [].forEach.call(host.querySelectorAll('[data-sh-tab]'), function(b) { b.onclick = function() { _koyomiShops.tab = b.getAttribute('data-sh-tab'); renderShopsView(); }; });
+  var body = host.querySelector('[data-sh-body]');
+  if (tab === 'town') { _shopRenderTownTab(body); return; }
+  _shopRenderMineTab(body);
+}
+// 「わたしの記録」：自分が★を付けたお店（町に関係なく・新しい順）
+function _shopRenderMineTab(body) {
+  if (!window._cloudIsLoggedIn) {
+    body.innerHTML = '<div style="padding:22px 14px;text-align:center;background:#fff;border:1px dashed #e1d8c8;border-radius:14px;line-height:1.8;">ログインすると、★を付けたお店が<br>ここに「自分の食べ歩きマップ」としてたまっていきます。' +
+      '<br><button type="button" data-sh-login style="min-height:48px;padding:0 18px;margin-top:10px;border:none;border-radius:12px;background:#06C755;color:#fff;font-weight:800;font-size:1em;cursor:pointer;font-family:inherit;">ログインする</button></div>';
+    body.querySelector('[data-sh-login]').onclick = function() { try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {} };
+    return;
+  }
+  body.innerHTML = '<div data-sh-list></div>' +
+    '<div data-sh-mapwrap style="position:relative;margin-top:12px;"><div data-sh-map style="height:46vh;min-height:280px;border-radius:14px;overflow:hidden;border:1px solid #e6dccb;background:#eef0ea;"></div></div>' +
+    '<div style="font-size:0.75em;color:#a39886;margin-top:6px;">地図：国土地理院</div>';
+  _shopDrawMine();
+  _shopWatchMap(body.querySelector('[data-sh-mapwrap]'));
+  _shopLoadMine(false);
+}
+function _shopLoadMine(force) {
+  if (!window._cloudIsLoggedIn || typeof rpcWithTimeout !== 'function' || !window.supabaseClient) return;
+  if (!force && _koyomiShops.mine && _koyomiShops.mineAt && Date.now() - _koyomiShops.mineAt < 60000) return;
+  _koyomiShops.mineLoading = true;
+  rpcWithTimeout('koyomiru_shops_mine', {}, 10000).then(function(r) {
+    _koyomiShops.mineLoading = false;
+    if (r && !r.error && Array.isArray(r.data)) { _koyomiShops.mine = r.data; _koyomiShops.mineAt = Date.now(); _koyomiShops.mineErr = ''; }
+    else _koyomiShops.mineErr = '読み込めませんでした';
+    if (_shopTab() === 'mine' && document.querySelector('#shopsView [data-sh-tab]')) renderShopsView();
+  }, function() { _koyomiShops.mineLoading = false; _koyomiShops.mineErr = '読み込めませんでした'; _shopDrawMine(); });
+}
+function _shopDrawMine() {
+  var el = document.querySelector('#shopsView [data-sh-list]'); if (!el) return;
+  var rows = _koyomiShops.mine || [];
+  if (!_koyomiShops.mine && !_koyomiShops.mineErr) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#8a7d6b;">読み込んでいます…</div>'; return; }
+  if (_koyomiShops.mineErr && !rows.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#8a7d6b;">' + _shopEsc(_koyomiShops.mineErr) + '</div>'; return; }
+  if (!rows.length) { el.innerHTML = '<div style="padding:22px 12px;text-align:center;color:#5a4e3c;line-height:1.9;background:#fff;border:1px dashed #e1d8c8;border-radius:14px;">まだ記録がありません。<br>食べたお店を「＋ お店を記録する」から残すと、<br>ここと下の地図に、すぐ出ます。</div>'; _shopDrawMarkers(true); return; }
+  el.innerHTML = rows.map(function(r, i) {
+    var g = _shopGenre(r.my_genre);
+    return '<button type="button" data-sh-mine="' + i + '" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;border:1px solid #eadfcd;border-radius:14px;background:#fff;cursor:pointer;font-family:inherit;color:#3b3226;">' +
+      '<div style="display:flex;align-items:baseline;gap:8px;"><span style="font-size:1.08em;font-weight:800;flex:1;min-width:0;overflow-wrap:anywhere;">' + g[1] + ' ' + _shopEsc(r.name) + '</span>' +
+      '<span style="white-space:nowrap;font-weight:800;font-size:1.08em;">' + _shopStars(r.my_stars) + '</span></div>' +
+      '<div style="font-size:0.85em;color:#8a7d6b;margin-top:3px;">' + _shopEsc([(r.pref || '') + ' ' + (r.muni_name || ''), r.n > 1 ? 'みんなの★' + Number(r.avg_stars).toFixed(1) + '（' + r.n + '人）' : '', r.my_hidden ? '通報で隠れています' : ''].filter(function(x) { return String(x).trim(); }).join('・')) + '</div>' +
+      (r.my_title ? '<div style="margin-top:6px;font-size:0.95em;">「' + _shopEsc(r.my_title) + '」</div>' : '') + '</button>';
+  }).join('');
+  [].forEach.call(el.querySelectorAll('[data-sh-mine]'), function(b) { b.onclick = function() { var r = rows[+b.getAttribute('data-sh-mine')]; if (r) _shopOpen(r.id); }; });
+  _shopDrawMarkers(true);
+}
+// ＋ お店を記録する：3つの入口
+function _shopRecordStart() {
+  if (!window._cloudIsLoggedIn) { if (typeof showToast === 'function') showToast('記録するには、ログインをお願いします', { type: 'warn' }); try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {} return; }
+  showChoiceModal({ align: 'left', title: '＋ お店を記録する', desc: 'どの方法で、お店を見つけますか？', buttons: [
+    { label: '🗺 Googleマップで探す（おすすめ）<span style="display:block;font-size:0.8em;color:#888;margin-top:2px;">お店の「共有」→「コピー」して、ここに貼るだけ</span>', style: 'primary', onClick: _shopFromGoogle },
+    { label: '🔍 その場で探す<span style="display:block;font-size:0.8em;color:#888;margin-top:2px;">地図のデータ（OpenStreetMap）から。載っていないお店もあります</span>', style: 'cancel', onClick: _shopFindWizard },
+    { label: '✍️ 名前と住所で登録する', style: 'cancel', onClick: function() { _shopRegister(''); } },
+    { label: '閉じる', style: 'cancel' } ] });
+}
+// Googleマップの「共有」でコピーした文から、お店の名前・住所・場所を読み取る
+// 例）「らーめん一番\n日本、〒260-0013 千葉県千葉市中央区中央1丁目2-3\nhttps://maps.app.goo.gl/xxxx」
+//     「https://www.google.com/maps/place/らーめん一番/@35.6,140.1,17z/data=!3d35.61!4d140.12」
+function _shopParseShare(text) {
+  var s = String(text || '').replace(/\r/g, '').slice(0, 2000), out = { name: '', addr: '', lat: null, lng: null, url: '' };
+  var urls = s.match(/https?:\/\/[^\s]+/g) || [];
+  out.url = urls.filter(function(u) { return /google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\./.test(u); })[0] || '';
+  urls.forEach(function(u) {
+    var d = u.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/) || u.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || u.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+    if (d && out.lat == null) { var la = Number(d[1]), ln = Number(d[2]); if (la >= 20 && la <= 46 && ln >= 122 && ln <= 154) { out.lat = la; out.lng = ln; } }
+    var pm = u.match(/\/maps\/place\/([^\/@?]+)/);
+    if (pm && !out.name) { try { out.name = decodeURIComponent(pm[1].replace(/\+/g, ' ')).trim(); } catch (e) {} }
+  });
+  var lines = s.replace(/https?:\/\/[^\s]+/g, '\n').replace(/\s+\u00b7\s+/g, '\n').split('\n').map(function(x) { return x.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  var isAddr = function(x) { return /〒|^日本|[都道府県].*[市区町村郡]|丁目|番地|\d+-\d+/.test(x); };
+  var firstText = '';
+  lines.forEach(function(x) { if (isAddr(x)) { if (!out.addr) out.addr = x; } else if (!firstText) firstText = x; });
+  if (firstText) out.name = firstText;   // 文の1行目（お店の名前）を、リンクの中の名前より優先
+  out.addr = out.addr.replace(/^日本[、,]?\s*/, '').replace(/〒?\s*\d{3}-?\d{4}\s*/, '').trim();
+  out.name = out.name.replace(/^[「『"]|[」』"]$/g, '').slice(0, 60);
+  return out;
+}
+// 住所で場所を探す。見つからなければ、うしろから少しずつ短くして探し直す（ビル名・番地を外す）
+function _shopGeocode(addr) {
+  var tries = [], a = String(addr || '').trim();
+  if (!a) return Promise.resolve([]);
+  tries.push(a);
+  var b = a.replace(/\s.*$/, ''); if (b && b !== a) tries.push(b);
+  var c2 = b.replace(/[0-9０-９\-－−ー番地号の]+$/, ''); if (c2 && tries.indexOf(c2) === -1) tries.push(c2);
+  var d = c2.replace(/[0-9０-９一二三四五六七八九十]+丁目$/, ''); if (d && tries.indexOf(d) === -1) tries.push(d);
+  var i = 0;
+  var next = function() {
+    if (i >= tries.length) return Promise.resolve([]);
+    var q = tries[i++];
+    return _tayoriAddressSearch(q).then(function(ls) { return ls && ls.length ? ls : next(); }, function() { return next(); });
+  };
+  return next();
+}
+function _shopFromGoogle() {
+  var t = _shopTown();
+  var gq = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('飲食店' + (t ? ' ' + (t.pref && t.pref !== t.name ? t.pref + ' ' : '') + t.name : ''));
+  var old = document.getElementById('shopGSheet'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'shopGSheet';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
+  var bt = 'display:block;width:100%;min-height:54px;border-radius:14px;font-size:1.02em;font-weight:800;cursor:pointer;font-family:inherit;';
+  ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;max-width:520px;width:100%;max-height:92vh;max-height:92dvh;overflow:auto;padding:16px 18px 18px;color:#3b3226;">' +
+    '<div style="display:flex;align-items:center;"><div style="flex:1;font-size:1.2em;font-weight:800;">🗺 Googleマップで探す</div><button type="button" data-sg-x aria-label="閉じる" style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;color:#6b6155;">✕</button></div>' +
+    '<ol style="margin:8px 0 0;padding-left:1.4em;line-height:1.9;">' +
+      '<li>下のボタンでGoogleマップを開いて、お店を探す</li>' +
+      '<li>お店の画面で「<b>共有</b>」→「<b>コピー</b>」</li>' +
+      '<li>こよみるに戻って「<b>📋 貼り付ける</b>」</li></ol>' +
+    '<a data-sg-open href="' + _shopEsc(gq) + '" target="_blank" rel="noopener noreferrer" style="' + bt + 'margin-top:12px;display:flex;align-items:center;justify-content:center;text-decoration:none;border:1.5px solid #1a5fb4;background:#fff;color:#1a5fb4;">Googleマップを開く ↗</a>' +
+    '<button type="button" data-sg-paste style="' + bt + 'margin-top:10px;border:none;background:#b5541c;color:#fff;">📋 貼り付ける</button>' +
+    '<textarea data-sg-text rows="4" placeholder="うまく貼れないときは、ここを長押しして「ペースト」" style="width:100%;box-sizing:border-box;margin-top:10px;padding:10px 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;line-height:1.6;"></textarea>' +
+    '<button type="button" data-sg-next style="' + bt + 'margin-top:8px;border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">この内容で次へ</button>' +
+  '</div>';
+  document.body.appendChild(ov);
+  var q = function(s) { return ov.querySelector(s); }, close = function() { ov.remove(); };
+  ov.onclick = function(e) { if (e.target === ov) close(); };
+  q('[data-sg-x]').onclick = close;
+  var go = function(text) {
+    var p = _shopParseShare(text);
+    if (!p.name && !p.addr && p.lat == null) {
+      if (typeof showToast === 'function') showToast(p.url ? 'リンクだけでは、お店が分かりませんでした。お店の名前と住所を入れてください' : 'お店の名前と住所が読み取れませんでした', { type: 'warn' });
+      if (!p.url) return;
+    }
+    close(); _shopConfirmPlace(p);
+  };
+  q('[data-sg-next]').onclick = function() { go(q('[data-sg-text]').value); };
+  q('[data-sg-paste]').onclick = function() {
+    var b = this;
+    if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+      navigator.clipboard.readText().then(function(x) { if (String(x || '').trim()) { q('[data-sg-text]').value = x; go(x); } else { q('[data-sg-text]').focus(); } }, function() { q('[data-sg-text]').focus(); if (typeof showToast === 'function') showToast('下の枠を長押しして「ペースト」してください', { type: 'info' }); });
+    } else { q('[data-sg-text]').focus(); }
+  };
+}
+// 名前と住所を確かめて（直せる）、場所を決めて、★へ
+function _shopConfirmPlace(p) {
+  var old = document.getElementById('shopGSheet'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'shopGSheet';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
+  var inp = 'width:100%;box-sizing:border-box;min-height:50px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;';
+  ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;max-width:520px;width:100%;max-height:92vh;max-height:92dvh;overflow:auto;padding:16px 18px 18px;color:#3b3226;">' +
+    '<div style="display:flex;align-items:center;"><div style="flex:1;font-size:1.2em;font-weight:800;">このお店ですか？</div><button type="button" data-sg-x aria-label="閉じる" style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;color:#6b6155;">✕</button></div>' +
+    '<div style="font-size:0.9em;color:#8a7d6b;margin-top:2px;">違っていたら、ここで直せます。</div>' +
+    '<div style="margin-top:12px;font-weight:700;">お店の名前</div><input data-sg-name maxlength="60" style="' + inp + 'margin-top:4px;">' +
+    '<div style="margin-top:10px;font-weight:700;">住所</div><input data-sg-addr maxlength="120" placeholder="例：千葉県千葉市中央区富士見2丁目" style="' + inp + 'margin-top:4px;">' +
+    (p.lat != null ? '<div style="font-size:0.85em;color:#2e6b4f;margin-top:6px;">📍 リンクから場所も分かりました</div>' : '') +
+    '<button type="button" data-sg-ok style="display:block;width:100%;min-height:54px;margin-top:14px;border:none;border-radius:14px;background:#b5541c;color:#fff;font-size:1.05em;font-weight:800;cursor:pointer;font-family:inherit;">このお店に★を付ける</button>' +
+  '</div>';
+  document.body.appendChild(ov);
+  var q = function(s) { return ov.querySelector(s); }, close = function() { ov.remove(); };
+  q('[data-sg-name]').value = p.name || ''; q('[data-sg-addr]').value = p.addr || '';
+  ov.onclick = function(e) { if (e.target === ov) close(); };
+  q('[data-sg-x]').onclick = close;
+  q('[data-sg-ok]').onclick = function() {
+    var b = this, name = q('[data-sg-name]').value.trim().slice(0, 60), addr = q('[data-sg-addr]').value.trim();
+    if (!name) { if (typeof showToast === 'function') showToast('お店の名前を入れてください', { type: 'warn' }); q('[data-sg-name]').focus(); return; }
+    if (p.lat != null && addr === (p.addr || '')) { close(); _shopEnsureThen(null, name, p.lat, p.lng, 'other'); return; }
+    if (!addr) { if (typeof showToast === 'function') showToast('住所を入れてください', { type: 'warn' }); q('[data-sg-addr]').focus(); return; }
+    b.disabled = true; b.textContent = '場所を探しています…';
+    _shopGeocode(addr).then(function(ls) {
+      b.disabled = false; b.textContent = 'このお店に★を付ける';
+      ls = (ls || []).slice(0, 8);
+      if (!ls.length) { if (typeof showToast === 'function') showToast('住所から場所が見つかりませんでした。町名までにして試してください', { type: 'warn' }); return; }
+      if (ls.length === 1) { close(); _shopEnsureThen(null, name, ls[0].lat, ls[0].lng, 'other'); return; }
+      showChoiceModal({ align: 'left', title: 'お店の場所はどこですか？', desc: '', buttons: ls.map(function(x) { return { label: '📍 ' + _shopEsc(x.title), style: 'cancel', onClick: function() { close(); _shopEnsureThen(null, name, x.lat, x.lng, 'other'); } }; }).concat([{ label: 'もどる', style: 'cancel' }]) });
+    });
+  };
+}
+function _shopRenderTownTab(host) {   // v0.99.67: 「みんなの★」タブ（町ごと・★の高い順）。もとの renderShopsView の中身
+  if (!host) return;
   var t = _shopTown(), g = _koyomiShops.genre ? _shopGenre(_koyomiShops.genre) : null;
   var btn = 'min-height:44px;padding:0 14px;border-radius:12px;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;';
-  host.innerHTML = '<div style="max-width:760px;margin:0 auto;padding:14px 12px 0;color:#3b3226;">' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><div style="flex:1;min-width:0;"><div style="font-size:0.85em;color:#8a7d6b;">🍜 おいしいお店</div>' +
+  host.innerHTML = '<div style="color:#3b3226;">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><div style="flex:1;min-width:0;">' +
       '<div style="font-size:1.35em;font-weight:800;line-height:1.35;">' + (t ? _shopEsc(t.name) + 'のおいしいお店' : 'おいしいお店') + '</div></div>' +
       '<button type="button" data-sh-town style="' + btn + 'border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">📍 ' + (t ? '町を変える' : '町を選ぶ') + '</button>' +
-      ((typeof isKoyomiruAdminMode === 'function' && isKoyomiruAdminMode()) ? '<button type="button" data-sh-pq style="' + btn + 'border:1.5px solid #c9a227;background:#fff7d6;color:#6b5200;">📷 確かめ待ち' + KOYOMI_ONLY_YOU_TAG + '</button>' : '') + '</div>' +
+      '</div>' +
     (t ? '<div style="display:flex;gap:6px;align-items:center;margin-top:12px;flex-wrap:wrap;">' +
         '<span style="display:inline-flex;border:1.5px solid #d9cfbf;border-radius:999px;overflow:hidden;background:#fff;"><button type="button" data-sh-cycle style="min-height:40px;padding:0 12px;border:none;background:none;font-size:0.95em;font-weight:700;cursor:pointer;font-family:inherit;color:#3b3226;">' + (g ? g[1] + ' ' + _shopEsc(g[2]) : '🍽 すべての種類') + ' ⟳</button><button type="button" data-sh-pick aria-label="種類を一覧から選ぶ" style="min-height:40px;padding:0 10px;border:none;border-left:1px solid #e6dccb;background:none;cursor:pointer;color:#8a7d6b;">▾</button></span>' +
-        '<button type="button" data-sh-add style="' + btn + 'border:none;background:#b5541c;color:#fff;margin-left:auto;">＋ お店を探してレビュー</button></div>' +
+        '</div>' +
       '<div style="font-size:0.85em;color:#8a7d6b;margin-top:8px;line-height:1.6;">★の高い順。（　）の中は、★を付けた人の数です。</div>' +
       '<div data-sh-list style="margin-top:10px;"></div>' +
       '<div data-sh-mapwrap style="position:relative;margin-top:14px;"><div data-sh-map style="height:50vh;min-height:300px;border-radius:14px;overflow:hidden;border:1px solid #e6dccb;background:#eef0ea;"></div>' +
         '<a data-sh-gmap href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer" style="position:absolute;top:8px;right:8px;z-index:1000;padding:7px 11px;border-radius:999px;background:#fff;border:1px solid #d9cfbf;color:#1a5fb4;font-size:0.82em;font-weight:700;text-decoration:none;">Googleマップで開く ↗</a></div>' +
-      '<div style="font-size:0.75em;color:#a39886;line-height:1.7;margin:10px 2px 90px;">お店の場所：© OpenStreetMap の協力者。★とレビューは、こよみるを使う人が書いたものです。自分や身内のお店には★を付けないでください。</div>'
+      '<div style="font-size:0.75em;color:#a39886;line-height:1.7;margin:10px 2px 6px;">お店の場所：© OpenStreetMap の協力者。★とレビューは、こよみるを使う人が書いたものです。自分や身内のお店には★を付けないでください。</div>'
       : '<div style="margin-top:18px;padding:22px 14px;text-align:center;background:#fff;border:1px dashed #e1d8c8;border-radius:14px;line-height:1.8;">どの町のおいしいお店を見ますか？<br><button type="button" data-sh-here style="' + btn + 'margin-top:10px;border:none;background:#b5541c;color:#fff;">📍 今いる町にする</button><br><button type="button" data-sh-town2 style="' + btn + 'margin-top:8px;border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">🔍 町の名前で探す</button></div>') +
   '</div>';
   var q = function(s) { return host.querySelector(s); };
   if (q('[data-sh-town]')) q('[data-sh-town]').onclick = _shopPickTown;
   if (q('[data-sh-town2]')) q('[data-sh-town2]').onclick = _shopPickTown;
-  if (q('[data-sh-pq]')) q('[data-sh-pq]').onclick = _shopPhotoQueue;
   if (q('[data-sh-here]')) q('[data-sh-here]').onclick = function() { _shopTownHere(this); };
   if (q('[data-sh-cycle]')) q('[data-sh-cycle]').onclick = function() {
     var ks = [''].concat(KOYOMI_SHOP_GENRES.map(function(x) { return x[0]; })), i = ks.indexOf(_koyomiShops.genre || '');
@@ -75734,7 +75928,6 @@ function renderShopsView() {
   if (q('[data-sh-pick]')) q('[data-sh-pick]').onclick = function() {
     showChoiceModal({ align: 'left', title: '種類を選ぶ', desc: '', buttons: [{ label: '🍽 すべての種類', style: 'cancel', onClick: function() { _koyomiShops.genre = ''; renderShopsView(); } }].concat(KOYOMI_SHOP_GENRES.map(function(x) { return { label: x[1] + ' ' + _shopEsc(x[2]), style: 'cancel', onClick: function() { _koyomiShops.genre = x[0]; renderShopsView(); } }; })).concat([{ label: '閉じる', style: 'cancel' }]) });
   };
-  if (q('[data-sh-add]')) q('[data-sh-add]').onclick = _shopFindWizard;
   var gm = q('[data-sh-gmap]'); if (gm) gm.onclick = function() {
     var m = _koyomiShops.map, tt = _shopTown(), lat = tt && tt.lat, lng = tt && tt.lng, z = 14;
     try { if (m) { var c = m.getCenter(); lat = c.lat; lng = c.lng; z = m.getZoom(); } } catch (e) {}
@@ -75781,8 +75974,8 @@ function _shopInitMap() {
 }
 function _shopDrawMarkers(fit) {
   var L = window.L, layer = _koyomiShops.layer, map = _koyomiShops.map; if (!L || !layer || !map) return;
-  layer.clearLayers(); var pts = [];
-  (_koyomiShops.rows || []).forEach(function(r) {
+  layer.clearLayers(); var pts = [], _mineTab = _shopTab() === 'mine';   // v0.99.67: わたしの記録では、自分の★のお店に印
+  ((_mineTab ? _koyomiShops.mine : _koyomiShops.rows) || []).map(function(r) { return _mineTab ? { id: r.id, name: r.name, lat: r.lat, lng: r.lng, genre: r.my_genre, avg_stars: r.my_stars, n: 1 } : r; }).forEach(function(r) {
     if (!isFinite(r.lat) || !isFinite(r.lng)) return; pts.push([r.lat, r.lng]);
     var g = _shopGenre(r.genre);
     L.marker([r.lat, r.lng], { icon: L.divIcon({ className: '', html: '<div style="background:#fff;border:2px solid #b5541c;border-radius:999px;padding:2px 6px;font-size:13px;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2);">' + g[1] + (r.avg_stars != null ? ' ' + Number(r.avg_stars).toFixed(1) : '') + '</div>', iconSize: null }) })
@@ -76022,7 +76215,7 @@ function _shopReviewForm(shop, mine) {
     rpcWithTimeout('koyomiru_shop_review_save', { p_shop: shop.id, p_stars: st.stars, p_genre: st.genre, p_title: q('[data-sf-title]').value.slice(0, 30), p_body: tb.value.slice(0, 5000) }, 12000).then(function(r) {
       if (!r || r.error) { b.disabled = false; b.textContent = 'もう一度送る'; if (typeof showToast === 'function') showToast(_shopErr(r && r.error), { type: 'warn' }); return; }
       var rid = r.data && r.data.id, msg = r.data && r.data.updated ? 'レビューを直しました' : 'レビューを載せました。ありがとうございます';
-      var after = function(extra) { close(); if (typeof showToast === 'function') showToast(msg + (extra ? '。' + extra : ''), { type: 'success' }); _shopLoad(true); _shopOpen(shop.id); };
+      var after = function(extra) { close(); if (typeof showToast === 'function') showToast(msg + (extra ? '。' + extra : ''), { type: 'success' }); _shopLoad(true); _shopLoadMine(true); _shopOpen(shop.id); };   // v0.99.67: わたしの記録も取り直す
       var hadPhoto = mine && mine.photo_path;
       var step1 = (hadPhoto && (st.dropPhoto || st.photo)) ? _shopPhotoRemove(rid) : Promise.resolve(true);
       step1.then(function() {
@@ -98944,8 +99137,8 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        try {
          _koyomiShops.town = { code: '12101', name: '<b>千葉市中央区</b>', pref: '千葉県', lat: 35.6, lng: 140.1 }; _koyomiShops.loading = false; _koyomiShops.err = '';
          _koyomiShops.rows = [{ id: 'a', name: '<img src=x onerror=1>', genre: 'ramen', n: 3, avg_stars: 4.2, lat: 35.6, lng: 140.1, last_title: 'うまい' }, { id: 'b', name: '二番', genre: 'cafe', n: 1, avg_stars: 3.5, lat: 35.6, lng: 140.1 }];
-         _koyomiShops.loadedFor = '12101|';
-         renderShopsView();
+         _koyomiShops.loadedFor = '12101|'; var _tb686 = _koyomiShops.tab; _koyomiShops.tab = 'town';   // v0.99.67: 町のランキングは「みんなの★」タブに移った
+         renderShopsView(); _koyomiShops.tab = _tb686;
          var _t686 = _hv686.textContent;
          _r686.list = /のおいしいお店/.test(_t686) && /4\.2（3人）/.test(_t686) && /3\.5（1人）/.test(_t686) && !/まだ評価が少ない/.test(_t686) && /自分や身内のお店には★を付けないで/.test(_t686) && !_hv686.querySelector('img') && !_hv686.querySelector('b');
        } finally { _koyomiShops.rows = _sv686.rows; _koyomiShops.town = _sv686.town; _koyomiShops.loading = _sv686.ld; _koyomiShops.err = _sv686.err; _koyomiShops.loadedFor = ''; _hv686.innerHTML = ''; _hv686.style.display = _hd686; }
@@ -98993,6 +99186,50 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-688: お店探しが違う', _x688.join(','));
      } catch(e) {
        ng('ST-688: 例外', e.message);
+     }
+
+     // ===== ST-691: おいしいお店の作り直し（v0.99.67） =====
+     // 【権威】2026-11-23「調べても自分のマップに載ってこない。一発目でGoogleマップで調べさせちゃえば。ゼロベースで作り直して」→ 記録するがいちばん上・わたしの記録が先・みんなの★は切り替え
+     try {
+       var _r691 = {};
+       var a1 = _shopParseShare('らーめん一番\n日本、〒260-0013 千葉県千葉市中央区中央1丁目2-3 第2ビル1F\nhttps://maps.app.goo.gl/AbCd123');
+       _r691.share = a1.name === 'らーめん一番' && a1.addr === '千葉県千葉市中央区中央1丁目2-3 第2ビル1F' && a1.lat == null && /goo\.gl/.test(a1.url);
+       var a2 = _shopParseShare('https://www.google.com/maps/place/%E3%81%9D%E3%81%B0%E5%87%A6/@35.6,140.1,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d35.6123!4d140.1234');
+       _r691.url = a2.name === 'そば処' && Math.abs(a2.lat - 35.6123) < 1e-6 && Math.abs(a2.lng - 140.1234) < 1e-6;
+       var a3 = _shopParseShare('カフェ・ド・ナギ · 〒260-0013 千葉県千葉市中央区中央2丁目');
+       _r691.dot = a3.name === 'カフェ・ド・ナギ' && a3.addr === '千葉県千葉市中央区中央2丁目';
+       var a4 = _shopParseShare('https://maps.app.goo.gl/xyz');
+       _r691.onlyLink = !a4.name && !a4.addr && a4.lat == null && !!a4.url;
+       _r691.far = _shopParseShare('https://www.google.com/maps/@40.7,-74.0,15z').lat == null;   // 日本の外は場所にしない
+       var _as691 = window._tayoriAddressSearch, _qs691 = [];
+       window._tayoriAddressSearch = function(q) { _qs691.push(q); return { then: function(f) { return f(/^千葉県千葉市中央区中央$/.test(q) ? [{ lat: 35.6, lng: 140.1, title: q }] : []); } }; }; _tayoriAddressSearch = window._tayoriAddressSearch;
+       try { _shopGeocode('千葉県千葉市中央区中央1丁目2-3 第2ビル1F'); } finally { window._tayoriAddressSearch = _as691; _tayoriAddressSearch = _as691; }
+       _r691.geo = _qs691[0] === '千葉県千葉市中央区中央1丁目2-3 第2ビル1F' && _qs691.indexOf('千葉県千葉市中央区中央1丁目2-3') !== -1 && _qs691[_qs691.length - 1] === '千葉県千葉市中央区中央';
+       var _hv691 = document.getElementById('shopsView'), _sv691 = { tab: _koyomiShops.tab, mine: _koyomiShops.mine, at: _koyomiShops.mineAt, err: _koyomiShops.mineErr }, _li691 = window._cloudIsLoggedIn, _rp691 = window.rpcWithTimeout;
+       try {
+         window._cloudIsLoggedIn = true; _koyomiShops.tab = '';
+         window.rpcWithTimeout = function() { return new Promise(function() {}); }; rpcWithTimeout = window.rpcWithTimeout;
+         _koyomiShops.mine = [{ id: 'm1', name: '<img src=x onerror=1>', lat: 35.6, lng: 140.1, pref: '千葉県', muni_name: '千葉市中央区', my_stars: 4.5, my_genre: 'ramen', my_title: 'スープが<b>濃い</b>', n: 3, avg_stars: 4.1 }]; _koyomiShops.mineAt = Date.now(); _koyomiShops.mineErr = '';
+         renderShopsView();
+         var t691 = _hv691.textContent, rec = _hv691.querySelector('[data-sh-rec]'), tabs = _hv691.querySelectorAll('[data-sh-tab]');
+         _r691.view = !!rec && /お店を記録する/.test(rec.textContent) && tabs.length === 2 && tabs[0].getAttribute('data-sh-tab') === 'mine' && tabs[0].getAttribute('aria-pressed') === 'true' &&
+           /わたしの記録（1）/.test(t691) && /4\.5/.test(t691) && /みんなの★4\.1（3人）/.test(t691) && /千葉市中央区/.test(t691) && !_hv691.querySelector('img') && !_hv691.querySelector('b');
+         _r691.order = !!rec && !!tabs[0] && !!(rec.compareDocumentPosition(tabs[0]) & Node.DOCUMENT_POSITION_FOLLOWING);
+         _koyomiShops.mine = []; renderShopsView();
+         _r691.empty = /まだ記録がありません/.test(_hv691.textContent);
+         window._cloudIsLoggedIn = false; _koyomiShops.tab = ''; renderShopsView();
+         var _tt691 = _hv691.querySelector('[data-sh-tab="town"]');
+         _r691.guest = !!_tt691 && _tt691.getAttribute('aria-pressed') === 'true';
+       } finally {
+         window._cloudIsLoggedIn = _li691; window.rpcWithTimeout = _rp691; rpcWithTimeout = _rp691;
+         _koyomiShops.tab = _sv691.tab; _koyomiShops.mine = _sv691.mine; _koyomiShops.mineAt = _sv691.at; _koyomiShops.mineErr = _sv691.err; _hv691.innerHTML = '';
+       }
+       var _x691 = Object.keys(_r691).filter(function(k) { return !_r691[k]; });
+       !_x691.length
+         ? ok('ST-691: おいしいお店（いちばん上に「＋ お店を記録する」・Googleマップの共有の文から名前と住所と場所を読む・住所は短くして探し直す・開くと「わたしの記録」・ログインしていない人は「みんなの★」）')
+         : ng('ST-691: おいしいお店の作り直しが違う', _x691.join(','));
+     } catch(e) {
+       ng('ST-691: 例外', e.message);
      }
 
      // ===== ST-690: 立ち上げる前に、同じ町（区）の掲示板がもうないか確かめる（v0.99.66） =====
