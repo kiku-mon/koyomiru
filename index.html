@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.69 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.70 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.69';
+    const APP_VERSION = 'v0.99.70';
   const APP_LAST_UPDATED = '2026-11-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -28201,7 +28201,9 @@ window._koyomiAnyOverlayOpen = _koyomiAnyOverlayOpen;
       var last = ''; try { last = localStorage.getItem(KOYOMI_TODAY_KEY) || ''; } catch (eL) {}
       if (!koyomiKazeResumeShould(getKoyomiOrder(), away, last === getLocalDateStr(new Date()))) return;
       if (_koyomiAnyOverlayOpen()) return;
+      try { if (typeof koyomiOrderAskByTiming === 'function' && koyomiOrderAskByTiming()) _koyomiOpenOrderAsk(true); } catch (eO) {}   // v0.99.70: 戻ってきたときも、注文票が先（閉じたら風だより）
       whenStartupClear(function() {
+        if (document.getElementById('koyomiOrderOverlay')) return;
         if (_koyomiAnyOverlayOpen()) return;
         _koyomiMarkKazeShown();
         if (typeof window.koyomiSaigaiStartupInstead === 'function' && window.koyomiSaigaiStartupInstead()) return;
@@ -28281,14 +28283,33 @@ function _markKoyomiOrderAsked(key) {
   allSettings.ui.koyomiOrderAskedKey = key;
   saveAllSettings();
 }
+// v0.99.70: 【権威】2026-11-23「今まではずっとAだった。開くたびにを決めた人はAだよ（注文票 → 閉じたら季節の風だより）。
+//   開くたびにしているのに注文票が出てこなくなったのがおかしい。出す頻度はユーザーが選べるようにして」
+//   → 注文票の「出てくる時」は、注文票と季節の風だより、両方の出る時。一度でも注文した人は、出てくる時のとおりに注文票が先に出て、閉じたら季節の風だより。
+//   設定の「お聞きする頻度」で「聞かない」を選んだ人には出さない。まだ一度も注文していない人は、今までどおり（七十二候が変わる日など）
+function koyomiOrderAskByTiming() {
+  if (window._isTesting || window._koyomiruEntryMode === 'saigai') return false;
+  if (!(allSettings && allSettings.ui && allSettings.ui.koyomiOrder)) return false;   // まだ一度も注文していない人は、今までどおり
+  if (koyomiAskFreq() === 'never') return false;
+  var setup = document.getElementById('setupOverlay');
+  if (setup && getComputedStyle(setup).display !== 'none') return false;
+  return true;
+}
+window.koyomiOrderAskByTiming = koyomiOrderAskByTiming;
+function _koyomiOpenOrderAsk(byTiming) {
+  var _kou = _koyomiCurrentKou(), _freq = koyomiAskFreq();
+  whenStartupClear(function() {
+    _markKoyomiOrderAsked(koyomiAskKey(_freq, getLocalDateStr(new Date()), _kou));
+    openKoyomiOrderSheet({ ask: true, askTitle: byTiming ? 'いらっしゃいませ。今日のご注文は？' : koyomiAskTitle(_freq) });
+  });
+}
 function maybeShowKoyomiToday() {
   try { renderKoyomiChips(); bindKoyomiChipOrderGesture(); } catch (eC) {}
   // v0.58.4: 注文票を聞く回は、まず注文票（季節の風だよりは、閉じたあとに順番に出る）
   try {
-    if (!window._koyomiOrderAskQueued && koyomiOrderAskWillShow()) {
-      window._koyomiOrderAskQueued = true;
-      var _kou = _koyomiCurrentKou(), _freq = koyomiAskFreq();
-      whenStartupClear(function() { _markKoyomiOrderAsked(koyomiAskKey(_freq, getLocalDateStr(new Date()), _kou)); openKoyomiOrderSheet({ ask: true, askTitle: koyomiAskTitle(_freq) }); });
+    if (!window._koyomiOrderAskQueued) {
+      var _byFreq = koyomiOrderAskWillShow(), _byTiming = !_byFreq && koyomiOrderAskByTiming() && typeof koyomiKazeAutoDecision === 'function' && koyomiKazeAutoDecision();
+      if (_byFreq || _byTiming) { window._koyomiOrderAskQueued = true; _koyomiOpenOrderAsk(!!_byTiming); }
     }
   } catch (eA) {}
   return false;
@@ -28419,7 +28440,7 @@ function openKoyomiOrderSheet(opts) {
       })() +
       '<div style="border:2px solid #b0443a;border-top:none;margin:0 8px;">' + rows + '</div>' +
       '<div style="margin:8px 8px 0;display:grid;grid-template-columns:' + Z.name + 'px 1fr;align-items:center;border:1px solid #e3d6b8;">' +
-        '<div style="padding:6px 8px;background:#f6ecd7;color:#6b4f2a;font-weight:700;font-size:' + Z.nameFs + ';">出てくる時</div>' +
+        '<div style="padding:6px 8px;background:#f6ecd7;color:#6b4f2a;font-weight:700;font-size:' + Z.nameFs + ';">出てくる時<span style="font-weight:400;font-size:0.9em;">（注文票と季節の風だより）</span></div>' +   // v0.99.70: 何が出るのかを書いた
         '<select data-ko-timing style="margin:4px 6px;padding:6px;border:1px solid #e6dcc6;border-radius:6px;font-size:14px;background:#fff;">' +
           KOYOMI_TIMING_OPTIONS.map(function(t) { return '<option value="' + t[0] + '"' + (draft.timing === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>'; }).join('') +
         '</select></div>' +
@@ -61284,6 +61305,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.70', date: '2026-11-23',
+    items: [
+      { icon:'📜', t:'暦の注文票が、「出てくる時」のとおりに出るようにしました',
+        before:'「出てくる時」を「開くたびに」にしても、注文票は七十二候が変わる日にしか出てきませんでした',
+        after:'一度でも注文した人は、「出てくる時」のとおりに、まず注文票、閉じたら季節の風だよりが出ます。「開くたびに」なら毎回です。注文票の「出てくる時」の行に、何が出るのかも書きました' }
+    ]
+  },
   {
     ver: 'v0.99.69', date: '2026-11-23',
     items: [
@@ -95232,7 +95261,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // ③ 繋がっているか（第76条）：起動のときに出す（順番に出す道具を通す）・その回は季節の風だよりの代わり
        var _src = document.documentElement.outerHTML;
        (_txt.indexOf('ST468の見出し。ご注文は？') !== -1 && !!_usual && _after === 'rich' && !document.getElementById('koyomiOrderOverlay') &&
-        /whenStartupClear\(function\(\) \{ _markKoyomiOrderAsked\(koyomiAskKey\(_freq, getLocalDateStr\(new Date\(\)\), _kou\)\); openKoyomiOrderSheet\(\{ ask: true, askTitle: koyomiAskTitle\(_freq\) \}\); \}\)/.test(_src) &&
+        /whenStartupClear\(function\(\) \{\s*_markKoyomiOrderAsked\(koyomiAskKey\(_freq, getLocalDateStr\(new Date\(\)\), _kou\)\);\s*openKoyomiOrderSheet\(\{ ask: true, askTitle: byTiming \? 'いらっしゃいませ。今日のご注文は？' : koyomiAskTitle\(_freq\) \}\);/.test(_src) &&   /* v0.99.70: 出てくる時で出す回の見出しを足した（_koyomiOpenOrderAsk にまとめた） */
         /try \{ if \(typeof maybeShowKoyomiToday === 'function'\) maybeShowKoyomiToday\(\); \} catch \(eM\) \{\}/.test(_src))   /* v0.59.0: 注文票のあとに季節の風だより（代わりにはしない） */
          ? ok('ST-468·②: 聞くときは頻度に合わせた見出し（七十二候が変わりました。ご注文は？など）と「いつもので」（押しても注文は変わらない）。起動のときに先に出し、閉じたら季節の風だより')
          : ng('ST-468·②: 聞くときの紙かつながりが違う', [!!_usual, _after].join(','));
@@ -99285,6 +99314,51 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-688: お店探しが違う', _x688.join(','));
      } catch(e) {
        ng('ST-688: 例外', e.message);
+     }
+
+     // ===== ST-695: 一度でも注文した人は、出てくる時のとおりに注文票が先に出る（v0.99.70） =====
+     // 【権威】2026-11-23「開くたびにを決めた人はA（注文票 → 閉じたら季節の風だより）。開くたびにしているのに出てこなくなったのがおかしい」
+     try {
+       var _r695 = {}, _sv695 = { it: window._isTesting, ord: allSettings.ui && allSettings.ui.koyomiOrder, fq: allSettings.ui && allSettings.ui.koyomiOrderAskFreq, q: window._koyomiOrderAskQueued,
+         wsc: window.whenStartupClear, oks: window.openKoyomiOrderSheet, mk: window._markKoyomiOrderAsked, kad: window.koyomiKazeAutoDecision, aw: window.koyomiOrderAskWillShow };
+       var _opened695 = null;
+       try {
+         window._isTesting = false; if (!allSettings.ui) allSettings.ui = {};
+         var _so695 = document.getElementById('setupOverlay'), _sod695 = _so695 ? _so695.style.display : null; if (_so695) _so695.style.display = 'none';   // 初めての案内が出ているときは出さない決まりなので、いったん隠す
+         delete allSettings.ui.koyomiOrder; allSettings.ui.koyomiOrderAskFreq = 'kou';
+         _r695.noOrder = koyomiOrderAskByTiming() === false;
+         allSettings.ui.koyomiOrder = JSON.parse(JSON.stringify(getKoyomiOrder()));
+         _r695.ordered = koyomiOrderAskByTiming() === true;
+         allSettings.ui.koyomiOrderAskFreq = 'never';
+         _r695.never = koyomiOrderAskByTiming() === false;
+         allSettings.ui.koyomiOrderAskFreq = 'kou';
+         window.whenStartupClear = function(f) { f(); }; whenStartupClear = window.whenStartupClear;
+         window.openKoyomiOrderSheet = function(o) { _opened695 = o; }; openKoyomiOrderSheet = window.openKoyomiOrderSheet;
+         window._markKoyomiOrderAsked = function() {}; _markKoyomiOrderAsked = window._markKoyomiOrderAsked;
+         window.koyomiOrderAskWillShow = function() { return false; }; koyomiOrderAskWillShow = window.koyomiOrderAskWillShow;
+         window.koyomiKazeAutoDecision = function() { return true; }; koyomiKazeAutoDecision = window.koyomiKazeAutoDecision;
+         window._koyomiOrderAskQueued = false; maybeShowKoyomiToday();
+         _r695.opens = !!_opened695 && _opened695.ask === true && /いらっしゃいませ/.test(_opened695.askTitle);
+         _opened695 = null; window._koyomiOrderAskQueued = false;
+         window.koyomiKazeAutoDecision = function() { return false; }; koyomiKazeAutoDecision = window.koyomiKazeAutoDecision;
+         maybeShowKoyomiToday();
+         _r695.followsTiming = _opened695 === null;   // 出てくる時が「出さない」回は、注文票も出さない
+       } finally {
+         if (_so695) _so695.style.display = _sod695;
+         window._isTesting = _sv695.it;
+         if (_sv695.ord === undefined) delete allSettings.ui.koyomiOrder; else allSettings.ui.koyomiOrder = _sv695.ord;
+         if (_sv695.fq === undefined) delete allSettings.ui.koyomiOrderAskFreq; else allSettings.ui.koyomiOrderAskFreq = _sv695.fq;
+         window._koyomiOrderAskQueued = _sv695.q;
+         window.whenStartupClear = _sv695.wsc; whenStartupClear = _sv695.wsc; window.openKoyomiOrderSheet = _sv695.oks; openKoyomiOrderSheet = _sv695.oks;
+         window._markKoyomiOrderAsked = _sv695.mk; _markKoyomiOrderAsked = _sv695.mk; window.koyomiKazeAutoDecision = _sv695.kad; koyomiKazeAutoDecision = _sv695.kad;
+         window.koyomiOrderAskWillShow = _sv695.aw; koyomiOrderAskWillShow = _sv695.aw;
+       }
+       var _x695 = Object.keys(_r695).filter(function(k) { return !_r695[k]; });
+       !_x695.length
+         ? ok('ST-695: 一度でも注文した人は、出てくる時のとおりに注文票が先に出る（閉じたら季節の風だより）。「聞かない」の人とまだ注文していない人は出さない')
+         : ng('ST-695: 注文票の出し方が違う', _x695.join(','));
+     } catch(e) {
+       ng('ST-695: 例外', e.message);
      }
 
      // ===== ST-694: アプリに戻ってきたときも「開いた」と数える（v0.99.69） =====
