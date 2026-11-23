@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.80 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.81 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.80';
+    const APP_VERSION = 'v0.99.81';
   const APP_LAST_UPDATED = '2026-11-24'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61327,6 +61327,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.81', date: '2026-11-24',
+    items: [
+      { icon:'🔑', t:'パスキーで、指紋や顔だけでログインできるようになりました',
+        before:'ログインするには、LINE・Google・Discord か、メールとパスワードを使う必要がありました',
+        after:'ログインのあと「この端末でパスキーを使う」を押しておくと、次からはログイン画面のいちばん上の「パスキーでログイン」で、指紋や顔だけで入れます。これまでの入り方もそのまま使えます' }
+    ]
+  },
+  {
     ver: 'v0.99.80', date: '2026-11-24',
     items: [
       { icon:'🔑', t:'パスワードの長さを、8文字以上に戻しました',
@@ -71072,6 +71080,7 @@ async function cloudLoginRefreshStatus() {
     userArea.style.display = 'block';
     if (userLabel) userLabel.textContent = 'ログイン中: ' + (user.email || user.id);
     if (typeof cloudRefreshLastSavedLabel === 'function') cloudRefreshLastSavedLabel();
+    if (typeof koyomiPasskeyRenderArea === 'function') koyomiPasskeyRenderArea();   // v0.99.81: パスキーの欄
     // v0.45.1339: ログイン履歴（この端末での回数・最終ログイン日時）を表示
     var _historyEl = document.getElementById('cloudLoginHistoryLabel');
     if (_historyEl) {
@@ -71414,6 +71423,7 @@ function openCloudLoginModal() {
   ov.style.display = 'flex';
   _cloudLoginSetStatus('');
   cloudLoginRefreshStatus();
+  if (typeof _koyomiPasskeyShowLoginBtn === 'function') _koyomiPasskeyShowLoginBtn();   // v0.99.81: パスキーが使えるときだけボタンを出す
   // v0.45.1475: 未ログイン時はメールアドレス欄へ自動フォーカス（すぐ入力を始められる）。
   // モバイルではキーボードが即座にせり上がると画面が狭くなるため、PC幅のみで実行する。
   try {
@@ -71640,6 +71650,147 @@ async function cloudLoginWithPassword() {
   }
   if (btn) { btn.disabled = false; btn.textContent = 'ログイン'; }
 }
+// ===== v0.99.81: パスキー =====
+// 【権威】2026-11-24 B「ちゃんとやりたい。いちばん正式なサービスに近いのは B」：
+//   ①ログイン画面のいちばん上に「パスキーでログイン」②ログイン後の設定に「この端末でパスキーを使う」と一覧（名前・消す）
+//   ③まだパスキーが無い人には、ログインのあとで1回だけ「次から指紋や顔で入れるようにしませんか？」
+//   Supabase 側：Authentication → Passkeys をオン、表示名「こよみる」、RP ID「koyomiru.com」、使う場所「https://koyomiru.com」（2026-11-24 きくモンさんが設定）
+//   パスキーは koyomiru.com でしか作れない・使えない（ドメインが違うと端末が断る）ので、ほかの住所では出さない。まだ試験中の機能なので、ほかの入り方は残す
+function _koyomiPasskeyOK() {
+  try {
+    if (!window.PublicKeyCredential || !navigator.credentials) return false;
+    var a = window.supabaseClient && window.supabaseClient.auth;
+    if (!a || typeof a.signInWithPasskey !== 'function' || typeof a.registerPasskey !== 'function') return false;
+    var h = String(location.hostname || '');
+    return h === 'koyomiru.com' || window._koyomiPasskeyHostOK === true;   // _koyomiPasskeyHostOK はスモークテスト用
+  } catch (e) { return false; }
+}
+window._koyomiPasskeyOK = _koyomiPasskeyOK;
+function _koyomiPasskeyErrMsg(err, kind) {
+  var code = String((err && (err.code || err.error_code)) || ''), name = String((err && err.cause && err.cause.name) || (err && err.name) || ''), msg = String((err && err.message) || '');
+  if (code === 'ERROR_CEREMONY_ABORTED' || name === 'NotAllowedError' || name === 'AbortError' || /cancel|abort|not allowed/i.test(msg)) return '';   // 自分で取りやめた → 何も言わない
+  if (code === 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED' || /previously registered|InvalidStateError/i.test(code + name + msg)) return 'この端末には、もうこよみるのパスキーがあります';
+  if (code === 'webauthn_challenge_expired' || /challenge_expired/.test(msg)) return '時間がたったので、もう一度押してください';
+  if (/too_many_passkeys/.test(code + msg)) return 'パスキーは、これ以上作れません。使っていないものを消してください';
+  if (/email_not_confirmed|phone_not_confirmed|not.*confirmed/i.test(code + msg)) return 'メールアドレスの確認が済んでいないため、パスキーを作れません';
+  if (/anonymous|sso/i.test(code + msg)) return 'このログイン方法では、パスキーを作れません';
+  if (/passkey.*disabled|provider_disabled/i.test(code + msg)) return 'いまはパスキーを使えません。ほかの方法でログインしてください';
+  return kind === 'signin' ? 'パスキーでログインできませんでした。パスキーをまだ作っていない場合は、ほかの方法でログインしてから作ってください' : 'パスキーを作れませんでした。少しおいて、もう一度お試しください';
+}
+async function cloudLoginWithPasskey() {
+  if (!_koyomiPasskeyOK()) { _cloudLoginSetStatus('⚠️ このブラウザでは、パスキーを使えません', 'error'); return; }
+  var btn = document.getElementById('cloudLoginPasskeyBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '指紋や顔で確かめています…'; }
+  try {
+    var r = await window.supabaseClient.auth.signInWithPasskey();
+    if (r && r.error) {
+      var m = _koyomiPasskeyErrMsg(r.error, 'signin');
+      if (m) _cloudLoginSetStatus('⚠️ ' + m, 'error');
+    } else {
+      _cloudLoginSetStatus('🎉 ログインしました。', 'success');
+      cloudLoginRefreshStatus();
+      setTimeout(function() { if (typeof closeCloudLoginModal === 'function') closeCloudLoginModal(); }, 1200);
+    }
+  } catch (e) {
+    var m2 = _koyomiPasskeyErrMsg(e, 'signin');
+    if (m2) _cloudLoginSetStatus('⚠️ ' + m2, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔑 パスキーでログイン'; }
+}
+window.cloudLoginWithPasskey = cloudLoginWithPasskey;
+// 端末のだいたいの名前（あとで見分けるため。くわしい機種は取らない）
+function _koyomiPasskeyDeviceName() {
+  var ua = String(navigator.userAgent || ''), d = new Date();
+  var dev = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Macintosh/.test(ua) ? (navigator.maxTouchPoints > 1 ? 'iPad' : 'Mac') : /Windows/.test(ua) ? 'Windows' : 'この端末';
+  return dev + '（' + (d.getMonth() + 1) + '/' + d.getDate() + 'に作成）';
+}
+async function koyomiPasskeyRegister() {
+  if (!_koyomiPasskeyOK()) { if (typeof showToast === 'function') showToast('このブラウザでは、パスキーを使えません', { type: 'warn' }); return; }
+  var btn = document.getElementById('cloudPasskeyAddBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '指紋や顔で確かめています…'; }
+  try {
+    var r = await window.supabaseClient.auth.registerPasskey();
+    if (r && r.error) {
+      var m = _koyomiPasskeyErrMsg(r.error, 'register');
+      if (m && typeof showToast === 'function') showToast(m, { type: 'warn' });
+    } else {
+      var id = r && r.data && r.data.id;
+      if (id) { try { await window.supabaseClient.auth.passkey.update({ passkeyId: id, friendlyName: _koyomiPasskeyDeviceName() }); } catch (eN) {} }
+      try { localStorage.setItem('koyomiruPasskeyNudged:' + (window._cloudUserId || ''), String(Date.now())); } catch (eL) {}   // 作ったら、もうすすめない
+      if (typeof showToast === 'function') showToast('🔑 この端末でパスキーを作りました。次からは指紋や顔だけで入れます', { type: 'success' });
+    }
+  } catch (e) {
+    var m2 = _koyomiPasskeyErrMsg(e, 'register');
+    if (m2 && typeof showToast === 'function') showToast(m2, { type: 'warn' });
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔑 この端末でパスキーを使う'; }
+  koyomiPasskeyRenderArea();
+}
+window.koyomiPasskeyRegister = koyomiPasskeyRegister;
+function _koyomiPasskeyEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
+function _koyomiPasskeyDate(s) { var d = s ? new Date(s) : null; return d && !isNaN(d.getTime()) ? (d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate()) : ''; }
+async function koyomiPasskeyRenderArea() {
+  var area = document.getElementById('cloudPasskeyArea'), list = document.getElementById('cloudPasskeyList');
+  if (!area || !list) return;
+  if (!_koyomiPasskeyOK() || !window._cloudIsLoggedIn) { area.style.display = 'none'; return; }
+  area.style.display = 'block';
+  var rows = [];
+  try { var r = await window.supabaseClient.auth.passkey.list(); if (r && !r.error && Array.isArray(r.data)) rows = r.data; } catch (e) {}
+  _koyomiPasskeyPaint(list, rows);
+}
+window.koyomiPasskeyRenderArea = koyomiPasskeyRenderArea;
+function _koyomiPasskeyPaint(list, rows) {
+  if (!rows.length) { list.innerHTML = '<div style="font-size:0.74em;color:#a39886;">まだパスキーはありません</div>'; return; }
+  list.innerHTML = rows.map(function(p) {
+    return '<div data-pk="' + _koyomiPasskeyEsc(p.id) + '" style="display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid #f0e8da;">' +
+      '<div style="flex:1;min-width:0;"><div style="font-size:0.84em;color:#3b3226;overflow-wrap:anywhere;">🔑 ' + _koyomiPasskeyEsc(p.friendly_name || 'パスキー') + '</div>' +
+      '<div style="font-size:0.7em;color:#a39886;">' + _koyomiPasskeyEsc(['作成 ' + _koyomiPasskeyDate(p.created_at), p.last_used_at ? '最後に使用 ' + _koyomiPasskeyDate(p.last_used_at) : ''].filter(Boolean).join('・')) + '</div></div>' +
+      '<button type="button" data-pk-rename style="min-height:36px;padding:0 10px;border:1px solid #d8cbb8;border-radius:8px;background:#fff;color:#6b5a44;font-size:0.76em;cursor:pointer;">名前</button>' +
+      '<button type="button" data-pk-del style="min-height:36px;padding:0 10px;border:1px solid #e3b3ab;border-radius:8px;background:#fff;color:#b3261e;font-size:0.76em;cursor:pointer;">消す</button></div>';
+  }).join('');
+  [].forEach.call(list.querySelectorAll('[data-pk]'), function(row) {
+    var id = row.getAttribute('data-pk'), p = rows.filter(function(x) { return String(x.id) === id; })[0] || {};
+    row.querySelector('[data-pk-rename]').onclick = function() {
+      // 名前は、その行の中で直す（ブラウザの小窓は使わない）
+      var cur = p.friendly_name || '';
+      row.innerHTML = '<input data-pk-name maxlength="40" style="flex:1;min-width:0;min-height:40px;padding:0 10px;border:1.5px solid #d9cfbf;border-radius:8px;font-size:16px;font-family:inherit;">' +
+        '<button type="button" data-pk-save style="min-height:40px;padding:0 12px;border:none;border-radius:8px;background:#2b2b2b;color:#fff;font-size:0.8em;cursor:pointer;">保存</button>';
+      var inp = row.querySelector('[data-pk-name]'); inp.value = cur; inp.focus();
+      row.querySelector('[data-pk-save]').onclick = async function() {
+        var v = inp.value.trim().slice(0, 40) || cur || 'パスキー';
+        try { await window.supabaseClient.auth.passkey.update({ passkeyId: id, friendlyName: v }); } catch (e) {}
+        koyomiPasskeyRenderArea();
+      };
+    };
+    row.querySelector('[data-pk-del]').onclick = function() {
+      showChoiceModal({ title: 'このパスキーを消しますか？', desc: '「' + _koyomiPasskeyEsc(p.friendly_name || 'パスキー') + '」を消すと、その端末では指紋や顔でログインできなくなります。ほかの方法でのログインは、そのまま使えます。', buttons: [
+        { label: '消す', style: 'danger', onClick: async function() { try { await window.supabaseClient.auth.passkey.delete({ passkeyId: id }); } catch (e) {} if (typeof showToast === 'function') showToast('パスキーを消しました', { type: 'success' }); koyomiPasskeyRenderArea(); } },
+        { label: 'やめる', style: 'cancel' } ] });
+    };
+  });
+}
+window._koyomiPasskeyPaint = _koyomiPasskeyPaint;
+// ログインのあとで、まだパスキーが無い人に1回だけすすめる（端末ごと・人ごとに1回）
+async function _koyomiPasskeyMaybeNudge(user) {
+  if (!user || !user.id || !_koyomiPasskeyOK() || window._isTesting) return;
+  if (!user.email || (!user.email_confirmed_at && !user.confirmed_at)) return;   // メールが確認済みの人だけが作れる
+  var key = 'koyomiruPasskeyNudged:' + user.id;
+  try { if (localStorage.getItem(key)) return; } catch (e) { return; }
+  var rows = [];
+  try { var r = await window.supabaseClient.auth.passkey.list(); if (!r || r.error) return; rows = r.data || []; } catch (e2) { return; }
+  if (rows.length) { try { localStorage.setItem(key, 'has'); } catch (e3) {} return; }
+  var show = function() {
+    try { localStorage.setItem(key, String(Date.now())); } catch (e4) {}
+    showChoiceModal({ title: '🔑 次から、指紋や顔で入れるようにしませんか？', desc: 'この端末でパスキーを作っておくと、次からはパスワードやメールを打たずに、指紋や顔だけでこよみるに入れます。', buttons: [
+      { label: '🔑 パスキーを作る', style: 'primary', onClick: koyomiPasskeyRegister },
+      { label: 'あとで', style: 'cancel' } ] });
+  };
+  if (typeof whenStartupClear === 'function') whenStartupClear(show); else show();
+}
+window._koyomiPasskeyMaybeNudge = _koyomiPasskeyMaybeNudge;
+// ログイン画面のボタンは、使えるときだけ出す
+function _koyomiPasskeyShowLoginBtn() { var w = document.getElementById('cloudLoginPasskeyWrap'); if (w) w.style.display = _koyomiPasskeyOK() ? 'block' : 'none'; }
+window._koyomiPasskeyShowLoginBtn = _koyomiPasskeyShowLoginBtn;
 window.cloudSignUpWithPassword = cloudSignUpWithPassword;
 window.cloudLoginWithPassword = cloudLoginWithPassword;
 // v0.45.1464: ログイン／新規登録の画面切り替え。入力欄は共用し、
@@ -72088,6 +72239,7 @@ try {
         // v0.49.15: 使えない名前の付け直しが出たときは、それを優先する（2つ重ねて出さない）
         var _renameShown = (typeof _promptRenameIfNameNotAllowed === 'function') && _promptRenameIfNameNotAllowed();   // v0.49.9
         if (!_renameShown && typeof _askDisplayNameIfEmpty === 'function') _askDisplayNameIfEmpty(session.user);
+        if (!_renameShown && typeof _koyomiPasskeyMaybeNudge === 'function') _koyomiPasskeyMaybeNudge(session.user);   // v0.99.81: パスキーを1回だけすすめる
         if (typeof _startCalendarLedgerAfterLogin === 'function') _startCalendarLedgerAfterLogin();   // v0.50.0: 大福帳
         if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
       }, 4000);
@@ -99513,6 +99665,52 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-697: 例外', e.message);
      }
 
+     // ===== ST-699: パスキー（v0.99.81） =====
+     // 【権威】2026-11-24 B「いちばん正式なサービスに近いのは B」：ログイン画面の上にパスキー、設定に作る・一覧・名前・消す、1回だけすすめる。使えないブラウザでは出さない
+     try {
+       var _x699 = [], _a699 = window.supabaseClient && window.supabaseClient.auth, _sv699 = {}, _hok699 = window._koyomiPasskeyHostOK, _li699 = window._cloudIsLoggedIn;
+       // ① 使える住所でないときは、ログイン画面のボタンを出さない
+       window._koyomiPasskeyHostOK = false; _koyomiPasskeyShowLoginBtn();
+       var _w699 = document.getElementById('cloudLoginPasskeyWrap');
+       if (!_w699 || _w699.style.display !== 'none') _x699.push('hidden');
+       // ② 使えるときは出る・押すと signInWithPasskey を呼ぶ・取りやめは何も言わない
+       if (_a699) {
+         ['signInWithPasskey', 'registerPasskey'].forEach(function(k) { _sv699[k] = _a699[k]; });
+         _sv699.passkey = _a699.passkey;
+         window._koyomiPasskeyHostOK = true; _koyomiPasskeyShowLoginBtn();
+         if (window.PublicKeyCredential && _w699.style.display !== 'block') _x699.push('shown');
+         var _called699 = 0;
+         _a699.signInWithPasskey = function() { _called699++; return Promise.resolve({ data: null, error: { code: 'ERROR_CEREMONY_ABORTED', message: 'cancelled' } }); };
+         _a699.registerPasskey = function() { return Promise.resolve({ data: null, error: { message: 'too_many_passkeys' } }); };
+         if (window.PublicKeyCredential) {
+           cloudLoginWithPasskey();   // 呼んだ時点で signInWithPasskey まで進む（結果は待たない）
+           if (_called699 !== 1) _x699.push('called');
+         }
+         if (_koyomiPasskeyErrMsg({ code: 'ERROR_CEREMONY_ABORTED' }, 'signin') !== '' || _koyomiPasskeyErrMsg({ name: 'NotAllowedError' }, 'register') !== '') _x699.push('cancelSilent');
+         // ③ 言葉の出し分け
+         if (_koyomiPasskeyErrMsg({ code: 'webauthn_challenge_expired' }, 'signin').indexOf('もう一度') < 0) _x699.push('expired');
+         if (_koyomiPasskeyErrMsg({ message: 'too_many_passkeys' }, 'register').indexOf('これ以上') < 0) _x699.push('toomany');
+         if (_koyomiPasskeyErrMsg({ code: 'ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED' }, 'register').indexOf('もう') < 0) _x699.push('dup');
+         // ④ 一覧：名前・日付・「名前」「消す」ボタン。名前は中身を文字として出す（<b>が効かない）
+         var _l699 = document.createElement('div');
+         _koyomiPasskeyPaint(_l699, [{ id: 'pk1', friendly_name: '<b>iPhone</b>', created_at: '2026-11-24T00:00:00Z' }]);
+         if (_l699.querySelector('b') || !/iPhone/.test(_l699.textContent) || !_l699.querySelector('[data-pk-rename]') || !_l699.querySelector('[data-pk-del]')) _x699.push('list');
+         _koyomiPasskeyPaint(_l699, []);
+         if (!/まだパスキーはありません/.test(_l699.textContent)) _x699.push('empty');
+         // ⑤ すすめは、メール未確認の人・テスト中には出さない（例外にならない）
+         _koyomiPasskeyMaybeNudge({ id: 'st699', email: '' });
+         Object.keys(_sv699).forEach(function(k) { _a699[k] = _sv699[k]; });
+       }
+       window._koyomiPasskeyHostOK = _hok699; window._cloudIsLoggedIn = _li699; _koyomiPasskeyShowLoginBtn(); _cloudLoginSetStatus('');
+       // ⑥ 設定の欄と、ログイン画面のボタンがある
+       if (!document.getElementById('cloudPasskeyArea') || !document.getElementById('cloudPasskeyAddBtn') || !document.getElementById('cloudLoginPasskeyBtn')) _x699.push('dom');
+       _x699.length === 0
+         ? ok('ST-699: パスキー（ログイン画面の上にボタン・使えないブラウザでは出さない・取りやめは黙る・期限切れ/上限/重複の言葉・一覧は名前と消す、名前は文字として出す）')
+         : ng('ST-699: パスキーの動きが違う', _x699.join(','));
+     } catch(e) {
+       ng('ST-699: 例外', e.message);
+     }
+
      // ===== ST-696: 立ち上げは「どの町ですか？」から、文字で探せる（v0.99.75） =====
      // 【権威】2026-11-23「どこですかを先に。テキストで千葉市中央区と打たせろ。何が起きましたかを一番初めに聞くのは間抜け」
      try {
@@ -100181,7 +100379,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch (e) { ng('ST-644: 例外', e.message); }
      // ===== ST-643: ログインの並びは LINE・Google・Discord（v0.78.24） =====
      try {
-       var _ids643 = [].map.call(document.querySelectorAll('#cloudLoginGuestArea button[id^="cloudLogin"]'), function(b) { return b.id; });
+       var _ids643 = [].map.call(document.querySelectorAll('#cloudLoginGuestArea button[id^="cloudLogin"]:not(#cloudLoginPasskeyBtn)'), function(b) { return b.id; });   // v0.99.81: パスキーは別の入り方（いちばん上）なので、LINE・Google・Discord の並びからは外して見る
        (_ids643.slice(0, 3).join() === 'cloudLoginLineBtn,cloudLoginGoogleBtn,cloudLoginDiscordBtn' && /id: 'line'[\s\S]*id: 'google'[\s\S]*id: 'discord'/.test(openLinkMethodModal.toString()))
          ? ok('ST-643: ログイン画面と連携画面の並びは LINE・Google・Discord（どこで開いても同じ）')
          : ng('ST-643: ログインの並びが違う', _ids643.join());
@@ -115416,6 +115614,12 @@ window.addMigration = addMigration;
     <div style="font-size:1.25em;font-weight:bold;margin-bottom:2px;">こよみる</div>
     <div id="cloudAuthHeading" style="font-size:0.82em;color:#8e8e8e;margin-bottom:20px;">ログイン</div>
     <div id="cloudLoginGuestArea">
+      <!-- v0.99.81: 【権威】2026-11-24 B「ちゃんとやりたい。いちばん正式なサービスに近いのは B」→ パスキーでログインをいちばん上に（使えるブラウザのときだけ出す）。
+           LINE・Google・Discord・メールはそのまま下に残す（パスキーはまだ試験中の機能なので、ほかの入り方を消さない） -->
+      <div id="cloudLoginPasskeyWrap" style="display:none;margin-bottom:14px;">
+        <button id="cloudLoginPasskeyBtn" onclick="cloudLoginWithPasskey()" style="width:100%;padding:13px;border:none;border-radius:10px;background:#2b2b2b;color:#fff;font-size:0.95em;font-weight:700;cursor:pointer;">🔑 パスキーでログイン</button>
+        <div style="font-size:0.74em;color:#8e8e8e;margin-top:6px;text-align:center;">前にパスキーを作った方は、指紋や顔だけで入れます</div>
+      </div>
       <!-- v0.78.24: 【権威】2026-11-18 LINEを一番上に。LINEが暮らしの中心の人（年配の方に多い）に届くため。
            見る場所で並びを変えることはしない（直すときも、人に教えるときも、どこでも同じ並びの方がよい）。
            v0.48.6: 【権威】2026-09-25、LINEはGoogleより身構えず使える人が多い、との要望。
@@ -115485,6 +115689,12 @@ window.addMigration = addMigration;
            要望を受けた。パスワード設定・他端末ログアウト・クラウドデータ取得は、
            トラブル時にしか使わない上級者向け設定であり、普段よく使う共有カレンダー・
            通知設定・ログアウトと同列に並んでいると目移りする。折りたたみに格下げする。 -->
+      <div id="cloudPasskeyArea" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid #e5dccc;border-radius:10px;background:#fffdf8;">
+        <div style="font-size:0.85em;font-weight:700;color:#5a4a36;">🔑 パスキー</div>
+        <div style="font-size:0.74em;color:#8a7a63;margin:3px 0 8px;line-height:1.6;">作っておくと、次からは指紋や顔だけでログインできます（端末ごとに1回）</div>
+        <button id="cloudPasskeyAddBtn" onclick="koyomiPasskeyRegister()" style="width:100%;padding:10px;border:none;border-radius:8px;background:#2b2b2b;color:#fff;font-size:0.88em;font-weight:700;cursor:pointer;">🔑 この端末でパスキーを使う</button>
+        <div id="cloudPasskeyList" style="margin-top:8px;"></div>
+      </div>
       <button onclick="openSharedCalendarModal()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">👨‍👩‍👧 共有カレンダー</button>
       <button onclick="enablePushNotifications()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">🔔 プッシュ通知を有効にする</button>
       <details style="margin-bottom:10px;">
