@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.67 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.68 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.67';
+    const APP_VERSION = 'v0.99.68';
   const APP_LAST_UPDATED = '2026-11-23'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -28293,19 +28293,32 @@ function openKoyomiOrderSheet(opts) {
   var draft = JSON.parse(JSON.stringify(cur));
   var ov = document.createElement('div');
   ov.id = 'koyomiOrderOverlay';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(20,20,30,0.55);display:flex;align-items:center;justify-content:center;padding:10px;';
   var big = window.innerWidth >= 760;
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100002;background:rgba(20,20,30,0.55);display:flex;align-items:center;justify-content:center;padding:' + (big ? '10px' : '6px') + ';';   // v0.99.68: スマホは外の余白を少なく
   var Z = big ? { w: 980, name: 190, nameFs: '1.05em', subFs: '0.8em', optFs: '0.95em', noteFs: '0.82em', circle: 24, pad: '7px 2px 5px', notePad: '2px 10px 4px 200px', head: '1.45em', headSub: '0.88em' }
-              : { w: 520, name: 84, nameFs: '0.8em', subFs: '0.75em', optFs: '0.74em', noteFs: '0.7em', circle: 18, pad: '5px 1px 4px', notePad: '2px 6px 4px 88px', head: '1.1em', headSub: '0.72em' };
+              : { w: 520, name: 84, nameFs: '0.8em', subFs: '0.75em', optFs: '0.74em', noteFs: '0.7em', circle: 18, pad: '4px 1px 3px', notePad: '0 6px 2px 88px', head: '1.1em', headSub: '0.72em' };   // v0.99.68: スマホは行の上下を少し詰める
   var circle = function(on) { return '<span style="display:block;width:' + Z.circle + 'px;height:' + Z.circle + 'px;margin:0 auto 4px;border-radius:50%;border:2px solid ' + (on ? '#b0443a' : '#c9bc98') + ';background:' + (on ? '#b0443a' : '#fff') + ';"></span>'; };
   var isOn = function(it, val) {
     if (it.multi) { var n = draft.yearNegi; if (!n) return false; return val === 'none' ? (!n.white && !n.blue) : !!n[val]; }
     return draft[it.key] !== null && draft[it.key] === val;
   };
+  // v0.99.68: 【権威】2026-11-23「スマホで開くと1画面に収まらない。トッピングがあると分かるUIにして、トッピングを折りたたんで1画面に」
+  //   → スマホでは、トッピング（たまご・メンマ・海苔・きくらげ）を1行にまとめて畳む。今の盛りは1行で見え、押すと開く。広い画面は今までどおり全部
+  var topOpen = big, _topIdx = -1;
+  KOYOMI_ORDER_ITEMS.forEach(function(it, i) { if (it.key === 'kyureki' && _topIdx < 0) _topIdx = i; });
   var render = function() {
+    var _topSummary = function() {
+      return KOYOMI_ORDER_ITEMS.slice(_topIdx).map(function(it) { var o = it.options.filter(function(x) { return x[0] === draft[it.key]; })[0]; return esc(it.ramen) + ' <b style="color:' + (o && o[0] !== 'none' ? '#b0443a' : '#a08d66') + ';">' + esc(o ? o[1] : 'なし') + '</b>'; }).join('　');
+    };
     var rows = KOYOMI_ORDER_ITEMS.map(function(it, idx) {
+      if (!topOpen && _topIdx >= 0 && idx >= _topIdx) {
+        if (idx !== _topIdx) return '';
+        return '<button type="button" data-ko-act="toppings" aria-expanded="false" style="display:block;width:100%;text-align:left;border:none;border-top:1px solid #e3d6b8;background:#efe2c4;padding:7px 10px;cursor:pointer;font-family:inherit;color:#6b4f2a;">' +
+          '<span style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:' + Z.nameFs + ';letter-spacing:0.05em;"><span style="flex:1;">🍥 トッピング（' + (KOYOMI_ORDER_ITEMS.length - _topIdx) + '種）</span><span style="font-size:0.95em;">開く ▾</span></span>' +
+          '<span data-ko-topsum style="display:block;margin-top:3px;font-size:' + Z.noteFs + ';font-weight:400;line-height:1.5;color:#6b4f2a;">' + _topSummary() + '</span></button>';
+      }
       // v0.70.0: 行が増えても迷わないよう、「暦の味」と「トッピング」の見出しで2つに分ける
-      var head = (idx === 0 || it.key === 'kyureki') ? '<div data-ko-head style="padding:4px 10px;background:#efe2c4;color:#6b4f2a;font-size:' + Z.subFs + ';font-weight:700;letter-spacing:0.1em;">' + (idx === 0 ? '暦の味' : 'トッピング') + '</div>' : '';
+      var head = (idx === 0 || it.key === 'kyureki') ? '<div data-ko-head style="padding:4px 10px;background:#efe2c4;color:#6b4f2a;font-size:' + Z.subFs + ';font-weight:700;letter-spacing:0.1em;">' + (idx === 0 ? '暦の味' : 'トッピング' + (!big ? '<button type="button" data-ko-act="toppings" aria-expanded="true" style="float:right;border:none;background:none;color:#6b4f2a;font-size:1em;font-weight:700;cursor:pointer;padding:0 2px;font-family:inherit;">たたむ ▴</button>' : '')) + '</div>' : '';
       var cells = it.options.map(function(op) {
         var val = op[0], on = isOn(it, val);
         var label = (it.key === 'moon' && val === 'times') ? (on ? draft.moonTimes : '（ ）') + '倍' : op[1];
@@ -28338,21 +28351,22 @@ function openKoyomiOrderSheet(opts) {
         '<div style="padding:' + Z.notePad + ';font-size:' + Z.noteFs + ';color:#8a7f6a;line-height:1.4;min-height:1.2em;">' + note + '</div>' +
       '</div>';
     }).join('');
-    ov.innerHTML = '<div style="background:#fffdf5;border-radius:12px;max-width:' + Z.w + 'px;width:100%;max-height:94vh;overflow:auto;box-shadow:0 12px 36px rgba(0,0,0,0.3);font-family:inherit;">' +
+    ov.innerHTML = '<div style="background:#fffdf5;border-radius:12px;max-width:' + Z.w + 'px;width:100%;max-height:' + (big ? '94vh' : 'calc(100vh - 12px);max-height:calc(100dvh - 12px)') + ';overflow:auto;box-shadow:0 12px 36px rgba(0,0,0,0.3);font-family:inherit;">' +
       '<div style="background:#b0443a;color:#fff;text-align:center;padding:8px 10px;border-radius:12px 12px 0 0;">' +
         '<div style="font-size:' + Z.head + ';font-weight:700;letter-spacing:.3em;">こよみの注文票</div>' +
         (opts.ask && (opts.askTitle || opts.kouName) ? '<div style="font-size:' + Z.headSub + ';font-weight:700;margin-top:2px;">' + esc(opts.askTitle || ('今日から「' + opts.kouName + '」。ご注文は？')) + '</div>' : '') +
-        '<div style="font-size:' + Z.headSub + ';opacity:.9;">天然こよみ専門店　こよみる ── こだわりたい、一回きりの今日がある。</div></div>' +
+        (big ? '<div style="font-size:' + Z.headSub + ';opacity:.9;">天然こよみ専門店　こよみる ── こだわりたい、一回きりの今日がある。</div>' : '<div style="font-size:' + Z.headSub + ';opacity:.9;">天然こよみ専門店　こよみる</div>') + '</div>' +   // v0.99.68: スマホは1行に
       // v0.71.5: 定番の札（いちばん上）。今の〇の並びと同じ定番には印
       (function() {
         var cur0 = koyomiOrderPresetOf(draft);
-        return '<div data-ko-presets style="margin:0 8px;padding:8px 6px 10px;border:2px solid #b0443a;border-top:none;border-bottom:none;background:#fff8ec;">' +
-          '<div style="font-size:0.78em;color:#6b4f2a;font-weight:700;margin:0 2px 6px;">定番から選ぶ<span style="font-weight:400;color:#a08d66;">（押してから、好きに直せます）</span></div>' +
-          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;">' +
+        return '<div data-ko-presets style="margin:0 8px;padding:' + (big ? '8px 6px 10px' : '6px 5px 7px') + ';border:2px solid #b0443a;border-top:none;border-bottom:none;background:#fff8ec;">' +
+          '<div style="font-size:0.78em;color:#6b4f2a;font-weight:700;margin:0 2px ' + (big ? '6px' : '4px') + ';">定番から選ぶ<span style="font-weight:400;color:#a08d66;">（押してから、好きに直せます）</span></div>' +
+          '<div style="display:grid;grid-template-columns:' + (big ? 'repeat(auto-fit,minmax(130px,1fr))' : 'repeat(4,1fr)') + ';gap:' + (big ? '6px' : '4px') + ';">' +   // v0.99.68: スマホは4つを1列に
           KOYOMI_ORDER_PRESETS.map(function(p) {
             var on = cur0 === p.key;
-            return '<button type="button" data-ko-act="preset" data-ko-preset="' + p.key + '" style="text-align:left;padding:7px 9px;border-radius:10px;cursor:pointer;border:' + (on ? '2px solid #b0443a' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdecea' : '#fff') + ';color:#6b4f2a;">' +
-              '<div style="font-weight:800;font-size:0.9em;">' + p.icon + ' ' + p.name + (on ? ' ✓' : '') + '</div><div style="font-size:0.72em;color:#a08d66;margin-top:1px;">' + p.sub + '</div></button>';
+            return '<button type="button" data-ko-act="preset" data-ko-preset="' + p.key + '" style="text-align:left;padding:' + (big ? '7px 9px' : '5px 2px') + ';border-radius:10px;cursor:pointer;border:' + (on ? '2px solid #b0443a' : '1px solid #d9c9a6') + ';background:' + (on ? '#fdecea' : '#fff') + ';color:#6b4f2a;">' +
+              (big ? '<div style="font-weight:800;font-size:0.9em;">' + p.icon + ' ' + p.name + (on ? ' ✓' : '') + '</div><div style="font-size:0.72em;color:#a08d66;margin-top:1px;">' + p.sub + '</div></button>'
+                   : '<div style="text-align:center;font-size:1.1em;line-height:1.1;">' + p.icon + '</div><div style="text-align:center;font-weight:800;font-size:0.66em;line-height:1.25;margin-top:2px;">' + p.name + (on ? '✓' : '') + '</div></button>');
           }).join('') + '</div></div>';
       })() +
       '<div style="border:2px solid #b0443a;border-top:none;margin:0 8px;">' + rows + '</div>' +
@@ -28390,6 +28404,7 @@ function openKoyomiOrderSheet(opts) {
       render(); return;
     }
     var act = b.getAttribute('data-ko-act');
+    if (act === 'toppings') { topOpen = !topOpen; render(); return; }   // v0.99.68: スマホのトッピングを開く／たたむ
     if (act === 'preset') {   // v0.71.5: 定番を押したら、その組み合わせに一気に〇
       var pp = KOYOMI_ORDER_PRESETS.filter(function(x) { return x.key === b.getAttribute('data-ko-preset'); })[0];
       if (pp) { var pv = JSON.parse(JSON.stringify(pp.v)); Object.keys(pv).forEach(function(k) { draft[k] = pv[k]; }); }
@@ -61222,6 +61237,17 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.68', date: '2026-11-23',
+    items: [
+      { icon:'🍜', t:'暦の注文票を、スマホで1画面に収まるようにしました',
+        before:'スマホで開くと縦に長く、下までスクロールしないと決められませんでした',
+        after:'スマホでは、トッピング（たまご・メンマ・海苔・きくらげ）を1行にまとめました。今の盛りはその1行で見え、押すと開いて選べます。定番の4つも横1列に並べました' },
+      { icon:'🍜', t:'おいしいお店を、Googleマップで探しやすくしました',
+        before:'Googleマップを開くと、前に選んだ町（例：千葉市中央区）で探してしまいました',
+        after:'「八千代台駅 ラーメン」のように、どこで・何を食べたいかを書いて探せます。前に使った言葉は札で出ます。「今いる場所の近くで探す」もあります' }
+    ]
+  },
+  {
     ver: 'v0.99.67', date: '2026-11-23',
     items: [
       { icon:'🍜', t:'おいしいお店を作り直しました',
@@ -75826,9 +75852,13 @@ function _shopGeocode(addr) {
   };
   return next();
 }
+// v0.99.68: 【権威】2026-11-23「津田沼で、これから行く八千代台のお店を調べようと思ったら千葉市中央区が出た。検索ワードを上手くして、検索しやすくしたい」
+//   → 前の町に決め打ちしない。「どこで・何を」を自分で書ける欄（前に使った言葉は札で出す）と、「今いる場所の近く」をGoogleマップに渡す
+function _shopGQuery(q) { return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(q || '').trim() || 'グルメ'); }
+function _shopGRecent() { var a = _tayoriLS('shopGWords', []); return Array.isArray(a) ? a.filter(function(x) { return typeof x === 'string' && x.trim(); }).slice(0, 4) : []; }
+function _shopGRemember(q) { q = String(q || '').trim().slice(0, 40); if (!q) return; var a = _shopGRecent().filter(function(x) { return x !== q; }); a.unshift(q); _tayoriLSSet('shopGWords', a.slice(0, 4)); }
 function _shopFromGoogle() {
-  var t = _shopTown();
-  var gq = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('飲食店' + (t ? ' ' + (t.pref && t.pref !== t.name ? t.pref + ' ' : '') + t.name : ''));
+  var gq = _shopGQuery('');
   var old = document.getElementById('shopGSheet'); if (old) old.remove();
   var ov = document.createElement('div'); ov.id = 'shopGSheet';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px;';
@@ -75836,10 +75866,13 @@ function _shopFromGoogle() {
   ov.innerHTML = '<div style="background:#fffdf8;border-radius:16px;max-width:520px;width:100%;max-height:92vh;max-height:92dvh;overflow:auto;padding:16px 18px 18px;color:#3b3226;">' +
     '<div style="display:flex;align-items:center;"><div style="flex:1;font-size:1.2em;font-weight:800;">🗺 Googleマップで探す</div><button type="button" data-sg-x aria-label="閉じる" style="min-width:44px;min-height:44px;border:none;background:none;font-size:1.3em;cursor:pointer;color:#6b6155;">✕</button></div>' +
     '<ol style="margin:8px 0 0;padding-left:1.4em;line-height:1.9;">' +
-      '<li>下のボタンでGoogleマップを開いて、お店を探す</li>' +
+      '<li>どこで・何を食べたいかを書いて、Googleマップを開く</li>' +
       '<li>お店の画面で「<b>共有</b>」→「<b>コピー</b>」</li>' +
       '<li>こよみるに戻って「<b>📋 貼り付ける</b>」</li></ol>' +
-    '<a data-sg-open href="' + _shopEsc(gq) + '" target="_blank" rel="noopener noreferrer" style="' + bt + 'margin-top:12px;display:flex;align-items:center;justify-content:center;text-decoration:none;border:1.5px solid #1a5fb4;background:#fff;color:#1a5fb4;">Googleマップを開く ↗</a>' +
+    '<input data-sg-q type="search" maxlength="40" placeholder="例：八千代台駅 ラーメン" style="width:100%;box-sizing:border-box;min-height:50px;margin-top:12px;padding:0 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;">' +
+    '<div data-sg-chips style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>' +
+    '<a data-sg-open href="' + _shopEsc(gq) + '" target="_blank" rel="noopener noreferrer" style="' + bt + 'margin-top:10px;display:flex;align-items:center;justify-content:center;text-decoration:none;border:1.5px solid #1a5fb4;background:#fff;color:#1a5fb4;">Googleマップで探す ↗</a>' +
+    '<a data-sg-near href="' + _shopEsc(_shopGQuery('グルメ')) + '" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;margin-top:6px;padding:8px;color:#1a5fb4;font-size:0.92em;font-weight:700;text-decoration:none;">📍 今いる場所の近くで探す ↗</a>' +
     '<button type="button" data-sg-paste style="' + bt + 'margin-top:10px;border:none;background:#b5541c;color:#fff;">📋 貼り付ける</button>' +
     '<textarea data-sg-text rows="4" placeholder="うまく貼れないときは、ここを長押しして「ペースト」" style="width:100%;box-sizing:border-box;margin-top:10px;padding:10px 12px;border:1.5px solid #d9cfbf;border-radius:12px;font-size:16px;font-family:inherit;line-height:1.6;"></textarea>' +
     '<button type="button" data-sg-next style="' + bt + 'margin-top:8px;border:1.5px solid #d9cfbf;background:#fff;color:#3b3226;">この内容で次へ</button>' +
@@ -75857,6 +75890,15 @@ function _shopFromGoogle() {
     close(); _shopConfirmPlace(p);
   };
   q('[data-sg-next]').onclick = function() { go(q('[data-sg-text]').value); };
+  // どこで・何を：書いた言葉をそのままGoogleマップへ。前に使った言葉と、選んでいる町は札で出す（押すと欄に入る）
+  var qi = q('[data-sg-q]'), op = q('[data-sg-open]'), t0 = _shopTown();
+  var sync = function() { op.href = _shopGQuery(qi.value || 'グルメ'); };
+  var chips = _shopGRecent(); if (t0 && t0.name && chips.indexOf(t0.name) === -1) chips.push(t0.name);
+  q('[data-sg-chips]').innerHTML = chips.slice(0, 5).map(function(w) { return '<button type="button" data-sg-chip="' + _shopEsc(w) + '" style="min-height:36px;padding:0 12px;border:1px solid #d9cfbf;border-radius:999px;background:#fff;color:#3b3226;font-size:0.9em;cursor:pointer;font-family:inherit;">' + _shopEsc(w) + '</button>'; }).join('');
+  [].forEach.call(q('[data-sg-chips]').querySelectorAll('[data-sg-chip]'), function(b) { b.onclick = function() { qi.value = b.getAttribute('data-sg-chip') + ' '; sync(); qi.focus(); }; });
+  qi.oninput = sync;
+  qi.onkeydown = function(e) { if (e.key === 'Enter') { e.preventDefault(); sync(); op.click(); } };
+  op.addEventListener('click', function() { sync(); _shopGRemember(qi.value); });
   q('[data-sg-paste]').onclick = function() {
     var b = this;
     if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
@@ -95053,6 +95095,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        delete allSettings.ui.koyomiOrder;
        openKoyomiOrderSheet();
        var _sh = document.getElementById('koyomiOrderOverlay');
+       var _tg466 = _sh && _sh.querySelector('[data-ko-act="toppings"][aria-expanded="false"]'); if (_tg466) _tg466.click();   // v0.99.68: スマホはトッピングが畳まれているので、開いてから数える
        var _rows = _sh ? _sh.querySelectorAll('[data-ko-key]').length : 0;
        var _hasTiming = _sh && !!_sh.querySelector('[data-ko-timing]');
        var _txt = _sh ? _sh.textContent : '';
@@ -99186,6 +99229,67 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-688: お店探しが違う', _x688.join(','));
      } catch(e) {
        ng('ST-688: 例外', e.message);
+     }
+
+     // ===== ST-693: Googleマップで探すとき、どこで・何をを自分で書ける（v0.99.68） =====
+     // 【権威】2026-11-23「津田沼で八千代台のお店を調べようとしたら千葉市中央区が出た。検索しやすくしたい」
+     try {
+       var _r693 = {}, _w693 = _tayoriLS('shopGWords', []), _tw693 = _koyomiShops.town;
+       try {
+         _tayoriLSSet('shopGWords', []); _koyomiShops.town = { code: '12101', name: '千葉市中央区', pref: '千葉県', lat: 35.6, lng: 140.1 };
+         _shopFromGoogle();
+         var g693 = document.getElementById('shopGSheet'), op693 = g693.querySelector('[data-sg-open]'), qi693 = g693.querySelector('[data-sg-q]');
+         _r693.noForce = !/%E5%8D%83%E8%91%89/.test(op693.href);   // 書く前から「千葉市中央区」に決め打ちしない
+         _r693.near = /query=%E3%82%B0%E3%83%AB%E3%83%A1/.test(g693.querySelector('[data-sg-near]').href);
+         _r693.chipTown = !!g693.querySelector('[data-sg-chip="千葉市中央区"]');
+         qi693.value = '八千代台駅 ラーメン'; qi693.dispatchEvent(new Event('input'));
+         _r693.typed = op693.href.indexOf(encodeURIComponent('八千代台駅 ラーメン')) !== -1;
+         g693.remove();
+         _shopGRemember('八千代台駅 ラーメン'); _shopGRemember('津田沼 カフェ'); _shopGRemember('八千代台駅 ラーメン');
+         var rc = _shopGRecent();
+         _r693.recent = rc[0] === '八千代台駅 ラーメン' && rc[1] === '津田沼 カフェ' && rc.length === 2;
+         _shopFromGoogle(); var g2 = document.getElementById('shopGSheet');
+         _r693.chips = !!g2.querySelector('[data-sg-chip="津田沼 カフェ"]'); g2.remove();
+       } finally { _tayoriLSSet('shopGWords', _w693); _koyomiShops.town = _tw693; var gx = document.getElementById('shopGSheet'); if (gx) gx.remove(); }
+       var _x693 = Object.keys(_r693).filter(function(k) { return !_r693[k]; });
+       !_x693.length
+         ? ok('ST-693: Googleマップで探すときは、どこで・何をを自分で書ける（前の町に決め打ちしない・前に使った言葉と今の町は札・今いる場所の近くでも探せる）')
+         : ng('ST-693: Googleマップの探し方が違う', _x693.join(','));
+     } catch(e) {
+       ng('ST-693: 例外', e.message);
+     }
+
+     // ===== ST-692: 暦の注文票、スマホではトッピングを畳む（v0.99.68） =====
+     // 【権威】2026-11-23「スマホで開くと1画面に収まらない。トッピングがあると分かるUIにして、折りたたんで1画面に」
+     try {
+       var _r692 = {}, _big692 = window.innerWidth >= 760;
+       openKoyomiOrderSheet({});
+       var ov692 = document.getElementById('koyomiOrderOverlay');
+       try {
+         var tg = ov692 && ov692.querySelector('[data-ko-act="toppings"]');
+         if (_big692) {
+           _r692.pc = !tg && !!ov692.querySelector('[data-ko-key="kyureki"]') && !!ov692.querySelector('[data-ko-key="ritual"]');
+         } else {
+           _r692.closed = !!tg && tg.getAttribute('aria-expanded') === 'false' && !ov692.querySelector('[data-ko-key="kyureki"]') && !ov692.querySelector('[data-ko-key="ritual"]') &&
+             /トッピング（4種）/.test(tg.textContent) && /たまご/.test(tg.textContent) && /メンマ/.test(tg.textContent) && /海苔/.test(tg.textContent) && /きくらげ/.test(tg.textContent);
+           tg.click();
+           var tg2 = ov692.querySelector('[data-ko-act="toppings"]');
+           _r692.open = !!ov692.querySelector('[data-ko-key="kyureki"]') && !!ov692.querySelector('[data-ko-key="ritual"]') && !!tg2 && tg2.getAttribute('aria-expanded') === 'true';
+           // 開いたまま〇を変えても、畳まれない
+           var kb = ov692.querySelector('[data-ko-key="kyureki"][data-ko-val="rich"]'); if (kb) kb.click();
+           _r692.stay = !!ov692.querySelector('[data-ko-key="kyureki"]');
+           ov692.querySelector('[data-ko-act="toppings"]').click();
+           var tg3 = ov692.querySelector('[data-ko-act="toppings"]');
+           _r692.reclose = !ov692.querySelector('[data-ko-key="kyureki"]') && !!tg3 && /まるごと/.test(tg3.textContent);   // 畳んでも、選んだ盛りが1行に出る
+           _r692.presets = ov692.querySelectorAll('[data-ko-preset]').length === 4;
+         }
+       } finally { if (ov692) ov692.remove(); }
+       var _x692 = Object.keys(_r692).filter(function(k) { return !_r692[k]; });
+       !_x692.length
+         ? ok('ST-692: 暦の注文票は、スマホではトッピング4種を1行に畳む（今の盛りが見える・押すと開く・たたむで戻る）。広い画面は全部出す')
+         : ng('ST-692: 注文票のトッピングの畳み方が違う', _x692.join(','));
+     } catch(e) {
+       ng('ST-692: 例外', e.message);
      }
 
      // ===== ST-691: おいしいお店の作り直し（v0.99.67） =====
