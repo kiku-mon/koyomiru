@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.87 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.88 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.87';
+    const APP_VERSION = 'v0.99.88';
   const APP_LAST_UPDATED = '2026-11-24'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61327,6 +61327,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.88', date: '2026-11-24',
+    items: [
+      { icon:'🍜', t:'お店に★を付けた日が、カレンダーに残るようにしました',
+        before:'どのお店でいつ食べたかは、カレンダーには残りませんでした',
+        after:'はじめて★を付けると、その日の予定に「🍜 お店の名前」が入ります（時刻なし。あとで時刻を付けられます）。入れるカレンダーは最初の1回だけ聞き、「おいしいお店」の画面で変えられます。共有カレンダーには入れません' }
+    ]
+  },
+  {
     ver: 'v0.99.87', date: '2026-11-24',
     items: [
       { icon:'📍', t:'記録したお店を、Googleマップですぐ開けるようにしました',
@@ -76238,6 +76246,16 @@ function _shopRenderMineTab(body) {
     '<div data-sh-mapwrap style="position:relative;margin-top:6px;"><div data-sh-map style="height:46vh;min-height:280px;border-radius:14px;overflow:hidden;border:1px solid #e6dccb;background:#eef0ea;"></div></div>' +
     '<div style="font-size:0.75em;color:#a39886;margin-top:6px;">地図：国土地理院　お店の場所：© OpenStreetMap の協力者</div>';
   var lb = body.querySelector('[data-sh-login]'); if (lb) lb.onclick = function() { try { if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); } catch (e) {} };
+  // v0.99.88: 食べた記録の入れ先（あとから変えられる）
+  if (li) {
+    var ec = document.createElement('div'); ec.setAttribute('data-sh-eatcal', '');
+    var cur = _shopEatCalId(), cal = _shopEatCals().filter(function(x) { return x.id === cur; })[0];
+    ec.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;font-size:0.85em;color:#6b5d48;';
+    ec.innerHTML = '<span style="flex:1;min-width:0;">📅 食べた記録の入れ先：' + (cur === 'none' ? '入れない' : cal ? _shopEsc(cal.name || 'カレンダー') : 'はじめて★を付けたときに聞きます') + '</span>' +
+      '<button type="button" style="min-height:36px;padding:0 12px;border:1px solid #d9cfbf;border-radius:999px;background:#fff;color:#3b3226;font-size:0.95em;cursor:pointer;font-family:inherit;">変える</button>';
+    ec.querySelector('button').onclick = function() { _shopEatCalAsk(function() { renderShopsView(); }); };
+    var lst = body.querySelector('[data-sh-list]'); if (lst && lst.parentNode) lst.parentNode.insertBefore(ec, lst.nextSibling);
+  }
   if (li) _shopDrawMine();
   _shopWatchMap(body.querySelector('[data-sh-mapwrap]'));
   if (li) _shopLoadMine(false);
@@ -76727,7 +76745,10 @@ function _shopReviewForm(shop, mine) {
     rpcWithTimeout('koyomiru_shop_review_save', { p_shop: shop.id, p_stars: st.stars, p_genre: st.genre, p_title: q('[data-sf-title]').value.slice(0, 30), p_body: tb.value.slice(0, 5000) }, 12000).then(function(r) {
       if (!r || r.error) { b.disabled = false; b.textContent = 'もう一度送る'; if (typeof showToast === 'function') showToast(_shopErr(r && r.error), { type: 'warn' }); return; }
       var rid = r.data && r.data.id, msg = r.data && r.data.updated ? 'レビューを直しました' : 'レビューを載せました。ありがとうございます';
-      var after = function(extra) { close(); if (typeof showToast === 'function') showToast(msg + (extra ? '。' + extra : ''), { type: 'success' }); _shopLoad(true); _shopLoadMine(true); _shopOpen(shop.id); };   // v0.99.67: わたしの記録も取り直す
+      var isNew = !(r.data && r.data.updated);
+      var after = function(extra) { close(); if (typeof showToast === 'function') showToast(msg + (extra ? '。' + extra : ''), { type: 'success' }); _shopLoad(true); _shopLoadMine(true);   // v0.99.67: わたしの記録も取り直す
+        // v0.99.88: はじめて★を付けたときは、その日の予定に「🍜 店名」を入れる（入れ先を聞くときは、聞き終わってからお店の画面を開く）
+        if (isNew) _shopEatToCalendar(shop.name, function() { _shopOpen(shop.id); }); else _shopOpen(shop.id); };
       var hadPhoto = mine && mine.photo_path;
       var step1 = (hadPhoto && (st.dropPhoto || st.photo)) ? _shopPhotoRemove(rid) : Promise.resolve(true);
       step1.then(function() {
@@ -76979,6 +77000,58 @@ function openKoyomiBosaiNote(opts) {
   };
   draw();
 }
+// ===== v0.99.88: 食べた日を、カレンダーに残す =====
+// 【権威】2026-11-24「お店に★を付けるとその日のカレンダーに出るのはいい。時刻なしで入れて、時刻を入れたいなら自分で選べるように」
+//   入れ先：メインカレンダーは人によって中身が違う（例：試験勉強のカレンダーをメインにしている人もいる）ので、
+//   はじめての1回だけ「どのカレンダーに入れますか？」と聞き（メインを先頭に）、覚えておく。「入れない」も選べる。あとから変えられる。
+//   共有カレンダーは選べない（どこで食べたか＝手の内・行動の並びを、ほかの人に見せない）
+function _shopEatCals() {
+  var list = (typeof calendars !== 'undefined' && Array.isArray(calendars)) ? calendars : ((allSettings.calendar && allSettings.calendar.list) || []);
+  var mainId = typeof getMainCalendarId === 'function' ? getMainCalendarId() : null;
+  var own = list.filter(function(cal) { return cal && cal.id && !_isSharedCalendar(cal) && (typeof isWritableCalendar !== 'function' || isWritableCalendar(cal)) && !(typeof isLegacyReceptacle === 'function' && isLegacyReceptacle(cal)); });
+  own.sort(function(a, b) { return (b.id === mainId) - (a.id === mainId); });
+  return own;
+}
+window._shopEatCals = _shopEatCals;
+// 覚えている入れ先：''＝まだ聞いていない／'none'＝入れない／それ以外はカレンダー（消えていたら、まだ聞いていない扱い）
+function _shopEatCalId() {
+  var v = (allSettings.ui && allSettings.ui.shopEatCal) || '';
+  if (v && v !== 'none' && !_shopEatCals().some(function(cal) { return cal.id === v; })) return '';
+  return v;
+}
+window._shopEatCalId = _shopEatCalId;
+function _shopEatCalSet(v) { if (!allSettings.ui) allSettings.ui = {}; allSettings.ui.shopEatCal = v; if (typeof saveAllSettings === 'function') saveAllSettings(); }
+function _shopEatCalAsk(then) {
+  var cals = _shopEatCals(), mainId = typeof getMainCalendarId === 'function' ? getMainCalendarId() : null;
+  showChoiceModal({ align: 'left', title: '🍜 食べた記録を、どのカレンダーに入れますか？', desc: '★を付けた日に「🍜 お店の名前」が入ります（時刻なし。あとで時刻を付けられます）。次からは聞きません。あとで「おいしいお店」の画面で変えられます。', buttons:
+    cals.map(function(cal) { return { label: '📅 ' + _shopEsc(cal.name || 'カレンダー') + (cal.id === mainId ? '（メイン）' : ''), style: cal.id === mainId ? 'primary' : 'cancel', onClick: function() { _shopEatCalSet(cal.id); if (then) then(cal.id); } }; })
+    .concat([{ label: 'カレンダーには入れない', style: 'cancel', onClick: function() { _shopEatCalSet('none'); if (then) then('none'); } }]) });
+}
+window._shopEatCalAsk = _shopEatCalAsk;
+// その日の予定に「🍜 店名」を入れる（同じ日・同じお店は2つ作らない）。done は最後に必ず呼ぶ
+function _shopEatToCalendar(name, done, dateStr) {
+  var fin = function() { if (typeof done === 'function') { try { done(); } catch (e) {} } };
+  try {
+    name = String(name || '').trim().slice(0, 60); if (!name) { fin(); return; }
+    var put = function(calId) {
+      if (!calId || calId === 'none') { fin(); return; }
+      var d = dateStr || getLocalDateStr(new Date()), text = '🍜 ' + name;
+      var dup = (allTasks || []).some(function(t) { return t && t.date === d && t.text === text && t.calendarId === calId && !t.deleted; });
+      if (!dup) {
+        var task = createTask({ text: text, date: d, displayScope: 'both', calendarId: calId, memo: 'おいしいお店で★を付けた日' });
+        if (task) {
+          if (typeof saveAllTasks === 'function') saveAllTasks();
+          if (typeof renderMonthlyView === 'function') try { renderMonthlyView(); } catch (e) {}
+          if (typeof showToast === 'function') showToast('📅 ' + d.replace(/^(\d{4})-0?(\d+)-0?(\d+)$/, '$2月$3日') + 'の予定に入れました', { type: 'info' });
+        }
+      }
+      fin();
+    };
+    var cur = _shopEatCalId();
+    if (cur) put(cur); else _shopEatCalAsk(put);
+  } catch (e) { fin(); }
+}
+window._shopEatToCalendar = _shopEatToCalendar;
 // 備蓄の期限を、カレンダーの予定にする（自分のカレンダーに。同じ品の予定は2つ作らない）
 function _bosaiToCal(s, note) {
   try {
@@ -99735,6 +99808,45 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-697: 注文票の並びか決めるボタンが違う', _x697.join(','));
      } catch(e) {
        ng('ST-697: 例外', e.message);
+     }
+
+     // ===== ST-705: ★を付けた日を、カレンダーに残す（v0.99.88） =====
+     // 【権威】2026-11-24「★を付けるとその日のカレンダーに。時刻なしで、時刻はあとで選べる」「メインは人によって違う」→ はじめてだけ入れ先を聞く・共有は出さない
+     var _sv705 = { set: allSettings.ui && allSettings.ui.shopEatCal, cm: window.showChoiceModal, save: window.saveAllTasks, ss: window.saveAllSettings, mv: window.renderMonthlyView, tasks: allTasks.length, cals: calendars };
+     try {
+       var _x705 = [], _asked705 = null, _done705 = 0;
+       window.saveAllTasks = function() {}; saveAllTasks = window.saveAllTasks; window.saveAllSettings = function() {}; saveAllSettings = window.saveAllSettings; window.renderMonthlyView = function() {}; renderMonthlyView = window.renderMonthlyView;
+       window.showChoiceModal = function(o) { _asked705 = o; }; showChoiceModal = window.showChoiceModal;
+       calendars = [{ id: 'st705-own', name: '自分の', visible: true }, { id: 'st705-shared', name: '家族', visible: true, cloudCalendarId: 'x' }];
+       if (_shopEatCals().some(function(x) { return x.id === 'st705-shared'; })) _x705.push('sharedShown');
+       calendars = _sv705.cals;   // ここからは、この端末に本当にある自分のカレンダーで確かめる（予定の作り方は、ある一覧のカレンダーにしか入れないため）
+       var _own705 = _shopEatCals()[0];
+       allSettings.ui.shopEatCal = '';
+       // ① はじめては聞く（「入れない」もある）。選ぶと、その日の予定に時刻なしで入る
+       _shopEatToCalendar('らーめん〇〇', function() { _done705++; }, '2026-11-24');
+       if (!_asked705 || !_asked705.buttons.some(function(b) { return /入れない/.test(b.label); })) _x705.push('ask');
+       else _asked705.buttons[0].onClick();   // 先頭（メイン）を選ぶ
+       var _t705 = allTasks.filter(function(t) { return t.text === '🍜 らーめん〇〇' && t.date === '2026-11-24'; });
+       if (_t705.length !== 1 || !_own705 || _t705[0].calendarId !== _own705.id || _t705[0].time) _x705.push('task');
+       // ② 2回目は聞かない・同じ日・同じお店は2つ作らない
+       _asked705 = null; _shopEatToCalendar('らーめん〇〇', function() { _done705++; }, '2026-11-24');
+       if (_asked705) _x705.push('askedAgain');
+       if (allTasks.filter(function(t) { return t.text === '🍜 らーめん〇〇' && t.date === '2026-11-24'; }).length !== 1) _x705.push('dup');
+       // ③ 「入れない」を選んだら入れない
+       allSettings.ui.shopEatCal = 'none'; _shopEatToCalendar('〇〇食堂', function() { _done705++; }, '2026-11-24');
+       if (allTasks.some(function(t) { return t.text === '🍜 〇〇食堂'; })) _x705.push('none');
+       // ④ 覚えたカレンダーが消えていたら、また聞く
+       allSettings.ui.shopEatCal = 'st705-gone'; if (_shopEatCalId() !== '') _x705.push('gone');
+       if (_done705 !== 3) _x705.push('done' + _done705);
+       allTasks = allTasks.filter(function(t) { return !/^🍜 (らーめん〇〇|〇〇食堂)$/.test(t.text); });
+       _x705.length === 0
+         ? ok('ST-705: ★を付けた日に「🍜 店名」を時刻なしで入れる（はじめてだけ入れ先を聞く・入れないも選べる・共有カレンダーは出さない・同じ日に2つ作らない）')
+         : ng('ST-705: 食べた日のカレンダーが違う', _x705.join(','));
+     } catch(e) {
+       ng('ST-705: 例外', e.message);
+     } finally {
+       allSettings.ui.shopEatCal = _sv705.set; window.showChoiceModal = _sv705.cm; showChoiceModal = _sv705.cm; window.saveAllTasks = _sv705.save; saveAllTasks = _sv705.save;
+       window.saveAllSettings = _sv705.ss; saveAllSettings = _sv705.ss; window.renderMonthlyView = _sv705.mv; renderMonthlyView = _sv705.mv; calendars = _sv705.cals;
      }
 
      // ===== ST-704: お店の画面の名前のすぐ下に、大きな「Googleマップで開く」（v0.99.87） =====
