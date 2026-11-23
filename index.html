@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.81 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.82 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.81';
+    const APP_VERSION = 'v0.99.82';
   const APP_LAST_UPDATED = '2026-11-24'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61327,6 +61327,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.82', date: '2026-11-24',
+    items: [
+      { icon:'👤', t:'パスキーでログインしたとき、右上が自分のアイコンになるようにしました',
+        before:'パスキーやパスワードでログインすると、開き直すまで右上が人型のままでした',
+        after:'ログインしたその場で、設定したアイコンに変わります' }
+    ]
+  },
+  {
     ver: 'v0.99.81', date: '2026-11-24',
     items: [
       { icon:'🔑', t:'パスキーで、指紋や顔だけでログインできるようになりました',
@@ -71928,6 +71936,16 @@ function _cloudSetNavRing(loggedIn) {
   if (loggedIn) btn.classList.add('nav-account-loggedin');
   else btn.classList.remove('nav-account-loggedin');
 }
+// v0.99.82: 【権威】2026-11-24「パスキーで入れたが、アイコンが人型のまま変わらない」。
+// ページを読み直さずにログインする入り方（パスキー・メールとパスワード）では、右上のアイコンを
+// 描き直す呼び出しが無く、次に開き直すまで人型のままだった（起動時とログアウト時だけ描き直していた）。
+// ログイン状態が変わったら、緑の印とアイコンを必ずいっしょに描き直す。
+function _cloudApplyLoginLook(loggedIn) {
+  window._cloudIsLoggedIn = !!loggedIn;
+  _cloudSetNavRing(!!loggedIn);
+  if (typeof window.updateNavAvatar === 'function') { try { window.updateNavAvatar(); } catch (e) {} }
+}
+window._cloudApplyLoginLook = _cloudApplyLoginLook;
 async function cloudUpdateNavLoginIndicator() {
   if (!window.supabaseClient) return;
   var loggedIn = false;
@@ -72242,6 +72260,7 @@ try {
         if (!_renameShown && typeof _koyomiPasskeyMaybeNudge === 'function') _koyomiPasskeyMaybeNudge(session.user);   // v0.99.81: パスキーを1回だけすすめる
         if (typeof _startCalendarLedgerAfterLogin === 'function') _startCalendarLedgerAfterLogin();   // v0.50.0: 大福帳
         if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
+        if (typeof window.updateNavAvatar === 'function') { try { window.updateNavAvatar(); } catch (eAv) {} }   // v0.99.82: クラウドから設定が届いたあとにも、アイコンを描き直す
       }, 4000);
       // v0.45.1356: unifiedPushTasksのcreated_byに、Supabase認証ユーザーID
       // （auth.users.id）ではなく端末ID（getOrCreateDeviceId）を誤って使っており、
@@ -72261,7 +72280,7 @@ try {
         // 管理者のタブ（出した手紙・届いた通報）を出すため、開いていれば描き直す
         try { if (typeof currentView !== 'undefined' && currentView === 'capsule' && typeof renderCapsuleView === 'function') renderCapsuleView(); } catch (eRv) {}
       });
-      _cloudSetNavRing(!!session);
+      _cloudApplyLoginLook(!!session);   // v0.99.82: 印とアイコンを、いっしょに描き直す
       // v0.45.1607: 【権威】2026-08-13、新規の方がパスワードを忘れて何度も失敗し離脱、との報告。
       // 調べたところ、再設定メールは送れるのに、リンクを開いた後の画面が無かった。
       // Supabaseはリンクから戻ると PASSWORD_RECOVERY を発火させるが、
@@ -99663,6 +99682,22 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-697: 注文票の並びか決めるボタンが違う', _x697.join(','));
      } catch(e) {
        ng('ST-697: 例外', e.message);
+     }
+
+     // ===== ST-700: ログインしたら、その場で右上のアイコンが変わる（v0.99.82） =====
+     // 【権威】2026-11-24「パスキーで入れたが、アイコンが人型のまま変わらない」
+     try {
+       var _li700 = window._cloudIsLoggedIn, _av700 = allSettings.profile.avatar;
+       var _w700 = document.getElementById('navAvatarWrapper'), _ph700 = document.getElementById('navAvatarPlaceholder');
+       allSettings.profile.avatar = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+       _cloudApplyLoginLook(false); var _out700 = _ph700 && _ph700.style.display !== 'none' && _w700.style.display === 'none';
+       _cloudApplyLoginLook(true);  var _in700 = _w700 && _w700.style.display !== 'none' && _ph700.style.display === 'none';
+       allSettings.profile.avatar = _av700; _cloudApplyLoginLook(_li700);
+       (_w700 && _out700 && _in700)
+         ? ok('ST-700: ログインしたその場で、右上が人型から自分のアイコンに変わる（ページを読み直さない入り方でも）')
+         : ng('ST-700: ログインしてもアイコンが変わらない', [_out700, _in700].join(','));
+     } catch(e) {
+       ng('ST-700: 例外', e.message);
      }
 
      // ===== ST-699: パスキー（v0.99.81） =====
