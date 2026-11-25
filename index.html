@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.90 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.91 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -262,7 +262,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.90';
+    const APP_VERSION = 'v0.99.91';
   const APP_LAST_UPDATED = '2026-11-25'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -24361,7 +24361,10 @@ function myDeckApply(idx) {
         dayRow.appendChild(dayNum);
         // v0.62.5: 旧暦（設定でオンのときだけ）。日付のすぐ右に小さく。行は増やさない
         if (!isOtherMonth && getKoyomiOrder().kyureki === 'rich' && isKoyomiVisible()) {   // v0.63.1: 注文票の旧暦（たまご）が「こい」のとき
-          var _kyS = koyomiKyurekiShort(dateStr);
+          // v0.99.91: 【不具合】2026-11-25「最近、最初は月間が灰色の画面になる。月間を押すと出る」
+          //   原因：旧暦の短い表記を作る koyomiKyurekiShort は後ろの<script>にあり、起動してすぐの1回目の描画ではまだ無い。
+          //   注文票で旧暦を「まるごと」にしている人だけ、ここで止まって、日付のマスが1つも描かれなかった。無ければ飛ばし、読み込まれたら描き直す
+          var _kyS = (typeof koyomiKyurekiShort === 'function') ? koyomiKyurekiShort(dateStr) : '';
           if (_kyS) {
             var _kyDiv = document.createElement('div');
             _kyDiv.className = 'monthly-kyureki';
@@ -52721,6 +52724,8 @@ function koyomiKyurekiShort(dateOrStr) {
   return r ? '旧' + (r.leap ? '閏' : '') + r.month + '/' + r.day : '';
 }
 window.koyomiKyurekiShort = koyomiKyurekiShort;
+// v0.99.91: 起動直後の月間は旧暦なしで描かれているので、ここで読み込まれたら描き直す（旧暦をまるごとにしている人のため）
+try { if (typeof currentView !== 'undefined' && currentView === 'monthly' && typeof renderMonthlyView === 'function' && !window._isTesting) setTimeout(function() { try { renderMonthlyView(); } catch (e) {} }, 0); } catch (e) {}
 
 function calcMoonAgeNAOJ(date) {
   // v0.63.8: 新月を計算で出して数える（前は表で、2027年12月で切れ、そのあとは平均の周期で数える予備の計算だった）。
@@ -61340,6 +61345,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.91', date: '2026-11-25',
+    items: [
+      { icon:'🗓', t:'開いたときに月間が灰色のままになることがあったのを直しました',
+        before:'暦の注文票で旧暦を「まるごと」にしていると、開いた直後の月間に日付が出ず、灰色のままでした（月間を押し直すと出ました）',
+        after:'開いたときから、月間に日付と旧暦が出ます' }
+    ]
+  },
   {
     ver: 'v0.99.90', date: '2026-11-25',
     items: [
@@ -100050,6 +100063,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-713: 起動直後、後ろの<script>の部品がまだ無くても月間が止まらない（v0.99.91） =====
+     // 【不具合】2026-11-25「最初は月間が灰色の画面。月間を押すと出る」＝ koyomiKyurekiShort is not defined で描画が止まっていた
+     try {
+       var _src713 = renderMonthlyView.toString();
+       (/typeof koyomiKyurekiShort === 'function'/.test(_src713) && !/[^.\w]koyomiKyurekiShort\(dateStr\);/.test(_src713.replace("(typeof koyomiKyurekiShort === 'function') ? koyomiKyurekiShort(dateStr)", '')))
+         ? ok('ST-713: 月間の描画は、旧暦の部品がまだ読み込まれていなくても止まらない（起動直後の灰色の画面を防ぐ）')
+         : ng('ST-713: 月間が旧暦の部品を確かめずに呼んでいる');
+     } catch(e) { ng('ST-713: 例外', e.message); }
 
      // ===== ST-707〜712: こよみるONE（v0.99.90） =====
      // 【権威】2026-11-25 設計書「こよみるONE 設計書（Stripe）」：月480円・14日無料（1人1回）・最終確認画面に6つ・共有カレンダーは無料5／ONE15・管理者は贈れる・カード情報を持たない
