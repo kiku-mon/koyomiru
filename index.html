@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.103 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.104 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.103';
+    const APP_VERSION = 'v0.99.104';
   const APP_LAST_UPDATED = '2026-11-25'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -60594,9 +60594,43 @@ function _koyomiNotifyOpenTask(task) {
 }
 window._koyomiNotifyOpenTask = _koyomiNotifyOpenTask;
 // その日の予定の一覧（前の夜のまとめから）
-function _koyomiNotifyShowList(d, note) {
+// v0.99.104: 【権威】2026-11-25「本当にこれ明日の予定ですか。1つしかなかったらおかしい」→ 起動直後の手元の控えには、
+//   ほかの端末で消した古い予定が残っていたり、共有カレンダーの予定がまだ届いていなかったりする（同期の前）。
+//   通知と同じく、サーバーの今の中身（消したもの・済み・通知をオフにしたカレンダーは除く）で一覧を作る
+async function _koyomiNotifyServerTasks(d) {
+  if (!window._cloudIsLoggedIn || !window.supabaseClient) return null;
+  try {
+    var r = await window.supabaseClient.from('koyomiru_shared_tasks').select('id, calendar_id, data')
+      .is('deleted_at', null).eq('data->>kind', 'task').eq('data->>date', d).limit(300);
+    if (r.error) return null;
+    var muted = [];
+    try { muted = (await _koyomiNotifyLoad()).muted_calendars || []; } catch (eM) {}
+    return _koyomiNotifyFilterRows(r.data || [], muted, d);
+  } catch (e) { return null; }
+}
+function _koyomiNotifyFilterRows(rows, muted, d) {
+    var seen = {};
+    return (rows || []).filter(function(row) {
+      var t = row.data || {};
+      if (muted.indexOf(row.calendar_id) !== -1 || String(t.done) === 'true' || String(t.completed) === 'true') return false;
+      var id = t.id || row.id; if (seen[id]) return false; seen[id] = 1; return true;
+    }).map(function(row) { var t = row.data || {}; return { id: t.id || row.id, kind: 'task', date: d, time: /^\d{1,2}:\d{2}$/.test(t.time || '') ? t.time : '', text: t.text || t.title || '予定' }; })
+      .sort(function(a, b) { return (a.time ? 0 : 1) - (b.time ? 0 : 1) || String(a.time || '').localeCompare(String(b.time || '')) || String(a.text).localeCompare(String(b.text)); });
+}
+// 一覧から押した予定：手元にまだ届いていなければ、届くまで少し待ってから開く
+function _koyomiNotifyOpenById(id, _tries) {
+  var task = (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) ? allTasks.find(function(t) { return t && t.id === id; }) : null;
+  if (task) return _koyomiNotifyOpenTask(task);
+  if ((_tries || 0) < 16) { setTimeout(function() { _koyomiNotifyOpenById(id, (_tries || 0) + 1); }, 500); return; }
+  if (typeof showToast === 'function') showToast('まだ読み込み中です。少し待ってから、もう一度押してください');
+}
+function _koyomiNotifyShowList(d, note, serverTasks) {
+  if (serverTasks === undefined && window._cloudIsLoggedIn && window.supabaseClient && !window._isTesting && !window._smokeTestRunning) {
+    _koyomiNotifyServerTasks(d).then(function(st) { _koyomiNotifyShowList(d, note, st || _koyomiNotifyTasksOf(d)); });
+    return null;
+  }
   var old = document.getElementById('koyomiNotifyListOverlay'); if (old) old.remove();
-  var tasks = _koyomiNotifyTasksOf(d), label = _koyomiNotifyDayLabel(d);
+  var tasks = serverTasks || _koyomiNotifyTasksOf(d), label = _koyomiNotifyDayLabel(d);
   var esc = function(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var ov = document.createElement('div');
   ov.id = 'koyomiNotifyListOverlay';
@@ -60619,7 +60653,7 @@ function _koyomiNotifyShowList(d, note) {
     var b = e.target.closest('button'); if (!b) return;
     if (b.hasAttribute('data-nl-close')) { ov.remove(); return; }
     if (b.hasAttribute('data-nl-day')) { ov.remove(); if (typeof jumpToTaskDate === 'function') jumpToTaskDate({ id: '', date: d }); return; }
-    if (b.hasAttribute('data-nl-i')) { ov.remove(); _koyomiNotifyOpenTask(tasks[+b.getAttribute('data-nl-i')]); }
+    if (b.hasAttribute('data-nl-i')) { ov.remove(); var _t = tasks[+b.getAttribute('data-nl-i')]; if (_t) _koyomiNotifyOpenById(_t.id); }
   });
   document.body.appendChild(ov);
   return ov;
@@ -60642,6 +60676,8 @@ function _koyomiOpenDateFromNotify(urlStr, _tries) {
       return true;
     }
     if (isList) {
+      if (window._cloudIsLoggedIn && window.supabaseClient) { _koyomiNotifyShowList(d); return true; }
+      if (!window._cloudIsLoggedIn && !window._cloudAuthInitialChecked && !window._isTesting && !window._smokeTestRunning && (_tries || 0) < 6) { setTimeout(function() { _koyomiOpenDateFromNotify(urlStr, (_tries || 0) + 1); }, 500); return true; }   // ログインの確かめが終わるのを少し待つ
       if (!_koyomiNotifyTasksOf(d).length && (_tries || 0) < 8) { setTimeout(function() { _koyomiOpenDateFromNotify(urlStr, (_tries || 0) + 1); }, 500); return true; }
       _koyomiNotifyShowList(d); return true;
     }
@@ -61626,6 +61662,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.104', date: '2026-11-25',
+    items: [
+      { icon:'🍵', t:'通知から開く「明日の予定」を、通知と同じ中身にしました',
+        before:'開いた直後の一覧に、ほかの端末で消した古い予定が出たり、共有カレンダーの予定がまだ出ていなかったりしました',
+        after:'通知と同じく、今の最新の予定で一覧を作ります。前の夜のまとめの時間を変えたときは、その日も新しい時間でもう一度届きます' }
+    ]
+  },
   {
     ver: 'v0.99.103', date: '2026-11-25',
     items: [
@@ -100474,6 +100518,15 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // v0.99.100: 【権威】2026-11-25「アプリ全体のお知らせと意味が混ざるから、ちゃんと通知って言わないと」→ 通知の画面・入口・言葉に「お知らせ」を使わない
        var _w715 = openKoyomiNotify.toString() + enablePushNotifications.toString() + disablePushNotifications.toString() + ((document.getElementById('settingsNotifySection') || {}).textContent || '') + [].map.call(document.querySelectorAll('[onclick="openKoyomiNotify()"]'), function(x) { return x.textContent; }).join('');
        if (/お知らせ/.test(_w715) || !/予定の通知/.test(_w715)) _x715.push('word');
+       // v0.99.104: 一覧はサーバーの今の中身から（済み・通知オフのカレンダーは除く・同じ予定は1つ・時刻のあるものが先）
+       var _fr715 = _koyomiNotifyFilterRows([
+         { id: 'r1', calendar_id: 'c1', data: { id: 'a', text: '終日の支払い' } },
+         { id: 'r2', calendar_id: 'c1', data: { id: 'b', text: '歯医者', time: '14:00' } },
+         { id: 'r3', calendar_id: 'c1', data: { id: 'c', text: '済み', time: '09:00', done: true } },
+         { id: 'r4', calendar_id: 'cOff', data: { id: 'd', text: 'オフのカレンダー', time: '10:00' } },
+         { id: 'r5', calendar_id: 'c2', data: { id: 'b', text: '歯医者', time: '14:00' } }
+       ], ['cOff'], '2099-01-02').map(function(t) { return (t.time || '終日') + ' ' + t.text; }).join('|');
+       if (_fr715 !== '14:00 歯医者|終日 終日の支払い') _x715.push('server-list:' + _fr715);
        // v0.99.102: アカウントのメニューの「設定」のすぐ下（A）に、今の状態の一行
        var _am715 = document.getElementById('accountMenu'), _amb715 = _am715 && [].slice.call(_am715.querySelectorAll('button'));
        var _iS715 = _amb715 ? _amb715.findIndex(function(x) { return x.classList.contains('account-menu-settings'); }) : -1;
