@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.98 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.99 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.98';
+    const APP_VERSION = 'v0.99.99';
   const APP_LAST_UPDATED = '2026-11-25'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -10146,6 +10146,8 @@ function _showInviteWelcome() {
       </div>
       <!-- v0.99.92: こよみるONE の入口（設定）。版をいちばん上に置く決まり（v0.47.4）は守り、そのすぐ下に置く -->
       <button id="settingsOneSection" onclick="openKoyomiOne();" style="width:100%;display:flex;align-items:center;gap:10px;background:#fffbea;border:1.5px solid #c9a227;border-radius:12px;padding:12px 16px;margin-bottom:14px;cursor:pointer;font-family:inherit;text-align:left;box-shadow:0 1px 4px rgba(0,0,0,0.06);"><span style="font-size:1.3em;">✨</span><span style="flex:1;min-width:0;"><span style="display:block;font-size:0.92em;font-weight:700;color:#5a4a1a;">こよみるONE</span><span id="settingsOneSub" style="display:block;font-size:0.76em;color:#7a6a3a;margin-top:2px;">準備中</span></span><span style="color:#b59a3c;font-size:1.2em;">›</span></button>
+      <!-- v0.99.99: 予定のお知らせ（通知）の入口 -->
+      <button id="settingsNotifySection" onclick="openKoyomiNotify();" style="width:100%;display:flex;align-items:center;gap:10px;background:#f4f8ee;border:1.5px solid #4f7a3a;border-radius:12px;padding:12px 16px;margin-bottom:14px;cursor:pointer;font-family:inherit;text-align:left;"><span style="font-size:1.3em;">🔔</span><span style="flex:1;"><span style="display:block;font-weight:800;color:#3d6230;">予定のお知らせ</span><span style="display:block;font-size:0.78em;color:#6b7d5e;">予定の少し前と、前の夜に、スマホへ</span></span><span style="color:#4f7a3a;">›</span></button>
       <div id="settingsTutorialRow" style="margin-bottom:24px;">
         <button onclick="showTutorial()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:transparent;border:1px solid #b0d4f1;border-radius:20px;color:#5aaadd;font-size:0.82em;font-weight:600;cursor:pointer;margin-bottom:4px;">🌙 はじめての方へ →</button>
       </div>
@@ -55694,6 +55696,8 @@ async function supabaseSignOut() {
     return null;
   }
   if (!window.supabaseClient) { console.warn('[Supabase] クライアント未初期化'); return null; }
+  // v0.99.99: ログアウトする端末には、もうお知らせを送らない（宛先を外してから出る）
+  try { if (typeof disablePushNotifications === 'function') await disablePushNotifications(true); } catch (eNt) {}
   var r = await window.supabaseClient.auth.signOut();
   if (r.error) { console.error('[Supabase] ログアウト失敗:', r.error.message); }
   else { console.log('[Supabase] ログアウトしました'); }
@@ -60419,11 +60423,18 @@ function runPurgeDuplicateContentFromAdmin() {
 }
 window.runPurgeDuplicateContentFromAdmin = runPurgeDuplicateContentFromAdmin;
 
-// ===== v0.45.1409: プッシュ通知フェーズB（アプリを閉じていても届く本物のプッシュ通知） =====
-// 【権威】2026-07-26、フェーズA（アプリを開いている間のトースト通知）の続きとして、
-// Service Worker + VAPID + Database Webhook + Edge Functionによる本格実装。
-// VAPID公開鍵は秘密情報ではないため、ここに直接埋め込む（秘密鍵はEdge Function側のみ）。
-var KOYOMIRU_VAPID_PUBLIC_KEY = 'BDMTMEbGjllvQBGhrY1gtSBlF3tdJ3fHChVrT0cBk-kGX_Tx5LzVzeWzLA6VUmxepqw9d0TLs9DHMk8OJxWAjLc';
+// ===== v0.99.99: 予定のお知らせ（通知） =====
+// 【権威】2026-11-25 きくモンさんと決めたこと：
+//   ① 前の夜のまとめ ＋ 予定ごとの「少し前」の両方（C）
+//   ② 少し前は設定で「なし／10分／30分／1時間」から選ぶ。最初は30分（C）
+//   ③ 共有カレンダーも最初から鳴る。うるさいカレンダーだけオフにできる（B）
+//   ④ まとめは最初は夜8時。7時〜10時から選べる。0件の日は送らない（A）
+//   ⑤ 全員無料（A）　⑥ ロック画面に名前を出す。設定で隠せる（A）
+// 7月の作りかけ（受け口・保存場所・送る係が無く、押すと失敗するだけだった）は、ここで作り直した。
+// 送るための鍵は、送る係（notify-send）が自分で作って持つ。画面は公開してよい半分だけを、送る係に聞いて受け取る。
+var KOYOMI_NOTIFY_BEFORE = [[0, 'なし'], [10, '10分前'], [30, '30分前'], [60, '1時間前']];
+var KOYOMI_NOTIFY_HOURS = [19, 20, 21, 22];
+var KOYOMI_NOTIFY_DEFAULT = { before_min: 30, digest_on: true, digest_hour: 20, hide_title: false, muted_calendars: [] };
 
 function _urlBase64ToUint8Array(base64String) {
   var padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -60433,82 +60444,213 @@ function _urlBase64ToUint8Array(base64String) {
   for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
   return outputArray;
 }
+function _koyomiIsIOS() {
+  var ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+function _koyomiIsStandalone() {
+  try { return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)); } catch (e) { return false; }
+}
+// この端末で通知を受けられるか：'ok' / 'need_home'（iPhoneでホーム画面から開いていない）/ 'unsupported'
+function _koyomiPushSupport() {
+  if (_koyomiIsIOS() && !_koyomiIsStandalone()) return 'need_home';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
+  return 'ok';
+}
+window._koyomiPushSupport = _koyomiPushSupport;
 
-// Service Workerを登録する（プッシュ通知の土台。ページ読み込み時に毎回呼んでよい：冪等）
+// 受け口を登録する（何度呼んでもよい）
 async function registerKoyomiruServiceWorker() {
-  if (!('serviceWorker' in navigator)) { console.warn('[Push] このブラウザはService Worker非対応'); return null; }
-  try {
-    var reg = await navigator.serviceWorker.register('./sw.js');
-    return reg;
-  } catch (e) {
-    console.warn('[Push] Service Worker登録失敗:', e);
-    return null;
-  }
+  if (!('serviceWorker' in navigator)) return null;
+  try { return await navigator.serviceWorker.register('./sw.js'); } catch (e) { console.warn('[通知] 受け口の登録に失敗:', e); return null; }
 }
 window.registerKoyomiruServiceWorker = registerKoyomiruServiceWorker;
 
-// プッシュ通知を有効化する（通知許可のリクエスト→購読→Supabaseへ保存）
-async function enablePushNotifications() {
-  if (!window._cloudIsLoggedIn) { if (typeof showToast === 'function') showToast('通知を有効にするには、まずログインしてください'); return; }
-  if (!('Notification' in window) || !('PushManager' in window)) {
-    if (typeof showToast === 'function') showToast('⚠️ このブラウザはプッシュ通知に対応していません', {type:'error'});
-    return;
-  }
-  var permission = await Notification.requestPermission();
-  if (permission !== 'granted') {
-    if (typeof showToast === 'function') showToast('通知が許可されませんでした');
-    return;
-  }
-  var reg = await registerKoyomiruServiceWorker();
-  if (!reg) { if (typeof showToast === 'function') showToast('⚠️ Service Workerの登録に失敗しました', {type:'error'}); return; }
+async function _koyomiNotifyPubKey() {
+  var r = await window.supabaseClient.functions.invoke('notify-send?op=pubkey', { body: {} });
+  if (r.error || !r.data || !r.data.key) throw new Error('鍵を受け取れませんでした');
+  return r.data.key;
+}
+async function _koyomiCurrentSub() {
   try {
-    var sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: _urlBase64ToUint8Array(KOYOMIRU_VAPID_PUBLIC_KEY)
-    });
-    var subJson = sub.toJSON();
-    var r = await window.supabaseClient.from('koyomiru_push_subscriptions').upsert({
-      user_id: window._cloudUserId,
-      endpoint: subJson.endpoint,
-      subscription: subJson
-    }, { onConflict: 'user_id,endpoint' });
-    if (r.error) {
-      console.error('[Push] 購読情報の保存失敗:', r.error.message);
-      if (typeof showToast === 'function') showToast('⚠️ 通知の設定に失敗しました: ' + r.error.message, {type:'error', duration:6000});
-      return;
+    if (!('serviceWorker' in navigator)) return null;
+    var reg = await navigator.serviceWorker.getRegistration();
+    return reg ? await reg.pushManager.getSubscription() : null;
+  } catch (e) { return null; }
+}
+
+// この端末で受け取る（許可 → 受け口 → 宛先をサーバーへ）。戻り値：true＝できた
+async function enablePushNotifications(quiet) {
+  var toast = function(m, t) { if (!quiet && typeof showToast === 'function') showToast(m, { type: t || 'info', duration: 6000 }); };
+  if (window._isTesting || window._smokeTestRunning) return false;
+  if (!window._cloudIsLoggedIn || !window.supabaseClient) { toast('通知を受け取るには、まずログインしてください'); return false; }
+  var sup = _koyomiPushSupport();
+  if (sup === 'need_home') { toast('iPhoneでは、ホーム画面に追加したこよみるから開くと、通知を受け取れます'); return false; }
+  if (sup !== 'ok') { toast('この端末（ブラウザ）は、通知に対応していません', 'error'); return false; }
+  try {
+    var permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (permission !== 'granted') { toast('通知が許可されませんでした。端末の設定から許可できます'); return false; }
+    var reg = await registerKoyomiruServiceWorker();
+    if (!reg) { toast('通知の受け口を用意できませんでした', 'error'); return false; }
+    await navigator.serviceWorker.ready;
+    var key = await _koyomiNotifyPubKey();
+    var sub = await reg.pushManager.getSubscription();
+    // 鍵が変わっていたら、古い宛先を外して作り直す
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      var a = new Uint8Array(sub.options.applicationServerKey), b = _urlBase64ToUint8Array(key);
+      var same = a.length === b.length && a.every(function(v, i) { return v === b[i]; });
+      if (!same) { try { await sub.unsubscribe(); } catch (eU) {} sub = null; }
     }
-    if (typeof showToast === 'function') showToast('✅ プッシュ通知を有効にしました');
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlBase64ToUint8Array(key) });
+    var r = await window.supabaseClient.rpc('koyomiru_push_register', { p_subscription: sub.toJSON() });
+    if (r.error) {
+      toast(/too_many_devices/.test(r.error.message) ? '通知を受け取れる端末は10台までです。使っていない端末で止めてください' : '通知の設定に失敗しました', 'error');
+      return false;
+    }
+    toast('🔔 この端末で、予定のお知らせを受け取ります', 'success');
+    return true;
   } catch (e) {
-    console.error('[Push] 購読失敗:', e);
-    if (typeof showToast === 'function') showToast('⚠️ 通知の設定に失敗しました: ' + e.message, {type:'error', duration:6000});
+    console.error('[通知] 受け取りの設定に失敗:', e);
+    toast('通知の設定に失敗しました', 'error');
+    return false;
   }
 }
 window.enablePushNotifications = enablePushNotifications;
 
-// プッシュ通知を無効化する
-async function disablePushNotifications() {
+// この端末では受け取らない
+async function disablePushNotifications(quiet) {
   try {
-    var reg = await navigator.serviceWorker.getRegistration();
-    if (reg) {
-      var sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        var endpoint = sub.endpoint;
-        await sub.unsubscribe();
-        if (window.supabaseClient && window._cloudUserId) {
-          var _pd = await window.supabaseClient.from('koyomiru_push_subscriptions').delete().eq('user_id', window._cloudUserId).eq('endpoint', endpoint).select('id');
-          // v0.48.19: 最高峰会議②。端末側の購読は既に外れているので画面はそのままでよいが、
-          // サーバー側に残った記録は送信の空振りを生むので、0件なら記録に残す。
-          if (_pd && !_pd.error && (!_pd.data || _pd.data.length === 0)) console.warn('[Push] サーバー側の購読記録が消えませんでした（0件）');
-        }
-      }
+    var sub = await _koyomiCurrentSub();
+    if (sub) {
+      var ep = sub.endpoint;
+      try { await sub.unsubscribe(); } catch (eU) {}
+      if (window.supabaseClient && window._cloudIsLoggedIn) await window.supabaseClient.rpc('koyomiru_push_unregister', { p_endpoint: ep });
     }
-    if (typeof showToast === 'function') showToast('🔕 プッシュ通知を無効にしました');
-  } catch (e) {
-    console.error('[Push] 解除失敗:', e);
-  }
+    if (!quiet && typeof showToast === 'function') showToast('🔕 この端末では、お知らせを受け取りません');
+  } catch (e) { console.error('[通知] 止めるのに失敗:', e); }
 }
 window.disablePushNotifications = disablePushNotifications;
-// ===== END v0.45.1409 プッシュ通知フェーズB =====
+
+// ログインのあと：この端末で受け取っていたら、宛先をこの人に付け直す（同じ端末で別の人がログインしたとき・鍵が変わったとき）
+async function _koyomiNotifyAfterLogin() {
+  if (window._isTesting || window._smokeTestRunning) return;
+  if (_koyomiPushSupport() !== 'ok' || Notification.permission !== 'granted') return;
+  if (await _koyomiCurrentSub()) enablePushNotifications(true);
+}
+window._koyomiNotifyAfterLogin = _koyomiNotifyAfterLogin;
+
+// 通知を押して開いたとき：その日の日次へ（?d=YYYY-MM-DD）
+function _koyomiOpenDateFromNotify(urlStr) {
+  try {
+    var u = new URL(urlStr || location.href, location.href), d = u.searchParams.get('d') || '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+    if (!urlStr) { u.searchParams.delete('d'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); }
+    if (typeof setDailyViewDate === 'function') setDailyViewDate(d);
+    if (typeof switchView === 'function') switchView('daily');
+    return true;
+  } catch (e) { return false; }
+}
+window._koyomiOpenDateFromNotify = _koyomiOpenDateFromNotify;
+try {
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function(ev) {
+    if (ev.data && ev.data.type === 'koyomi-open') _koyomiOpenDateFromNotify(ev.data.url);
+  });
+} catch (eSWm) {}
+
+// ---- 設定の画面（🔔 予定のお知らせ） ----
+async function _koyomiNotifyLoad() {
+  var s = Object.assign({}, KOYOMI_NOTIFY_DEFAULT);
+  if (!window._cloudIsLoggedIn || !window.supabaseClient) return s;
+  var r = await window.supabaseClient.from('koyomiru_notify_settings').select('before_min, digest_on, digest_hour, hide_title, muted_calendars').maybeSingle();
+  if (r.data) Object.assign(s, r.data);
+  return s;
+}
+async function _koyomiNotifySave(s) {
+  var r = await window.supabaseClient.from('koyomiru_notify_settings').upsert({
+    user_id: window._cloudUserId, before_min: s.before_min, digest_on: s.digest_on, digest_hour: s.digest_hour,
+    hide_title: s.hide_title, muted_calendars: s.muted_calendars || [], updated_at: new Date().toISOString()
+  }, { onConflict: 'user_id' });
+  if (r.error && typeof showToast === 'function') showToast('設定を保存できませんでした', { type: 'error' });
+  return !r.error;
+}
+async function openKoyomiNotify() {
+  var old = document.getElementById('koyomiNotifyOverlay'); if (old) old.remove();
+  var ov = document.createElement('div');
+  ov.id = 'koyomiNotifyOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99998;display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
+  ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:420px;max-height:calc(100dvh - 28px);overflow-y:auto;padding:20px 18px;box-sizing:border-box;color:#4a3f30;">読み込んでいます…</div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  var box = ov.firstChild, esc = function(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var logged = !!window._cloudIsLoggedIn, s = Object.assign({}, KOYOMI_NOTIFY_DEFAULT), cals = [], subOn = false, sup = _koyomiPushSupport();
+  try {
+    if (logged) {
+      s = await _koyomiNotifyLoad();
+      var rc = await window.supabaseClient.from('koyomiru_shared_calendars').select('id, name, is_personal').order('created_at');
+      cals = rc.data || [];
+    }
+    subOn = !!(await _koyomiCurrentSub()) && ('Notification' in window) && Notification.permission === 'granted';
+  } catch (eL) {}
+  var chip = function(attr, val, label, on) {
+    return '<button type="button" ' + attr + '="' + esc(val) + '" style="flex:1 1 auto;min-height:40px;padding:6px 10px;border-radius:999px;font-size:0.88em;cursor:pointer;font-family:inherit;' +
+      (on ? 'border:2px solid #4f7a3a;background:#eef4e4;color:#3d6230;font-weight:800;' : 'border:1px solid #d9cdb4;background:#fff;color:#6b5d48;') + '">' + esc(label) + '</button>';
+  };
+  var sec = function(t) { return '<div style="margin:16px 0 6px;font-size:0.86em;font-weight:800;color:#6b4f2a;">' + t + '</div>'; };
+  var render = function() {
+    var h = '<div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:1.1em;font-weight:800;color:#4f7a3a;">🔔 予定のお知らせ</div>' +
+      '<button type="button" data-nt-close style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>' +
+      '<div style="font-size:0.8em;color:#8a7f6a;line-height:1.7;margin-top:4px;">予定の少し前と、前の夜に、スマホへお知らせします。無料です。</div>';
+    // この端末
+    h += '<div style="margin-top:12px;padding:12px;border-radius:12px;background:' + (subOn ? '#eef4e4' : '#fff7e6') + ';border:1px solid ' + (subOn ? '#c6dbb4' : '#ecd9a8') + ';font-size:0.88em;line-height:1.7;">';
+    if (!logged) h += 'お知らせを受け取るには、ログインが必要です。<button type="button" data-nt-login style="display:block;width:100%;margin-top:8px;min-height:42px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;">ログインする</button>';
+    else if (sup === 'need_home') h += '📱 iPhoneでは、<b>ホーム画面に追加したこよみる</b>から開くと、お知らせを受け取れます。<br>Safariの下の共有ボタン（□に↑）→「ホーム画面に追加」→ ホーム画面のこよみるから開いて、もう一度ここを押してください。';
+    else if (sup !== 'ok') h += 'この端末（ブラウザ）は、お知らせに対応していません。';
+    else if (subOn) h += '✅ この端末で受け取っています。<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" data-nt-test style="flex:1;min-height:40px;border:1px solid #4f7a3a;border-radius:10px;background:#fff;color:#4f7a3a;font-weight:700;cursor:pointer;">試しに1通送る</button><button type="button" data-nt-off style="flex:1;min-height:40px;border:1px solid #d9cdb4;border-radius:10px;background:#fff;color:#8a7f6a;cursor:pointer;">この端末では止める</button></div>';
+    else h += 'この端末では、まだ受け取っていません。<button type="button" data-nt-on style="display:block;width:100%;margin-top:8px;min-height:44px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;">この端末で受け取る</button>';
+    h += '</div>';
+    if (logged) {
+      h += sec('予定の少し前') + '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + KOYOMI_NOTIFY_BEFORE.map(function(o) { return chip('data-nt-before', o[0], o[1], s.before_min === o[0]); }).join('') + '</div>' +
+        '<div style="font-size:0.75em;color:#a99f8c;margin-top:4px;">時刻のある予定だけ。終日の予定は、前の夜のまとめに入ります</div>';
+      h += sec('前の夜のまとめ（明日の予定）') + '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + chip('data-nt-digest', 'off', 'なし', !s.digest_on) +
+        KOYOMI_NOTIFY_HOURS.map(function(hh) { return chip('data-nt-digest', hh, '夜' + (hh - 12) + '時', s.digest_on && s.digest_hour === hh); }).join('') + '</div>' +
+        '<div style="font-size:0.75em;color:#a99f8c;margin-top:4px;">明日の予定が無い日は、送りません</div>';
+      h += sec('ロック画面に、予定の名前を') + '<div style="display:flex;gap:6px;">' + chip('data-nt-hide', '0', '出す（例：30分後：14:00 歯医者）', !s.hide_title) + chip('data-nt-hide', '1', '隠す', s.hide_title) + '</div>';
+      if (cals.length) {
+        h += sec('お知らせするカレンダー') + cals.map(function(c) {
+          var on = (s.muted_calendars || []).indexOf(c.id) === -1;
+          return '<label style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-top:1px solid #efe6d6;font-size:0.9em;cursor:pointer;"><input type="checkbox" data-nt-cal="' + esc(c.id) + '"' + (on ? ' checked' : '') + ' style="width:20px;height:20px;accent-color:#4f7a3a;"><span>' + esc(c.is_personal ? 'わたしのカレンダー' : (c.name || 'カレンダー')) + '</span></label>';
+        }).join('');
+      }
+    }
+    box.innerHTML = h;
+  };
+  var save = function() { _koyomiNotifySave(s); render(); };
+  box.addEventListener('click', async function(e) {
+    var t = e.target.closest('button,input'); if (!t) return;
+    if (t.hasAttribute('data-nt-close')) { ov.remove(); return; }
+    if (t.hasAttribute('data-nt-login')) { ov.remove(); if (typeof openCloudLoginModal === 'function') openCloudLoginModal(); return; }
+    if (t.hasAttribute('data-nt-on')) { t.disabled = true; subOn = await enablePushNotifications(); render(); return; }
+    if (t.hasAttribute('data-nt-off')) { await disablePushNotifications(); subOn = false; render(); return; }
+    if (t.hasAttribute('data-nt-test')) {
+      t.disabled = true;
+      var r = await window.supabaseClient.functions.invoke('notify-send?op=test', { body: {} });
+      if (typeof showToast === 'function') showToast(r.data && r.data.sent > 0 ? '送りました。数秒で届きます' : '送れませんでした。「この端末では止める」→「受け取る」をやり直してください', { type: r.data && r.data.sent > 0 ? 'success' : 'error', duration: 6000 });
+      t.disabled = false; return;
+    }
+    if (t.hasAttribute('data-nt-before')) { s.before_min = +t.getAttribute('data-nt-before'); save(); return; }
+    if (t.hasAttribute('data-nt-digest')) { var v = t.getAttribute('data-nt-digest'); if (v === 'off') s.digest_on = false; else { s.digest_on = true; s.digest_hour = +v; } save(); return; }
+    if (t.hasAttribute('data-nt-hide')) { s.hide_title = t.getAttribute('data-nt-hide') === '1'; save(); return; }
+    if (t.hasAttribute('data-nt-cal')) {
+      var id = t.getAttribute('data-nt-cal'), m = (s.muted_calendars || []).filter(function(x) { return x !== id; });
+      if (!t.checked) m.push(id);
+      s.muted_calendars = m; _koyomiNotifySave(s); return;
+    }
+  });
+  render();
+}
+window.openKoyomiNotify = openKoyomiNotify;
+// ===== END v0.99.99 予定のお知らせ =====
+try { window.addEventListener('load', function() { setTimeout(function() { if (!window._isTesting && !window._smokeTestRunning) _koyomiOpenDateFromNotify(); }, 1500); }); } catch (eLd) {}
 
 // ===== v0.45.1344: 統一同期エンジン（個人＝メンバー1人のカレンダーとして扱う） =====
 // 【権威】2026-07-17、「個人用（blob）」と「共有用（1行1タスク）」の2つの仕組みを
@@ -61361,6 +61503,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.99', date: '2026-11-25',
+    items: [
+      { icon:'🔔', t:'予定のお知らせを始めました（無料）',
+        before:'予定の時間が近づいても、こよみるからは何も届きませんでした',
+        after:'予定の少し前（最初は30分前）と、前の夜（最初は夜8時に明日の予定をまとめて）、スマホにお知らせが届きます。設定の「🔔 予定のお知らせ」で、時間・カレンダーごとのオン／オフ・ロック画面に名前を出すかを選べます。iPhoneは、ホーム画面に追加したこよみるから開いて「この端末で受け取る」を押してください' }
+    ]
+  },
   {
     ver: 'v0.99.98', date: '2026-11-25',
     items: [
@@ -72640,6 +72790,7 @@ try {
         var _renameShown = (typeof _promptRenameIfNameNotAllowed === 'function') && _promptRenameIfNameNotAllowed();   // v0.49.9
         if (!_renameShown && typeof _askDisplayNameIfEmpty === 'function') _askDisplayNameIfEmpty(session.user);
         if (!_renameShown && typeof _koyomiPasskeyMaybeNudge === 'function') _koyomiPasskeyMaybeNudge(session.user);
+        if (typeof _koyomiNotifyAfterLogin === 'function') _koyomiNotifyAfterLogin();   // v0.99.99: この端末で受け取っていたら、宛先をこの人に付け直す
         if (typeof _koyomiOneAfterLogin === 'function') _koyomiOneAfterLogin();   // v0.99.90: 申し込みから戻ったとき・お知らせの帯   // v0.99.81: パスキーを1回だけすすめる
         if (typeof _startCalendarLedgerAfterLogin === 'function') _startCalendarLedgerAfterLogin();   // v0.50.0: 大福帳
         if (typeof _syncPublicProfileIfChanged === 'function') _syncPublicProfileIfChanged();
@@ -100153,6 +100304,31 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        ng('ST-697: 例外', e.message);
      }
 
+     // ===== ST-715: 予定のお知らせ（v0.99.99） =====
+     // 【権威】2026-11-25 C・C・B・A・A・A（少し前＋前の夜／何分前は設定で・最初30分／共有も鳴る・オフにできる／夜8時・7〜10時／無料／名前は出す・隠せる）
+     try {
+       var _x715 = [];
+       if (KOYOMI_NOTIFY_DEFAULT.before_min !== 30 || KOYOMI_NOTIFY_DEFAULT.digest_hour !== 20 || KOYOMI_NOTIFY_DEFAULT.hide_title !== false || KOYOMI_NOTIFY_DEFAULT.digest_on !== true || KOYOMI_NOTIFY_DEFAULT.muted_calendars.length !== 0) _x715.push('default');
+       if (KOYOMI_NOTIFY_BEFORE.map(function(o) { return o[0]; }).join(',') !== '0,10,30,60' || KOYOMI_NOTIFY_HOURS.join(',') !== '19,20,21,22') _x715.push('choices');
+       if (!document.getElementById('settingsNotifySection')) _x715.push('settings-entry');
+       if (!/koyomiru_push_register/.test(enablePushNotifications.toString()) || !/koyomiru_push_unregister/.test(disablePushNotifications.toString())) _x715.push('rpc');
+       if (!/need_home/.test(_koyomiPushSupport.toString()) || !/standalone/.test(_koyomiIsStandalone.toString())) _x715.push('iphone');
+       if (!/disablePushNotifications\(true\)/.test(supabaseSignOut.toString())) _x715.push('logout');
+       if (!/_isTesting/.test(enablePushNotifications.toString())) _x715.push('test-guard');
+       // 通知を押して開いた日付へ（?d=）。変な値では動かない
+       var _sd715 = window.setDailyViewDate, _sv715 = window.switchView, _got715 = [];
+       try {
+         window.setDailyViewDate = function(d) { _got715.push(d); }; setDailyViewDate = window.setDailyViewDate;
+         window.switchView = function(v) { _got715.push(v); }; switchView = window.switchView;
+         _koyomiOpenDateFromNotify('https://koyomiru.com/?d=2026-11-27');
+         _koyomiOpenDateFromNotify('https://koyomiru.com/?d=evil');
+       } finally { window.setDailyViewDate = _sd715; setDailyViewDate = _sd715; window.switchView = _sv715; switchView = _sv715; }
+       if (_got715.join(',') !== '2026-11-27,daily') _x715.push('open-date:' + _got715.join('/'));
+       _x715.length === 0
+         ? ok('ST-715: 予定のお知らせ：最初は30分前・夜8時・名前は出す・カレンダーは全部／設定の入口／宛先はサーバーの入口から／iPhoneはホーム画面から／ログアウトで止める／押すとその日へ')
+         : ng('ST-715: 予定のお知らせが違う', _x715.join(','));
+     } catch(e) { ng('ST-715: 例外', e.message); }
+
      // ===== ST-714: 通知の受け口（sw.js）と、ホーム画面の名札（manifest）がある（v0.99.98） =====
      // 【権威】2026-11-25「予定のお知らせ（通知）…やろう」→ 作る順番の1：スマホ側の通知の受け口
      try {
@@ -105073,12 +105249,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
            : ng('ST-292·' + fn + ': 未公開', '');
        });
        var _st292scriptTexts = document.documentElement.innerHTML;
-       _st292scriptTexts.indexOf('🔔 プッシュ通知を有効にする') !== -1
-         ? ok('ST-292·①: アカウントメニューへのボタン組み込み確認')
-         : ng('ST-292·①: ボタンが見つからない', '');
-       typeof KOYOMIRU_VAPID_PUBLIC_KEY === 'string' && KOYOMIRU_VAPID_PUBLIC_KEY.length > 20
-         ? ok('ST-292·②: VAPID公開鍵の設定確認')
-         : ng('ST-292·②: VAPID公開鍵が設定されていない', '');
+       // v0.99.99: 7月の作りかけを作り直した。ボタンは「予定のお知らせ」を開く。鍵はコードに持たず、送る係に聞く
+       !document.querySelector('[onclick="enablePushNotifications()"]') && [].some.call(document.querySelectorAll('[onclick="openKoyomiNotify()"]'), function(x) { return /🔔 予定のお知らせ/.test(x.textContent); })
+         ? ok('ST-292·①: アカウントの「🔔 予定のお知らせ」から設定を開く（押すと失敗するだけの古いボタンは無い）')
+         : ng('ST-292·①: ボタンが違う', '');
+       typeof KOYOMIRU_VAPID_PUBLIC_KEY === 'undefined' && /notify-send\?op=pubkey/.test(_koyomiNotifyPubKey.toString())
+         ? ok('ST-292·②: 送る鍵はコードに書かず、送る係から受け取る')
+         : ng('ST-292·②: 古い鍵が残っている', '');
        ok('ST-292: プッシュ通知フェーズB（Service Worker・購読） 確認 完了');
      } catch(e) {
        ng('ST-292: 例外', e.message);
@@ -116432,7 +116609,7 @@ window.addMigration = addMigration;
         <div id="cloudPasskeyList" style="margin-top:8px;"></div>
       </div>
       <button onclick="openSharedCalendarModal()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">👨‍👩‍👧 共有カレンダー</button>
-      <button onclick="enablePushNotifications()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">🔔 プッシュ通知を有効にする</button>
+      <button onclick="openKoyomiNotify()" style="width:100%;padding:9px;border:1px solid #a3c9a8;border-radius:8px;background:transparent;color:#4a7856;font-size:0.8em;cursor:pointer;margin-bottom:10px;">🔔 予定のお知らせ</button>
       <details style="margin-bottom:10px;">
         <summary style="font-size:0.78em;color:#8e8e8e;cursor:pointer;padding:4px 0;">⚙️ その他の設定（アカウント連携・端末管理）</summary>
         <div style="margin-top:10px;">
