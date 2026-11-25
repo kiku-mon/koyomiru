@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.100 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.101 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.100';
+    const APP_VERSION = 'v0.99.101';
   const APP_LAST_UPDATED = '2026-11-25'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6731,7 +6731,16 @@ function _showInviteWelcome() {
 // 季節の風だよりを出す所が起動のとても早い段階にあるので、この道具はそれより前に置く（第74条）
 (function() {
   var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiOrderOverlay', 'koyomiLifeSwipe'];   // v0.59.3: 払う画面も   // v0.58.0: 注文票も（v0.59.0: 今日の暦のカードは無くした）
+  // v0.99.101: 通知を押して来たときは、本題（一覧・その予定）が先。起動の画面（季節の風だよりなど）は、それが済むまで待つ
+  try { var _nq = new URLSearchParams(location.search); if (_nq.get('d') && (_nq.get('t') || _nq.get('list') === '1')) { window._koyomiFromNotify = true; window._koyomiFromNotifyAt = Date.now(); } } catch (eNq) {}
+  function notifyBusy() {
+    if (!window._koyomiFromNotify) return false;
+    if (Date.now() - (window._koyomiFromNotifyAt || 0) < 8000) return true;
+    if (document.getElementById('koyomiNotifyListOverlay')) return true;
+    var mm = document.getElementById('monthlyTaskModal'); return !!(mm && mm.classList.contains('show'));
+  }
   function openNow() {
+    if (notifyBusy()) return true;
     return IDS.some(function(id) {
       var e = document.getElementById(id); if (!e) return false;
       var cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
@@ -60541,12 +60550,96 @@ async function _koyomiNotifyAfterLogin() {
 }
 window._koyomiNotifyAfterLogin = _koyomiNotifyAfterLogin;
 
-// 通知を押して開いたとき：その日の日次へ（?d=YYYY-MM-DD）
-function _koyomiOpenDateFromNotify(urlStr) {
+// 通知を押して開いたとき（v0.99.101）
+// 【権威】2026-11-25「ただ単に月間カレンダーに遷移しただけで、がっかり感半端ない。明日の予定は以下の通りです…みたいな一覧や、
+//   タスクをその一覧からクリックしたら、実際に月間カレンダーの、そのタスクまで自動遷移して、編集、削除など、当日ならではの微調整」
+//   → 少し前の通知（?t=予定）：いきなり月間のその日へ移り、その予定が光って、編集画面が開く（A）
+//   → 前の夜のまとめ（?list=1）：「🍵 明日の予定（N件）」の一覧。1件押すと、上と同じくその予定へ
+//   → 日付だけ（?d=）：その日の日次へ（前のまま）
+function _koyomiNotifyTasksOf(d) {
+  var list = (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) ? allTasks : [];
+  return list.filter(function(t) { return t && t.kind === 'task' && t.date === d && !t.done && !t.completed; })
+    .sort(function(a, b) { return (a.time ? 0 : 1) - (b.time ? 0 : 1) || String(a.time || '').localeCompare(String(b.time || '')) || String(a.text || '').localeCompare(String(b.text || '')); });
+}
+function _koyomiNotifyDayLabel(d) {
+  var today = (typeof getLocalDateStr === 'function') ? getLocalDateStr(new Date()) : '';
+  var tm = new Date(); tm.setDate(tm.getDate() + 1);
+  var tomorrow = (typeof getLocalDateStr === 'function') ? getLocalDateStr(tm) : '';
+  if (d === today) return '今日';
+  if (d === tomorrow) return '明日';
+  var p = d.split('-'); return (+p[1]) + '月' + (+p[2]) + '日';
+}
+// その予定へ：月間のその日 → 光らせる → 編集画面
+function _koyomiNotifyOpenTask(task) {
+  if (!task) return false;
+  if (typeof jumpToTaskDate === 'function') jumpToTaskDate(task);
+  setTimeout(function() {
+    try {
+      var row = document.querySelector('#monthlySidebarTasks [data-id="' + String(task.id).replace(/["\\]/g, '') + '"]');
+      if (row) {
+        row.scrollIntoView({ block: 'center' });
+        row.style.transition = 'background 0.4s, box-shadow 0.4s';
+        row.style.background = '#fff3c4'; row.style.boxShadow = '0 0 0 3px #e8c35a';
+        setTimeout(function() { row.style.background = ''; row.style.boxShadow = ''; }, 2600);
+      }
+    } catch (eF) {}
+    setTimeout(function() { if (typeof openMonthlyTaskEditModal === 'function') openMonthlyTaskEditModal(task.id); }, 1400);   // 光ったのが見えてから開く
+  }, 900);
+  return true;
+}
+window._koyomiNotifyOpenTask = _koyomiNotifyOpenTask;
+// その日の予定の一覧（前の夜のまとめから）
+function _koyomiNotifyShowList(d, note) {
+  var old = document.getElementById('koyomiNotifyListOverlay'); if (old) old.remove();
+  var tasks = _koyomiNotifyTasksOf(d), label = _koyomiNotifyDayLabel(d);
+  var esc = function(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var ov = document.createElement('div');
+  ov.id = 'koyomiNotifyListOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99998;display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
+  var rows = tasks.map(function(t, i) {
+    return '<button type="button" data-nl-i="' + i + '" style="display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:10px 12px;margin-top:8px;border:1px solid #e3d9c4;border-radius:12px;background:#fff;cursor:pointer;font-family:inherit;text-align:left;">' +
+      '<span style="flex:0 0 52px;font-weight:800;color:#4f7a3a;font-size:0.95em;">' + esc(t.time || '終日') + '</span>' +
+      '<span style="flex:1;color:#3d3326;font-size:0.95em;line-height:1.5;word-break:break-word;">' + esc(t.text || t.title || '予定') + '</span>' +
+      '<span style="color:#b0a58f;">›</span></button>';
+  }).join('');
+  ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:420px;max-height:calc(100dvh - 28px);overflow-y:auto;padding:20px 18px;box-sizing:border-box;">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:1.15em;font-weight:800;color:#4f7a3a;">🍵 ' + esc(label) + 'の予定（' + tasks.length + '件）</div>' +
+    '<button type="button" data-nl-close style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>' +
+    (note ? '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff7e6;color:#7a5a1e;font-size:0.82em;line-height:1.6;">' + esc(note) + '</div>' : '') +
+    (tasks.length ? '<div style="font-size:0.78em;color:#8a7f6a;margin-top:4px;">押すと、その予定を開いて直せます</div>' + rows
+      : '<div style="margin-top:14px;color:#8a7f6a;font-size:0.9em;">予定はありません</div>') +
+    '<button type="button" data-nl-day style="display:block;width:100%;min-height:44px;margin-top:14px;border:1px solid #4f7a3a;border-radius:10px;background:#fff;color:#4f7a3a;font-weight:700;cursor:pointer;">' + esc(label) + 'のカレンダーを見る</button></div>';
+  ov.addEventListener('click', function(e) {
+    if (e.target === ov) { ov.remove(); return; }
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.hasAttribute('data-nl-close')) { ov.remove(); return; }
+    if (b.hasAttribute('data-nl-day')) { ov.remove(); if (typeof jumpToTaskDate === 'function') jumpToTaskDate({ id: '', date: d }); return; }
+    if (b.hasAttribute('data-nl-i')) { ov.remove(); _koyomiNotifyOpenTask(tasks[+b.getAttribute('data-nl-i')]); }
+  });
+  document.body.appendChild(ov);
+  return ov;
+}
+window._koyomiNotifyShowList = _koyomiNotifyShowList;
+// 通知の行き先を読む。予定がまだ読み込まれていなければ、少し待つ（起動直後・同期の前）
+function _koyomiOpenDateFromNotify(urlStr, _tries) {
   try {
     var u = new URL(urlStr || location.href, location.href), d = u.searchParams.get('d') || '';
+    var tid = u.searchParams.get('t') || '', isList = u.searchParams.get('list') === '1';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
-    if (!urlStr) { u.searchParams.delete('d'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); }
+    if (tid && !/^[\w.:-]{1,80}$/.test(tid)) tid = '';
+    if (!_tries && (tid || isList)) { window._koyomiFromNotify = true; window._koyomiFromNotifyAt = Date.now(); }   // 起動の画面は、本題が済むまで待たせる
+    if (!urlStr) { ['d', 't', 'list'].forEach(function(k) { u.searchParams.delete(k); }); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); urlStr = 'https://koyomiru.com/?d=' + d + (tid ? '&t=' + tid : '') + (isList ? '&list=1' : ''); }
+    if (tid) {
+      var task = (typeof allTasks !== 'undefined' && Array.isArray(allTasks)) ? allTasks.find(function(t) { return t && t.id === tid; }) : null;
+      if (task) return _koyomiNotifyOpenTask(task);
+      if ((_tries || 0) < 16) { setTimeout(function() { _koyomiOpenDateFromNotify(urlStr, (_tries || 0) + 1); }, 500); return true; }
+      _koyomiNotifyShowList(d, 'その予定は見つかりませんでした。消したか、まだ読み込み中かもしれません');
+      return true;
+    }
+    if (isList) {
+      if (!_koyomiNotifyTasksOf(d).length && (_tries || 0) < 8) { setTimeout(function() { _koyomiOpenDateFromNotify(urlStr, (_tries || 0) + 1); }, 500); return true; }
+      _koyomiNotifyShowList(d); return true;
+    }
     if (typeof setDailyViewDate === 'function') setDailyViewDate(d);
     if (typeof switchView === 'function') switchView('daily');
     return true;
@@ -61505,6 +61598,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.101', date: '2026-11-25',
+    items: [
+      { icon:'🔔', t:'通知を押すと、その予定が開くようにしました',
+        before:'通知を押しても、カレンダーが開くだけでした',
+        after:'予定の少し前の通知を押すと、月間のその日へ移り、その予定が光って、直す画面が開きます。前の夜のまとめを押すと「🍵 明日の予定」の一覧が開き、1件押すとその予定へ移ります' }
+    ]
+  },
   {
     ver: 'v0.99.100', date: '2026-11-25',
     items: [
@@ -100337,6 +100438,25 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _koyomiOpenDateFromNotify('https://koyomiru.com/?d=evil');
        } finally { window.setDailyViewDate = _sd715; setDailyViewDate = _sd715; window.switchView = _sv715; switchView = _sv715; }
        if (_got715.join(',') !== '2026-11-27,daily') _x715.push('open-date:' + _got715.join('/'));
+       // v0.99.101: 【権威】2026-11-25「月間カレンダーに遷移しただけで、がっかり」→ 少し前＝その予定へ（A）／まとめ＝一覧から1件押すとその予定へ
+       var _jt715 = window.jumpToTaskDate, _hit715 = [], _ov715 = null;
+       var _tk715 = { id: 'st715_task', kind: 'task', date: '2099-01-02', time: '14:00', text: 'ST715歯医者' }, _tk715b = { id: 'st715_b', kind: 'task', date: '2099-01-02', text: 'ST715終日' }, _tk715c = { id: 'st715_c', kind: 'task', date: '2099-01-02', time: '09:00', text: 'ST715済み', done: true };
+       try {
+         window.jumpToTaskDate = function(t) { _hit715.push(t && t.id); }; jumpToTaskDate = window.jumpToTaskDate;
+         allTasks.push(_tk715, _tk715b, _tk715c);
+         _koyomiOpenDateFromNotify('https://koyomiru.com/?d=2099-01-02&t=st715_task');
+         _koyomiOpenDateFromNotify('https://koyomiru.com/?d=2099-01-02&list=1');
+         _ov715 = document.getElementById('koyomiNotifyListOverlay');
+         var _rows715 = _ov715 ? [].map.call(_ov715.querySelectorAll('[data-nl-i]'), function(x) { return x.textContent; }) : [];
+         if (_hit715[0] !== 'st715_task') _x715.push('open-task');
+         if (!(_rows715.length === 2 && /14:00/.test(_rows715[0]) && /ST715歯医者/.test(_rows715[0]) && /終日/.test(_rows715[1]) && !/済み/.test(_rows715.join('')))) _x715.push('list:' + _rows715.join('|'));
+         if (_ov715) { _ov715.querySelector('[data-nl-i="1"]').click(); if (_hit715[1] !== 'st715_b' || document.getElementById('koyomiNotifyListOverlay')) _x715.push('list-click'); }
+         if (typeof openMonthlyTaskEditModal !== 'function' || !/openMonthlyTaskEditModal/.test(_koyomiNotifyOpenTask.toString())) _x715.push('edit');
+       } finally {
+         window.jumpToTaskDate = _jt715; jumpToTaskDate = _jt715;
+         for (var _i715 = allTasks.length - 1; _i715 >= 0; _i715--) if (allTasks[_i715] && /^st715_/.test(allTasks[_i715].id)) allTasks.splice(_i715, 1);
+         var _o715 = document.getElementById('koyomiNotifyListOverlay'); if (_o715) _o715.remove();
+       }
        _x715.length === 0
          ? ok('ST-715: 予定の通知：最初は30分前・夜8時・名前は出す・カレンダーは全部／設定の入口／宛先はサーバーの入口から／iPhoneはホーム画面から／ログアウトで止める／押すとその日へ')
          : ng('ST-715: 予定の通知が違う', _x715.join(','));
