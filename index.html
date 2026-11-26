@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.106 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.107 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.106';
+    const APP_VERSION = 'v0.99.107';
   const APP_LAST_UPDATED = '2026-11-26'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -60506,7 +60506,7 @@ async function enablePushNotifications(quiet) {
   if (sup !== 'ok') { toast('この端末（ブラウザ）は、通知に対応していません', 'error'); return false; }
   try {
     var permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-    if (permission !== 'granted') { toast('通知が許可されませんでした。端末の設定から許可できます'); return false; }
+    if (permission !== 'granted') { toast('通知が止められています。この画面に出る手順で許可してください'); return false; }
     var reg = await registerKoyomiruServiceWorker();
     if (!reg) { toast('通知の受け口を用意できませんでした', 'error'); return false; }
     await navigator.serviceWorker.ready;
@@ -60576,8 +60576,14 @@ function _koyomiNotifyDayLabel(d) {
   var p = d.split('-'); return (+p[1]) + '月' + (+p[2]) + '日';
 }
 // その予定へ：月間のその日 → 光らせる → 編集画面
+// v0.99.107: 【権威】2026-11-26（通知の設定の画面が開いたまま、一覧が上に重なっていた）→ 通知から来たら、開いている画面を閉じてから本題へ
+function _koyomiNotifyCloseOthers() {
+  ['koyomiNotifyOverlay', 'koyomiGhostOverlay'].forEach(function(id) { var el = document.getElementById(id); if (el) el.remove(); });
+  try { if (typeof closeAccountMenu === 'function') closeAccountMenu(); } catch (e) {}
+}
 function _koyomiNotifyOpenTask(task) {
   if (!task) return false;
+  _koyomiNotifyCloseOthers();
   if (typeof jumpToTaskDate === 'function') jumpToTaskDate(task);
   setTimeout(function() {
     try {
@@ -60631,6 +60637,7 @@ function _koyomiNotifyShowList(d, note, serverTasks) {
     return null;
   }
   var old = document.getElementById('koyomiNotifyListOverlay'); if (old) old.remove();
+  _koyomiNotifyCloseOthers();
   var tasks = serverTasks || _koyomiNotifyTasksOf(d), label = _koyomiNotifyDayLabel(d);
   var esc = function(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var ov = document.createElement('div');
@@ -60737,13 +60744,15 @@ async function openKoyomiNotify() {
   var render = function() {
     var h = '<div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:1.1em;font-weight:800;color:#4f7a3a;">🔔 予定の通知</div>' +
       '<button type="button" data-nt-close style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>' +
-      '<div style="font-size:0.8em;color:#8a7f6a;line-height:1.7;margin-top:4px;">予定の少し前と、前の夜に、スマホへ通知します。無料です。</div>';
+      '<div style="font-size:0.8em;color:#8a7f6a;line-height:1.7;margin-top:4px;">予定の少し前と、前の夜に、スマホやパソコンへ通知します。無料です。</div>';
     // この端末
     h += '<div style="margin-top:12px;padding:12px;border-radius:12px;background:' + (subOn ? '#eef4e4' : '#fff7e6') + ';border:1px solid ' + (subOn ? '#c6dbb4' : '#ecd9a8') + ';font-size:0.88em;line-height:1.7;">';
     if (!logged) h += '通知を受け取るには、ログインが必要です。<button type="button" data-nt-login style="display:block;width:100%;margin-top:8px;min-height:42px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;">ログインする</button>';
     else if (sup === 'need_home') h += '📱 iPhoneでは、<b>ホーム画面に追加したこよみる</b>から開くと、通知を受け取れます。<br>Safariの下の共有ボタン（□に↑）→「ホーム画面に追加」→ ホーム画面のこよみるから開いて、もう一度ここを押してください。';
     else if (sup !== 'ok') h += 'この端末（ブラウザ）は、通知に対応していません。';
-    else if (subOn) h += '✅ この端末で受け取っています。<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" data-nt-test style="flex:1;min-height:40px;border:1px solid #4f7a3a;border-radius:10px;background:#fff;color:#4f7a3a;font-weight:700;cursor:pointer;">試しに1通送る</button><button type="button" data-nt-off style="flex:1;min-height:40px;border:1px solid #d9cdb4;border-radius:10px;background:#fff;color:#8a7f6a;cursor:pointer;">この端末では止める</button></div>';
+    else if (('Notification' in window) && Notification.permission === 'denied') h += '🔕 この端末では、通知が止められています。次の手順で許可すると届くようになります。' + _koyomiNotifyStepsHtml();
+    else if (subOn) h += '✅ この端末で受け取っています。<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" data-nt-test style="flex:1;min-height:40px;border:1px solid #4f7a3a;border-radius:10px;background:#fff;color:#4f7a3a;font-weight:700;cursor:pointer;">試しに1通送る</button><button type="button" data-nt-off style="flex:1;min-height:40px;border:1px solid #d9cdb4;border-radius:10px;background:#fff;color:#8a7f6a;cursor:pointer;">この端末では止める</button></div>' +
+      '<details style="margin-top:8px;"><summary style="cursor:pointer;color:#6b7d5e;font-size:0.92em;">試しても届かないときは</summary>' + _koyomiNotifyStepsHtml() + '</details>';
     else h += 'この端末では、まだ受け取っていません。<button type="button" data-nt-on style="display:block;width:100%;margin-top:8px;min-height:44px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;">この端末で受け取る</button>';
     h += '</div>';
     if (logged) {
@@ -60787,6 +60796,41 @@ async function openKoyomiNotify() {
   render();
 }
 window.openKoyomiNotify = openKoyomiNotify;
+
+// v0.99.107: 【権威】2026-11-26「ＰＣで通知来ない」→ 原因は Windows の通知で Chrome がオフ＋Chrome でこよみるが未許可。
+//   「通知が許可されませんでした」の一言では、どこを直すか分からない。端末に合わせて直し方を出す（パソコン／iPhone／Android）
+function _koyomiNotifyFixSteps(ua, standalone) {
+  ua = String(ua || '');
+  var isIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && /Mobile/.test(ua));
+  var isAndroid = /Android/.test(ua);
+  var isMac = !isIOS && /Macintosh|Mac OS X/.test(ua);
+  var isWin = /Windows/.test(ua);
+  var br = /Edg\//.test(ua) ? 'Microsoft Edge' : (/Chrome\//.test(ua) ? 'Google Chrome' : (/Firefox\//.test(ua) ? 'Firefox' : (/Safari\//.test(ua) ? 'Safari' : 'ブラウザ')));
+  if (isIOS) return [
+    'iPhoneの「設定」アプリを開く',
+    '「通知」→ 一覧から「こよみる」を選ぶ',
+    '「通知を許可」をオンにする',
+    'ホーム画面のこよみるから開き直して、ここで「この端末で受け取る」を押す'
+  ];
+  if (isAndroid) return [
+    'こよみるを開いたまま、アドレス欄の左のマーク（または右上の︙）を押す',
+    '「権限」または「サイトの設定」→「通知」を「許可」にする',
+    'スマホの「設定」→「通知」で、' + br + ' の通知がオンになっているかも確かめる',
+    'こよみるを読み込み直して、ここで「この端末で受け取る」を押す'
+  ];
+  var steps = [];
+  if (br === 'Safari') steps.push('Safariのメニュー「Safari」→「設定」→「Webサイト」→「通知」で、koyomiru.com を「許可」にする');
+  else steps.push('こよみるを開いたまま、アドレス欄の左のマーク（koyomiru.com の左）を押す →「サイトの設定」→「通知」を「許可」にする');
+  if (isWin) steps.push('Windowsの「設定」→「システム」→「通知」で、' + br + ' を「オン」にする');
+  else if (isMac) steps.push('Macの「システム設定」→「通知」→「' + br + '」で、通知を許可する');
+  steps.push('こよみるを読み込み直して、ここで「この端末で受け取る」→「試しに1通送る」を押す');
+  return steps;
+}
+window._koyomiNotifyFixSteps = _koyomiNotifyFixSteps;
+function _koyomiNotifyStepsHtml() {
+  var st = _koyomiNotifyFixSteps(navigator.userAgent, _koyomiIsStandalone());
+  return '<ol style="margin:8px 0 0;padding-left:1.4em;line-height:1.8;font-size:0.92em;">' + st.map(function(s) { return '<li>' + String(s).replace(/[&<>]/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]; }) + '</li>'; }).join('') + '</ol>';
+}
 
 // ===== v0.99.106: 同期の食い違いの記録 =====
 // 【権威】2026-11-26「管理者用なら、自分も見れるようにしてね」→ 管理者メニューの「🧭 同期の食い違いの記録」で見る
@@ -61709,6 +61753,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.107', date: '2026-11-26',
+    items: [
+      { icon:'🔔', t:'通知が届かないときの直し方を、端末に合わせて出すようにしました',
+        before:'通知が止められていても「許可されませんでした」と出るだけで、どこを直せばよいか分かりませんでした。通知を押すと、開いていた画面の上に一覧が重なることもありました',
+        after:'「🔔 予定の通知」の画面に、パソコン・iPhone・Androidそれぞれの直し方を出します。受け取っているのに届かないときは「試しても届かないときは」を開いてください。通知を押したときは、開いている画面を閉じてから一覧を出します' }
+    ]
+  },
   {
     ver: 'v0.99.106', date: '2026-11-26',
     items: [
@@ -100609,6 +100661,17 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        // v0.99.100: 【権威】2026-11-25「アプリ全体のお知らせと意味が混ざるから、ちゃんと通知って言わないと」→ 通知の画面・入口・言葉に「お知らせ」を使わない
        var _w715 = openKoyomiNotify.toString() + enablePushNotifications.toString() + disablePushNotifications.toString() + ((document.getElementById('settingsNotifySection') || {}).textContent || '') + [].map.call(document.querySelectorAll('[onclick="openKoyomiNotify()"]'), function(x) { return x.textContent; }).join('');
        if (/お知らせ/.test(_w715) || !/予定の通知/.test(_w715)) _x715.push('word');
+       // v0.99.107: 端末に合わせた直し方／通知から来たらほかの画面を閉じる
+       var _win715 = _koyomiNotifyFixSteps('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', false).join('|');
+       var _ios715 = _koyomiNotifyFixSteps('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', true).join('|');
+       var _and715 = _koyomiNotifyFixSteps('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36', false).join('|');
+       if (!/サイトの設定/.test(_win715) || !/Windowsの「設定」→「システム」→「通知」で、Google Chrome/.test(_win715)) _x715.push('steps-win');
+       if (!/「設定」アプリ/.test(_ios715) || !/ホーム画面/.test(_ios715) || /Windows/.test(_ios715)) _x715.push('steps-ios');
+       if (!/Android|権限|サイトの設定/.test(_and715) || /Windows/.test(_and715)) _x715.push('steps-android');
+       var _dm715 = document.createElement('div'); _dm715.id = 'koyomiNotifyOverlay'; document.body.appendChild(_dm715);
+       _koyomiNotifyCloseOthers();
+       if (document.getElementById('koyomiNotifyOverlay')) { _x715.push('close-others'); _dm715.remove(); }
+       if (!/_koyomiNotifyCloseOthers/.test(_koyomiNotifyOpenTask.toString()) || !/_koyomiNotifyCloseOthers/.test(_koyomiNotifyShowList.toString())) _x715.push('close-call');
        // v0.99.104: 一覧はサーバーの今の中身から（済み・通知オフのカレンダーは除く・同じ予定は1つ・時刻のあるものが先）
        var _fr715 = _koyomiNotifyFilterRows([
          { id: 'r1', calendar_id: 'c1', data: { id: 'a', text: '終日の支払い' } },
