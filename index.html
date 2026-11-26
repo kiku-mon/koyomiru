@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.112 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.113 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.112';
+    const APP_VERSION = 'v0.99.113';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -1010,6 +1010,7 @@ async function _acceptInvite(code) {
     if (typeof renderMonthlyView === 'function') renderMonthlyView();
   } catch(e) {}
   if (typeof showToast === 'function') showToast('参加しました。月間カレンダーに表示されます', {type:'ok'});
+  try { if (typeof _koyomiNotifyInvite === 'function') _koyomiNotifyInvite({ joined: (typeof _cname !== 'undefined' && _cname) || '共有カレンダー' }); } catch (eIv) {}   // v0.99.113
   // v0.45.1778: 参加できた実感を先に持ってもらってから、自分のカレンダーを聞く。
   // 1.6秒あけるのは、月間が描かれて「入れた」と分かるまでの間を取るため。
   _releasePendingSetup(1600);
@@ -10188,6 +10189,7 @@ function _showInviteWelcome() {
         <p style="font-size:0.82em;color:#aaa;margin:0 0 14px 0;">スタートデッキコードを生成してDiscordで配布できます。</p>
         <button onclick="copyStarterDeckCode()" style="width:100%;padding:11px;background:linear-gradient(135deg,#ffd700,#ff8800);border:none;border-radius:10px;color:#7a4800;font-size:0.92em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(255,150,0,0.3);margin-bottom:8px;">📋 スタートデッキコードをコピー</button>
         <button onclick="openDeckBuilder()" style="width:100%;padding:11px;background:linear-gradient(135deg,#a855f7,#6366f1);border:none;border-radius:10px;color:#fff;font-size:0.92em;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(168,85,247,0.3);margin-bottom:8px;">🃏 新しいデッキを仕込む</button>
+        <button id="adminNotifyReqBtn" onclick="openKoyomiNotifyRequest('dev')" style="width:100%;padding:9px;background:transparent;border:1px solid #7fbf5a;border-radius:8px;color:#9fd77a;font-size:0.82em;cursor:pointer;margin-bottom:6px;">🔔 全員に通知のオンを頼む（開発者から）</button>
         <button id="adminGhostLogBtn" onclick="openKoyomiGhostLog()" style="width:100%;padding:9px;background:transparent;border:1px solid #f0a35a;border-radius:8px;color:#f0a35a;font-size:0.82em;cursor:pointer;margin-bottom:6px;">🧭 同期の食い違いの記録（消したのに端末に残っていた予定）</button>
         <button onclick="showDebugLog()" style="width:100%;padding:9px;background:transparent;border:1px solid #4facfe;border-radius:8px;color:#4facfe;font-size:0.82em;cursor:pointer;margin-bottom:6px;">🔍 デバッグパネルを開く</button>
         <!-- 多層マトリクス 解放コントロール -->
@@ -45026,6 +45028,16 @@ window.unshareCalendar = unshareCalendar;
           _bottom.appendChild(_invBtn);
         }
         if (unshareBtn) _bottom.appendChild(unshareBtn);
+        // v0.99.113: 【権威】2026-11-27「部屋主からのお願い…後で部屋主になってくれる人がやりやすくなる」→ 部屋主にだけ、メンバーへ通知のオンを頼むボタン
+        if (_isShared && cal.sharedOwner !== false && cal.cloudCalendarId) {
+          var _reqBtn = document.createElement('button');
+          _reqBtn.className = 'koyomi-room-notify-req';
+          _reqBtn.textContent = '🔔 メンバーに通知のオンを頼む';
+          _reqBtn.title = 'まだ通知を受け取っていないメンバーに、次にアプリを開いたとき1回だけ案内が出ます（1日1回まで）';
+          _reqBtn.style.cssText = 'flex-shrink:0;padding:5px 9px;border:1px solid #4f7a3a;border-radius:7px;background:#f4f8ee;color:#3d6230;font-size:0.74em;cursor:pointer;white-space:nowrap;';
+          _reqBtn.onclick = (function(_cid, _nm) { return function(e) { e.stopPropagation(); openKoyomiNotifyRequest('room', _cid, _nm); }; })(cal.cloudCalendarId, cal.name);
+          _bottom.appendChild(_reqBtn);
+        }
         row.appendChild(_top);
         row.appendChild(_bottom);
         // v0.45.1904: Discordへの通知設定。カレンダーごとに持つ。
@@ -60638,6 +60650,7 @@ window.disablePushNotifications = disablePushNotifications;
 // ログインのあと：この端末で受け取っていたら、宛先をこの人に付け直す（同じ端末で別の人がログインしたとき・鍵が変わったとき）
 async function _koyomiNotifyAfterLogin() {
   if (window._isTesting || window._smokeTestRunning) return;
+  setTimeout(function() { _koyomiNotifyInvite(); }, 4000);   // v0.99.113: お誘い・お願い（起動の画面が済んでから）
   if (_koyomiPushSupport() !== 'ok' || Notification.permission !== 'granted') return;
   if (await _koyomiCurrentSub()) enablePushNotifications(true);
 }
@@ -60951,6 +60964,155 @@ async function openKoyomiNotify() {
   render();
 }
 window.openKoyomiNotify = openKoyomiNotify;
+
+// ===== v0.99.113: 通知のお誘い・お願い =====
+// 【権威】2026-11-27 決めたこと：
+//   ・お誘い：共有カレンダーに入った直後と、今いるメンバーが次に開いたとき。「あとで」なら1週間後にもう1回だけ（端末ごと）
+//   ・お願い：部屋主から（その部屋のメンバーへ・1日1回）／開発者から（全員へ・7日に1回）。1つのお願いは1つの端末に1回だけ
+//   ・両方あるときは部屋主から先（身近な人の声のほうが届く）。頼んだ側に見せるのは人数だけ
+//   ・ブラウザの許可は、こよみるの画面で理由を見せて「受け取る」を押した人にだけ出す（断られてもブラウザに拒否が残らない）
+function _koyomiInviteLoad() { try { return JSON.parse(localStorage.getItem('koyomiNotifyInvite') || '{}') || {}; } catch (e) { return {}; } }
+function _koyomiInviteSave(o) { try { localStorage.setItem('koyomiNotifyInvite', JSON.stringify(o)); } catch (e) {} }
+// お誘い（お願いではないもの）を今出してよいか：まだ0回、または1回出して1週間たった
+function _koyomiInviteAllowed(st, now) {
+  st = st || {}; now = now || Date.now();
+  var n = +st.n || 0;
+  if (n <= 0) return true;
+  if (n === 1 && now >= (+st.next || 0)) return true;
+  return false;
+}
+// 出すものを決める（純粋な判断。テストしやすいように外へ出している）
+//   ctx: { pending:[{id,kind,calendar_name,requester_name}], seen:{id:true}, invite:{n,next}, calName, joined, now }
+function _koyomiInvitePick(ctx) {
+  var seen = ctx.seen || {}, pend = (ctx.pending || []).filter(function(p) { return !seen[p.id]; });
+  var room = pend.filter(function(p) { return p.kind === 'room'; })[0], dev = pend.filter(function(p) { return p.kind === 'dev'; })[0];
+  if (room) return { type: 'room', req: room };
+  if (dev) return { type: 'dev', req: dev };
+  if (ctx.joined) return { type: 'joined', calName: ctx.joined };
+  if (ctx.calName && _koyomiInviteAllowed(ctx.invite, ctx.now)) return { type: 'invite', calName: ctx.calName };
+  return null;
+}
+window._koyomiInvitePick = _koyomiInvitePick;
+function _koyomiInviteText(pick) {
+  if (!pick) return '';
+  if (pick.type === 'room') return '🔔 ' + (pick.req.calendar_name || '共有カレンダー') + 'の部屋主・' + (pick.req.requester_name || '部屋主') + 'さんから：予定の通知をオンにしてね';
+  if (pick.type === 'dev') return '🍵 こよみるの開発者から：予定の通知をオンにすると、共有カレンダーの予定が近づいたときに知らせます';
+  if (pick.type === 'joined') return '🔔 ' + pick.calName + 'に入りました。予定が近づいたら、通知で知らせます';
+  return '🔔 ' + pick.calName + 'の予定が近づいたら、通知で知らせます';
+}
+window._koyomiInviteText = _koyomiInviteText;
+var _koyomiInviteBusy = false;
+async function _koyomiNotifyInvite(opt) {
+  opt = opt || {};
+  if (window._isTesting || window._smokeTestRunning || _koyomiInviteBusy) return;
+  if (!window._cloudIsLoggedIn || !window.supabaseClient) return;
+  var sup = _koyomiPushSupport();
+  if (sup === 'unsupported') return;
+  if (('Notification' in window) && Notification.permission === 'denied') return;   // 止めている人には出さない（通知の画面に直し方がある）
+  if (sup === 'ok' && Notification.permission === 'granted' && await _koyomiCurrentSub()) return;   // もう受け取っている
+  _koyomiInviteBusy = true;
+  try {
+    var calName = '', pending = [];
+    try {
+      var rc = await window.supabaseClient.from('koyomiru_shared_calendars').select('id, name, is_personal, created_at').order('created_at');
+      var cs = (rc.data || []).filter(function(x) { return !x.is_personal; });
+      if (!cs.length && !opt.joined) return;   // 共有カレンダーに入っていない人には出さない
+      calName = cs.length ? cs[0].name : '';
+      var rp = await window.supabaseClient.rpc('koyomiru_notify_pending');
+      pending = (rp && rp.data) || [];
+    } catch (eQ) { return; }
+    var inv = _koyomiInviteLoad();
+    var pick = _koyomiInvitePick({ pending: pending, seen: inv.seen || {}, invite: inv, calName: calName, joined: opt.joined || '', now: Date.now() });
+    if (!pick) return;
+    var show = function() { _koyomiInviteShow(pick, sup); };
+    if (opt.joined) setTimeout(show, 2200);   // 参加した直後は、月間が描かれて「入れた」と分かってから
+    else if (typeof window.whenStartupClear === 'function') window.whenStartupClear(show); else show();
+  } finally { _koyomiInviteBusy = false; }
+}
+window._koyomiNotifyInvite = _koyomiNotifyInvite;
+function _koyomiInviteDone(pick, accepted) {
+  var inv = _koyomiInviteLoad();
+  inv.seen = inv.seen || {};
+  if (pick.req) inv.seen[pick.req.id] = true;
+  if (pick.type === 'invite' || pick.type === 'joined') {
+    inv.n = (+inv.n || 0) + 1;
+    inv.next = Date.now() + 7 * 24 * 3600 * 1000;
+  }
+  if (accepted) inv.n = 9;   // 受け取ったら、お誘いはもう出さない
+  _koyomiInviteSave(inv);
+}
+function _koyomiInviteShow(pick, sup) {
+  if (document.getElementById('koyomiNotifyInviteBar')) return;
+  var esc = function(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var bar = document.createElement('div');
+  bar.id = 'koyomiNotifyInviteBar';
+  bar.setAttribute('role', 'dialog');
+  bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));z-index:99990;width:min(440px,calc(100vw - 24px));background:#fffdf8;border:1.5px solid #4f7a3a;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.22);padding:14px 14px 12px;box-sizing:border-box;color:#3d3326;';
+  var body = '<div style="font-size:0.92em;line-height:1.7;font-weight:700;">' + esc(_koyomiInviteText(pick)) + '</div>';
+  if (sup === 'need_home') {
+    body += '<div style="font-size:0.82em;line-height:1.7;margin-top:6px;color:#6b5d48;">iPhoneでは、ホーム画面に追加したこよみるから開くと受け取れます。<ol style="margin:4px 0 0;padding-left:1.4em;"><li>下の共有ボタン（□に↑）を押す</li><li>「ホーム画面に追加」を押す</li><li>ホーム画面のこよみるから開いて、「🔔 予定の通知」→「この端末で受け取る」</li></ol></div>' +
+      '<div style="display:flex;gap:8px;margin-top:10px;"><button type="button" data-iv-ok style="flex:1;min-height:42px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;font-family:inherit;">わかった</button></div>';
+  } else {
+    body += '<div style="display:flex;gap:8px;margin-top:10px;"><button type="button" data-iv-yes style="flex:2;min-height:44px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;font-family:inherit;">受け取る</button>' +
+      '<button type="button" data-iv-later style="flex:1;min-height:44px;border:1px solid #d9cdb4;border-radius:10px;background:#fff;color:#8a7f6a;cursor:pointer;font-family:inherit;">あとで</button></div>';
+  }
+  bar.innerHTML = body;
+  bar.addEventListener('click', async function(e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.hasAttribute('data-iv-yes')) {
+      b.disabled = true;
+      var ok = await enablePushNotifications();
+      _koyomiInviteDone(pick, ok); bar.remove();
+      if (typeof koyomiNotifyRefreshEntries === 'function') koyomiNotifyRefreshEntries();
+      return;
+    }
+    _koyomiInviteDone(pick, false); bar.remove();
+  });
+  document.body.appendChild(bar);
+}
+// 部屋主／開発者：お願いの画面（人数を見せて、頼む）
+async function openKoyomiNotifyRequest(kind, calId, calName) {
+  var old = document.getElementById('koyomiNotifyReqOverlay'); if (old) old.remove();
+  var esc = function(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var ov = document.createElement('div');
+  ov.id = 'koyomiNotifyReqOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99998;display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
+  ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:420px;padding:20px 18px;box-sizing:border-box;color:#3d3326;">読み込んでいます…</div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov || (e.target.closest && e.target.closest('[data-rq-close]'))) ov.remove(); });
+  document.body.appendChild(ov);
+  var box = ov.firstChild, st = null, err = '';
+  try {
+    var r = kind === 'room' ? await window.supabaseClient.rpc('koyomiru_notify_room_status', { p_cal: calId }) : await window.supabaseClient.rpc('koyomiru_notify_dev_status');
+    if (r.error) err = /forbidden/.test(r.error.message) ? (kind === 'room' ? 'お願いできるのは、この部屋の部屋主だけです' : '管理者だけが使えます') : '読み込めませんでした';
+    else st = (r.data || [])[0];
+  } catch (e) { err = 'ログインしてから開いてください'; }
+  var total = st ? (kind === 'room' ? st.members : st.users) : 0;
+  var nextAt = st && st.last_requested_at ? new Date(new Date(st.last_requested_at).getTime() + (kind === 'room' ? 1 : 7) * 24 * 3600 * 1000) : null;
+  var fmt = function(d) { return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); };
+  var title = kind === 'room' ? '🔔 ' + esc(calName || '部屋') + 'のメンバーに頼む' : '🔔 全員に頼む（開発者から）';
+  var h = '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="font-weight:800;font-size:1.05em;color:#4f7a3a;">' + title + '</div><button type="button" data-rq-close style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>';
+  if (err) h += '<div style="margin-top:12px;color:#b33;">' + esc(err) + '</div>';
+  else {
+    h += '<div style="margin-top:12px;padding:12px;border-radius:12px;background:#f4f8ee;font-size:0.95em;line-height:1.7;">まだ通知を受け取っていない人：<b style="font-size:1.25em;color:#3d6230;">' + st.without_push + '人</b>（' + (kind === 'room' ? 'メンバー' : '共有カレンダーを使っている人') + ' ' + total + '人のうち）</div>' +
+      '<div style="font-size:0.8em;color:#6b5d48;line-height:1.7;margin-top:10px;">頼むと、その人たちが次にこよみるを開いたとき、1回だけ次の案内が出ます。誰がまだかは、こちらには出ません。</div>' +
+      '<div style="margin-top:8px;padding:10px;border:1px dashed #c6dbb4;border-radius:10px;font-size:0.85em;line-height:1.6;">' + esc(kind === 'room' ? _koyomiInviteText({ type: 'room', req: { calendar_name: calName, requester_name: ((window.allSettings && allSettings.profile && allSettings.profile.name) || window._cloudUserName || 'あなた') } }) : _koyomiInviteText({ type: 'dev' })) + '<div style="color:#8a7f6a;margin-top:4px;">［受け取る］［あとで］</div></div>';
+    if (st.without_push === 0) h += '<div style="margin-top:12px;font-weight:700;color:#3d6230;">✅ みんな受け取っています</div>';
+    else if (!st.can_request) h += '<div style="margin-top:12px;font-size:0.85em;color:#8a6d2a;">もう頼んであります。次に頼めるのは ' + (nextAt ? fmt(nextAt) : '') + ' からです（' + (kind === 'room' ? '1日1回' : '7日に1回') + 'まで）</div>';
+    else h += '<button type="button" data-rq-go style="display:block;width:100%;min-height:46px;margin-top:14px;border:none;border-radius:12px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;font-family:inherit;">頼む</button>' +
+      '<div style="font-size:0.75em;color:#a99f8c;margin-top:6px;text-align:center;">' + (kind === 'room' ? '1つの部屋につき1日1回まで' : '7日に1回まで') + '</div>';
+  }
+  box.innerHTML = h;
+  var go = box.querySelector('[data-rq-go]');
+  if (go) go.onclick = async function() {
+    go.disabled = true;
+    var rr = kind === 'room' ? await window.supabaseClient.rpc('koyomiru_notify_room_request', { p_cal: calId }) : await window.supabaseClient.rpc('koyomiru_notify_dev_request');
+    if (rr.error) { if (typeof showToast === 'function') showToast(/too_soon/.test(rr.error.message) ? 'もう頼んであります' : '頼めませんでした', { type: 'error' }); go.disabled = false; return; }
+    ov.remove();
+    if (typeof showToast === 'function') showToast('🔔 頼みました。相手が次に開いたとき、1回だけ案内が出ます', { type: 'success', duration: 6000 });
+  };
+}
+window.openKoyomiNotifyRequest = openKoyomiNotifyRequest;
+// ===== END v0.99.113 =====
 
 // v0.99.107: 【権威】2026-11-26「ＰＣで通知来ない」→ 原因は Windows の通知で Chrome がオフ＋Chrome でこよみるが未許可。
 //   「通知が許可されませんでした」の一言では、どこを直すか分からない。端末に合わせて直し方を出す（パソコン／iPhone／Android）
@@ -61909,6 +62071,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.113', date: '2026-11-27',
+    items: [
+      { icon:'🔔', t:'共有カレンダーの予定を、通知で受け取ろうと声をかけるようにしました',
+        before:'通知を受け取れることを、知るきっかけがありませんでした',
+        after:'共有カレンダーに入った直後と、次にこよみるを開いたときに、通知を受け取るかを一度だけ聞きます（「あとで」なら1週間後にもう1回）。部屋主は、設定のカレンダーの欄から、メンバーに「通知をオンにしてね」と頼めます' }
+    ]
+  },
   {
     ver: 'v0.99.112', date: '2026-11-27',
     items: [
@@ -71440,6 +71610,7 @@ async function joinSharedCalendarFromModal() {
     if (typeof unifiedPullTasks === 'function') await unifiedPullTasks();
     if (typeof renderAllSections === 'function') renderAllSections();
     _sharedCalSetStatus('✅ 「' + lookup.data[0].calendar_name + '」に参加しました！予定を取り込みました。', 'success');
+    try { if (typeof _koyomiNotifyInvite === 'function') _koyomiNotifyInvite({ joined: lookup.data[0].calendar_name }); } catch (eIv) {}   // v0.99.113
     // v0.45.1541: 【権威】2026-08-06、招待リンクを踏んで参加しても、モーダルが開いたままで
     // 「どこに追加されたのか」が分からず、そのまま離脱してしまうとの指摘。
     // 招待された人が見たいのは「その予定がいつ入っているか」なので、
@@ -100827,6 +100998,37 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-718: 通知のお誘い・お願い（v0.99.113） =====
+     // 【権威】2026-11-27「部屋主からのお願いと、開発者からのお願い、2つ作れば」「もう入っちゃってる人もいる」
+     try {
+       var _x718 = [], _now718 = Date.UTC(2026, 10, 27);
+       var _P = function(ctx) { var p = _koyomiInvitePick(ctx); return p ? p.type + (p.req ? ':' + p.req.id : '') : 'none'; };
+       var _room = { id: 1, kind: 'room', calendar_name: 'こぴきゃカレンダー', requester_name: 'きくモン' }, _dev = { id: 2, kind: 'dev', requester_name: 'こよみるの開発者' };
+       var _r718 = [
+         _P({ pending: [_dev, _room], calName: 'こぴきゃカレンダー', now: _now718 }),                              // 部屋主が先
+         _P({ pending: [_dev, _room], seen: { 1: true }, calName: 'x', now: _now718 }),                            // 部屋主のを見たら開発者
+         _P({ pending: [_dev, _room], seen: { 1: true, 2: true }, calName: 'x', now: _now718 }),                   // 両方見たら、ふつうのお誘い
+         _P({ pending: [], calName: 'x', invite: { n: 1, next: _now718 + 1000 }, now: _now718 }),                  // 「あとで」から1週間たっていない
+         _P({ pending: [], calName: 'x', invite: { n: 1, next: _now718 - 1000 }, now: _now718 }),                  // 1週間たった
+         _P({ pending: [], calName: 'x', invite: { n: 2, next: 0 }, now: _now718 }),                               // 2回目のあとはおしまい
+         _P({ pending: [], calName: '', now: _now718 }),                                                           // 共有カレンダーが無い
+         _P({ pending: [], calName: 'x', invite: { n: 2 }, joined: 'WM', now: _now718 }),                          // 参加した直後は出す
+         _P({ pending: [_room], seen: {}, invite: { n: 9 }, calName: 'x', now: _now718 })                          // お願いは、お誘いの「おしまい」と別
+       ].join('|');
+       if (_r718 !== 'room:1|dev:2|invite|none|invite|none|none|joined|room:1') _x718.push('pick:' + _r718);
+       var _t718 = [_koyomiInviteText({ type: 'room', req: _room }), _koyomiInviteText({ type: 'dev' })];
+       if (_t718[0] !== '🔔 こぴきゃカレンダーの部屋主・きくモンさんから：予定の通知をオンにしてね' || !/^🍵 こよみるの開発者から：/.test(_t718[1])) _x718.push('text');
+       if (/お知らせ/.test(_t718.join('') + _koyomiInviteText({ type: 'invite', calName: 'x' }) + _koyomiInviteText({ type: 'joined', calName: 'x' }))) _x718.push('word');
+       if (!/_isTesting/.test(_koyomiNotifyInvite.toString()) || !/denied/.test(_koyomiNotifyInvite.toString())) _x718.push('guards');
+       if (!/koyomi-room-notify-req/.test(loadCalendarSettingsUI.toString()) || !/sharedOwner !== false/.test(loadCalendarSettingsUI.toString())) _x718.push('room-btn');
+       var _ab718 = document.getElementById('adminNotifyReqBtn');
+       if (!_ab718 || !document.getElementById('adminMenuSection').contains(_ab718)) _x718.push('dev-btn');
+       if (!/_koyomiNotifyInvite\(\)/.test(_koyomiNotifyAfterLogin.toString())) _x718.push('after-login');
+       _x718.length === 0
+         ? ok('ST-718: お誘い（参加直後・今いる人は次に開いたとき・あとでなら1週間後に1回だけ）と、部屋主／開発者からのお願い（部屋主が先・1回ずつ）')
+         : ng('ST-718: 通知のお誘い・お願いが違う', _x718.join(','));
+     } catch(e) { ng('ST-718: 例外', e.message); }
 
      // ===== ST-717: 担当者の選び窓は、元の画面が閉じたら一緒に閉じる（v0.99.112） =====
      // 【権威】2026-11-27「タスクのやつを閉じたままでも担当の窓が残っちゃってて、変」
