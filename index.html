@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.111 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.112 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,8 +264,8 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.111';
-  const APP_LAST_UPDATED = '2026-11-26'; // ★ バージョン更新時は必ずセットで更新
+    const APP_VERSION = 'v0.99.112';
+  const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
     // DOMContentLoaded の中に書いていたため、旗が立つのはページ読み込みが
@@ -56054,56 +56054,103 @@ window._sharedMemberCache = {};   // calendarId → [{user_id, display_name}]
 // 担当者を選ぶ。メンバーの一覧をその場に出して、押すだけで決まる。
 // 別画面へ飛ばさないのは、担当を決めるのは一瞬の判断で、
 // 画面が切り替わると「今どの予定の話だったか」を見失うため。
+// v0.99.112: 【権威】2026-11-27「タスクのやつを閉じたままでも担当の窓が残っちゃってて、変」「あなたがデザイナーとしていいと思うようにやっていいよ」
+//   → 選び窓は、①選んだ ②外を押した ③元の画面（その日の欄・編集画面）が閉じた ④元の画面をスクロールした ⑤Esc、のどれでも閉じる。
+//     「担当をはずす」は人数が多いと画面の外に隠れていたので、窓の上（いつも見える所）へ。いまの担当には ✓ を付ける
+var _assigneePickerState = null;   // { box, anchor, timer, handlers }
+function closeAssigneePicker() {
+  var st = _assigneePickerState; _assigneePickerState = null;
+  if (st) {
+    clearInterval(st.timer);
+    document.removeEventListener('pointerdown', st.onDown, true);
+    window.removeEventListener('scroll', st.onScroll, true);
+    window.removeEventListener('resize', st.onResize);
+    document.removeEventListener('keydown', st.onKey, true);
+  }
+  var b = document.getElementById('assigneePicker'); if (b) b.remove();
+}
+window.closeAssigneePicker = closeAssigneePicker;
+// 元のボタンがまだ画面に見えているか。見えていなければ（元の画面が閉じた）窓も閉じる
+function _assigneePickerCheck() {
+  var st = _assigneePickerState; if (!st) return;
+  var a = st.anchor, gone = !a || !a.isConnected;
+  if (!gone) {
+    try {
+      var r = a.getBoundingClientRect(), cs = getComputedStyle(a);
+      gone = (r.width === 0 && r.height === 0) || cs.visibility === 'hidden' || r.bottom < 0 || r.top > window.innerHeight;
+    } catch (e) { gone = true; }
+  }
+  if (gone) closeAssigneePicker();
+}
+window._assigneePickerCheck = _assigneePickerCheck;
+function _assigneePickerArm(box, anchorBtn) {
+  var st = { box: box, anchor: anchorBtn };
+  st.onDown = function(ev) { if (!box.contains(ev.target) && ev.target !== anchorBtn) closeAssigneePicker(); };
+  st.onScroll = function(ev) { if (!box.contains(ev.target)) closeAssigneePicker(); };   // 窓の中のスクロールでは閉じない
+  st.onResize = function() { closeAssigneePicker(); };
+  st.onKey = function(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); closeAssigneePicker(); } };
+  st.timer = setInterval(_assigneePickerCheck, 300);
+  _assigneePickerState = st;
+  setTimeout(function() {   // 開いた時の押し込みで、すぐ閉じないように
+    if (_assigneePickerState !== st) return;
+    document.addEventListener('pointerdown', st.onDown, true);
+    window.addEventListener('scroll', st.onScroll, true);
+    window.addEventListener('resize', st.onResize);
+    document.addEventListener('keydown', st.onKey, true);
+  }, 10);
+}
+window._assigneePickerArm = _assigneePickerArm;
 async function openAssigneePicker(taskId, anchorBtn) {
   try {
     var task = (allTasks || []).find(function(t) { return t && t.id === taskId; });
     if (!task || !task.cloudCalendarId) return;
-    var old = document.getElementById('assigneePicker');
-    if (old) old.remove();
+    // 同じボタンをもう一度押したら閉じる
+    if (_assigneePickerState && _assigneePickerState.anchor === anchorBtn) { closeAssigneePicker(); return; }
+    closeAssigneePicker();
     var members = await loadSharedMembersForPicker(task.cloudCalendarId);
     var _esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s){ return String(s||''); };
     var box = document.createElement('div');
     box.id = 'assigneePicker';
-    box.style.cssText = 'position:fixed;z-index:99995;background:#fff;border:1px solid #e0e0e0;border-radius:12px;' +
-      'box-shadow:0 8px 24px rgba(0,0,0,0.16);padding:6px;min-width:170px;max-height:50vh;overflow-y:auto;';
+    box.setAttribute('role', 'dialog');
+    box.style.cssText = 'position:fixed;z-index:99995;background:#fff;border:1px solid #e0e0e0;border-radius:14px;' +
+      'box-shadow:0 10px 28px rgba(0,0,0,0.18);min-width:200px;max-width:min(300px,calc(100vw - 24px));max-height:min(60vh,420px);display:flex;flex-direction:column;overflow:hidden;';
+    var cur = task.assigneeId || null;
     var rows = members.map(function(m) {
       var _nm = m.display_name || 'メンバー';
       var _me = (m.user_id === window._cloudUserId) ? '（自分）' : '';
+      var _on = m.user_id === cur;
       return '<button onclick="setTaskAssignee(\'' + taskId + '\',\'' + m.user_id + '\',\'' +
              _esc(_nm).replace(/'/g, '&#39;') + '\')" ' +
-             'style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:none;' +
-             'font-size:13px;color:#333;cursor:pointer;border-radius:8px;font-family:inherit;">👤 ' +
-             _esc(_nm) + '<span style="color:#aaa;font-size:11px;">' + _me + '</span></button>';
+             'style="display:flex;align-items:center;gap:6px;width:100%;text-align:left;min-height:40px;padding:8px 12px;border:none;background:' + (_on ? '#eef4fb' : 'none') + ';' +
+             'font-size:13px;color:#333;cursor:pointer;border-radius:8px;font-family:inherit;' + (_on ? 'font-weight:700;' : '') + '">👤 <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+             _esc(_nm) + '<span style="color:#aaa;font-size:11px;font-weight:400;">' + _me + '</span></span>' + (_on ? '<span style="color:#2f6fb3;">✓</span>' : '') + '</button>';
     }).join('');
-    box.innerHTML = (rows || '<div style="padding:10px 12px;font-size:12px;color:#aaa;">メンバーがいません</div>') +
-      '<div style="border-top:1px solid #f0f0f0;margin-top:4px;padding-top:4px;">' +
-      '<button onclick="setTaskAssignee(\'' + taskId + '\',null,null)" ' +
-      'style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;background:none;' +
-      'font-size:13px;color:#999;cursor:pointer;border-radius:8px;font-family:inherit;">担当をはずす</button></div>';
+    box.innerHTML =
+      '<div style="display:flex;align-items:center;gap:6px;padding:8px 8px 6px 12px;border-bottom:1px solid #f0f0f0;flex:0 0 auto;">' +
+        '<span style="flex:1;font-size:12px;font-weight:700;color:#666;">担当を選ぶ</span>' +
+        (cur ? '<button onclick="setTaskAssignee(\'' + taskId + '\',null,null)" style="border:1px solid #e3d9c4;background:#fff;border-radius:8px;padding:4px 10px;font-size:12px;color:#8a7f6a;cursor:pointer;font-family:inherit;">担当をはずす</button>' : '') +
+        '<button onclick="closeAssigneePicker()" aria-label="閉じる" title="閉じる" style="border:none;background:none;font-size:18px;line-height:1;color:#aaa;cursor:pointer;padding:4px 6px;">×</button>' +
+      '</div>' +
+      '<div style="overflow-y:auto;padding:6px;flex:1 1 auto;-webkit-overflow-scrolling:touch;">' +
+        (rows || '<div style="padding:10px 12px;font-size:12px;color:#aaa;">メンバーがいません</div>') +
+      '</div>';
     document.body.appendChild(box);
-    // 押したボタンの近くに出す（画面からはみ出さないよう寄せる）
+    // 押したボタンの近くに出す（画面からはみ出さないよう寄せる。下が狭ければ上に出す）
     try {
-      var r = anchorBtn.getBoundingClientRect();
-      var top = Math.min(r.bottom + 6, window.innerHeight - box.offsetHeight - 12);
-      var left = Math.min(r.left, window.innerWidth - box.offsetWidth - 12);
-      box.style.top = Math.max(12, top) + 'px';
+      var r = anchorBtn.getBoundingClientRect(), h = box.offsetHeight, w = box.offsetWidth;
+      var top = (r.bottom + 6 + h <= window.innerHeight - 12) ? r.bottom + 6 : Math.max(12, r.top - 6 - h);
+      var left = Math.min(r.left, window.innerWidth - w - 12);
+      box.style.top = Math.max(12, Math.min(top, window.innerHeight - h - 12)) + 'px';
       box.style.left = Math.max(12, left) + 'px';
     } catch(e) { box.style.top = '30%'; box.style.left = '20px'; }
-    setTimeout(function() {
-      document.addEventListener('click', function _close() {
-        var b = document.getElementById('assigneePicker');
-        if (b) b.remove();
-        document.removeEventListener('click', _close);
-      }, { once: true });
-    }, 10);
+    _assigneePickerArm(box, anchorBtn);
   } catch(e) { console.warn('[担当者] 選択の表示に失敗:', e && e.message); }
 }
 window.openAssigneePicker = openAssigneePicker;
 
 function setTaskAssignee(taskId, userId, name) {
   try {
-    var box = document.getElementById('assigneePicker');
-    if (box) box.remove();
+    closeAssigneePicker();
     // updateTask を通すので updatedAt が入り、そのままクラウドへ届く（第61条）
     if (typeof updateTask === 'function') {
       updateTask(taskId, { assigneeId: userId || null, assigneeName: name || null });
@@ -61862,6 +61909,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.112', date: '2026-11-27',
+    items: [
+      { icon:'👤', t:'担当者を選ぶ窓が、画面に取り残されないようにしました',
+        before:'その日の予定の欄を閉じても、担当者を選ぶ窓だけが残ることがありました。人数が多いと「担当をはずす」が画面の外に隠れていました',
+        after:'元の画面を閉じる・スクロールする・外を押す・Escキーで、窓も一緒に閉じます。「担当をはずす」は窓の上に置き、いまの担当には ✓ が付きます' }
+    ]
+  },
   {
     ver: 'v0.99.111', date: '2026-11-26',
     items: [
@@ -100772,6 +100827,53 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-717: 担当者の選び窓は、元の画面が閉じたら一緒に閉じる（v0.99.112） =====
+     // 【権威】2026-11-27「タスクのやつを閉じたままでも担当の窓が残っちゃってて、変」
+     try {
+       var _x717 = [];
+       var _mk717 = function() {
+         var a = document.createElement('button'); a.textContent = 'ST717'; a.style.cssText = 'position:fixed;top:100px;left:10px;';
+         document.body.appendChild(a);
+         var b = document.createElement('div'); b.id = 'assigneePicker'; b.innerHTML = '<button id="st717in">x</button>'; document.body.appendChild(b);
+         _assigneePickerArm(b, a); return { a: a, b: b };
+       };
+       // ③ 元のボタンが消えた（元の画面が閉じた）
+       var _t1 = _mk717(); _t1.a.remove(); _assigneePickerCheck();
+       if (document.getElementById('assigneePicker')) _x717.push('parent-closed');
+       closeAssigneePicker();
+       // ③' 元のボタンが見えなくなった（display:none の中）
+       var _t2 = _mk717(); _t2.a.style.display = 'none'; _assigneePickerCheck();
+       if (document.getElementById('assigneePicker')) _x717.push('parent-hidden');
+       _t2.a.remove(); closeAssigneePicker();
+       // 元が見えているうちは閉じない
+       var _t3 = _mk717(); _assigneePickerCheck();
+       if (!document.getElementById('assigneePicker')) _x717.push('closed-too-early');
+       // ⑤ Esc ／ ② 外を押す（リスナーは開いた直後には付けないので、直接呼ぶ）
+       _assigneePickerState.onKey({ key: 'Escape', stopPropagation: function() {} });
+       if (document.getElementById('assigneePicker')) _x717.push('esc');
+       _t3.a.remove(); closeAssigneePicker();
+       var _t4 = _mk717();
+       _assigneePickerState.onDown({ target: document.getElementById('st717in') });
+       if (!document.getElementById('assigneePicker')) _x717.push('inside-closed');
+       _assigneePickerState.onDown({ target: document.body });
+       if (document.getElementById('assigneePicker')) _x717.push('outside');
+       _t4.a.remove(); closeAssigneePicker();
+       // ④ スクロール（窓の中のスクロールでは閉じない）
+       var _t5 = _mk717();
+       _assigneePickerState.onScroll({ target: _t5.b });
+       if (!document.getElementById('assigneePicker')) _x717.push('inner-scroll-closed');
+       _assigneePickerState.onScroll({ target: document });
+       if (document.getElementById('assigneePicker')) _x717.push('scroll');
+       _t5.a.remove(); closeAssigneePicker();
+       if (_assigneePickerState !== null) _x717.push('state-left');
+       var _src717 = openAssigneePicker.toString();
+       if (!/担当をはずす/.test(_src717.slice(0, _src717.indexOf('overflow-y:auto;padding:6px')))) _x717.push('unassign-on-top');
+       if (!/closeAssigneePicker\(\)/.test(setTaskAssignee.toString())) _x717.push('set-closes');
+       _x717.length === 0
+         ? ok('ST-717: 担当者の選び窓は、選んだ・外を押した・元の画面が閉じた／見えなくなった・スクロール・Esc で閉じる。「担当をはずす」は窓の上')
+         : ng('ST-717: 担当者の選び窓の閉じ方が違う', _x717.join(','));
+     } catch(e) { ng('ST-717: 例外', e.message); try { closeAssigneePicker(); } catch (e2) {} }
 
      // ===== ST-716: 同期の食い違いの記録（v0.99.106） =====
      // 【権威】2026-11-26「同期が壊れてないって本当に言えるんですか」「管理者用なら、自分も見れるようにしてね」
