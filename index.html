@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.110 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.111 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.110';
+    const APP_VERSION = 'v0.99.111';
   const APP_LAST_UPDATED = '2026-11-26'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -60460,6 +60460,12 @@ function _koyomiNotifyTimes(s) {
   var seen = {};
   return a.filter(function(x) { if (!/^([01]\d|2[0-3]):[0-5][05]$/.test(x) || seen[x]) return false; seen[x] = 1; return true; }).sort().slice(0, KOYOMI_NOTIFY_MAX_TIMES);
 }
+// 足す欄に最初に入れておく時刻：よく使う順で、まだ入っていないもの
+function _koyomiNotifyAddDefault(times) {
+  var c = ['07:00', '21:00', '12:00', '18:00', '08:00', '20:00', '06:00', '22:00', '09:00', '19:00', '10:00'];
+  for (var i = 0; i < c.length; i++) if ((times || []).indexOf(c[i]) === -1) return c[i];
+  return '12:30';
+}
 function _koyomiNotifySetTimes(s, arr) {
   s.digest_times = _koyomiNotifyTimes({ digest_times: arr });
   if (s.digest_times.length) { s.digest_hour = +s.digest_times[0].slice(0, 2); s.digest_minute = +s.digest_times[0].slice(3, 5); }   // 古い欄にも、いちばん早い時刻を入れておく
@@ -60761,6 +60767,7 @@ async function openKoyomiNotify() {
   document.body.appendChild(ov);
   var box = ov.firstChild, esc = function(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var logged = !!window._cloudIsLoggedIn, s = Object.assign({}, KOYOMI_NOTIFY_DEFAULT), cals = [], subOn = false, sup = _koyomiPushSupport();
+  var _adding = false, _undo = '', _undoTimer = null;   // v0.99.111: 足す欄を開いているか／いま消した時刻（元に戻す用）
   try {
     if (logged) {
       s = await _koyomiNotifyLoad();
@@ -60801,16 +60808,30 @@ async function openKoyomiNotify() {
         '<div style="font-size:0.75em;color:#a99f8c;margin-top:4px;">5分〜1日前まで（5分きざみ）。時刻のある予定だけで、終日の予定はまとめに入ります</div>';
       // v0.99.110: 【権威】2026-11-26「予定のまとめは1日1回は少なくね？」「10回くらいはやってみたい」→ 時刻を10個まで
       var _times = _koyomiNotifyTimes(s);
-      h += sec('予定のまとめ（1日' + KOYOMI_NOTIFY_MAX_TIMES + '回まで）') + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + chip('data-nt-digest', 'off', 'なし', !s.digest_on) + chip('data-nt-digest', 'on', '送る', s.digest_on) + '</div>' +
-        (s.digest_on ? '<div style="margin-top:8px;">' + (_times.length ? _times.map(function(hm) {
-            return '<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-top:1px solid #efe6d6;font-size:0.9em;"><b style="min-width:3.2em;color:#3d6230;">' + esc(hm) + '</b><span style="flex:1;color:#6b5d48;">「' + _koyomiNotifyDigestWord({ digest_hour: +hm.slice(0, 2) }) + '」</span>' +
-              '<button type="button" data-nt-time-del="' + esc(hm) + '" aria-label="' + esc(hm) + 'を消す" style="border:1px solid #e3d9c4;background:#fff;border-radius:8px;min-width:36px;min-height:32px;color:#a0937b;cursor:pointer;">×</button></div>';
-          }).join('') : '<div style="font-size:0.85em;color:#a0937b;">まだ時刻がありません</div>') +
-          (_times.length < KOYOMI_NOTIFY_MAX_TIMES
-            ? '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;"><input type="time" id="ntDigestTime" step="300" value="07:00" style="' + _inp + '"><button type="button" data-nt-time-add style="' + _inp + 'cursor:pointer;color:#4f7a3a;font-weight:700;border-color:#4f7a3a;">＋ 時刻を足す</button></div>'
-            : '<div style="font-size:0.78em;color:#a0937b;margin-top:6px;">' + KOYOMI_NOTIFY_MAX_TIMES + '個まで入っています。足すときは、どれかを消してください</div>') + '</div>'
-          : '<div style="font-size:0.78em;color:#6b5d48;margin-top:6px;">送りません</div>') +
-        '<div style="font-size:0.75em;color:#a99f8c;margin-top:6px;">お昼より前の時刻なら今日の予定、お昼からは明日の予定。予定が無い日は送りません</div>';
+      // v0.99.111: 【権威】2026-11-26「分かりづらい。あとバツにホバーしても何も出ない」（×を押した21:00が確認なしで消えていた）
+      //   → 「消す」と書いたボタン＋ホバーで説明＋数秒「元に戻す」。足す欄は「＋ 時刻を足す」を押したときだけ出し、今日／明日をその場で見せる
+      h += sec('予定のまとめ（1日' + KOYOMI_NOTIFY_MAX_TIMES + '回まで）') +
+        '<div style="font-size:0.78em;color:#6b5d48;margin:-2px 0 8px;line-height:1.6;">決めた時刻に、予定の一覧を通知します。お昼より前の時刻は「今日の予定」、お昼からは「明日の予定」です</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + chip('data-nt-digest', 'off', 'なし', !s.digest_on) + chip('data-nt-digest', 'on', '送る', s.digest_on) + '</div>';
+      if (s.digest_on) {
+        h += '<div style="margin-top:8px;">' + (_times.length ? _times.map(function(hm) {
+            return '<div style="display:flex;align-items:center;gap:8px;padding:8px 2px;border-top:1px solid #efe6d6;font-size:0.92em;"><span>⏰</span><b style="min-width:3.2em;color:#3d6230;">' + esc(hm) + '</b><span style="flex:1;color:#6b5d48;">' + _koyomiNotifyDigestWord({ digest_hour: +hm.slice(0, 2) }) + 'を送る</span>' +
+              '<button type="button" data-nt-time-del="' + esc(hm) + '" title="' + esc(hm) + 'のまとめを消す" aria-label="' + esc(hm) + 'のまとめを消す" style="border:1px solid #e0c9c4;background:#fff;border-radius:8px;min-height:34px;padding:4px 12px;color:#a35a4a;font-size:0.88em;cursor:pointer;font-family:inherit;">消す</button></div>';
+          }).join('') : '<div style="font-size:0.85em;color:#a0937b;padding:6px 2px;">まだ時刻がありません。下の「＋ 時刻を足す」から入れてください</div>');
+        if (_undo) h += '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:8px 10px;border-radius:10px;background:#3d3326;color:#fff;font-size:0.85em;"><span style="flex:1;">' + esc(_undo) + ' を消しました</span><button type="button" data-nt-time-undo style="border:none;background:none;color:#ffd77a;font-weight:800;cursor:pointer;font-family:inherit;">元に戻す</button></div>';
+        if (_times.length >= KOYOMI_NOTIFY_MAX_TIMES) h += '<div style="font-size:0.78em;color:#a0937b;margin-top:6px;">' + KOYOMI_NOTIFY_MAX_TIMES + '個まで入っています。足すときは、どれかを消してください</div>';
+        else if (!_adding) h += '<button type="button" data-nt-time-open style="margin-top:8px;' + _inp + 'cursor:pointer;color:#4f7a3a;font-weight:700;border-color:#4f7a3a;">＋ 時刻を足す</button>';
+        else {
+          var _def = _koyomiNotifyAddDefault(_times);
+          h += '<div style="margin-top:8px;padding:10px;border:1.5px dashed #4f7a3a;border-radius:12px;background:#f7faf2;">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:0.9em;">足す時刻：<input type="time" id="ntDigestTime" step="300" value="' + _def + '" style="' + _inp + '">' +
+            '<span id="ntAddWord" style="color:#3d6230;font-weight:700;">→ ' + _koyomiNotifyDigestWord({ digest_hour: +_def.slice(0, 2) }) + 'を送る</span></div>' +
+            '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" data-nt-time-add style="flex:1;' + _inp + 'cursor:pointer;background:#4f7a3a;color:#fff;font-weight:800;border-color:#4f7a3a;">足す</button>' +
+            '<button type="button" data-nt-time-cancel style="flex:1;' + _inp + 'cursor:pointer;color:#8a7f6a;">やめる</button></div></div>';
+        }
+        h += '</div>';
+      } else h += '<div style="font-size:0.78em;color:#6b5d48;margin-top:6px;">送りません</div>';
+      h += '<div style="font-size:0.75em;color:#a99f8c;margin-top:6px;">予定が無い日は送りません</div>';
       h += sec('ロック画面に、予定の名前を') + '<div style="display:flex;gap:6px;">' + chip('data-nt-hide', '0', '出す（例：30分後：14:00 歯医者）', !s.hide_title) + chip('data-nt-hide', '1', '隠す', s.hide_title) + '</div>';
       if (cals.length) {
         h += sec('通知するカレンダー') + cals.map(function(c) {
@@ -60822,6 +60843,11 @@ async function openKoyomiNotify() {
     box.innerHTML = h;
   };
   var save = function() { _koyomiNotifySave(s); render(); };
+  box.addEventListener('input', function(e) {
+    if (!e.target || e.target.id !== 'ntDigestTime') return;
+    var hm = _koyomiNotifyNormTime(e.target.value), w = box.querySelector('#ntAddWord');
+    if (w) w.textContent = hm ? '→ ' + _koyomiNotifyDigestWord({ digest_hour: hm[0] }) + 'を送る' : '';
+  });
   box.addEventListener('click', async function(e) {
     var t = e.target.closest('button,input'); if (!t) return;
     if (t.id === 'ntBeforeNum' || t.id === 'ntDigestTime') return;
@@ -60844,11 +60870,23 @@ async function openKoyomiNotify() {
       var _cur = _koyomiNotifyTimes(s);
       if (_cur.indexOf(_txt) !== -1) { if (typeof showToast === 'function') showToast(_txt + ' は、もう入っています'); return; }
       if (_cur.length >= KOYOMI_NOTIFY_MAX_TIMES) return;
-      _koyomiNotifySetTimes(s, _cur.concat([_txt])); save(); return;
+      _adding = false; _undo = '';
+      _koyomiNotifySetTimes(s, _cur.concat([_txt])); save();
+      if (typeof showToast === 'function') showToast('⏰ ' + _txt + ' に「' + _koyomiNotifyDigestWord({ digest_hour: _hm[0] }) + '」を送ります');
+      return;
     }
+    if (t.hasAttribute('data-nt-time-open')) { _adding = true; render(); var _ti = box.querySelector('#ntDigestTime'); if (_ti) try { _ti.focus(); } catch (eF) {} return; }
+    if (t.hasAttribute('data-nt-time-cancel')) { _adding = false; render(); return; }
     if (t.hasAttribute('data-nt-time-del')) {
       var _del = t.getAttribute('data-nt-time-del');
-      _koyomiNotifySetTimes(s, _koyomiNotifyTimes(s).filter(function(x) { return x !== _del; })); save(); return;
+      _koyomiNotifySetTimes(s, _koyomiNotifyTimes(s).filter(function(x) { return x !== _del; }));
+      _undo = _del; clearTimeout(_undoTimer);
+      _undoTimer = setTimeout(function() { if (_undo === _del) { _undo = ''; render(); } }, 7000);
+      save(); return;
+    }
+    if (t.hasAttribute('data-nt-time-undo')) {
+      if (_undo) { _koyomiNotifySetTimes(s, _koyomiNotifyTimes(s).concat([_undo])); _undo = ''; clearTimeout(_undoTimer); save(); }
+      return;
     }
     if (t.hasAttribute('data-nt-before-free')) {
       var _n = parseInt((box.querySelector('#ntBeforeNum') || {}).value, 10), _u = +((box.querySelector('#ntBeforeUnit') || {}).value || 1);
@@ -61824,6 +61862,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.111', date: '2026-11-26',
+    items: [
+      { icon:'⏰', t:'予定のまとめの時刻を、分かりやすく足したり消したりできるようにしました',
+        before:'「×」を押すと説明も確認もなく時刻が消え、足すための欄も、もう入っている時刻と見分けがつきませんでした',
+        after:'「消す」と書いたボタンにし、消したあと数秒は「元に戻す」で取り消せます。時刻は「＋ 時刻を足す」を押してから選び、今日／明日のどちらの予定が届くかもその場で分かります' }
+    ]
+  },
   {
     ver: 'v0.99.110', date: '2026-11-26',
     items: [
@@ -100759,6 +100805,10 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
        if (_tt !== '07:00,21:00|09:30|10|10') _x715.push('times:' + _tt);
        var _ss = { digest_hour: 20, digest_minute: 0 }; _koyomiNotifySetTimes(_ss, ['21:00', '06:45']);
        if (_ss.digest_times.join(',') !== '06:45,21:00' || _ss.digest_hour !== 6 || _ss.digest_minute !== 45) _x715.push('set-times');
+       // v0.99.111: 「消す」の文字＋ホバーの説明＋元に戻す／足す欄は押したときだけ
+       var _ui715 = openKoyomiNotify.toString();
+       if (!/のまとめを消す/.test(_ui715) || !/>消す<\/button>/.test(_ui715) || !/data-nt-time-undo/.test(_ui715) || !/元に戻す/.test(_ui715) || !/data-nt-time-open/.test(_ui715) || !/data-nt-time-cancel/.test(_ui715) || !/ntAddWord/.test(_ui715)) _x715.push('times-ui');
+       if ([_koyomiNotifyAddDefault([]), _koyomiNotifyAddDefault(['07:00']), _koyomiNotifyAddDefault(['07:00', '21:00'])].join(',') !== '07:00,21:00,12:00') _x715.push('add-default');
        if (!document.getElementById('settingsNotifySection')) _x715.push('settings-entry');
        if (!/koyomiru_push_register/.test(enablePushNotifications.toString()) || !/koyomiru_push_unregister/.test(disablePushNotifications.toString())) _x715.push('rpc');
        if (!/need_home/.test(_koyomiPushSupport.toString()) || !/standalone/.test(_koyomiIsStandalone.toString())) _x715.push('iphone');
