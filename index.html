@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.131 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.132 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.131';
+    const APP_VERSION = 'v0.99.132';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61431,6 +61431,33 @@ function _koyomiAsakuraHit(r, memos) {
   return null;
 }
 window._koyomiAsakuraHit = _koyomiAsakuraHit;
+
+// v0.99.132: 台帳の［買った］［見送り］。【権威】2026-11-27 半自動（Claudeが判断して知らせ、きくモンさんがかぶピタッでタップ）→ 注文したあとに押して記録を残す
+//   買った：提案の行を「済み」にし、「🟢 買った」の行を足す（金額・約定単価・株数）。見送り：提案の行を「見送り」に。どちらも本人だけ（データベースで管理者しか書けない）
+var _koyomiInvestApi = {
+  update: function(id, patch) { return window.supabaseClient.from('koyomiru_invest_ledger').update(patch).eq('id', id).select('id'); },
+  insert: function(row) { return window.supabaseClient.from('koyomiru_invest_ledger').insert(row).select('id'); }
+};
+window._koyomiInvestApi = _koyomiInvestApi;
+function koyomiInvestSkip(r) {
+  return Promise.resolve(_koyomiInvestApi.update(r.id, { status: 'skipped', updated_at: new Date().toISOString() }));
+}
+function koyomiInvestBought(r, amount, price) {
+  amount = Math.round(Number(amount)); price = price === '' || price == null ? null : Number(price);
+  if (!isFinite(amount) || amount < 1) return Promise.reject(new Error('amount'));
+  if (price != null && (!isFinite(price) || price <= 0)) return Promise.reject(new Error('price'));
+  var today = getLocalDateStr(new Date());
+  var row = { kind: 'buy', status: 'done', paper: false, horizon: r.horizon || 'short', market: r.market || 'JP', code: r.code || null, name: r.name || null,
+    amount_yen: amount, price: price, shares: price ? Math.round(amount / price * 1e6) / 1e6 : null, traded_on: today,
+    reason: '提案（' + String(r.created_at || '').slice(0, 10) + '）にもとづいて買った', source: r.source || null, source_url: r.source_url || null,
+    kabupita: r.kabupita == null ? null : r.kabupita, funds: r.funds || null };
+  return Promise.resolve(_koyomiInvestApi.insert(row)).then(function(res) {
+    if (res && res.error) throw new Error(res.error.message);
+    return _koyomiInvestApi.update(r.id, { status: 'done', updated_at: new Date().toISOString() });
+  });
+}
+window.koyomiInvestSkip = koyomiInvestSkip;
+window.koyomiInvestBought = koyomiInvestBought;
 function openKoyomiInvest(opt) {
   opt = opt || {};
   if (!(typeof isKoyomiruOwner === 'function' && isKoyomiruOwner())) return false;
@@ -61464,7 +61491,33 @@ function openKoyomiInvest(opt) {
   ov.addEventListener('click', function(e) {
     if (e.target === ov || (e.target.closest && e.target.closest('[data-iv-close]'))) { ov.remove(); return; }
     var tb = e.target.closest && e.target.closest('[data-iv-tab]');
-    if (tb) { _tab = tb.getAttribute('data-iv-tab'); if (_lastRes) paint(_lastRes); }
+    if (tb) { _tab = tb.getAttribute('data-iv-tab'); if (_lastRes) paint(_lastRes); return; }
+    // v0.99.132: ［買った］［見送り］
+    var _find = function(id) { return (_lastRes && _lastRes.rows || []).find(function(x) { return x && x.id === id; }); };
+    var _refresh = function(msg) { if (typeof showToast === 'function') showToast(msg, { type: 'success' }); if (opt.rows === undefined) _koyomiInvestFetch().then(paint); else if (typeof opt.onChange === 'function') opt.onChange(); };
+    var _fail = function(err) { if (typeof showToast === 'function') showToast('記録できませんでした。通信のよいところでもう一度押してください'); console.warn('[invest]', err); };
+    var sk = e.target.closest && e.target.closest('[data-iv-skip]');
+    if (sk) { var rs = _find(sk.getAttribute('data-iv-skip')); if (rs) koyomiInvestSkip(rs).then(function(res) { if (res && res.error) throw res.error; rs.status = 'skipped'; _refresh('⏭ 見送りにしました'); }).catch(_fail); return; }
+    var bb = e.target.closest && e.target.closest('[data-iv-buy]');
+    if (bb) {
+      var id = bb.getAttribute('data-iv-buy'), rb = _find(id), fm = ov.querySelector('[data-iv-form="' + id + '"]'); if (!rb || !fm) return;
+      var inp = 'width:100%;box-sizing:border-box;min-height:36px;padding:6px 8px;border:1px solid #d9cdb4;border-radius:8px;font-size:0.95em;font-family:inherit;';
+      fm.style.display = 'block';
+      fm.innerHTML = '<div style="margin-top:6px;padding:8px;border-radius:9px;background:#f4f8ef;font-size:0.85em;">' +
+        '<div>買った金額（円）</div><input data-iv-amt type="number" inputmode="numeric" min="1" value="' + (rb.amount_yen || 100) + '" style="' + inp + '">' +
+        '<div style="margin-top:6px;">約定した値段（1株あたり・円）<span style="color:#9a8f7a;">　分かれば。あとからでもOK</span></div><input data-iv-price type="number" inputmode="decimal" min="0" step="any" style="' + inp + '">' +
+        '<button type="button" data-iv-save="' + esc(id) + '" style="width:100%;margin-top:8px;min-height:36px;border:none;border-radius:9px;background:#4f7a3a;color:#fff;font-weight:700;cursor:pointer;font-family:inherit;">記録する</button></div>';
+      return;
+    }
+    var sv = e.target.closest && e.target.closest('[data-iv-save]');
+    if (sv) {
+      var id2 = sv.getAttribute('data-iv-save'), r2 = _find(id2), f2 = ov.querySelector('[data-iv-form="' + id2 + '"]'); if (!r2 || !f2) return;
+      var amt = f2.querySelector('[data-iv-amt]').value, pr = f2.querySelector('[data-iv-price]').value;
+      if (!(Number(amt) >= 1)) { if (typeof showToast === 'function') showToast('買った金額を入れてください'); return; }
+      sv.disabled = true;
+      koyomiInvestBought(r2, amt, pr).then(function(res) { if (res && res.error) throw res.error; r2.status = 'done'; _refresh('🟢 買った記録を残しました'); }).catch(function(er) { sv.disabled = false; _fail(er); });
+      return;
+    }
   });
   document.body.appendChild(ov);
   var paint = function(res) {
@@ -61512,6 +61565,11 @@ function openKoyomiInvest(opt) {
         '<div style="font-size:0.85em;color:#8a7f6a;">' + esc(String(r.traded_on || r.created_at || '').slice(0, 10)) + '　' + (r.kind === 'note' ? '参考（買う判断ではありません）' : esc(KOYOMI_INVEST_STATUS[r.status] || r.status)) + (r.paper ? '　<span style="color:#6a4fb3;">（お金は使っていない試し）</span>' : '') + '</div>' +
         (r.reason ? '<div style="font-size:0.85em;margin-top:2px;">' + esc(r.reason) + '</div>' : '') +
         _koyomiInvestDetail(r, esc, y) +
+        ((r.kind === 'decision' && r.status === 'proposed' && r.id) ?   // v0.99.132
+          '<div data-iv-act style="display:flex;gap:6px;margin-top:6px;">' +
+            '<button type="button" data-iv-buy="' + esc(r.id) + '" style="flex:1;min-height:34px;border:none;border-radius:9px;background:#4f7a3a;color:#fff;font-weight:700;cursor:pointer;font-family:inherit;">🟢 買った</button>' +
+            '<button type="button" data-iv-skip="' + esc(r.id) + '" style="flex:1;min-height:34px;border:1px solid #d9cdb4;border-radius:9px;background:#fff;color:#6b5f4a;font-weight:700;cursor:pointer;font-family:inherit;">⏭ 見送り</button>' +
+          '</div><div data-iv-form="' + esc(r.id) + '" style="display:none;"></div>' : '') +
       '</div>';
     }).join('');
   };
@@ -62647,6 +62705,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.132', date: '2026-11-27',
+    items: [
+      { icon:'🔧', t:'開発者用の試験機能を整えました（皆さんの画面は変わりません）',
+        before:'開発者の試験用の記録は、見るだけでした',
+        after:'開発者の画面でだけ、記録をボタンで書き足せるようにしました。皆さんの画面は今までどおりです' }
+    ]
+  },
   {
     ver: 'v0.99.131', date: '2026-11-27',
     items: [
@@ -101754,6 +101820,49 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-729: 台帳の［買った］［見送り］（v0.99.132） =====
+     enqueueSmokeAsyncTest('ST-729', function() {
+     return (async function() {
+     try {
+       var _x729 = [], _sv729 = { u: window._cloudUserId, a: window._koyomiruIsAdmin, f: window._koyomiruAdminFor, api: Object.assign({}, _koyomiInvestApi) }, _calls = [];
+       _koyomiInvestApi.update = function(id, patch) { _calls.push(['update', id, patch]); return Promise.resolve({ data: [{ id: id }], error: null }); };
+       _koyomiInvestApi.insert = function(row) { _calls.push(['insert', row]); return Promise.resolve({ data: [{ id: 'new' }], error: null }); };
+       try {
+         window._cloudUserId = 'st729'; window._koyomiruAdminFor = 'st729'; window._koyomiruIsAdmin = true;
+         var _rows = [
+           { id: 'r1', kind: 'decision', status: 'proposed', horizon: 'long', code: '2802', name: 'テスト味の素', amount_yen: 100, kabupita: true, funds: ['おおぶねJAPAN'], created_at: '2026-11-27T00:00:00Z' },
+           { id: 'r2', kind: 'decision', status: 'proposed', code: '8002', name: 'テスト丸紅', amount_yen: 100, created_at: '2026-11-27T00:00:00Z' },
+           { id: 'r3', kind: 'decision', status: 'skipped', code: '5802', name: 'テスト見送り済み', created_at: '2026-11-27T00:00:00Z' }
+         ];
+         openKoyomiInvest({ rows: _rows, tab: 'short' });
+         var _ov = document.getElementById('koyomiInvestOverlay');
+         if (_ov.querySelectorAll('[data-iv-buy]').length !== 1) _x729.push('btn-count');   // 短期の提案中1件だけ（見送り済みには出さない）
+         _ov.querySelector('[data-iv-skip="r2"]').click();
+         await new Promise(function(res) { setTimeout(res, 30); });
+         if (!_calls.some(function(c) { return c[0] === 'update' && c[1] === 'r2' && c[2].status === 'skipped'; })) _x729.push('skip');
+         _calls = [];
+         _ov.querySelector('[data-iv-tab="long"]').click();
+         _ov.querySelector('[data-iv-buy="r1"]').click();
+         var _f = _ov.querySelector('[data-iv-form="r1"]');
+         if (!_f || _f.style.display === 'none' || _f.querySelector('[data-iv-amt]').value !== '100') _x729.push('form');
+         _f.querySelector('[data-iv-amt]').value = '700'; _f.querySelector('[data-iv-price]').value = '3500';
+         _f.querySelector('[data-iv-save]').click();
+         await new Promise(function(res) { setTimeout(res, 30); });
+         var _ins = _calls.find(function(c) { return c[0] === 'insert'; });
+         if (!_ins || _ins[1].kind !== 'buy' || _ins[1].amount_yen !== 700 || _ins[1].price !== 3500 || _ins[1].shares !== 0.2 || _ins[1].horizon !== 'long' || _ins[1].paper !== false || _ins[1].code !== '2802') _x729.push('buy:' + JSON.stringify(_ins && _ins[1]));
+         if (!_calls.some(function(c) { return c[0] === 'update' && c[1] === 'r1' && c[2].status === 'done'; })) _x729.push('mark-done');
+         var _e = null; try { await koyomiInvestBought(_rows[0], 0, null); } catch (er) { _e = er; }
+         if (!_e) _x729.push('zero-amount');
+       } finally {
+         window._cloudUserId = _sv729.u; window._koyomiruIsAdmin = _sv729.a; window._koyomiruAdminFor = _sv729.f;
+         _koyomiInvestApi.update = _sv729.api.update; _koyomiInvestApi.insert = _sv729.api.insert;
+         var _o729 = document.getElementById('koyomiInvestOverlay'); if (_o729) _o729.remove();
+       }
+       _x729.length === 0 ? ok('ST-729: 提案中の行に［買った］［見送り］。買ったは金額・約定単価・株数で「🟢 買った」の行を足し、提案を済みに。見送りは見送りに') : ng('ST-729: 違う', _x729.join(','));
+     } catch(e) { ng('ST-729: 例外', e.message); }
+     })();
+     });
 
      // ===== ST-728: 💹 長期と短期を分ける（v0.99.131） =====
      // 【権威】2026-11-27「バフェットみたいなスタンスの新機能も欲しい」「A（長期7・短期3）」
