@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.122 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.123 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.122';
+    const APP_VERSION = 'v0.99.123';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -19312,7 +19312,8 @@ function renderTodoList() {
         _b('off', 'お金で絞らない', '#333') +
         _b('out', '▲ 出る（支払い）', '#b3261e') +
         _b('in',  '▽ 入る（入金）',  '#1f6b4d') +
-        _b('both','▲▽ どちらも',    '#4a6fa5');
+        _b('both','▲▽ どちらも',    '#4a6fa5') +
+        ((window.koyomiMoneyMoveOn && window.koyomiMoneyMoveOn()) ? _b('move', '➡ 移す', '#6a4fb3') : '');   // v0.99.123: 本人だけ
     }
     window.renderSearchMoneyFilter = renderSearchMoneyFilter;
 
@@ -19336,6 +19337,7 @@ function renderTodoList() {
       if (kind === 'out')  return r.out > 0;
       if (kind === 'in')   return r['in'] > 0;
       if (kind === 'both') return r.out > 0 || r['in'] > 0 || r.unreadable > 0;
+      if (kind === 'move') return window._parseMoneyMoves((t.text || '') + ' ' + (t.title || '')).total > 0;   // v0.99.123
       return true;
     }
     window._matchesMoneyFilter = _matchesMoneyFilter;
@@ -19442,10 +19444,12 @@ function renderTodoList() {
         var _allMarks = (window.MONEY_OUT_MARKS || '▲') + (window.MONEY_IN_MARKS || '▽');
         _isMoneyQuery = q.length > 0 && q.split('').every(function(c){ return _allMarks.indexOf(c) !== -1; });
       } catch (eMq) {}
+      var _isMoveQuery = false;   // v0.99.123: 矢印だけを打ったら、➡ 移す の予定を全部（本人だけ）
+      try { _isMoveQuery = !_isMoneyQuery && q.length > 0 && window.koyomiMoneyMoveOn() && q.split('').every(function(c){ return window.MONEY_MOVE_MARKS.indexOf(c) !== -1; }); } catch (eMv) {}
       const taskHits = allTasks.filter(t => _isSearchableTask(t) &&
         // v0.46.53: お金の種類で絞る。言葉の検索と組み合わせて効く。
         (typeof _matchesMoneyFilter === 'function' ? _matchesMoneyFilter(t) : true) &&
-        (_isMoneyQuery
+        (_isMoveQuery ? (window._parseMoneyMoves((t.text || '') + ' ' + (t.title || '')).total > 0) : _isMoneyQuery
           ? (function(){
               if (typeof window._parseMoneyLine !== 'function') return false;
               var _r = window._parseMoneyLine((t.text || '') + ' ' + (t.title || ''));
@@ -45891,6 +45895,52 @@ function renderCalendarFilter(containerId, onChangeCallback) {
     }
     window._parseMoneyLine = _parseMoneyLine;
 
+    // ===== v0.99.123: ➡ 移す（投資へ・貯金へ など）。本人だけ =====
+    // 【権威】2026-11-27「ウーバーで320円稼いで、そのうち100円を投資に回したい。全体はこよみるで🔍出来たり、グラフとかでも管理したい」→ 書き方A「➡100 投資へ」。誰が使えるか→B：きくモンさん（本人）だけ
+    // 読み方は三角と同じ決まり（行の先頭か空白・「、」のあと／直後に数字）。「出る」「入る」には数えない
+    var MONEY_MOVE_MARKS = '→➡⇒';
+    window.MONEY_MOVE_MARKS = MONEY_MOVE_MARKS;
+    function koyomiMoneyMoveOn() { try { return typeof isKoyomiruOwner === 'function' && !!isKoyomiruOwner(); } catch (e) { return false; } }
+    window.koyomiMoneyMoveOn = koyomiMoneyMoveOn;
+    // 行き先の名前をそろえる（「投資へ」「投資に」→「投資」）
+    function _moneyMoveDest(name) { var s = String(name || '').replace(/[へに]$/, ''); return s || '（行き先なし）'; }
+    function _parseMoneyMoves(text, force) {
+      var res = { entries: [], total: 0 };
+      if (!text || !(force || koyomiMoneyMoveOn())) return res;
+      var s = String(text);
+      var re = new RegExp('([' + MONEY_MOVE_MARKS + '])[\\s、，,]*([0-9０-９][0-9０-９,，]*)', 'g');
+      var m;
+      while ((m = re.exec(s)) !== null) {
+        var at = m.index, prev = at > 0 ? s.charAt(at - 1) : '';
+        if (at > 0 && !/[\s、，,。]/.test(prev)) continue;   // 「渋谷→新宿」のような語の途中は読まない
+        var n = parseInt(String(m[2]).replace(/[０-９]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); }).replace(/[,，\s]/g, ''), 10);
+        if (!isFinite(n) || n <= 0) continue;
+        var rest = s.slice(at + m[0].length);
+        var mm = rest.replace(/^[円]/, '').match(/^[ 　\t、，,]*([^\s　、，,。]+)/);
+        var name = mm ? mm[1] : '';
+        if (name && (MONEY_MOVE_MARKS + MONEY_OUT_MARKS + MONEY_IN_MARKS).indexOf(name.charAt(0)) !== -1) name = '';
+        res.entries.push({ amount: n, name: name.slice(0, 20) || '（行き先なし）', dest: _moneyMoveDest(name.slice(0, 20)) });
+        res.total += n;
+      }
+      return res;
+    }
+    window._parseMoneyMoves = _parseMoneyMoves;
+    // 行き先ごとの、これまでの合計（全期間）
+    function getMoneyMoveTotals() {
+      var box = {};
+      if (!koyomiMoneyMoveOn()) return [];
+      (allTasks || []).forEach(function(t) {
+        if (!t || t.deleted || (t.kind || 'task') !== 'task') return;
+        _parseMoneyMoves((t.text || '') + ' ' + (t.title || '')).entries.forEach(function(e) {
+          if (!box[e.dest]) box[e.dest] = { dest: e.dest, total: 0, count: 0 };
+          box[e.dest].total += e.amount; box[e.dest].count++;
+        });
+      });
+      return Object.keys(box).map(function(k) { return box[k]; }).sort(function(a, b) { return b.total - a.total; });
+    }
+    window.getMoneyMoveTotals = getMoneyMoveTotals;
+    // ===== END v0.99.123 =====
+
     // ===== 月ごとの決算 v0.47.36 =====
     // 【権威】2026-09-18、「8月にウーバーでいくら稼いだか」を知りたい、との要望。
     //
@@ -45955,7 +46005,7 @@ function renderCalendarFilter(containerId, onChangeCallback) {
       var map = {};
       keys.forEach(function(k) {
         map[k] = { month: k, out: 0, 'in': 0, past: { out: 0, 'in': 0 }, future: { out: 0, 'in': 0 },
-                   names: { out: {}, 'in': {} }, items: [], unreadable: 0 };
+                   names: { out: {}, 'in': {} }, items: [], unreadable: 0, move: 0, moveNames: {} };
       });
       (allTasks || []).forEach(function(t) {
         if (!t || t.deleted) return;
@@ -45975,6 +46025,13 @@ function renderCalendarFilter(containerId, onChangeCallback) {
           box[e.name].count++;
           slot.items.push({ date: t.date, text: String(t.text || ''), dir: e.dir, amount: e.amount, name: e.name });
         });
+        // v0.99.123: ➡ 移す（本人だけ）。出る・入るには足さない
+        _parseMoneyMoves((t.text || '') + ' ' + (t.title || '')).entries.forEach(function(e) {
+          slot.move += e.amount;
+          if (!slot.moveNames[e.dest]) slot.moveNames[e.dest] = { name: e.dest, total: 0, count: 0 };
+          slot.moveNames[e.dest].total += e.amount; slot.moveNames[e.dest].count++;
+          slot.items.push({ date: t.date, text: String(t.text || ''), dir: 'move', amount: e.amount, name: e.dest });
+        });
       });
       return keys.map(function(k) {
         var s = map[k];
@@ -45986,7 +46043,8 @@ function renderCalendarFilter(containerId, onChangeCallback) {
         };
         s.topIn = _top(s.names['in']);
         s.topOut = _top(s.names.out);
-        s.hasData = (s.out > 0 || s['in'] > 0 || s.unreadable > 0);
+        s.topMove = Object.keys(s.moveNames).map(function(nm) { return s.moveNames[nm]; }).sort(function(a, b) { return b.total - a.total; });
+        s.hasData = (s.out > 0 || s['in'] > 0 || s.unreadable > 0 || s.move > 0);
         s.isCurrentOrFuture = (k >= todayStr.slice(0, 7));
         return s;
       });
@@ -46061,7 +46119,8 @@ function renderCalendarFilter(containerId, onChangeCallback) {
                   '　　これから　▲' + y(s.future.out) + '／▽' + y(s.future['in']) +
                 '</div>'
               : '') +
-            _names(s.topIn, '#1b5e20') + _names(s.topOut, '#c0392b') +
+            (s.move > 0 ? '<div data-money-move style="margin-top:2px;color:#6a4fb3;font-weight:700;">➡ 移す ' + y(s.move) + '</div>' : '') +   // v0.99.123
+            _names(s.topIn, '#1b5e20') + _names(s.topOut, '#c0392b') + _names(s.topMove || [], '#6a4fb3') +
             (s.unreadable > 0 ? '<div style="color:#c07a2a;font-size:0.85em;">⚠️ 金額を読めませんでした ' + s.unreadable + '件</div>' : '') +
           '</div>';
         var detail = '';
@@ -46072,8 +46131,8 @@ function renderCalendarFilter(containerId, onChangeCallback) {
                   return '<div style="display:flex;gap:8px;padding:2px 0;">' +
                     '<span style="color:#8e8e8e;flex:0 0 3.2em;">' + it.date.slice(5).replace('-', '/') + '</span>' +
                     '<span style="flex:1 1 auto;word-break:break-all;">' + _escapeHtml(it.text) + '</span>' +
-                    '<span style="flex:0 0 auto;color:' + (it.dir === 'out' ? '#c0392b' : '#1b5e20') + ';font-weight:700;">' +
-                      (it.dir === 'out' ? '▲' : '▽') + y(it.amount) + '</span>' +
+                    '<span style="flex:0 0 auto;color:' + (it.dir === 'out' ? '#c0392b' : (it.dir === 'move' ? '#6a4fb3' : '#1b5e20')) + ';font-weight:700;">' +
+                      (it.dir === 'out' ? '▲' : (it.dir === 'move' ? '➡' : '▽')) + y(it.amount) + '</span>' +
                   '</div>';
                 }).join('')
               : '<div style="color:#aaa;">明細はありません</div>') +
@@ -46085,7 +46144,11 @@ function renderCalendarFilter(containerId, onChangeCallback) {
         '<div style="background:#fff;border-radius:14px;padding:18px;max-width:560px;width:100%;max-height:86vh;overflow:auto;">' +
           '<div style="font-weight:700;font-size:1.05em;margin-bottom:4px;">📊 月ごとの決算</div>' +
           '<div style="color:#8e8e8e;font-size:0.85em;line-height:1.6;margin-bottom:10px;">' +
-            '予定に書いた ▲出る ▽入る を、月ごとに数えました。<br>' +
+            '予定に書いた ▲出る ▽入る' + (koyomiMoneyMoveOn() ? ' ➡移す' : '') + ' を、月ごとに数えました。<br>' +
+            (function() {   // v0.99.123: 行き先ごとの、これまでの合計
+              var mt = koyomiMoneyMoveOn() ? getMoneyMoveTotals() : [];
+              return mt.length ? '<span data-money-move-totals style="color:#6a4fb3;">これまでに移した額：' + mt.map(function(x) { return _escapeHtml(x.dest) + ' ' + y(x.total); }).join('　') + '</span><br>' : '';
+            })() +
             '金額のすぐ後ろの言葉を名目として分けています（例：▽3,500 ウーバー）。' +
           '</div>' +
           rows +
@@ -62388,6 +62451,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.123', date: '2026-11-27',
+    items: [
+      { icon:'🔧', t:'開発者用の試験機能を足しました（皆さんの画面は変わりません）',
+        before:'お金の書き方は ▲出る ▽入る の2つでした',
+        after:'開発者の画面でだけ、お金を別の場所へ移した記録を試しています。皆さんの ▲▽ の読み方・集計は今までどおりです' }
+    ]
+  },
   {
     ver: 'v0.99.122', date: '2026-11-27',
     items: [
@@ -101423,6 +101494,48 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-724: ➡ 移す（本人だけ）（v0.99.123） =====
+     // 【権威】2026-11-27「ウーバーで320円稼いで、そのうち100円を投資に回したい。🔍やグラフで管理したい」→ A「➡100 投資へ」・B 本人だけ
+     try {
+       var _x724 = [], _svOwn = window.isKoyomiruOwner;
+       try {
+         window.isKoyomiruOwner = function() { return true; };
+         var _r1 = _parseMoneyMoves('▽320 ウーバー ➡100 投資へ');
+         if (_r1.total !== 100 || _r1.entries[0].dest !== '投資') _x724.push('read:' + JSON.stringify(_r1));
+         if (_parseMoneyMoves('→1,000 貯金に').total !== 1000 || _parseMoneyMoves('⇒５００ 旅行の積立').total !== 500) _x724.push('arrows');
+         if (_parseMoneyMoves('渋谷→新宿').total !== 0 || _parseMoneyMoves('渋谷→100番出口').total !== 0) _x724.push('mid-word');
+         var _ml = _parseMoneyLine('▽320 ウーバー ➡100 投資へ');
+         if (_ml.out !== 0 || _ml['in'] !== 320) _x724.push('in-out-mixed');
+         if (_parseMoneyLine('▲15000 15オリコ').out !== 15000) _x724.push('triangles-changed');
+         // 🔍 と 月ごとの集計
+         var _d = getLocalDateStr(new Date());
+         allTasks.push({ id: 'st724_a', kind: 'task', date: _d, text: '▽320 ウーバー ➡100 投資へ', section: 4 },
+                       { id: 'st724_b', kind: 'task', date: _d, text: '▽500 ST724', section: 4 });
+         window._searchMoney = 'move';
+         if (!_matchesMoneyFilter(allTasks.find(function(x){return x.id==='st724_a';})) || _matchesMoneyFilter(allTasks.find(function(x){return x.id==='st724_b';}))) _x724.push('filter');
+         window._searchMoney = 'off';
+         var _sm = getMoneyMonthlySummary(1)[0];
+         if (_sm.move < 100 || !_sm.topMove.some(function(x){ return x.name === '投資'; })) _x724.push('summary');
+         if (!getMoneyMoveTotals().some(function(x){ return x.dest === '投資' && x.total >= 100; })) _x724.push('totals');
+         renderSearchMoneyFilter();
+         if (!/➡ 移す/.test((document.getElementById('searchMoneyFilter') || {}).innerHTML || '')) _x724.push('filter-btn');
+         // 本人でなければ読まない
+         window.isKoyomiruOwner = function() { return false; };
+         if (_parseMoneyMoves('➡100 投資へ').total !== 0 || getMoneyMoveTotals().length) _x724.push('not-owner');
+         renderSearchMoneyFilter();
+         if (/➡ 移す/.test((document.getElementById('searchMoneyFilter') || {}).innerHTML || '')) _x724.push('filter-btn-not-owner');
+         if (getMoneyMonthlySummary(1)[0].move !== 0) _x724.push('summary-not-owner');
+       } finally {
+         window.isKoyomiruOwner = _svOwn;
+         for (var _i724 = allTasks.length - 1; _i724 >= 0; _i724--) if (allTasks[_i724] && /^st724_/.test(allTasks[_i724].id)) allTasks.splice(_i724, 1);
+         window._searchMoney = 'off';
+         try { renderSearchMoneyFilter(); } catch (e) {}
+       }
+       _x724.length === 0
+         ? ok('ST-724: ➡ 移す（→⇒も）は本人だけ読む。語の途中は読まない。出る・入るに混ぜない。🔍の「➡ 移す」と月ごとの集計・行き先ごとの合計')
+         : ng('ST-724: ➡ 移すが違う', _x724.join(','));
+     } catch(e) { ng('ST-724: 例外', e.message); }
 
      // ===== ST-723: 朝の確認の言葉・業とのつながり（v0.99.120） =====
      // 【権威】2026-11-27「できたはできたでいい、まだできていないとか」「業、バニッシュも変えるべきとこあれば変えていい」「もう一回窓出てくるかなと思ったら出てこなかった」
