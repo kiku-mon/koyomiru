@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.121 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.122 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.121';
+    const APP_VERSION = 'v0.99.122';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -18946,17 +18946,7 @@ function switchSearchTab(tab) {
   countEl.textContent = tasks.length + '件';
   container.innerHTML = '';
   // v0.99.120: きのうのまだの予定があれば、朝の確認をもう一度ひらける（「あとで」を押した日や、済みを外したとき）
-  try {
-    var _kmIds = (typeof _koyomiMorningTargets === 'function') ? _koyomiMorningTargets(today, window._cloudUserId || null).map(function(t) { return t.id; }) : [];
-    if (_kmIds.length) {
-      var _km = document.createElement('button');
-      _km.type = 'button'; _km.id = 'gouMorningAgainBtn';
-      _km.textContent = '☀️ きのうの予定を確かめる（' + _kmIds.length + '件）';
-      _km.style.cssText = 'width:100%;margin-bottom:10px;min-height:38px;border:1px solid #e6d3a8;border-radius:10px;background:#fffaf0;color:#7a5a1e;font-weight:700;cursor:pointer;font-family:inherit;';
-      _km.onclick = function() { if (typeof closeSearchModal === 'function') closeSearchModal(); openKoyomiMorningCheck(_kmIds, today); };
-      container.appendChild(_km);
-    }
-  } catch (eKm) {}
+  try { if (typeof koyomiFillMorningSlot === 'function') koyomiFillMorningSlot(container, 'gouMorningAgainBtn', true); } catch (eKm) {}
 
   // ===== 業ゼロ =====
   if (tasks.length === 0) {
@@ -19193,6 +19183,7 @@ function renderTodoList() {
       document.getElementById('searchResults').innerHTML = '';
       document.getElementById('searchCount').textContent = '0件';
       if (typeof switchSearchTab === 'function') switchSearchTab('search');
+      try { if (typeof koyomiFillMorningSlot === 'function') koyomiFillMorningSlot(document.getElementById('searchMorningSlot'), 'searchMorningAgainBtn'); } catch (eMs) {}   // v0.99.122
       // v0.45.1943: 開いたときに絞り込みを描く。
       // 前回の絞り込みは持ち越さない。探すたびに範囲が違うのが普通なので、
       // 覚えていると「なぜ出ないのか」で悩ませる。
@@ -52072,6 +52063,8 @@ window.addEventListener('afterprint', function() {
         <div id="commentSearchResults" style="flex:1;overflow-y:auto;"></div>
       </div>
       <div id="searchPaneSearch" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+        <!-- v0.99.122: きのうのまだの予定があるときだけ「☀️ きのうの予定を確かめる」 -->
+        <div id="searchMorningSlot"></div>
         <!-- v0.45.1942: 【権威】2026-09-02、検索でもカレンダーごとに
              予定を出したい、との要望。共有カレンダーが増えると、
              どのカレンダーの予定かを絞れないと目的のものに辿り着けない。
@@ -61268,6 +61261,24 @@ function openKoyomiMorningCheck(ids, today) {
   document.body.appendChild(ov);
 }
 window.openKoyomiMorningCheck = openKoyomiMorningCheck;
+
+// v0.99.122【権威】2026-11-27「いちいち業をクリック面倒。🔍をクリックしたら出るようにしたら？」→ 🔍の最初の画面（検索）にも出す。きのうのまだの予定があるときだけ
+function koyomiFillMorningSlot(box, btnId, append) {
+  if (!box) return 0;
+  var old = document.getElementById(btnId); if (old) old.remove();
+  if (!append) box.innerHTML = '';
+  var today = getLocalDateStr(new Date());
+  var ids = _koyomiMorningTargets(today, window._cloudUserId || null).map(function(t) { return t.id; });
+  if (!ids.length) return 0;
+  var b = document.createElement('button');
+  b.type = 'button'; b.id = btnId;
+  b.textContent = '☀️ きのうの予定を確かめる（' + ids.length + '件）';
+  b.style.cssText = 'width:100%;margin-bottom:10px;min-height:38px;border:1px solid #e6d3a8;border-radius:10px;background:#fffaf0;color:#7a5a1e;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;';
+  b.onclick = function() { if (typeof closeSearchModal === 'function') closeSearchModal(); openKoyomiMorningCheck(ids, today); };
+  box.appendChild(b);
+  return ids.length;
+}
+window.koyomiFillMorningSlot = koyomiFillMorningSlot;
 // ===== END v0.99.118 =====
 // ===== END v0.99.116 =====
 
@@ -62377,6 +62388,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.122', date: '2026-11-27',
+    items: [
+      { icon:'☀️', t:'🔍を開いただけで、きのうの予定を確かめられるようにしました',
+        before:'きのうの予定をもう一度確かめるには、🔍のあと「👹 業」を押す必要がありました',
+        after:'きのうのまだの予定があるときは、🔍を開いた最初の画面に「☀️ きのうの予定を確かめる」が出ます' }
+    ]
+  },
   {
     ver: 'v0.99.121', date: '2026-11-27',
     items: [
@@ -101421,6 +101440,11 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          var _gr = document.getElementById('gouTaskResults');
          if (!_gr || !document.getElementById('_gouRow_st723_a')) _x723.push('gou-row');
          if (document.getElementById('_gouRow_st723_f')) _x723.push('failed-in-gou');
+         openSearchModal();   // v0.99.122: 🔍を開いただけで出る
+         var _sb = document.getElementById('searchMorningAgainBtn');
+         if (!_sb || !/1件/.test(_sb.textContent) || getComputedStyle(document.getElementById('searchPaneSearch')).display === 'none') _x723.push('search-btn');
+         if (typeof closeSearchModal === 'function') closeSearchModal();
+         renderGouTaskList();
          var _again = document.getElementById('gouMorningAgainBtn');
          if (!_again) _x723.push('again-btn');
          else { _again.click(); if (!document.getElementById('koyomiMorningOverlay')) _x723.push('again-open'); }
@@ -101438,7 +101462,7 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          try { renderGouTaskList(); } catch (e) {}
        }
        _x723.length === 0
-         ? ok('ST-723: 朝の確認は［まだできていない］［今日に移す］。波線の予定は業に数えない。業から朝の確認をもう一度ひらける。バニッシュに「できなかった」')
+         ? ok('ST-723: 朝の確認は［まだできていない］［今日に移す］。波線の予定は業に数えない。🔍と業から朝の確認をもう一度ひらける。バニッシュに「できなかった」')
          : ng('ST-723: 違う', _x723.join(','));
      } catch(e) { ng('ST-723: 例外', e.message); }
 
