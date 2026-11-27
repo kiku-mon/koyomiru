@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.128 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.129 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.128';
+    const APP_VERSION = 'v0.99.129';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61354,7 +61354,7 @@ window.openKoyomiMorningCheck = openKoyomiMorningCheck;
 // ===== v0.99.124: 💹 投資（本人だけ） =====
 // 【権威】2026-11-27「こよみるのナビタブで出したい」→ 管理者だけに見えるタブ。中身（判断・台帳）はデータベースの koyomiru_invest_ledger（管理者しか読めない）
 //   画面のプログラムには銘柄も判断も書かない（こよみるのプログラムは誰でも中を見られるため）
-var KOYOMI_INVEST_KIND = { decision: '🤖 判断', buy: '🟢 買った', sell: '🔴 売った', note: '📝 メモ' };
+var KOYOMI_INVEST_KIND = { decision: '🤖 判断', buy: '🟢 買った', sell: '🔴 売った', note: '📝 参考' };
 var KOYOMI_INVEST_STATUS = { proposed: '提案中', done: '済み', skipped: '見送り' };
 function _koyomiInvestFetch() {
   if (!window.supabaseClient || window._smokeTestRunning || window._isTesting) return Promise.resolve({ rows: null, error: 'offline' });
@@ -61431,15 +61431,16 @@ function openKoyomiInvest(opt) {
     if (!res.rows.length) { box.innerHTML = '<div>まだ記録はありません。Claudeの判断が始まると、ここに並びます</div>'; return; }
     var _rank = { proposed: 0, done: 1, skipped: 2 };   // v0.99.128: 提案中を上に。そのうち、上位に入れているファンドが多いものを上に
     var rows = res.rows.slice().sort(function(a, b) {
+      var ka = a.kind === 'note' ? 1 : 0, kb = b.kind === 'note' ? 1 : 0; if (ka !== kb) return ka - kb;   // v0.99.129: 参考（メモ）は判断のあとに
       var s = (_rank[a.status] != null ? _rank[a.status] : 3) - (_rank[b.status] != null ? _rank[b.status] : 3); if (s) return s;
       var f = ((b.funds || []).length) - ((a.funds || []).length); if (f) return f;
       return String(b.created_at || '').localeCompare(String(a.created_at || ''));
     });
-    box.innerHTML = '<div style="font-size:0.8em;color:#8a7f6a;margin-bottom:4px;">' + rows.length + '件（提案中 ' + rows.filter(function(r){ return r.status === 'proposed'; }).length + '件）</div>' + rows.map(function(r) {
+    box.innerHTML = '<div style="font-size:0.8em;color:#8a7f6a;margin-bottom:4px;">' + rows.length + '件（提案中 ' + rows.filter(function(r){ return r.status === 'proposed' && r.kind !== 'note'; }).length + '件・参考 ' + rows.filter(function(r){ return r.kind === 'note'; }).length + '件）</div>' + rows.map(function(r) {
       return '<div data-iv-row style="padding:8px 0;border-top:1px solid #efe7d6;color:#3d3326;">' +
         '<div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-weight:700;">' + esc(KOYOMI_INVEST_KIND[r.kind] || r.kind) + '　' + (r.market === 'US' ? '🇺🇸 ' : '') + esc(r.name || '') + (r.code ? ' <span style="color:#9a8f7a;">' + esc(r.code) + '</span>' : '') + '</span>' +
         '<span style="white-space:nowrap;">' + (r.amount_yen != null ? y(r.amount_yen) + '円' : '') + '</span></div>' +
-        '<div style="font-size:0.85em;color:#8a7f6a;">' + esc(String(r.traded_on || r.created_at || '').slice(0, 10)) + '　' + esc(KOYOMI_INVEST_STATUS[r.status] || r.status) + (r.paper ? '　<span style="color:#6a4fb3;">（お金は使っていない試し）</span>' : '') + '</div>' +
+        '<div style="font-size:0.85em;color:#8a7f6a;">' + esc(String(r.traded_on || r.created_at || '').slice(0, 10)) + '　' + (r.kind === 'note' ? '参考（買う判断ではありません）' : esc(KOYOMI_INVEST_STATUS[r.status] || r.status)) + (r.paper ? '　<span style="color:#6a4fb3;">（お金は使っていない試し）</span>' : '') + '</div>' +
         (r.reason ? '<div style="font-size:0.85em;margin-top:2px;">' + esc(r.reason) + '</div>' : '') +
         _koyomiInvestDetail(r, esc, y) +
       '</div>';
@@ -62577,6 +62578,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.129', date: '2026-11-27',
+    items: [
+      { icon:'🔧', t:'開発者用の試験機能を整えました（皆さんの画面は変わりません）',
+        before:'開発者の試験用の記録で、参考の印と判断の区別があいまいでした',
+        after:'開発者の画面でだけ、参考の記録を判断と分けて表示するようにしました。皆さんの画面は今までどおりです' }
+    ]
+  },
   {
     ver: 'v0.99.128', date: '2026-11-27',
     items: [
@@ -101737,6 +101746,13 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          _ov = document.getElementById('koyomiInvestOverlay');
          _rw = _ov ? _ov.querySelectorAll('[data-iv-row]') : [];
          if (_rw.length !== 3 || !/テスト丸紅/.test(_rw[0].textContent) || !/見送りの株/.test(_rw[2].textContent)) _x725.push('sort');
+         // v0.99.129: 参考（メモ）は判断のあと・「提案中」に数えない
+         openKoyomiInvest({ rows: [
+           { kind: 'note', status: 'proposed', code: '6501', name: 'テスト参考', created_at: '2026-11-29T00:00:00Z', funds: ['a', 'b', 'c'] },
+           { kind: 'decision', status: 'skipped', code: '6504', name: 'テスト見送り', created_at: '2026-11-28T00:00:00Z' }
+         ] });
+         var _ov2 = document.getElementById('koyomiInvestOverlay'), _rw2 = _ov2 ? _ov2.querySelectorAll('[data-iv-row]') : [];
+         if (_rw2.length !== 2 || !/テスト見送り/.test(_rw2[0].textContent) || !/買う判断ではありません/.test(_rw2[1].textContent) || !/提案中 0件・参考 1件/.test(_ov2.textContent)) _x725.push('note');
          else {
            if (!_rw[0].querySelector('[data-iv-funds]') || !/2本のファンド/.test(_rw[0].textContent)) _x725.push('funds');
            if (!/🇺🇸/.test(_rw[1].textContent) || !/かぶピタッの対象外/.test(_rw[1].textContent) || !/9月 <b>上位<\/b>/.test(_rw[1].innerHTML) || !/ひふみワールドでの比率/.test(_rw[1].textContent)) _x725.push('us');
