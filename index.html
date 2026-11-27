@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.115 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.116 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.115';
+    const APP_VERSION = 'v0.99.116';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -1987,6 +1987,17 @@ function _showInviteWelcome() {
       text-decoration-color: red;
       text-decoration-thickness: 2px;
     }
+    /* v0.99.116: できなかった予定の波線。文字の線（text-decoration の wavy）はスマホで直線になるので、波の絵を重ねて描く */
+    .koyomi-failed, .task-item.failed .task-text {
+      text-decoration: none !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'%3E%3Cpath d='M0 3 Q2 0 4 3 T8 3' fill='none' stroke='%23C0562E' stroke-width='1.4'/%3E%3C/svg%3E");
+      background-repeat: repeat-x;
+      background-position: 0 55%;
+      background-size: 8px 6px;
+      color: #8a6a5a !important;
+    }
+    .koyomi-failed-badge { display:inline-block; margin-left:6px; padding:1px 8px; border-radius:999px; font-size:0.78em; font-weight:700; cursor:pointer; border:1px solid #e0b9a8; background:#fff4ee; color:#a3462a; white-space:nowrap; text-decoration:none !important; }
+    .koyomi-failed-badge.done { border-color:#d9d2c4; background:#f6f3ec; color:#7a6f5a; }
     .task-item.completed .task-text {
       text-decoration: line-through;
       text-decoration-color: red;
@@ -11551,6 +11562,10 @@ function _showInviteWelcome() {
           <input type="date" id="monthlyEditRepeatEnd" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:0.9em;">
         </div>
       </div>
+      </div>
+      <!-- v0.99.116: できなかった（波線）。まだの予定の編集のときだけ出す -->
+      <div id="monthlyFailRow" style="display:none;margin-top:14px;">
+        <button type="button" id="monthlyFailBtn" onclick="koyomiFailFromModal()" style="width:100%;min-height:42px;border:1px dashed #c0562e;border-radius:10px;background:#fff8f4;color:#a3462a;font-weight:700;cursor:pointer;font-family:inherit;">😣 できなかった（振り返る）</button>
       </div>
       <div class="modal-buttons" style="margin-top: 20px;">
         <button class="modal-btn modal-btn-cancel" onclick="closeMonthlyTaskModal()">キャンセル</button>
@@ -23890,6 +23905,7 @@ function myDeckApply(idx) {
             taskDiv.appendChild(ownerBadge);
           }
           if (task.completed) titleSpan.style.cssText = 'text-decoration:line-through;opacity:0.6;flex:1;overflow:hidden;text-overflow:ellipsis;';
+          else if (task.failed) { titleSpan.classList.add('koyomi-failed'); titleSpan.style.flex = '1'; titleSpan.style.overflow = 'hidden'; titleSpan.style.textOverflow = 'ellipsis'; }   // v0.99.116
           const editBtn = document.createElement('span');
           editBtn.className = 'wg-task-edit';
           editBtn.textContent = '✏️';
@@ -24617,6 +24633,9 @@ function myDeckApply(idx) {
           if (task.completed) {
             taskDiv.style.textDecoration = 'line-through';
             taskDiv.style.opacity = '0.6';
+          } else if (task.failed) {   // v0.99.116: できなかった＝波線
+            taskDiv.classList.add('koyomi-failed');
+            taskDiv.style.opacity = '0.8';
           }
           // ドラッグ開始（PC用）
           taskDiv.addEventListener('dragstart', (e) => {
@@ -33043,6 +33062,7 @@ function reviveBlueprint(id) {
         clearTimeSelect && clearTimeSelect('monthly');
         document.getElementById('monthlyTaskSection').value = '1';
         document.getElementById('monthlyDeleteBtn').style.display = 'none';
+        try { var _fr0 = document.getElementById('monthlyFailRow'); if (_fr0) _fr0.style.display = 'none'; } catch (eFr0) {}   // v0.99.116: 新しい予定には出さない
         // v0.45.1269: 自動投入ONならメイン、OFFなら前回選択を復元（週間と同じロジックに統一）
         var _mMainId = getMainCalendarId();   // v0.55.42
         var _mAutoMain = allSettings.calendar && allSettings.calendar.autoMain !== undefined ? allSettings.calendar.autoMain : localStorage.getItem('autoMainCalendar') !== 'false';
@@ -33258,6 +33278,14 @@ function renderMonthlySidebarTasks() {
         // 本文を一段大きくし、行間を広げ、切らずに全部出す。
         txt.style.cssText = 'flex:1;text-decoration:' + (done?'line-through':'none') + ';color:' + (done?'#9ca3af':'#1f2937') + ';cursor:pointer;font-size:15.5px;font-weight:500;line-height:1.75;word-break:break-word;white-space:pre-wrap;';
         txt.onclick = function(e) { e && e.stopPropagation(); startSidebarInlineEdit(taskId); };
+        if (!done && t.failed) {   // v0.99.116: できなかった＝波線。振り返りの印（書く前／書いたあと）
+          txt.classList.add('koyomi-failed');
+          var _fbd = document.createElement('span');
+          _fbd.className = 'koyomi-failed-badge' + (_koyomiReflected(t) ? ' done' : '');
+          _fbd.textContent = _koyomiReflected(t) ? '✅ 振り返り済み' : '✍️ 振り返りを書く';
+          _fbd.onclick = function(e) { e && e.stopPropagation(); openKoyomiReflect(taskId); };
+          txt.appendChild(_fbd);
+        }
         // v0.45.1566: 💬でこの予定の会話を開く。
         // 予定名タップは編集のままにして、会話は明示的な操作にする
         // （書き換えるつもりが会話を開く、の取り違えを避けるため）。
@@ -34907,6 +34935,10 @@ function saveMsbEdit() {
       setTimeSelect('monthly', task.time);
       document.getElementById('monthlyTaskSection').value = task.section;
       document.getElementById('monthlyDeleteBtn').style.display = 'inline-block';
+      try {   // v0.99.116: まだの予定だけ［できなかった］。もう波線なら［振り返りを見る・書く］
+        var _fr = document.getElementById('monthlyFailRow'), _fb = document.getElementById('monthlyFailBtn');
+        if (_fr && _fb) { _fr.style.display = task.completed ? 'none' : 'block'; _fb.textContent = task.failed ? '✍️ 振り返りを見る・書く' : '😣 できなかった（振り返る）'; }
+      } catch (eFr) {}
       _monthlyCalendarId = task.calendarId || 'default';
       renderCalendarSelector('monthlyCalendarBtns', _monthlyCalendarId, function(id) { _monthlyCalendarId = id; });
       // v0.45.1263: 編集時は詳細セクションを開いた状態にする（既存の設定内容を確認しやすいように）
@@ -37117,7 +37149,7 @@ function saveMsbEdit() {
       const _mix = sectionNum === 1 && gyomuCasesShown();
       const _makeTaskLi = (task, index) => {
         const li = document.createElement('li');
-        li.className = 'task-item' + (task.completed ? ' completed' : '');
+        li.className = 'task-item' + (task.completed ? ' completed' : (task.failed ? ' failed' : ''));
         li.dataset.taskId = task.id;  // IDを保存
         // 未完了タスクの放置日数に応じて背景色を設定
         var _staleCol = getStaleColor(task.date, task.completed || task.done);
@@ -49688,7 +49720,7 @@ function renderDashboardView() {
       // v0.55.8: 予定の行を1つ作る（並べるのは下でまとめて。案件の行と混ぜるため）
       var _quadTaskItem = function(t) {
         var item = document.createElement('div');
-        item.className = 'task-item' + (t.completed || t.done ? ' completed' : '');
+        item.className = 'task-item' + (t.completed || t.done ? ' completed' : (t.failed ? ' failed' : ''));
         item.style.cssText = 'background:#fff;border-radius:6px;padding:5px 7px;margin-bottom:4px;font-size:0.78em;color:#333;border:1px solid rgba(0,0,0,0.07);display:flex;align-items:center;gap:4px;cursor:move;-webkit-user-select:none;user-select:none;';
         item.draggable = true;
         item.dataset.taskId = t.id;
@@ -49933,7 +49965,7 @@ function renderDashboardView() {
           : sectionTasks.filter(function(t) { return t.timeSlot === slot.key; });
         slotTasks.forEach(function(t) {
           var item = document.createElement('div');
-          item.className = 'task-item' + (t.completed || t.done ? ' completed' : '');
+          item.className = 'task-item' + (t.completed || t.done ? ' completed' : (t.failed ? ' failed' : ''));
           item.style.cssText = 'background:#fff;border-radius:5px;padding:4px 6px;margin-bottom:3px;font-size:0.75em;color:#333;display:flex;align-items:center;gap:3px;cursor:pointer;';
           if (_quadZoomFTagModeOn) {
             item.style.outline = '2px solid #4facfe';
@@ -60982,6 +61014,70 @@ async function openKoyomiNotify() {
 }
 window.openKoyomiNotify = openKoyomiNotify;
 
+// ===== v0.99.116: できなかった（波線）と振り返り =====
+// 【権威】2026-11-27「タスクを企画したが、結果できなかったやつは波線にしたい。なぜ出来なかったかを反省させて、次はどうするかを書かせる。無理な計画の可視化と、反省、二度と繰り返さない改善の徹底」
+// 決めたこと：波線（反省を書いたあとも残す）／印は ✍️振り返りを書く → ✅振り返り済み／欄は「なぜできなかった」「次はどうする」
+//   反省は予定の中に書く（置き場は1つ。部屋のメンバーにも同期で見える。それで当たり前）。［できなかった］は取り消せる（反省は残す）
+function _koyomiReflected(t) { return !!(t && (String(t.reflectWhy || '').trim() || String(t.reflectNext || '').trim())); }
+window._koyomiReflected = _koyomiReflected;
+function koyomiMarkFailed(taskId, on) {
+  var t = (allTasks || []).find(function(x) { return x && x.id === taskId; }); if (!t) return false;
+  if (typeof updateTask === 'function') updateTask(taskId, on === false ? { failed: false } : { failed: true, failedAt: new Date().toISOString(), completed: false, done: false });
+  try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); if (typeof renderMonthlyView === 'function') renderMonthlyView(); if (typeof renderAllSections === 'function') renderAllSections(); } catch (e) {}
+  return true;
+}
+window.koyomiMarkFailed = koyomiMarkFailed;
+function koyomiFailFromModal() {
+  var id = (document.getElementById('monthlyTaskId') || {}).value; if (!id) return;
+  var t = (allTasks || []).find(function(x) { return x && x.id === id; }); if (!t) return;
+  if (typeof closeMonthlyTaskModal === 'function') closeMonthlyTaskModal();
+  if (!t.failed) koyomiMarkFailed(id, true);
+  openKoyomiReflect(id);
+}
+window.koyomiFailFromModal = koyomiFailFromModal;
+function openKoyomiReflect(taskId, opt) {
+  opt = opt || {};
+  var t = (allTasks || []).find(function(x) { return x && x.id === taskId; }); if (!t) return;
+  var old = document.getElementById('koyomiReflectOverlay'); if (old) old.remove();
+  var esc = function(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var ov = document.createElement('div');
+  ov.id = 'koyomiReflectOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100001;display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
+  var ta = 'width:100%;box-sizing:border-box;min-height:70px;padding:10px;border:1px solid #d9cdb4;border-radius:10px;font-size:0.95em;font-family:inherit;line-height:1.6;resize:vertical;';
+  ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:440px;max-height:calc(100dvh - 28px);overflow-y:auto;padding:18px;box-sizing:border-box;color:#3d3326;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div style="font-weight:800;font-size:1.02em;line-height:1.5;">😣 できなかった：<span class="koyomi-failed">' + esc(t.text || '予定') + '</span></div>' +
+    '<button type="button" data-rf-close aria-label="閉じる" style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>' +
+    '<div style="font-size:0.78em;color:#8a7f6a;margin-top:2px;">' + esc(t.date || '') + (t.time ? ' ' + esc(t.time) : '') + '　波線のまま残ります。次に生かすために、短くでいいので書いておきましょう</div>' +
+    (opt.queueNote ? '<div style="font-size:0.78em;color:#6b7d5e;margin-top:6px;">' + esc(opt.queueNote) + '</div>' : '') +
+    '<div style="margin-top:12px;font-weight:700;font-size:0.9em;">なぜ、できなかった？</div>' +
+    '<textarea id="rfWhy" maxlength="400" placeholder="例：見積もりが甘かった／ほかの用事が割り込んだ" style="' + ta + '">' + esc(t.reflectWhy || '') + '</textarea>' +
+    '<div style="margin-top:10px;font-weight:700;font-size:0.9em;">次は、どうする？</div>' +
+    '<textarea id="rfNext" maxlength="400" placeholder="例：半分に分けて2日でやる／朝いちばんに入れる" style="' + ta + '">' + esc(t.reflectNext || '') + '</textarea>' +
+    '<div style="display:flex;gap:8px;margin-top:12px;"><button type="button" data-rf-save style="flex:2;min-height:44px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;font-family:inherit;">書いた</button>' +
+    '<button type="button" data-rf-later style="flex:1;min-height:44px;border:1px solid #d9cdb4;border-radius:10px;background:#fff;color:#8a7f6a;cursor:pointer;font-family:inherit;">あとで</button></div>' +
+    '<div style="text-align:center;margin-top:12px;"><button type="button" data-rf-undo style="border:none;background:none;color:#9a8f7a;font-size:0.8em;text-decoration:underline;cursor:pointer;font-family:inherit;">「できなかった」を取り消す（まだの予定に戻す）</button></div>' +
+  '</div>';
+  var done = function() { ov.remove(); if (typeof opt.onDone === 'function') opt.onDone(); };
+  ov.addEventListener('click', function(e) {
+    if (e.target === ov) { done(); return; }
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.hasAttribute('data-rf-close') || b.hasAttribute('data-rf-later')) { done(); return; }
+    if (b.hasAttribute('data-rf-save')) {
+      var why = String(ov.querySelector('#rfWhy').value || '').trim().slice(0, 400), nx = String(ov.querySelector('#rfNext').value || '').trim().slice(0, 400);
+      if (!why && !nx) { if (typeof showToast === 'function') showToast('どちらか1つは書いてください'); return; }
+      if (typeof updateTask === 'function') updateTask(taskId, { reflectWhy: why, reflectNext: nx, reflectedAt: new Date().toISOString() });
+      try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (eR) {}
+      if (typeof showToast === 'function') showToast('✅ 振り返りを書きました。次に生かしましょう', { type: 'success' });
+      done(); return;
+    }
+    if (b.hasAttribute('data-rf-undo')) { koyomiMarkFailed(taskId, false); if (typeof showToast === 'function') showToast('まだの予定に戻しました'); done(); return; }
+  });
+  document.body.appendChild(ov);
+  try { ov.querySelector('#rfWhy').focus(); } catch (eF) {}
+}
+window.openKoyomiReflect = openKoyomiReflect;
+// ===== END v0.99.116 =====
+
 // ===== v0.99.113: 通知のお誘い・お願い =====
 // 【権威】2026-11-27 決めたこと：
 //   ・お誘い：共有カレンダーに入った直後と、今いるメンバーが次に開いたとき。「あとで」なら1週間後にもう1回だけ（端末ごと）
@@ -62088,6 +62184,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.116', date: '2026-11-27',
+    items: [
+      { icon:'😣', t:'「できなかった」予定を、波線で残して振り返れるようにしました',
+        before:'予定は「済み」（一重線）か「まだ」しかなく、できなかった予定は黙って消すか、まだのまま残すしかありませんでした',
+        after:'予定を開いて［😣 できなかった］を押すと、波線になり、「なぜできなかった」「次はどうする」を書けます。書くと ✅ 振り返り済みになり、波線は残ります。無理な計画が見えるようになり、次に生かせます' }
+    ]
+  },
   {
     ver: 'v0.99.115', date: '2026-11-27',
     items: [
@@ -101066,6 +101170,48 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-721: できなかった＝波線と振り返り（v0.99.116） =====
+     // 【権威】2026-11-27「できなかったやつは波線。なぜ出来なかったかを反省させて、次はどうするかを書かせる」
+     try {
+       var _x721 = [], _id721 = 'st721_task';
+       allTasks.push({ id: _id721, kind: 'task', date: '2099-03-03', text: 'ST721資料づくり', section: 4, completed: false });
+       try {
+         // 波線は絵で描く（文字の線はスマホで直線になるため）
+         var _sp = document.createElement('span'); _sp.className = 'koyomi-failed'; _sp.textContent = 'x'; document.body.appendChild(_sp);
+         var _cs = getComputedStyle(_sp);
+         if (!/svg/.test(_cs.backgroundImage) || /line-through/.test(_cs.textDecorationLine || _cs.textDecoration)) _x721.push('wave-css');
+         _sp.remove();
+         koyomiMarkFailed(_id721, true);
+         var _t = allTasks.find(function(x) { return x.id === _id721; });
+         if (!_t.failed || _t.completed) _x721.push('mark');
+         if (_koyomiReflected(_t)) _x721.push('reflected-too-early');
+         openKoyomiReflect(_id721);
+         var _ov = document.getElementById('koyomiReflectOverlay');
+         if (!_ov || !_ov.querySelector('#rfWhy') || !_ov.querySelector('#rfNext')) _x721.push('sheet');
+         else {
+           _ov.querySelector('[data-rf-save]').click();   // 空のままでは書けない
+           if (!document.getElementById('koyomiReflectOverlay')) _x721.push('empty-saved');
+           _ov.querySelector('#rfWhy').value = '見積もりが甘かった'; _ov.querySelector('#rfNext').value = '半分に分ける';
+           _ov.querySelector('[data-rf-save]').click();
+           _t = allTasks.find(function(x) { return x.id === _id721; });
+           if (_t.reflectWhy !== '見積もりが甘かった' || _t.reflectNext !== '半分に分ける' || !_t.failed) _x721.push('save');
+           if (!_koyomiReflected(_t)) _x721.push('reflected');
+         }
+         // 取り消すと、まだの予定に戻る（反省は残す）
+         koyomiMarkFailed(_id721, false);
+         _t = allTasks.find(function(x) { return x.id === _id721; });
+         if (_t.failed || _t.reflectWhy !== '見積もりが甘かった') _x721.push('undo');
+         if (!document.getElementById('monthlyFailBtn') || !/task\.completed \? 'none' : 'block'/.test(openMonthlyTaskEditModal.toString())) _x721.push('modal-btn');
+         if (!/振り返り済み/.test(renderMonthlySidebarTasks.toString()) || !/koyomi-failed/.test(renderMonthlyView.toString())) _x721.push('render');
+       } finally {
+         for (var _i721 = allTasks.length - 1; _i721 >= 0; _i721--) if (allTasks[_i721] && allTasks[_i721].id === _id721) allTasks.splice(_i721, 1);
+         var _o721 = document.getElementById('koyomiReflectOverlay'); if (_o721) _o721.remove();
+       }
+       _x721.length === 0
+         ? ok('ST-721: できなかった＝波線（絵で描く）。振り返り（なぜ・次は）を書くと ✅、波線は残る。取り消せる（反省は残す）')
+         : ng('ST-721: できなかった・振り返りが違う', _x721.join(','));
+     } catch(e) { ng('ST-721: 例外', e.message); }
 
      // ===== ST-720: 部屋の管理帳の画面に、部屋主の部屋も出す（v0.99.115） =====
      // 【権威】2026-11-27「??誰もいないわけない」
