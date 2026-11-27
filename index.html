@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.123 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.124 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.123';
+    const APP_VERSION = 'v0.99.124';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -7274,6 +7274,8 @@ function _showInviteWelcome() {
          → 災害復旧掲示板は別のナビタブ。関わる掲示板が動いている間だけ出る（設定で出す・出さない、並べ替えもできる） -->
     <!-- v0.99.33: 【権威】2026-11-20「やっぱりナビタブで出すべき。アクセスしやすさがカギ。設定でも制御・緊急のやつの上・アカウント配下にも。アクセス経路を増やせ」 → 開くとマイ防災ノートの窓が出る（画面は切り替えない） -->
     <!-- v0.99.61: 【権威】2026-11-21 最高峰会議「おいしいお店のナビタブ。星何個は譲らない」 -->
+    <!-- v0.99.124: 【権威】2026-11-27「こよみるのナビタブで出したいよ」→ 管理者（本人）だけに見える投資タブ。📈はダッシュボードが使っているので💹 -->
+    <button class="nav-tab" id="navInvest" onclick="if (typeof openKoyomiInvest === 'function') openKoyomiInvest();" title="投資（本人だけ）" style="display:none;"><span class="nav-tab-icon">💹</span><span class="nav-tab-label">投資</span></button>
     <button class="nav-tab" id="navShops" onclick="switchView('shops')" title="おいしいお店"><span class="nav-tab-icon">🍜</span><span class="nav-tab-label">おいしいお店</span></button>
     <button class="nav-tab" id="navBosai" onclick="if (typeof openKoyomiBosaiNote === 'function') openKoyomiBosaiNote();" title="マイ防災ノート"><span class="nav-tab-icon">⛑️</span><span class="nav-tab-label">防災ノート</span></button>
     <button class="nav-tab" id="navSaigai" onclick="if (typeof koyomiSaigaiNav === 'function') koyomiSaigaiNav(); else switchView('saigai');" title="災害復旧掲示板" style="display:none;"><span class="nav-tab-icon">🆘</span><span class="nav-tab-label" id="navSaigaiLabel" style="color:#b3261e;font-weight:700;">災害復旧掲示板</span></button>
@@ -16923,7 +16925,8 @@ window.highlightSafe = highlightSafe;
     }
     function _koyomiruAdminNow() { return !!(window._cloudUserId && window._koyomiruIsAdmin === true && window._koyomiruAdminFor === window._cloudUserId); }
     // v0.76.38: 管理者モードの入口ボタンを、サーバーが管理者と答えた人にだけ出す
-    function koyomiruUpdateAdminEntry() { try { var el = document.getElementById('adminEntrySlot'); if (el) el.style.display = _koyomiruAdminNow() ? '' : 'none'; } catch (e) {} }
+    function koyomiruUpdateAdminEntry() { try { var _ni = document.getElementById('navInvest'); if (_ni) _ni.style.display = _koyomiruAdminNow() ? '' : 'none'; } catch (eNi) {}   // v0.99.124: 💹投資タブも本人だけ
+      try { var el = document.getElementById('adminEntrySlot'); if (el) el.style.display = _koyomiruAdminNow() ? '' : 'none'; } catch (e) {} }
     window.koyomiruUpdateAdminEntry = koyomiruUpdateAdminEntry;
     window.koyomiruRefreshAdmin = koyomiruRefreshAdmin;
 
@@ -61325,6 +61328,62 @@ function openKoyomiMorningCheck(ids, today) {
 }
 window.openKoyomiMorningCheck = openKoyomiMorningCheck;
 
+// ===== v0.99.124: 💹 投資（本人だけ） =====
+// 【権威】2026-11-27「こよみるのナビタブで出したい」→ 管理者だけに見えるタブ。中身（判断・台帳）はデータベースの koyomiru_invest_ledger（管理者しか読めない）
+//   画面のプログラムには銘柄も判断も書かない（こよみるのプログラムは誰でも中を見られるため）
+var KOYOMI_INVEST_KIND = { decision: '🤖 判断', buy: '🟢 買った', sell: '🔴 売った', note: '📝 メモ' };
+var KOYOMI_INVEST_STATUS = { proposed: '提案中', done: '済み', skipped: '見送り' };
+function _koyomiInvestFetch() {
+  if (!window.supabaseClient || window._smokeTestRunning || window._isTesting) return Promise.resolve({ rows: null, error: 'offline' });
+  return window.supabaseClient.from('koyomiru_invest_ledger').select('id,kind,status,paper,code,name,amount_yen,shares,price,reason,source,traded_on,created_at')
+    .order('created_at', { ascending: false }).limit(100)
+    .then(function(r) { return { rows: (r && r.data) || [], error: r && r.error ? r.error.message : null }; }, function(e) { return { rows: null, error: String(e) }; });
+}
+function openKoyomiInvest(opt) {
+  opt = opt || {};
+  if (!(typeof isKoyomiruOwner === 'function' && isKoyomiruOwner())) return false;
+  var old = document.getElementById('koyomiInvestOverlay'); if (old) old.remove();
+  var esc = function(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var y = function(n) { return Number(n || 0).toLocaleString('ja-JP'); };
+  var moved = 0;
+  try { (getMoneyMoveTotals() || []).forEach(function(x) { if (x.dest === '投資') moved += x.total; }); } catch (eM) {}
+  var ov = document.createElement('div');
+  ov.id = 'koyomiInvestOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
+  ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:520px;max-height:calc(100dvh - 28px);overflow-y:auto;padding:18px;box-sizing:border-box;color:#3d3326;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div style="font-weight:800;font-size:1.08em;">💹 投資 <span style="font-size:0.7em;font-weight:700;color:#6a4fb3;border:1px solid #cfc2ee;border-radius:999px;padding:1px 8px;">試し中</span></div>' +
+    '<button type="button" data-iv-close aria-label="閉じる" style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>' +
+    '<div style="font-size:0.78em;color:#8a7f6a;margin-top:2px;">この画面は、きくモンさんにだけ見えています</div>' +
+    '<div style="margin-top:12px;padding:12px;border-radius:12px;background:#f4f0fb;">' +
+      '<div style="font-size:0.82em;color:#6a4fb3;font-weight:700;">投資へ移したお金（➡ 投資へ の合計）</div>' +
+      '<div data-iv-moved style="font-size:1.5em;font-weight:800;color:#4b3591;">' + y(moved) + ' 円</div>' +
+      '<div style="font-size:0.75em;color:#8a7f6a;">予定に「➡100 投資へ」と書くと増えます</div>' +
+    '</div>' +
+    '<div style="margin-top:14px;font-weight:700;font-size:0.92em;">台帳</div>' +
+    '<div id="koyomiInvestRows" style="margin-top:6px;font-size:0.88em;color:#8a7f6a;">読み込んでいます…</div>' +
+    '<div style="margin-top:12px;font-size:0.75em;color:#9a8f7a;line-height:1.6;">ここに並ぶ判断は、きくモンさん自身の運用のための記録です。最後に買うかどうかは、きくモンさんが決めます。</div>' +
+  '</div>';
+  ov.addEventListener('click', function(e) { if (e.target === ov || (e.target.closest && e.target.closest('[data-iv-close]'))) ov.remove(); });
+  document.body.appendChild(ov);
+  var paint = function(res) {
+    var box = document.getElementById('koyomiInvestRows'); if (!box) return;
+    if (!res || res.rows === null) { box.innerHTML = '<div>台帳を読み込めませんでした。通信のよいところで開き直してください</div>'; return; }
+    if (!res.rows.length) { box.innerHTML = '<div>まだ記録はありません。Claudeの判断が始まると、ここに並びます</div>'; return; }
+    box.innerHTML = res.rows.map(function(r) {
+      return '<div data-iv-row style="padding:8px 0;border-top:1px solid #efe7d6;color:#3d3326;">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-weight:700;">' + esc(KOYOMI_INVEST_KIND[r.kind] || r.kind) + '　' + esc(r.name || '') + (r.code ? ' <span style="color:#9a8f7a;">' + esc(r.code) + '</span>' : '') + '</span>' +
+        '<span style="white-space:nowrap;">' + (r.amount_yen != null ? y(r.amount_yen) + '円' : '') + '</span></div>' +
+        '<div style="font-size:0.85em;color:#8a7f6a;">' + esc(String(r.traded_on || r.created_at || '').slice(0, 10)) + '　' + esc(KOYOMI_INVEST_STATUS[r.status] || r.status) + (r.paper ? '　<span style="color:#6a4fb3;">（お金は使っていない試し）</span>' : '') + '</div>' +
+        (r.reason ? '<div style="font-size:0.85em;margin-top:2px;">' + esc(r.reason) + '</div>' : '') +
+      '</div>';
+    }).join('');
+  };
+  if (opt.rows !== undefined) paint({ rows: opt.rows }); else _koyomiInvestFetch().then(paint);
+  return true;
+}
+window.openKoyomiInvest = openKoyomiInvest;
+// ===== END v0.99.124 =====
+
 // v0.99.122【権威】2026-11-27「いちいち業をクリック面倒。🔍をクリックしたら出るようにしたら？」→ 🔍の最初の画面（検索）にも出す。きのうのまだの予定があるときだけ
 function koyomiFillMorningSlot(box, btnId, append) {
   if (!box) return 0;
@@ -62451,6 +62510,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.124', date: '2026-11-27',
+    items: [
+      { icon:'🔧', t:'開発者用の試験機能を足しました（皆さんの画面は変わりません）',
+        before:'開発者が自分のお金の記録を試す場所がありませんでした',
+        after:'開発者の画面にだけ、試験用のタブが出ます。皆さんの画面・ナビは今までどおりです' }
+    ]
+  },
   {
     ver: 'v0.99.123', date: '2026-11-27',
     items: [
@@ -101494,6 +101561,37 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-725: 💹投資タブ（本人だけ）（v0.99.124） =====
+     // 【権威】2026-11-27「こよみるのナビタブで出したい」→ 管理者だけに見えるタブ。📈はダッシュボードが使っているので💹
+     try {
+       var _x725 = [], _sv725 = { u: window._cloudUserId, a: window._koyomiruIsAdmin, f: window._koyomiruAdminFor };
+       try {
+         var _nv = document.getElementById('navInvest');
+         if (!_nv || /📈/.test(_nv.textContent)) _x725.push('nav');
+         window._cloudUserId = 'st725'; window._koyomiruIsAdmin = false; window._koyomiruAdminFor = 'st725';
+         koyomiruUpdateAdminEntry();
+         if (_nv && _nv.style.display !== 'none') _x725.push('shown-to-others');
+         if (openKoyomiInvest({ rows: [] }) !== false || document.getElementById('koyomiInvestOverlay')) _x725.push('opened-by-others');
+         window._koyomiruIsAdmin = true;
+         koyomiruUpdateAdminEntry();
+         if (_nv && _nv.style.display === 'none') _x725.push('hidden-to-owner');
+         if (openKoyomiInvest({ rows: [] }) !== true) _x725.push('open');
+         var _ov = document.getElementById('koyomiInvestOverlay');
+         if (!_ov || !/まだ記録はありません/.test(_ov.textContent) || !_ov.querySelector('[data-iv-moved]')) _x725.push('empty');
+         openKoyomiInvest({ rows: [{ kind: 'decision', status: 'proposed', paper: true, code: '8001', name: 'テスト商事', amount_yen: 100, reason: 'ひふみで比率が増えた', created_at: '2026-11-27T00:00:00Z' }] });
+         _ov = document.getElementById('koyomiInvestOverlay');
+         if (!_ov || _ov.querySelectorAll('[data-iv-row]').length !== 1 || !/お金は使っていない試し/.test(_ov.textContent)) _x725.push('rows');
+         if (/<script/i.test(_ov ? _ov.innerHTML : '')) _x725.push('esc');
+       } finally {
+         window._cloudUserId = _sv725.u; window._koyomiruIsAdmin = _sv725.a; window._koyomiruAdminFor = _sv725.f;
+         try { koyomiruUpdateAdminEntry(); } catch (e) {}
+         var _o725 = document.getElementById('koyomiInvestOverlay'); if (_o725) _o725.remove();
+       }
+       _x725.length === 0
+         ? ok('ST-725: 💹投資タブは本人だけに出る・開ける。台帳が空なら案内、記録は試しの印つきで並ぶ')
+         : ng('ST-725: 💹投資タブが違う', _x725.join(','));
+     } catch(e) { ng('ST-725: 例外', e.message); }
 
      // ===== ST-724: ➡ 移す（本人だけ）（v0.99.123） =====
      // 【権威】2026-11-27「ウーバーで320円稼いで、そのうち100円を投資に回したい。🔍やグラフで管理したい」→ A「➡100 投資へ」・B 本人だけ
