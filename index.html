@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.129 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.130 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.129';
+    const APP_VERSION = 'v0.99.130';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61377,6 +61377,7 @@ function _koyomiInvestDetail(r, esc, y) {
     var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(r.next_check_on);
     lines.push('<div data-iv-next style="' + sm + 'color:#7a5a1e;">📅 次に確かめる日：' + (d ? (+d[2]) + '月' + (+d[3]) + '日' : esc(r.next_check_on)) + '</div>');
   }
+  if (r._asakura) lines.push('<div data-iv-asakura style="' + sm + 'color:#8a3fb3;font-weight:700;">🗣 朝倉慶さんも挙げている（' + esc(String(r._asakura.date || '').slice(5).replace('-', '/')) + 'のメモ）</div>');   // v0.99.130
   if (Array.isArray(r.funds) && r.funds.length >= 2) lines.push('<div data-iv-funds style="' + sm + 'color:#b5651d;font-weight:700;">🤝 ' + r.funds.length + '本のファンドが上位に入れている（' + r.funds.map(esc).join('・') + '）</div>');   // v0.99.128
   if (r.market === 'US') lines.push('<div data-iv-kp style="' + sm + 'color:#9a8f7a;">🇺🇸 米国株：かぶピタッの対象外（100円から買える証券会社は別に要る）</div>');
   else lines.push('<div data-iv-kp style="' + sm + 'color:' + (r.kabupita === true ? '#2f6b2f' : r.kabupita === false ? '#b3261e' : '#9a8f7a') + ';">' +
@@ -61399,6 +61400,34 @@ function _koyomiInvestDetail(r, esc, y) {
   return lines.join('');
 }
 window._koyomiInvestDetail = _koyomiInvestDetail;
+
+// v0.99.130【権威】2026-11-27「朝倉慶も足せ」「買いはしないでまずやって」→ A：レポートは買わない。YouTubeを見て書いたメモ（例「🗣朝倉 丸紅」）を拾う
+//   朝倉さんはファンドと同じ1票ではなく「参考の声」。名前だけで買う判断はしない（台帳に印を付けるだけ）
+function koyomiAsakuraMemos() {
+  if (!(typeof isKoyomiruOwner === 'function' && isKoyomiruOwner())) return [];
+  var out = [];
+  (allTasks || []).forEach(function(t) {
+    if (!t || t.deleted) return;
+    String((t.text || '') + '\n' + (t.memo || '')).split(/\n/).forEach(function(line) {
+      var m = /^\s*(?:🗣\s*)?朝倉(?:慶)?(?:さん)?[\s　:：、]+(.+)$/.exec(line);
+      if (!m) return;
+      var names = m[1].split(/[、,，／\/\s　・]+/).map(function(s) { return s.trim(); }).filter(function(s) { return s && s.length <= 30; });
+      if (names.length) out.push({ date: t.date || '', raw: line.trim().slice(0, 120), names: names });
+    });
+  });
+  return out.sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+}
+window.koyomiAsakuraMemos = koyomiAsakuraMemos;
+// 台帳の1件が、朝倉さんのメモに出てくるか（名前の一部か、コードで合わせる）
+function _koyomiAsakuraHit(r, memos) {
+  var nm = String(r.name || ''), cd = String(r.code || '');
+  for (var i = 0; i < memos.length; i++) for (var j = 0; j < memos[i].names.length; j++) {
+    var w = memos[i].names[j];
+    if ((cd && w === cd) || (w.length >= 2 && (nm.indexOf(w) !== -1 || (nm.length >= 2 && w.indexOf(nm) !== -1)))) return memos[i];
+  }
+  return null;
+}
+window._koyomiAsakuraHit = _koyomiAsakuraHit;
 function openKoyomiInvest(opt) {
   opt = opt || {};
   if (!(typeof isKoyomiruOwner === 'function' && isKoyomiruOwner())) return false;
@@ -61429,6 +61458,8 @@ function openKoyomiInvest(opt) {
     var box = document.getElementById('koyomiInvestRows'); if (!box) return;
     if (!res || res.rows === null) { box.innerHTML = '<div>台帳を読み込めませんでした。通信のよいところで開き直してください</div>'; return; }
     if (!res.rows.length) { box.innerHTML = '<div>まだ記録はありません。Claudeの判断が始まると、ここに並びます</div>'; return; }
+    var _memos = koyomiAsakuraMemos(), _used = {};   // v0.99.130: 朝倉さんのメモと突き合わせる
+    res.rows.forEach(function(r) { var h = _koyomiAsakuraHit(r, _memos); r._asakura = h; if (h) _used[(r.name || '') + '|' + (r.code || '')] = 1; });
     var _rank = { proposed: 0, done: 1, skipped: 2 };   // v0.99.128: 提案中を上に。そのうち、上位に入れているファンドが多いものを上に
     var rows = res.rows.slice().sort(function(a, b) {
       var ka = a.kind === 'note' ? 1 : 0, kb = b.kind === 'note' ? 1 : 0; if (ka !== kb) return ka - kb;   // v0.99.129: 参考（メモ）は判断のあとに
@@ -61436,7 +61467,22 @@ function openKoyomiInvest(opt) {
       var f = ((b.funds || []).length) - ((a.funds || []).length); if (f) return f;
       return String(b.created_at || '').localeCompare(String(a.created_at || ''));
     });
-    box.innerHTML = '<div style="font-size:0.8em;color:#8a7f6a;margin-bottom:4px;">' + rows.length + '件（提案中 ' + rows.filter(function(r){ return r.status === 'proposed' && r.kind !== 'note'; }).length + '件・参考 ' + rows.filter(function(r){ return r.kind === 'note'; }).length + '件）</div>' + rows.map(function(r) {
+    var _asaHtml = '';
+    if (_memos.length) {
+      var _miss = [];
+      _memos.forEach(function(mo) { mo.names.forEach(function(w) {
+        var hit = res.rows.some(function(r) { return _koyomiAsakuraHit(r, [{ names: [w] }]); });
+        if (!hit && _miss.indexOf(w) === -1) _miss.push(w);
+      }); });
+      _asaHtml = '<div data-iv-asakura-box style="margin:4px 0 10px;padding:10px;border-radius:10px;background:#f7f0fb;font-size:0.82em;color:#5a3a7a;">' +
+        '<div style="font-weight:700;">🗣 朝倉慶さんの声（あなたのメモから・' + _memos.length + '件）</div>' +
+        _memos.slice(0, 5).map(function(mo) { return '<div>' + esc(String(mo.date || '').slice(5).replace('-', '/')) + '　' + esc(mo.raw) + '</div>'; }).join('') +
+        (_miss.length ? '<div style="margin-top:4px;color:#8a7f6a;">台帳にまだ無い銘柄：' + _miss.slice(0, 10).map(esc).join('、') + '（次の判断のときに調べます）</div>' : '') +
+        '<div style="margin-top:4px;color:#9a8f7a;">参考の声です。朝倉さんの名前だけでは買いません</div></div>';
+    } else {
+      _asaHtml = '<div style="margin:4px 0 10px;font-size:0.78em;color:#9a8f7a;">🗣 朝倉慶さんの話で気になった銘柄は、予定やメモに「🗣朝倉 丸紅」のように書くと、ここで突き合わせます</div>';
+    }
+    box.innerHTML = _asaHtml + '<div style="font-size:0.8em;color:#8a7f6a;margin-bottom:4px;">' + rows.length + '件（提案中 ' + rows.filter(function(r){ return r.status === 'proposed' && r.kind !== 'note'; }).length + '件・参考 ' + rows.filter(function(r){ return r.kind === 'note'; }).length + '件）</div>' + rows.map(function(r) {
       return '<div data-iv-row style="padding:8px 0;border-top:1px solid #efe7d6;color:#3d3326;">' +
         '<div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-weight:700;">' + esc(KOYOMI_INVEST_KIND[r.kind] || r.kind) + '　' + (r.market === 'US' ? '🇺🇸 ' : '') + esc(r.name || '') + (r.code ? ' <span style="color:#9a8f7a;">' + esc(r.code) + '</span>' : '') + '</span>' +
         '<span style="white-space:nowrap;">' + (r.amount_yen != null ? y(r.amount_yen) + '円' : '') + '</span></div>' +
@@ -62578,6 +62624,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.130', date: '2026-11-27',
+    items: [
+      { icon:'🔧', t:'開発者用の試験機能を整えました（皆さんの画面は変わりません）',
+        before:'開発者の試験用の記録に、自分のメモを突き合わせる仕組みがありませんでした',
+        after:'開発者の画面でだけ、自分のメモと記録を突き合わせられるようにしました。皆さんの画面は今までどおりです' }
+    ]
+  },
   {
     ver: 'v0.99.129', date: '2026-11-27',
     items: [
@@ -101669,6 +101723,37 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-727: 朝倉慶さんのメモを台帳と突き合わせる（v0.99.130） =====
+     // 【権威】2026-11-27「朝倉慶も足せ」「買いはしないでまずやって」→ A：YouTubeを見て書いたメモを拾う。参考の声（名前だけで買わない）
+     try {
+       var _x727 = [], _sv727 = { u: window._cloudUserId, a: window._koyomiruIsAdmin, f: window._koyomiruAdminFor };
+       allTasks.push({ id: 'st727_a', kind: 'task', date: '2099-11-27', text: '🗣朝倉 テスト商事、AAPL', section: 4 },
+                     { id: 'st727_b', kind: 'task', date: '2099-11-26', text: '朝倉さん：謎の株', section: 4 },
+                     { id: 'st727_c', kind: 'task', date: '2099-11-25', text: '朝倉駅で待ち合わせ', section: 4 });
+       try {
+         window._cloudUserId = 'st727'; window._koyomiruAdminFor = 'st727'; window._koyomiruIsAdmin = false;
+         if (koyomiAsakuraMemos().length !== 0) _x727.push('others');
+         window._koyomiruIsAdmin = true;
+         var _ms = koyomiAsakuraMemos().filter(function(m) { return /^2099/.test(m.date); });
+         if (_ms.length !== 2 || _ms[0].names.join('|') !== 'テスト商事|AAPL' || _ms[1].names[0] !== '謎の株') _x727.push('parse:' + JSON.stringify(_ms));
+         openKoyomiInvest({ rows: [
+           { kind: 'decision', status: 'proposed', code: '8001', name: 'テスト商事', created_at: '2026-11-27T00:00:00Z' },
+           { kind: 'decision', status: 'proposed', market: 'US', code: 'AAPL', name: 'アップル', created_at: '2026-11-27T00:00:00Z' },
+           { kind: 'decision', status: 'proposed', code: '9999', name: '関係ない株', created_at: '2026-11-27T00:00:00Z' }
+         ] });
+         var _ov = document.getElementById('koyomiInvestOverlay');
+         var _rw = _ov ? _ov.querySelectorAll('[data-iv-row]') : [];
+         var _hit = [].filter.call(_rw, function(r) { return r.querySelector('[data-iv-asakura]'); }).length;
+         if (_hit !== 2) _x727.push('badge:' + _hit);
+         if (!_ov || !_ov.querySelector('[data-iv-asakura-box]') || !/謎の株/.test(_ov.querySelector('[data-iv-asakura-box]').textContent) || !/名前だけでは買いません/.test(_ov.textContent)) _x727.push('box');
+       } finally {
+         window._cloudUserId = _sv727.u; window._koyomiruIsAdmin = _sv727.a; window._koyomiruAdminFor = _sv727.f;
+         for (var _i727 = allTasks.length - 1; _i727 >= 0; _i727--) if (allTasks[_i727] && /^st727_/.test(allTasks[_i727].id)) allTasks.splice(_i727, 1);
+         var _o727 = document.getElementById('koyomiInvestOverlay'); if (_o727) _o727.remove();
+       }
+       _x727.length === 0 ? ok('ST-727: 「🗣朝倉 〇〇」のメモを本人だけ拾い、台帳の銘柄（名前かコード）に印。台帳に無い銘柄も見せる。「朝倉駅」は拾わない') : ng('ST-727: 違う', _x727.join(','));
+     } catch(e) { ng('ST-727: 例外', e.message); }
 
      // ===== ST-726: 💹投資タブを設定で並べ替え・出し入れ（本人だけ）（v0.99.126） =====
      // 【権威】2026-11-27「ナビタブは設定で順序とか制御したい」
