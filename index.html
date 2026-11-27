@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.130 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.131 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.130';
+    const APP_VERSION = 'v0.99.131';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -61358,13 +61358,14 @@ var KOYOMI_INVEST_KIND = { decision: '🤖 判断', buy: '🟢 買った', sell:
 var KOYOMI_INVEST_STATUS = { proposed: '提案中', done: '済み', skipped: '見送り' };
 function _koyomiInvestFetch() {
   if (!window.supabaseClient || window._smokeTestRunning || window._isTesting) return Promise.resolve({ rows: null, error: 'offline' });
-  return window.supabaseClient.from('koyomiru_invest_ledger').select('id,kind,status,paper,code,name,amount_yen,shares,price,reason,source,traded_on,created_at,weight_hist,next_check_on,kabupita,current_price,current_at,source_url,market,funds')
+  return window.supabaseClient.from('koyomiru_invest_ledger').select('id,kind,status,paper,code,name,amount_yen,shares,price,reason,source,traded_on,created_at,weight_hist,next_check_on,kabupita,current_price,current_at,source_url,market,funds,horizon')
     .order('created_at', { ascending: false }).limit(100)
     .then(function(r) { return { rows: (r && r.data) || [], error: r && r.error ? r.error.message : null }; }, function(e) { return { rows: null, error: String(e) }; });
 }
 
 // v0.99.127【権威】2026-11-27「台帳はとても良い。もっと見たい。項目少ない」→ A：比率の動き・次に確かめる日・かぶピタッで買えるか・買ったあとの数字・情報源
-var KOYOMI_INVEST_STOP = 0.15;   // 【権威】2026-11-27 B：買値から15%下がったら売る
+var KOYOMI_INVEST_STOP = 0.15;
+var KOYOMI_INVEST_LONG_SHARE = 0.7;   // v0.99.131 【権威】2026-11-27「短期売買が前提。農林中金バリューインベストメントやバフェットみたいなスタンスの新機能も欲しい」「A（長期7・短期3）」「おおぶね・おおぶねワールド・米国株も入れ込め」 → 長期7・短期3   // 【権威】2026-11-27 B：買値から15%下がったら売る
 function _koyomiInvestMonth(m) { var x = /^(\d{4})-(\d{2})$/.exec(m || ''); return x ? (+x[2]) + '月' : String(m || ''); }
 function _koyomiInvestDetail(r, esc, y) {
   var lines = [], sm = 'font-size:0.82em;margin-top:3px;';
@@ -61377,6 +61378,7 @@ function _koyomiInvestDetail(r, esc, y) {
     var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(r.next_check_on);
     lines.push('<div data-iv-next style="' + sm + 'color:#7a5a1e;">📅 次に確かめる日：' + (d ? (+d[2]) + '月' + (+d[3]) + '日' : esc(r.next_check_on)) + '</div>');
   }
+  if (r.horizon === 'long' && r.kind !== 'note') lines.push('<div data-iv-long style="' + sm + 'color:#2f6b2f;">🌳 毎月の積立候補。値下がりでは売らず、会社の強さが壊れたときだけ見直します</div>');   // v0.99.131
   if (r._asakura) lines.push('<div data-iv-asakura style="' + sm + 'color:#8a3fb3;font-weight:700;">🗣 朝倉慶さんも挙げている（' + esc(String(r._asakura.date || '').slice(5).replace('-', '/')) + 'のメモ）</div>');   // v0.99.130
   if (Array.isArray(r.funds) && r.funds.length >= 2) lines.push('<div data-iv-funds style="' + sm + 'color:#b5651d;font-weight:700;">🤝 ' + r.funds.length + '本のファンドが上位に入れている（' + r.funds.map(esc).join('・') + '）</div>');   // v0.99.128
   if (r.market === 'US') lines.push('<div data-iv-kp style="' + sm + 'color:#9a8f7a;">🇺🇸 米国株：かぶピタッの対象外（100円から買える証券会社は別に要る）</div>');
@@ -61391,7 +61393,8 @@ function _koyomiInvestDetail(r, esc, y) {
       t += '　今 ' + y(cur) + '円' + (r.current_at ? '<span style="color:#aaa;">（' + esc(String(r.current_at).slice(5, 10).replace('-', '/')) + '）</span>' : '') +
         '　<span data-iv-pl style="color:' + col + ';font-weight:700;">' + (yen != null ? (yen >= 0 ? '+' : '') + y(yen) + '円／' : '') + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
     }
-    t += '　<span data-iv-stop style="color:#b3261e;">売る線 ' + y(Math.round(buy * (1 - KOYOMI_INVEST_STOP))) + '円</span>';
+    if (r.horizon === 'long') t += '　<span data-iv-stop style="color:#2f6b2f;">🌳 値下がりでは売りません</span>';   // v0.99.131: 長期は売る線を使わない
+    else t += '　<span data-iv-stop style="color:#b3261e;">売る線 ' + y(Math.round(buy * (1 - KOYOMI_INVEST_STOP))) + '円</span>';
     lines.push('<div style="' + sm + '">' + t + '</div>');
   }
   if (r.source_url && /^https:\/\//.test(r.source_url)) {
@@ -61447,17 +61450,37 @@ function openKoyomiInvest(opt) {
       '<div style="font-size:0.82em;color:#6a4fb3;font-weight:700;">投資へ移したお金（➡ 投資へ の合計）</div>' +
       '<div data-iv-moved style="font-size:1.5em;font-weight:800;color:#4b3591;">' + y(moved) + ' 円</div>' +
       '<div style="font-size:0.75em;color:#8a7f6a;">予定に「➡100 投資へ」と書くと増えます</div>' +
+      '<div data-iv-split style="margin-top:6px;font-size:0.85em;color:#4b3591;">🌳 長期 <b>' + y(Math.floor(moved * KOYOMI_INVEST_LONG_SHARE)) + '円</b>　⚡ 短期 <b>' + y(moved - Math.floor(moved * KOYOMI_INVEST_LONG_SHARE)) + '円</b><span style="color:#9a8f7a;">（7:3）</span></div>' +   // v0.99.131
+    '</div>' +
+    '<div style="display:flex;gap:6px;margin-top:12px;">' +
+      '<button type="button" data-iv-tab="long" style="flex:1;min-height:36px;border-radius:999px;border:1px solid #c9dcc0;font-weight:700;cursor:pointer;font-family:inherit;">🌳 長期（育てる）</button>' +
+      '<button type="button" data-iv-tab="short" style="flex:1;min-height:36px;border-radius:999px;border:1px solid #d9cdb4;font-weight:700;cursor:pointer;font-family:inherit;">⚡ 短期（入れ替わり）</button>' +
     '</div>' +
     '<div style="margin-top:14px;font-weight:700;font-size:0.92em;">台帳</div>' +
     '<div id="koyomiInvestRows" style="margin-top:6px;font-size:0.88em;color:#8a7f6a;">読み込んでいます…</div>' +
     '<div style="margin-top:12px;font-size:0.75em;color:#9a8f7a;line-height:1.6;">ここに並ぶ判断は、きくモンさん自身の運用のための記録です。最後に買うかどうかは、きくモンさんが決めます。</div>' +
   '</div>';
-  ov.addEventListener('click', function(e) { if (e.target === ov || (e.target.closest && e.target.closest('[data-iv-close]'))) ov.remove(); });
+  var _lastRes = null, _tab = opt.tab || null;
+  ov.addEventListener('click', function(e) {
+    if (e.target === ov || (e.target.closest && e.target.closest('[data-iv-close]'))) { ov.remove(); return; }
+    var tb = e.target.closest && e.target.closest('[data-iv-tab]');
+    if (tb) { _tab = tb.getAttribute('data-iv-tab'); if (_lastRes) paint(_lastRes); }
+  });
   document.body.appendChild(ov);
   var paint = function(res) {
     var box = document.getElementById('koyomiInvestRows'); if (!box) return;
     if (!res || res.rows === null) { box.innerHTML = '<div>台帳を読み込めませんでした。通信のよいところで開き直してください</div>'; return; }
     if (!res.rows.length) { box.innerHTML = '<div>まだ記録はありません。Claudeの判断が始まると、ここに並びます</div>'; return; }
+    // v0.99.131: 長期と短期を分けて見せる。長期の記録があれば、はじめは長期
+    _lastRes = res;
+    var _hasLong = res.rows.some(function(r) { return r.horizon === 'long'; });
+    if (!_tab) _tab = _hasLong ? 'long' : 'short';
+    ov.querySelectorAll('[data-iv-tab]').forEach(function(b) {
+      var on = b.getAttribute('data-iv-tab') === _tab;
+      b.style.background = on ? (_tab === 'long' ? '#eef5e8' : '#fff4e0') : '#fff'; b.style.color = on ? '#3d3326' : '#9a8f7a';
+    });
+    res = { rows: res.rows.filter(function(r) { return (r.horizon || 'short') === _tab; }) };
+    if (!res.rows.length) { box.innerHTML = '<div>' + (_tab === 'long' ? '🌳 長期の候補はまだありません' : '⚡ 短期の記録はまだありません') + '</div>'; return; }
     var _memos = koyomiAsakuraMemos(), _used = {};   // v0.99.130: 朝倉さんのメモと突き合わせる
     res.rows.forEach(function(r) { var h = _koyomiAsakuraHit(r, _memos); r._asakura = h; if (h) _used[(r.name || '') + '|' + (r.code || '')] = 1; });
     var _rank = { proposed: 0, done: 1, skipped: 2 };   // v0.99.128: 提案中を上に。そのうち、上位に入れているファンドが多いものを上に
@@ -62624,6 +62647,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.131', date: '2026-11-27',
+    items: [
+      { icon:'🔧', t:'開発者用の試験機能を整えました（皆さんの画面は変わりません）',
+        before:'開発者の試験用の記録は、1種類の見方しかありませんでした',
+        after:'開発者の画面でだけ、記録を2つに分けて見られるようにしました。皆さんの画面は今までどおりです' }
+    ]
+  },
   {
     ver: 'v0.99.130', date: '2026-11-27',
     items: [
@@ -101723,6 +101754,32 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-728: 💹 長期と短期を分ける（v0.99.131） =====
+     // 【権威】2026-11-27「バフェットみたいなスタンスの新機能も欲しい」「A（長期7・短期3）」
+     try {
+       var _x728 = [], _sv728 = { u: window._cloudUserId, a: window._koyomiruIsAdmin, f: window._koyomiruAdminFor };
+       try {
+         window._cloudUserId = 'st728'; window._koyomiruAdminFor = 'st728'; window._koyomiruIsAdmin = true;
+         openKoyomiInvest({ rows: [
+           { kind: 'decision', status: 'proposed', horizon: 'long', market: 'US', code: 'V', name: 'テスト長期', created_at: '2026-11-27T00:00:00Z', funds: ['おおぶね', 'おおぶねグローバル'] },
+           { kind: 'buy', status: 'done', horizon: 'long', code: '2802', name: 'テスト長期買い', price: 1000, shares: 1, current_price: 800, created_at: '2026-11-27T00:00:00Z' },
+           { kind: 'decision', status: 'proposed', code: '8002', name: 'テスト短期', created_at: '2026-11-27T00:00:00Z' }
+         ] });
+         var _ov = document.getElementById('koyomiInvestOverlay');
+         if (!_ov || !_ov.querySelector('[data-iv-split]') || !/（7:3）/.test(_ov.textContent)) _x728.push('split');
+         var _rw = _ov ? _ov.querySelectorAll('[data-iv-row]') : [];
+         if (_rw.length !== 2 || /テスト短期/.test(_ov.querySelector('#koyomiInvestRows').textContent)) _x728.push('long-first');
+         if (_rw.length === 2 && (!/値下がりでは売りません/.test(_rw[1].textContent) || /売る線/.test(_rw[1].textContent) || !_rw[0].querySelector('[data-iv-long]'))) _x728.push('long-rule');
+         _ov.querySelector('[data-iv-tab="short"]').click();
+         _rw = _ov.querySelectorAll('[data-iv-row]');
+         if (_rw.length !== 1 || !/テスト短期/.test(_rw[0].textContent)) _x728.push('short-tab');
+       } finally {
+         window._cloudUserId = _sv728.u; window._koyomiruIsAdmin = _sv728.a; window._koyomiruAdminFor = _sv728.f;
+         var _o728 = document.getElementById('koyomiInvestOverlay'); if (_o728) _o728.remove();
+       }
+       _x728.length === 0 ? ok('ST-728: 💹は🌳長期と⚡短期に分かれ、長期があれば長期から。長期は売る線を出さない。7:3の分け方を出す') : ng('ST-728: 違う', _x728.join(','));
+     } catch(e) { ng('ST-728: 例外', e.message); }
 
      // ===== ST-727: 朝倉慶さんのメモを台帳と突き合わせる（v0.99.130） =====
      // 【権威】2026-11-27「朝倉慶も足せ」「買いはしないでまずやって」→ A：YouTubeを見て書いたメモを拾う。参考の声（名前だけで買わない）
