@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.120 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.121 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.120';
+    const APP_VERSION = 'v0.99.121';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -33302,7 +33302,7 @@ function renderMonthlySidebarTasks() {
           txt.classList.add('koyomi-failed');
           var _fbd = document.createElement('span');
           _fbd.className = 'koyomi-failed-badge' + (_koyomiReflected(t) ? ' done' : '');
-          _fbd.textContent = _koyomiReflected(t) ? '✅ 振り返り済み' : '🌱 次の一手を書く';
+          _fbd.textContent = koyomiReflectBadge(t);   // v0.99.121: やり直し日・手放したも見せる
           _fbd.onclick = function(e) { e && e.stopPropagation(); openKoyomiReflect(taskId); };
           txt.appendChild(_fbd);
         }
@@ -61056,46 +61056,118 @@ function koyomiFailFromModal() {
   openKoyomiReflect(id);
 }
 window.koyomiFailFromModal = koyomiFailFromModal;
+// v0.99.121【権威】2026-11-27「ここにも検索窓のバニッシュの4つぐらいの項目、それも入れちゃえば。その上でテキストベースで具体的な反省を書かせればスムーズ。被るとこもあると思うから設計考えて」
+//   決めたこと：「次は、どうしたい？」は選ぶ（📅日を変えてやり直す／✂️小さくしてやり直す／🚮手放す）。やり直しは新しい予定として作り、元の予定は波線のまま残す（移すと波線ごと消えるため）
+//   「ちなみに、どこをどうすれば良くなったと思う？」は文で（書かなくてもOK）。バニッシュの「完了した」は入れない（下の取り消しで足りる）
+var KOYOMI_REFLECT_PLANS = { retry: '📅 日を変えてやり直す', shrink: '✂️ 小さくしてやり直す', release: '🚮 手放す（もうやらない）' };
+function _koyomiMD(ds) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ds || ''); return m ? (+m[2]) + '/' + (+m[3]) : (ds || ''); }
+function koyomiReflectBadge(t) {
+  if (!_koyomiReflected(t)) return '🌱 次の一手を書く';
+  if (t.reflectPlan === 'release') return '🚮 手放した';
+  if ((t.reflectPlan === 'retry' || t.reflectPlan === 'shrink') && t.retryDate) return (t.reflectPlan === 'shrink' ? '✂️' : '📅') + ' やり直し ' + _koyomiMD(t.retryDate);
+  return '✅ 振り返り済み';
+}
+window.koyomiReflectBadge = koyomiReflectBadge;
+// やり直しの予定を作る（すでに作ってあれば、それを直す）。元の予定は触らない
+function _koyomiReflectRetry(t, date, text) {
+  var ex = t.retryId ? (allTasks || []).find(function(x) { return x && x.id === t.retryId; }) : null;
+  if (ex) { updateTask(ex.id, { date: date, text: text }); return ex.id; }
+  var nt = createTask({ text: text, date: date, time: t.time || null, endTime: t.endTime || null, section: t.section || 4, displayScope: t.displayScope || 'both',
+                        calendarId: t.calendarId || null, cloudCalendarId: t.cloudCalendarId || null, memo: t.memo || null });
+  if (!nt) return null;
+  var up = { retryOf: t.id };
+  if (t.assigneeId) { up.assigneeId = t.assigneeId; up.assigneeName = t.assigneeName || null; }
+  updateTask(nt.id, up);
+  return nt.id;
+}
 function openKoyomiReflect(taskId, opt) {
   opt = opt || {};
   var t = (allTasks || []).find(function(x) { return x && x.id === taskId; }); if (!t) return;
   var old = document.getElementById('koyomiReflectOverlay'); if (old) old.remove();
   var esc = function(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var today = getLocalDateStr(new Date()), tmr = (function() { var d = new Date(); d.setDate(d.getDate() + 1); return getLocalDateStr(d); })();
+  var exRetry = t.retryId ? (allTasks || []).find(function(x) { return x && x.id === t.retryId; }) : null;
+  var plan = t.reflectPlan || null;
+  var date = (exRetry && exRetry.date) || t.retryDate || ((t.date || today) < today ? today : tmr);
   var ov = document.createElement('div');
   ov.id = 'koyomiReflectOverlay';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100001;display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
   var ta = 'width:100%;box-sizing:border-box;min-height:70px;padding:10px;border:1px solid #d9cdb4;border-radius:10px;font-size:0.95em;font-family:inherit;line-height:1.6;resize:vertical;';
+  var chip = 'display:block;width:100%;text-align:left;min-height:42px;margin-top:6px;padding:8px 12px;border-radius:10px;font-size:0.92em;font-weight:700;cursor:pointer;font-family:inherit;';
+  var dbtn = 'flex:1;min-height:36px;border-radius:9px;font-size:0.85em;font-weight:700;cursor:pointer;font-family:inherit;';
+  var oldNext = (!plan && t.reflectNext) ? '<div style="font-size:0.78em;color:#8a7f6a;margin-top:4px;">前に書いた次の一手：' + esc(t.reflectNext) + '</div>' : '';
   ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:440px;max-height:calc(100dvh - 28px);overflow-y:auto;padding:18px;box-sizing:border-box;color:#3d3326;">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div style="font-weight:800;font-size:1.02em;line-height:1.5;">🌱 できなかった：<span class="koyomi-failed">' + esc(t.text || '予定') + '</span></div>' +
     '<button type="button" data-rf-close aria-label="閉じる" style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>' +
-    '<div style="font-size:0.78em;color:#8a7f6a;margin-top:2px;">' + esc(t.date || '') + (t.time ? ' ' + esc(t.time) : '') + '　波線のまま残ります。次につなげる一手を、短くでいいので書いておきましょう</div>' +
+    '<div style="font-size:0.78em;color:#8a7f6a;margin-top:2px;">' + esc(t.date || '') + (t.time ? ' ' + esc(t.time) : '') + '　この予定は波線のまま残ります</div>' +
     (opt.queueNote ? '<div style="font-size:0.78em;color:#6b7d5e;margin-top:6px;">' + esc(opt.queueNote) + '</div>' : '') +
-    // v0.99.117【権威】2026-11-27「反省ってあんま好きじゃなくて、なぜできなかったのかって考えるのはつまんない。初めに次はどうしたいって聞いて、そのあと、ちなみに、どこをどうすれば良くなったと思うって聞いたらどう？」→ 前向きな問いを先に。2つ目は空でもよい
-    '<div style="margin-top:12px;font-weight:700;font-size:0.9em;">次は、どうしたい？</div>' +
-    '<textarea id="rfNext" maxlength="400" placeholder="例：半分に分けて2日でやる／朝いちばんに入れる" style="' + ta + '">' + esc(t.reflectNext || '') + '</textarea>' +
-    '<div style="margin-top:10px;font-weight:700;font-size:0.9em;">ちなみに、どこをどうすれば良くなったと思う？ <span style="font-weight:400;color:#9a8f7a;font-size:0.9em;">（書かなくてもOK）</span></div>' +
+    '<div style="margin-top:12px;font-weight:700;font-size:0.9em;">次は、どうしたい？</div>' + oldNext +
+    Object.keys(KOYOMI_REFLECT_PLANS).map(function(k) { return '<button type="button" data-rf-plan="' + k + '" style="' + chip + '">' + KOYOMI_REFLECT_PLANS[k] + '</button>'; }).join('') +
+    '<div id="rfPlanBox" style="display:none;margin-top:8px;padding:10px;border-radius:10px;background:#f6f3ec;">' +
+      '<div id="rfShrinkRow" style="display:none;margin-bottom:8px;"><div style="font-size:0.8em;color:#6b5f4a;margin-bottom:4px;">小さくした予定（直してください）</div>' +
+        '<input id="rfShrinkText" type="text" maxlength="200" value="' + esc((exRetry && t.reflectPlan === 'shrink') ? exRetry.text : (t.text || '')) + '" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid #d9cdb4;border-radius:9px;font-size:0.95em;font-family:inherit;"></div>' +
+      '<div id="rfDateRow"><div style="font-size:0.8em;color:#6b5f4a;margin-bottom:4px;">いつ、やり直す？</div>' +
+        '<div style="display:flex;gap:6px;"><button type="button" data-rf-date="' + today + '" style="' + dbtn + '">今日</button><button type="button" data-rf-date="' + tmr + '" style="' + dbtn + '">明日</button>' +
+        '<input id="rfDate" type="date" value="' + esc(date) + '" style="flex:1.3;min-height:36px;border:1px solid #d9cdb4;border-radius:9px;font-family:inherit;font-size:0.85em;padding:0 6px;background:#fff;"></div>' +
+        '<div style="font-size:0.75em;color:#8a7f6a;margin-top:6px;">' + (exRetry ? 'やり直しの予定は作ってあります。日や文を変えると、そちらが直ります' : 'この日に、新しい予定として作ります') + '</div></div>' +
+      '<div id="rfReleaseNote" style="display:none;font-size:0.82em;color:#6b5f4a;">新しい予定は作りません。記録として残します</div>' +
+    '</div>' +
+    '<div style="margin-top:12px;font-weight:700;font-size:0.9em;">ちなみに、どこをどうすれば良くなったと思う？ <span style="font-weight:400;color:#9a8f7a;font-size:0.9em;">（書かなくてもOK）</span></div>' +
     '<textarea id="rfWhy" maxlength="400" placeholder="例：前の日に準備しておけばよかった" style="' + ta + '">' + esc(t.reflectWhy || '') + '</textarea>' +
-    '<div style="display:flex;gap:8px;margin-top:12px;"><button type="button" data-rf-save style="flex:2;min-height:44px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;font-family:inherit;">書いた</button>' +
+    '<div style="display:flex;gap:8px;margin-top:12px;"><button type="button" data-rf-save style="flex:2;min-height:44px;border:none;border-radius:10px;background:#4f7a3a;color:#fff;font-weight:800;cursor:pointer;font-family:inherit;">決めた</button>' +
     '<button type="button" data-rf-later style="flex:1;min-height:44px;border:1px solid #d9cdb4;border-radius:10px;background:#fff;color:#8a7f6a;cursor:pointer;font-family:inherit;">あとで</button></div>' +
     '<div style="text-align:center;margin-top:12px;"><button type="button" data-rf-undo style="border:none;background:none;color:#9a8f7a;font-size:0.8em;text-decoration:underline;cursor:pointer;font-family:inherit;">「できなかった」を取り消す（まだの予定に戻す）</button></div>' +
   '</div>';
+  var $ = function(s) { return ov.querySelector(s); };
+  var paint = function() {
+    ov.querySelectorAll('[data-rf-plan]').forEach(function(b) {
+      var on = b.getAttribute('data-rf-plan') === plan;
+      b.style.border = on ? '2px solid #4f7a3a' : '1px solid #d9cdb4'; b.style.background = on ? '#eef5e8' : '#fff'; b.style.color = on ? '#2f5a1e' : '#4a4030';
+    });
+    $('#rfPlanBox').style.display = plan ? 'block' : 'none';
+    $('#rfShrinkRow').style.display = plan === 'shrink' ? 'block' : 'none';
+    $('#rfDateRow').style.display = (plan === 'retry' || plan === 'shrink') ? 'block' : 'none';
+    $('#rfReleaseNote').style.display = plan === 'release' ? 'block' : 'none';
+    var dv = $('#rfDate').value;
+    ov.querySelectorAll('[data-rf-date]').forEach(function(b) {
+      var on = b.getAttribute('data-rf-date') === dv;
+      b.style.border = on ? '2px solid #4f7a3a' : '1px solid #d9cdb4'; b.style.background = on ? '#eef5e8' : '#fff'; b.style.color = on ? '#2f5a1e' : '#6b5f4a';
+    });
+  };
+  $('#rfDate').addEventListener('change', paint);
   var done = function() { ov.remove(); if (typeof opt.onDone === 'function') opt.onDone(); };
   ov.addEventListener('click', function(e) {
     if (e.target === ov) { done(); return; }
     var b = e.target.closest('button'); if (!b) return;
     if (b.hasAttribute('data-rf-close') || b.hasAttribute('data-rf-later')) { done(); return; }
+    if (b.hasAttribute('data-rf-plan')) { plan = b.getAttribute('data-rf-plan'); paint(); if (plan === 'shrink') try { $('#rfShrinkText').focus(); } catch (eS) {} return; }
+    if (b.hasAttribute('data-rf-date')) { $('#rfDate').value = b.getAttribute('data-rf-date'); paint(); return; }
     if (b.hasAttribute('data-rf-save')) {
-      var why = String(ov.querySelector('#rfWhy').value || '').trim().slice(0, 400), nx = String(ov.querySelector('#rfNext').value || '').trim().slice(0, 400);
-      if (!nx) { if (typeof showToast === 'function') showToast('「次は、どうしたい？」を書いてください'); return; }
-      if (typeof updateTask === 'function') updateTask(taskId, { reflectWhy: why, reflectNext: nx, reflectedAt: new Date().toISOString() });
-      try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); if (typeof renderMonthlyView === 'function') renderMonthlyView(); } catch (eR) {}
-      if (typeof showToast === 'function') showToast('✅ 次の一手を書きました', { type: 'success' });
+      if (!plan) { if (typeof showToast === 'function') showToast('「次は、どうしたい？」を1つ選んでください'); return; }
+      var why = String($('#rfWhy').value || '').trim().slice(0, 400);
+      var up = { reflectWhy: why, reflectPlan: plan, reflectedAt: new Date().toISOString() };
+      if (plan === 'release') {
+        up.reflectNext = '🚮 手放す（もうやらない）';
+        if (exRetry && !exRetry.completed && typeof deleteTaskById === 'function') { try { deleteTaskById(exRetry.id); } catch (eD) {} }   // 前に作ったやり直し（まだ済んでいない）は消す
+        up.retryId = null; up.retryDate = null;
+      } else {
+        var d = $('#rfDate').value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { if (typeof showToast === 'function') showToast('やり直す日を選んでください'); return; }
+        var txt = plan === 'shrink' ? String($('#rfShrinkText').value || '').trim().slice(0, 200) : (t.text || '');
+        if (!txt) { if (typeof showToast === 'function') showToast('小さくした予定を書いてください'); return; }
+        var rid = _koyomiReflectRetry(t, d, txt);
+        up.retryId = rid; up.retryDate = d;
+        up.reflectNext = (plan === 'shrink' ? '✂️ 小さくして ' + _koyomiMD(d) + ' にやり直す：' + txt : '📅 ' + _koyomiMD(d) + ' にやり直す');
+      }
+      if (typeof updateTask === 'function') updateTask(taskId, up);
+      try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); if (typeof renderMonthlyView === 'function') renderMonthlyView(); if (typeof renderAllSections === 'function') renderAllSections(); } catch (eR) {}
+      if (typeof showToast === 'function') showToast(plan === 'release' ? '🚮 手放しました。記録は残ります' : '📅 ' + _koyomiMD(up.retryDate) + ' に、やり直しの予定を作りました', { type: 'success' });
       done(); return;
     }
     if (b.hasAttribute('data-rf-undo')) { koyomiMarkFailed(taskId, false); if (typeof showToast === 'function') showToast('まだの予定に戻しました'); done(); return; }
   });
   document.body.appendChild(ov);
-  try { ov.querySelector('#rfNext').focus(); } catch (eF) {}
+  paint();
 }
 window.openKoyomiReflect = openKoyomiReflect;
 
@@ -62305,6 +62377,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.121', date: '2026-11-27',
+    items: [
+      { icon:'🌱', t:'「できなかった」のあと、次の一手を選べるようにしました',
+        before:'「次は、どうしたい？」を毎回、文で書く必要がありました',
+        after:'［📅 日を変えてやり直す］［✂️ 小さくしてやり直す］［🚮 手放す］から選びます。やり直しは新しい予定として作り、元の予定は波線のまま残ります。そのあと「どこをどうすれば良くなったと思う？」を書けます（書かなくてもOK）' }
+    ]
+  },
   {
     ver: 'v0.99.120', date: '2026-11-27',
     items: [
@@ -101411,69 +101491,80 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
          : ng('ST-722: 朝の確認が違う', _x722.join(','));
      } catch(e) { ng('ST-722: 例外', e.message); }
 
-     // ===== ST-721b: 「次は」だけで書ける（2つ目は空でもよい） =====
+     // ===== ST-721: できなかった＝波線と次の一手（v0.99.116→v0.99.121） =====
+     // 【権威】2026-11-27「できなかったやつは波線」「初めに次はどうしたい、そのあと、ちなみに、どこをどうすれば良くなった」「バニッシュの項目も入れちゃえば。その上でテキストで具体的な反省」
      try {
-       var _id721b = 'st721b_task', _x721b = [];
-       allTasks.push({ id: _id721b, kind: 'task', date: '2099-03-04', text: 'ST721b', section: 4, completed: false, failed: true });
+       var _x721 = [], _id721 = 'st721_task', _svCreate = window.createTask;
+       var _d721 = new Date(); _d721.setDate(_d721.getDate() - 1); var _y721 = getLocalDateStr(_d721), _t721 = getLocalDateStr(new Date());
+       allTasks.push({ id: _id721, kind: 'task', date: _y721, time: '10:00', text: 'ST721資料づくり', section: 4, completed: false, assigneeId: 'st721_u', assigneeName: 'ゆう' });
        try {
-         openKoyomiReflect(_id721b);
-         var _ovb = document.getElementById('koyomiReflectOverlay');
-         _ovb.querySelector('#rfNext').value = '朝に入れる';
-         _ovb.querySelector('[data-rf-save]').click();
-         var _tb = allTasks.find(function(x) { return x.id === _id721b; });
-         if (document.getElementById('koyomiReflectOverlay') || _tb.reflectNext !== '朝に入れる' || !_koyomiReflected(_tb)) _x721b.push('next-only');
-       } finally {
-         for (var _ib = allTasks.length - 1; _ib >= 0; _ib--) if (allTasks[_ib] && allTasks[_ib].id === _id721b) allTasks.splice(_ib, 1);
-         var _ob = document.getElementById('koyomiReflectOverlay'); if (_ob) _ob.remove();
-       }
-       _x721b.length === 0 ? ok('ST-721b: 「次は、どうしたい？」だけで書ける（2つ目は書かなくてもOK）') : ng('ST-721b: 違う', _x721b.join(','));
-     } catch(e) { ng('ST-721b: 例外', e.message); }
-
-     // ===== ST-721: できなかった＝波線と振り返り（v0.99.116） =====
-     // 【権威】2026-11-27「できなかったやつは波線。なぜ出来なかったかを反省させて、次はどうするかを書かせる」
-     try {
-       var _x721 = [], _id721 = 'st721_task';
-       allTasks.push({ id: _id721, kind: 'task', date: '2099-03-03', text: 'ST721資料づくり', section: 4, completed: false });
-       try {
-         // 波線は絵で描く（文字の線はスマホで直線になるため）
          var _sp = document.createElement('span'); _sp.className = 'koyomi-failed'; _sp.textContent = 'x'; document.body.appendChild(_sp);
          var _cs = getComputedStyle(_sp);
          if (!/svg/.test(_cs.backgroundImage) || /line-through/.test(_cs.textDecorationLine || _cs.textDecoration)) _x721.push('wave-css');
          _sp.remove();
          koyomiMarkFailed(_id721, true);
          var _t = allTasks.find(function(x) { return x.id === _id721; });
-         if (!_t.failed || _t.completed) _x721.push('mark');
-         if (_koyomiReflected(_t)) _x721.push('reflected-too-early');
+         if (!_t.failed || _t.completed || _koyomiReflected(_t)) _x721.push('mark');
          openKoyomiReflect(_id721);
          var _ov = document.getElementById('koyomiReflectOverlay');
-         if (!_ov || !_ov.querySelector('#rfWhy') || !_ov.querySelector('#rfNext')) _x721.push('sheet');
+         if (!_ov || _ov.querySelectorAll('[data-rf-plan]').length !== 3 || !_ov.querySelector('#rfWhy')) _x721.push('sheet');
          else {
-           // v0.99.117: 先に「次は、どうしたい？」。2つ目（どこをどうすれば）だけでは書けない
-           if (_ov.querySelector('#rfNext').compareDocumentPosition(_ov.querySelector('#rfWhy')) !== Node.DOCUMENT_POSITION_FOLLOWING) _x721.push('order');
-           if (/なぜ、できなかった/.test(_ov.textContent) || !/どこをどうすれば良くなったと思う/.test(_ov.textContent)) _x721.push('wording');
+           if (!/次は、どうしたい/.test(_ov.textContent) || !/どこをどうすれば良くなったと思う/.test(_ov.textContent) || /完了した/.test(_ov.textContent)) _x721.push('wording');
+           // 選ばずには決められない（文だけでは決まらない）
            _ov.querySelector('#rfWhy').value = '見積もりが甘かった';
            _ov.querySelector('[data-rf-save]').click();
-           if (!document.getElementById('koyomiReflectOverlay')) _x721.push('why-only-saved');
-           _ov.querySelector('#rfNext').value = '半分に分ける';
+           if (!document.getElementById('koyomiReflectOverlay')) _x721.push('no-plan-saved');
+           // 小さくしてやり直す：新しい予定ができ、元は波線のまま
+           _ov.querySelector('[data-rf-plan="shrink"]').click();
+           if (_ov.querySelector('#rfDate').value !== _t721) _x721.push('default-date');   // きのうの予定なら今日
+           _ov.querySelector('#rfShrinkText').value = '目次だけ作る';
            _ov.querySelector('[data-rf-save]').click();
            _t = allTasks.find(function(x) { return x.id === _id721; });
-           if (_t.reflectWhy !== '見積もりが甘かった' || _t.reflectNext !== '半分に分ける' || !_t.failed) _x721.push('save');
-           if (!_koyomiReflected(_t)) _x721.push('reflected');
+           var _nt = _t.retryId && allTasks.find(function(x) { return x.id === _t.retryId; });
+           if (!_t.failed || _t.date !== _y721 || _t.reflectPlan !== 'shrink' || _t.reflectWhy !== '見積もりが甘かった') _x721.push('orig');
+           if (!_nt || _nt.text !== '目次だけ作る' || _nt.date !== _t721 || _nt.failed || _nt.retryOf !== _id721 || _nt.assigneeId !== 'st721_u' || _nt.time !== '10:00') _x721.push('retry-task');
+           if (!/やり直し/.test(koyomiReflectBadge(_t))) _x721.push('badge');
+           // もう一度開いて日を変えると、同じやり直しの予定が直る（増えない）
+           var _cnt = allTasks.filter(function(x) { return x && x.retryOf === _id721; }).length;
+           openKoyomiReflect(_id721);
+           _ov = document.getElementById('koyomiReflectOverlay');
+           _ov.querySelector('#rfDate').value = '2099-01-02';
+           _ov.querySelector('[data-rf-save]').click();
+           if (allTasks.filter(function(x) { return x && x.retryOf === _id721; }).length !== _cnt || allTasks.find(function(x) { return x.id === _t.retryId; }).date !== '2099-01-02') _x721.push('retry-twice');
          }
-         // 取り消すと、まだの予定に戻る（反省は残す）
+         // 取り消すと、まだの予定に戻る（書いたものは残す）
          koyomiMarkFailed(_id721, false);
          _t = allTasks.find(function(x) { return x.id === _id721; });
          if (_t.failed || _t.reflectWhy !== '見積もりが甘かった') _x721.push('undo');
          if (!document.getElementById('monthlyFailBtn') || !/task\.completed \? 'none' : 'block'/.test(openMonthlyTaskEditModal.toString())) _x721.push('modal-btn');
-         if (!/振り返り済み/.test(renderMonthlySidebarTasks.toString()) || !/koyomi-failed/.test(renderMonthlyView.toString())) _x721.push('render');
+         if (!/koyomiReflectBadge/.test(renderMonthlySidebarTasks.toString()) || !/koyomi-failed/.test(renderMonthlyView.toString())) _x721.push('render');
        } finally {
-         for (var _i721 = allTasks.length - 1; _i721 >= 0; _i721--) if (allTasks[_i721] && allTasks[_i721].id === _id721) allTasks.splice(_i721, 1);
+         for (var _i721 = allTasks.length - 1; _i721 >= 0; _i721--) if (allTasks[_i721] && (allTasks[_i721].id === _id721 || allTasks[_i721].retryOf === _id721)) allTasks.splice(_i721, 1);
          var _o721 = document.getElementById('koyomiReflectOverlay'); if (_o721) _o721.remove();
        }
        _x721.length === 0
-         ? ok('ST-721: できなかった＝波線（絵で描く）。次の一手（次は・どこを）を書くと ✅、波線は残る。取り消せる（反省は残す）')
-         : ng('ST-721: できなかった・振り返りが違う', _x721.join(','));
+         ? ok('ST-721: できなかった＝波線。次は3つから選ぶ（やり直す／小さくしてやり直す／手放す）。やり直しは新しい予定（担当・時刻つき）で元は波線のまま。2回目は同じ予定を直す。取り消せる')
+         : ng('ST-721: できなかった・次の一手が違う', _x721.join(','));
      } catch(e) { ng('ST-721: 例外', e.message); }
+
+     // ===== ST-721b: 手放す（新しい予定は作らない） =====
+     try {
+       var _id721b = 'st721b_task', _x721b = [], _n0 = allTasks.length;
+       allTasks.push({ id: _id721b, kind: 'task', date: '2099-03-04', text: 'ST721b', section: 4, completed: false, failed: true });
+       try {
+         openKoyomiReflect(_id721b);
+         var _ovb = document.getElementById('koyomiReflectOverlay');
+         _ovb.querySelector('[data-rf-plan="release"]').click();
+         _ovb.querySelector('[data-rf-save]').click();
+         var _tb = allTasks.find(function(x) { return x.id === _id721b; });
+         if (document.getElementById('koyomiReflectOverlay') || _tb.reflectPlan !== 'release' || !_koyomiReflected(_tb) || !_tb.failed || allTasks.length !== _n0 + 1) _x721b.push('release');
+         if (koyomiReflectBadge(_tb) !== '🚮 手放した') _x721b.push('badge');
+       } finally {
+         for (var _ib = allTasks.length - 1; _ib >= 0; _ib--) if (allTasks[_ib] && allTasks[_ib].id === _id721b) allTasks.splice(_ib, 1);
+         var _ob = document.getElementById('koyomiReflectOverlay'); if (_ob) _ob.remove();
+       }
+       _x721b.length === 0 ? ok('ST-721b: 手放すは新しい予定を作らず、波線のまま「🚮 手放した」') : ng('ST-721b: 違う', _x721b.join(','));
+     } catch(e) { ng('ST-721b: 例外', e.message); }
 
      // ===== ST-720: 部屋の管理帳の画面に、部屋主の部屋も出す（v0.99.115） =====
      // 【権威】2026-11-27「??誰もいないわけない」
