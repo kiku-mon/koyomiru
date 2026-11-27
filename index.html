@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.117 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.118 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.117';
+    const APP_VERSION = 'v0.99.118';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -6743,7 +6743,7 @@ function _showInviteWelcome() {
 // 1か所で「今、ほかの画面が開いていないか」を見て、開いていれば閉じるまで待ってから出す（第71条④）。
 // 季節の風だよりを出す所が起動のとても早い段階にあるので、この道具はそれより前に置く（第74条）
 (function() {
-  var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiOrderOverlay', 'koyomiLifeSwipe'];   // v0.59.3: 払う画面も   // v0.58.0: 注文票も（v0.59.0: 今日の暦のカードは無くした）
+  var IDS = ['setupOverlay', 'tutorialOverlay', 'tokiWizardOverlay', 'oshiraseModal', 'kazedayoriModal', 'koyomiOrderOverlay', 'koyomiLifeSwipe', 'koyomiMorningOverlay'];   // v0.99.118: 朝の確認も   // v0.59.3: 払う画面も   // v0.58.0: 注文票も（v0.59.0: 今日の暦のカードは無くした）
   // v0.99.101: 通知を押して来たときは、本題（一覧・その予定）が先。起動の画面（季節の風だよりなど）は、それが済むまで待つ
   try { var _nq = new URLSearchParams(location.search); if (_nq.get('d') && (_nq.get('t') || _nq.get('list') === '1')) { window._koyomiFromNotify = true; window._koyomiFromNotifyAt = Date.now(); } } catch (eNq) {}
   function notifyBusy() {
@@ -26015,6 +26015,7 @@ function myDeckApply(idx) {
             const _wasDone = t.completed;
             t.completed = !t.completed;
             t.done = t.completed; // 造営(gantt)のdoneと同期
+            if (t.completed && t.failed) t.failed = false;   // v0.99.118
             // v0.45.1575: 【権威】2026-08-06、完了トグルでupdatedAtを更新しておらず、
             // 差分プッシュの対象から漏れてクラウドへ届いていなかった（第61条）。
             // 共有カレンダーでは「相手が完了にしたのにこちらは未完了のまま」になる。
@@ -35469,6 +35470,7 @@ function saveMsbEdit() {
         const wasCompleted = task.completed;
         task.completed = !task.completed;
         task.done = task.completed; // 造営(gantt)のdoneと双方向同期
+        if (task.completed && task.failed) task.failed = false;   // v0.99.118: 済みにしたら、できなかった（波線）は外す（書いた次の一手は残す）
         task.updatedAt = new Date().toISOString();
         saveAllTasks();
         if (!wasCompleted && task.completed) {
@@ -61077,6 +61079,102 @@ function openKoyomiReflect(taskId, opt) {
   try { ov.querySelector('#rfNext').focus(); } catch (eF) {}
 }
 window.openKoyomiReflect = openKoyomiReflect;
+
+// ===== v0.99.118: 朝の確認（きのうの、まだの予定） =====
+// 【権威】2026-11-27 決めたこと：その日はじめて開いたとき1回だけ。きのうの、まだの予定に［できた］［できなかった］［今日に回す］
+//   聞くのは自分が作った予定と、自分が担当の予定だけ（ほかの人が担当の予定は聞かない）。今日に回すは日を移すだけ（波線にしない）
+var KOYOMI_MORNING_KEY = 'koyomi_morning_check_day_v1';   // 「今日はもう聞いた」の印だけ（予定の中身は持たない）
+function _koyomiMorningTargets(todayStr, uid) {
+  var d = new Date(todayStr + 'T00:00:00'); d.setDate(d.getDate() - 1);
+  var y = getLocalDateStr(d);
+  return (allTasks || []).filter(function(t) {
+    if (!t || t.date !== y) return false;
+    if (t.kind && t.kind !== 'task') return false;         // 日記・メモ・ノートなどは聞かない
+    if (t.completed || t.done || t.failed) return false;
+    if (t.assigneeId) return !!uid && t.assigneeId === uid; // 担当が決まっていれば、自分が担当のときだけ
+    return !t.createdBy || !uid || t.createdBy === uid;     // 担当なしは、自分が作った予定だけ
+  });
+}
+window._koyomiMorningTargets = _koyomiMorningTargets;
+function koyomiMorningCheckMaybe(opt) {
+  opt = opt || {};
+  if (!opt.test && (window._smokeTestRunning || window._isTesting || window._viewOnlyBackup)) return false;
+  if (window._koyomiMorningQueued && !opt.test) return false;
+  var today = opt.today || getLocalDateStr(new Date());
+  var seen = null; try { seen = localStorage.getItem(KOYOMI_MORNING_KEY); } catch (e) {}
+  if (seen === today) return false;
+  var list = _koyomiMorningTargets(today, opt.uid !== undefined ? opt.uid : (window._cloudUserId || null));
+  if (!list.length) return false;
+  window._koyomiMorningQueued = true;
+  var show = function() {
+    try { localStorage.setItem(KOYOMI_MORNING_KEY, today); } catch (e) {}
+    openKoyomiMorningCheck(list.map(function(t) { return t.id; }), today);
+  };
+  if (opt.test) show(); else if (typeof whenStartupClear === 'function') whenStartupClear(show); else show();
+  return true;
+}
+window.koyomiMorningCheckMaybe = koyomiMorningCheckMaybe;
+function openKoyomiMorningCheck(ids, today) {
+  var old = document.getElementById('koyomiMorningOverlay'); if (old) old.remove();
+  today = today || getLocalDateStr(new Date());
+  var esc = function(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); };
+  var find = function(id) { return (allTasks || []).find(function(x) { return x && x.id === id; }); };
+  var ov = document.createElement('div');
+  ov.id = 'koyomiMorningOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;';
+  var btn = 'flex:1;min-height:38px;border-radius:9px;font-size:0.85em;font-weight:700;cursor:pointer;font-family:inherit;';
+  var rows = ids.map(function(id) {
+    var t = find(id); if (!t) return '';
+    return '<div class="km-row" data-km-id="' + esc(id) + '" style="padding:10px 0;border-top:1px solid #efe7d6;">' +
+      '<div class="km-text" style="font-weight:700;line-height:1.5;">' + (t.time ? '<span style="color:#9a8f7a;font-weight:400;">' + esc(t.time) + '　</span>' : '') + esc(t.text || '予定') + '</div>' +
+      '<div class="km-btns" style="display:flex;gap:6px;margin-top:7px;">' +
+        '<button type="button" data-km="done" style="' + btn + 'border:none;background:#4f7a3a;color:#fff;">できた</button>' +
+        '<button type="button" data-km="fail" style="' + btn + 'border:1px dashed #c0562e;background:#fff8f4;color:#a3462a;">できなかった</button>' +
+        '<button type="button" data-km="move" style="' + btn + 'border:1px solid #d9cdb4;background:#fff;color:#6b5f4a;">今日に回す</button>' +
+      '</div><div class="km-res" style="display:none;font-size:0.85em;color:#6b7d5e;margin-top:4px;"></div></div>';
+  }).join('');
+  ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:440px;max-height:calc(100dvh - 28px);overflow-y:auto;padding:18px;box-sizing:border-box;color:#3d3326;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><div style="font-weight:800;font-size:1.05em;">☀️ おはようございます。きのうの予定、どうでした？</div>' +
+    '<button type="button" data-km-close aria-label="閉じる" style="border:none;background:none;font-size:1.3em;color:#999;cursor:pointer;">×</button></div>' +
+    '<div style="font-size:0.8em;color:#8a7f6a;margin:2px 0 6px;">まだ済みになっていない予定が ' + ids.length + ' 件あります</div>' + rows +
+    '<div style="text-align:center;margin-top:10px;"><button type="button" data-km-close style="border:none;background:none;color:#9a8f7a;font-size:0.85em;text-decoration:underline;cursor:pointer;font-family:inherit;">あとで（今日はもう聞きません）</button></div></div>';
+  var left = ids.length;
+  var settle = function(row, msg) {
+    row.querySelector('.km-btns').style.display = 'none';
+    var r = row.querySelector('.km-res'); r.textContent = msg; r.style.display = 'block';
+    row.style.opacity = '0.7';
+    left--;
+    if (left <= 0) setTimeout(function() { if (document.getElementById('koyomiReflectOverlay')) return; ov.remove(); if (typeof showToast === 'function') showToast('☀️ きのうの予定、ぜんぶ確かめました'); }, 900);
+  };
+  var redraw = function() { try { if (typeof renderMonthlySidebarTasks === 'function') renderMonthlySidebarTasks(); if (typeof renderMonthlyView === 'function') renderMonthlyView(); if (typeof renderAllSections === 'function') renderAllSections(); } catch (e) {} };
+  ov.addEventListener('click', function(e) {
+    if (e.target === ov) { ov.remove(); return; }
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.hasAttribute('data-km-close')) { ov.remove(); return; }
+    var row = b.closest('.km-row'); if (!row) return;
+    var id = row.getAttribute('data-km-id'), t = find(id); if (!t) return;
+    var k = b.getAttribute('data-km');
+    if (k === 'done') {
+      if (typeof updateTask === 'function') updateTask(id, { completed: true, done: true, failed: false });
+      try { if (typeof onTaskCompleted === 'function') onTaskCompleted(find(id)); } catch (eC) {}
+      redraw(); settle(row, '✅ 済みにしました');
+    } else if (k === 'move') {
+      if (typeof updateTask === 'function') updateTask(id, { date: today });
+      redraw(); settle(row, '➡️ 今日に回しました');
+    } else if (k === 'fail') {
+      koyomiMarkFailed(id, true);
+      settle(row, '🌱 波線にしました');
+      openKoyomiReflect(id, { onDone: function() {
+        var tt = find(id), r = row.querySelector('.km-res');
+        if (tt && _koyomiReflected(tt)) r.textContent = '🌱 波線にしました（次の一手を書きました）';
+        if (left <= 0) setTimeout(function() { ov.remove(); if (typeof showToast === 'function') showToast('☀️ きのうの予定、ぜんぶ確かめました'); }, 300);
+      } });
+    }
+  });
+  document.body.appendChild(ov);
+}
+window.openKoyomiMorningCheck = openKoyomiMorningCheck;
+// ===== END v0.99.118 =====
 // ===== END v0.99.116 =====
 
 // ===== v0.99.113: 通知のお誘い・お願い =====
@@ -62185,6 +62283,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.118', date: '2026-11-27',
+    items: [
+      { icon:'☀️', t:'朝、きのうの「まだの予定」を確かめるようにしました',
+        before:'済みにし忘れた予定や、できなかった予定が、そのまま放っておかれていました',
+        after:'その日はじめて開いたとき1回だけ、きのうのまだの予定に［できた］［できなかった］［今日に回す］を聞きます。聞くのは、自分が作った予定と自分が担当の予定だけです。できなかったを選ぶと、そのまま次の一手を書けます' }
+    ]
+  },
   {
     ver: 'v0.99.117', date: '2026-11-27',
     items: [
@@ -69329,6 +69435,7 @@ async function unifiedPullTasks() {
     // 「気づかせる」のではなく「気づかせない」のが正しい同期の姿。
     // 不具合調査用に、記録だけは上の_syncLog／_dbgLogに残している。
   }
+  try { if (typeof koyomiMorningCheckMaybe === 'function') koyomiMorningCheckMaybe(); } catch (eMc) {}   // v0.99.118: 同期が済んでから、朝の確認（1日1回）
   return r;
 }
 window.unifiedRefreshMyCalendarIds = unifiedRefreshMyCalendarIds;
@@ -101179,6 +101286,54 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-722: 朝の確認（v0.99.118） =====
+     // 【権威】2026-11-27 翌朝の確認：1日1回。自分が作った／自分が担当の、きのうの、まだの予定だけ。［できた］［できなかった］［今日に回す］
+     try {
+       var _x722 = [], _me = 'st722_me', _you = 'st722_you', _td = '2099-05-10', _yd = '2099-05-09';
+       var _mk = function(id, o) { var t = Object.assign({ id: id, kind: 'task', date: _yd, text: id, section: 4, completed: false, createdBy: _me }, o || {}); allTasks.push(t); return t; };
+       _mk('st722_a'); _mk('st722_b', { createdBy: _you, assigneeId: _me }); _mk('st722_c', { createdBy: _you }); _mk('st722_d', { assigneeId: _you });
+       _mk('st722_e', { completed: true }); _mk('st722_f', { failed: true }); _mk('st722_g', { kind: 'journal' }); _mk('st722_h', { date: _td });
+       var _svKey = null; try { _svKey = localStorage.getItem(KOYOMI_MORNING_KEY); localStorage.removeItem(KOYOMI_MORNING_KEY); } catch (e) {}
+       try {
+         var _ids = _koyomiMorningTargets(_td, _me).map(function(t) { return t.id; }).filter(function(i) { return /^st722_/.test(i); }).sort().join(',');
+         if (_ids !== 'st722_a,st722_b') _x722.push('targets:' + _ids);
+         // テスト中は出ない
+         if (koyomiMorningCheckMaybe() !== false || document.getElementById('koyomiMorningOverlay')) _x722.push('shown-in-test');
+         window._koyomiMorningQueued = false;
+         if (koyomiMorningCheckMaybe({ test: true, today: _td, uid: _me }) !== true) _x722.push('not-shown');
+         var _ov = document.getElementById('koyomiMorningOverlay');
+         if (!_ov || _ov.querySelectorAll('.km-row').length < 2) _x722.push('rows');
+         else {
+           _ov.querySelector('[data-km-id="st722_b"] [data-km="move"]').click();
+           var _b = allTasks.find(function(x) { return x.id === 'st722_b'; });
+           if (_b.date !== _td || _b.failed) _x722.push('move');
+           _ov.querySelector('[data-km-id="st722_a"] [data-km="fail"]').click();
+           var _a = allTasks.find(function(x) { return x.id === 'st722_a'; });
+           if (!_a.failed || !document.getElementById('koyomiReflectOverlay')) _x722.push('fail');
+         }
+         var _r = document.getElementById('koyomiReflectOverlay'); if (_r) _r.remove();
+         var _o = document.getElementById('koyomiMorningOverlay'); if (_o) _o.remove();
+         // 同じ日の2回目は出ない
+         window._koyomiMorningQueued = false;
+         allTasks.find(function(x) { return x.id === 'st722_b'; }).date = _yd;
+         if (koyomiMorningCheckMaybe({ test: true, today: _td, uid: _me }) !== false) _x722.push('twice');
+         // できた→済み・波線は外れる（済みにする道でも外れる）
+         allTasks.find(function(x) { return x.id === 'st722_a'; }).failed = true;
+         toggleTaskById('st722_a');
+         var _a2 = allTasks.find(function(x) { return x.id === 'st722_a'; });
+         if (!_a2.completed || _a2.failed) _x722.push('complete-clears-failed');
+         if (STARTUP_MODAL_IDS.indexOf('koyomiMorningOverlay') < 0) _x722.push('queue');
+       } finally {
+         for (var _i722 = allTasks.length - 1; _i722 >= 0; _i722--) if (allTasks[_i722] && /^st722_/.test(allTasks[_i722].id)) allTasks.splice(_i722, 1);
+         try { if (_svKey) localStorage.setItem(KOYOMI_MORNING_KEY, _svKey); else localStorage.removeItem(KOYOMI_MORNING_KEY); } catch (e) {}
+         window._koyomiMorningQueued = false;
+         ['koyomiMorningOverlay', 'koyomiReflectOverlay'].forEach(function(i) { var e = document.getElementById(i); if (e) e.remove(); });
+       }
+       _x722.length === 0
+         ? ok('ST-722: 朝の確認。自分が作った／担当の、きのうの、まだの予定だけ。1日1回・テスト中は出ない。今日に回すは日を移すだけ、済みにすると波線は外れる')
+         : ng('ST-722: 朝の確認が違う', _x722.join(','));
+     } catch(e) { ng('ST-722: 例外', e.message); }
 
      // ===== ST-721b: 「次は」だけで書ける（2つ目は空でもよい） =====
      try {
