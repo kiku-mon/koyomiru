@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.114 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.115 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.114';
+    const APP_VERSION = 'v0.99.115';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -62089,6 +62089,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
   {
+    ver: 'v0.99.115', date: '2026-11-27',
+    items: [
+      { icon:'📒', t:'右上のメニューの「部屋の管理帳」で、部屋主の部屋も見られるようにしました',
+        before:'メンバーとしての設定だけが出て、部屋主が開くと「まだ入っていません」と出ていました',
+        after:'上に「あなたが部屋主の部屋」（今日・昨日来た人数と［開く］）、下に「あなたがメンバーの部屋」（来たことを届けるかの設定）が出ます' }
+    ]
+  },
+  {
     ver: 'v0.99.114', date: '2026-11-27',
     items: [
       { icon:'🚪', t:'共有カレンダーを「部屋」と呼ぶことにしました',
@@ -70737,8 +70745,13 @@ async function openCalendarLedger(calendarId) {
 }
 window.openCalendarLedger = openCalendarLedger;
 // 届けるかどうか（お得意さま側の設定）。止めたら、それまでの自分の記録も消す
+// v0.99.115: 【権威】2026-11-27「??誰もいないわけない」（部屋主のきくモンさんが開くと「まだ入っていません」だけが出た）
+//   → この画面はメンバー側の設定だけだった。部屋主の部屋（今日・昨日の人数と［開く］）を上に、メンバーとして入っている部屋の設定を下に、1枚にする
 async function openLedgerPrivacyModal() {
-  var ms = await fetchMyLedgerMemberships();
+  var old = document.getElementById('ledgerPrivacyOverlay'); if (old) old.remove();
+  var res = await Promise.all([fetchMyLedgerMemberships().catch(function() { return []; }), (_ledgerCanRun() ? _fetchOwnerLedger(1).catch(function() { return []; }) : Promise.resolve([]))]);
+  var ms = res[0] || [];
+  var owned = (res[1] || []).filter(function(x) { return (calendars || []).some(function(c) { return c && c.cloudCalendarId === (x.cal && x.cal.id); }); });
   var esc = (typeof _escapeHtml === 'function') ? _escapeHtml : function(s) { return String(s); };
   var ov = document.createElement('div');
   ov.id = 'ledgerPrivacyOverlay';
@@ -70749,12 +70762,29 @@ async function openLedgerPrivacyModal() {
     return '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:0.9em;">' +
       '<span>' + esc(r.cal.name || '') + '<br><span style="font-size:0.78em;color:#888;">' + esc(lb.owner) + 'さんに「来た」ことを届ける</span></span>' +
       '<input type="checkbox" data-ledger-cal="' + esc(r.calendar_id) + '"' + (r.hide_from_ledger ? '' : ' checked') + ' style="width:20px;height:20px;"></label>';
-  }).join('') : '<div style="color:#999;font-size:0.88em;">部屋の管理帳のある部屋には、まだ入っていません。</div>';
+  }).join('') : '';
+  var _today = getLocalDateStr(new Date()), _yd = new Date(); _yd.setDate(_yd.getDate() - 1); var _yest = getLocalDateStr(_yd);
+  var _cnt = function(vs, day) { var u = {}; vs.forEach(function(x) { if (x.visit_date === day) u[x.user_id] = 1; }); return Object.keys(u).length; };
+  var _sec = function(t) { return '<div style="margin:14px 0 4px;font-size:0.8em;font-weight:800;color:#6b5d48;">― ' + t + ' ―</div>'; };
+  var ownedHtml = owned.map(function(d) {
+    return '<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #f0f0f0;font-size:0.9em;">' +
+      '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;">' + esc(koyomiRoomName(d.cal.name)) + '</span>' +
+      (d.memberCount > 0
+        ? '<span style="white-space:nowrap;color:#555;font-size:0.9em;">今日 <b>' + _cnt(d.visits, _today) + '</b>人・昨日 ' + _cnt(d.visits, _yest) + '人</span>' +
+          '<button type="button" data-ledger-open="' + esc(d.cal.id) + '" style="flex-shrink:0;min-height:34px;padding:4px 12px;border:1px solid #4f7a3a;border-radius:8px;background:#f4f8ee;color:#3d6230;font-weight:700;cursor:pointer;font-family:inherit;">開く</button>'
+        : '<span style="white-space:nowrap;color:#aaa;font-size:0.85em;">まだメンバーがいません</span>') + '</div>';
+  }).join('');
+  var body = (owned.length ? _sec('あなたが部屋主の部屋') + ownedHtml : '') +
+    (ms.length ? _sec('あなたがメンバーの部屋') + '<div style="font-size:0.75em;color:#888;margin-bottom:2px;line-height:1.6;">来たことを、その部屋の部屋主に届けるか。止めると、それまでのあなたの記録も消えます。予定・コメント・参加表明は、これまでどおり仲間に見えます。</div>' + rows : '') +
+    (!owned.length && !ms.length ? '<div style="color:#999;font-size:0.88em;margin-top:10px;">部屋（共有カレンダー）を作るか、誘われて入ると使えます。</div>' : '');
   ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;max-height:80vh;overflow:auto;padding:18px;">' +
     '<div style="font-weight:700;margin-bottom:4px;">📒 部屋の管理帳（だれが来たかの記録）</div>' +   // v0.55.41: メニューの言葉とそろえる
-    '<div style="font-size:0.78em;color:#888;margin-bottom:10px;">部屋（共有カレンダー）を表示した状態でこよみるを開くと、その部屋の部屋主に「来た」ことが届きます。記録は90日で消えます。止めると、それまでのあなたの記録も消えます。予定・コメント・参加表明は、これまでどおり仲間に見えます。</div>' +
-    rows + '<button onclick="document.getElementById(\'ledgerPrivacyOverlay\').remove()" style="margin-top:12px;width:100%;padding:10px;border:1px solid #ccd;border-radius:10px;background:#fff;">閉じる</button></div>';
+    '<div style="font-size:0.78em;color:#888;margin-bottom:4px;">メンバーが部屋（共有カレンダー）を表示した状態でこよみるを開くと、その部屋の部屋主に「来た」ことが届きます。記録は90日で消えます。</div>' +
+    body + '<button onclick="document.getElementById(\'ledgerPrivacyOverlay\').remove()" style="margin-top:12px;width:100%;padding:10px;border:1px solid #ccd;border-radius:10px;background:#fff;">閉じる</button></div>';
   document.body.appendChild(ov);
+  [].forEach.call(ov.querySelectorAll('[data-ledger-open]'), function(b) {
+    b.onclick = function() { var id = b.getAttribute('data-ledger-open'); ov.remove(); openCalendarLedger(id); };
+  });
   [].forEach.call(ov.querySelectorAll('[data-ledger-cal]'), function(box) {
     box.onchange = async function() {
       var calId = box.getAttribute('data-ledger-cal'), me = window._cloudUserId, show = box.checked;
@@ -101036,6 +101066,19 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-720: 部屋の管理帳の画面に、部屋主の部屋も出す（v0.99.115） =====
+     // 【権威】2026-11-27「??誰もいないわけない」
+     try {
+       var _s720 = openLedgerPrivacyModal.toString(), _x720 = [];
+       if (!/_fetchOwnerLedger\(1\)/.test(_s720) || !/あなたが部屋主の部屋/.test(_s720) || !/あなたがメンバーの部屋/.test(_s720)) _x720.push('sections');
+       if (!/data-ledger-open/.test(_s720) || !/openCalendarLedger\(id\)/.test(_s720)) _x720.push('open');
+       if (/まだ入っていません/.test(_s720)) _x720.push('old-empty');
+       if (!/作るか、誘われて入ると使えます/.test(_s720)) _x720.push('empty');
+       _x720.length === 0
+         ? ok('ST-720: 部屋の管理帳は、上に部屋主の部屋（今日・昨日の人数と［開く］）、下にメンバーとして入っている部屋の設定')
+         : ng('ST-720: 部屋の管理帳の画面が違う', _x720.join(','));
+     } catch(e) { ng('ST-720: 例外', e.message); }
 
      // ===== ST-719: 部屋の言葉（v0.99.114） =====
      // 【権威】2026-11-27「大福帳は部屋の管理帳に。共有カレンダーを〇〇部屋と呼ぶ。部屋主。対外的にはカレンダー、内側の論理は部屋」
