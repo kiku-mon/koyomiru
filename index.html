@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ★ CURRENT VERSION: v0.99.119 ★ -->
+<!-- ★ CURRENT VERSION: v0.99.120 ★ -->
 <!-- ════════════════════════════════════════════════════════════
      開発ルール 第0条（店の方針）── 2026-11-02 きくモン決定。すべての条より先に読む
      こよみるは、暦の事実と暮らしの習わしまで。運勢は扱わない。
@@ -264,7 +264,7 @@
     })();</script>
   <script>    // ★ バージョン番号：ここだけ変えれば全箇所に反映される
     // v0.99.33: 【権威】2026-11-20「バージョンが1になってるのは変じゃね？リリースしてないよ」→ 正式な公開までは v0 台。v1.0.0〜v1.5.2 と付けてしまった31の版は v0.99.3〜v0.99.33 と数え直した
-    const APP_VERSION = 'v0.99.119';
+    const APP_VERSION = 'v0.99.120';
   const APP_LAST_UPDATED = '2026-11-27'; // ★ バージョン更新時は必ずセットで更新
     // v0.45.1815: 【権威】2026-08-31、招待リンクを踏んでも初回セットアップ画面が出る件。
     // 原因は置き場所だった。「どこから来たか」を記録する処理を
@@ -18781,6 +18781,7 @@ function switchSearchTab(tab) {
       var modes = [
         { key: 'today',    label: '今日に移す' },
         { key: 'edit',     label: '編集して小さくする' },
+        { key: 'fail',     label: '🌱 できなかった（次につなげる）' },   // v0.99.120: 波線にして、次の一手を書く
         { key: 'complete', label: '✅ 完了した' },
         { key: 'release',  label: '🚮 捨てる・手放す' }
       ];
@@ -18824,6 +18825,7 @@ function switchSearchTab(tab) {
       if (mode === 'complete') {
         task.completed = true;
         task.done = true;
+        task.failed = false;   // v0.99.120
         task.updatedAt = new Date().toISOString();
         saveAllTasks();
         if (typeof onTaskCompleted === 'function') onTaskCompleted(task);
@@ -18898,6 +18900,10 @@ function switchSearchTab(tab) {
           panel.appendChild(cancelBtn);
         }
         return; // animateAndRefreshしない
+      } else if (mode === 'fail') {   // v0.99.120
+        if (typeof koyomiMarkFailed === 'function') koyomiMarkFailed(taskId, true);
+        animateAndRefresh();
+        if (typeof openKoyomiReflect === 'function') openKoyomiReflect(taskId);
       } else if (mode === 'release') {
         task.completed = true;
         task.done = true;
@@ -18927,6 +18933,7 @@ function switchSearchTab(tab) {
   // 業タスク＝過去日付の未完了のみ
   var tasks = allTasks.filter(function(t) {
     return t.kind === 'task' && !t.completed && !t.done && !t.inHeaven && t.displayScope !== 'heaven'
+      && !t.failed   // v0.99.120: できなかったと決めて波線にした予定は、放っておかれた業ではない
       && t.date && t.date < today;
   }).sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
 
@@ -18938,14 +18945,26 @@ function switchSearchTab(tab) {
 
   countEl.textContent = tasks.length + '件';
   container.innerHTML = '';
+  // v0.99.120: きのうのまだの予定があれば、朝の確認をもう一度ひらける（「あとで」を押した日や、済みを外したとき）
+  try {
+    var _kmIds = (typeof _koyomiMorningTargets === 'function') ? _koyomiMorningTargets(today, window._cloudUserId || null).map(function(t) { return t.id; }) : [];
+    if (_kmIds.length) {
+      var _km = document.createElement('button');
+      _km.type = 'button'; _km.id = 'gouMorningAgainBtn';
+      _km.textContent = '☀️ きのうの予定を確かめる（' + _kmIds.length + '件）';
+      _km.style.cssText = 'width:100%;margin-bottom:10px;min-height:38px;border:1px solid #e6d3a8;border-radius:10px;background:#fffaf0;color:#7a5a1e;font-weight:700;cursor:pointer;font-family:inherit;';
+      _km.onclick = function() { if (typeof closeSearchModal === 'function') closeSearchModal(); openKoyomiMorningCheck(_kmIds, today); };
+      container.appendChild(_km);
+    }
+  } catch (eKm) {}
 
   // ===== 業ゼロ =====
   if (tasks.length === 0) {
-    container.innerHTML = '<div style="text-align:center;padding:32px 0;">' +
+    container.insertAdjacentHTML('beforeend', '<div style="text-align:center;padding:32px 0;">' +
       '<div style="font-size:2em;margin-bottom:8px;">🌸</div>' +
       '<div style="color:#4caf50;font-weight:700;font-size:1em;margin-bottom:4px;">業ゼロ！清らかです</div>' +
       '<div style="color:#bbb;font-size:0.8em;">今日も精進を続けましょう</div>' +
-      '</div>';
+      '</div>');
     return;
   }
 
@@ -61081,7 +61100,7 @@ function openKoyomiReflect(taskId, opt) {
 window.openKoyomiReflect = openKoyomiReflect;
 
 // ===== v0.99.118: 朝の確認（きのうの、まだの予定） =====
-// 【権威】2026-11-27 決めたこと：その日はじめて開いたとき1回だけ。きのうの、まだの予定に［できた］［できなかった］［今日に回す］
+// 【権威】2026-11-27 決めたこと：その日はじめて開いたとき1回だけ。きのうの、まだの予定に［できた］［まだできていない］［今日に移す］（v0.99.120で言葉を変えた）
 //   聞くのは自分が作った予定と、自分が担当の予定だけ（ほかの人が担当の予定は聞かない）。今日に回すは日を移すだけ（波線にしない）
 var KOYOMI_MORNING_KEY = 'koyomi_morning_check_day_v1';   // 「今日はもう聞いた」の印だけ（予定の中身は持たない）
 function _koyomiMorningTargets(todayStr, uid) {
@@ -61131,8 +61150,9 @@ function openKoyomiMorningCheck(ids, today) {
         (t.assigneeId && t.assigneeId !== (window._cloudUserId || null) && t.assigneeName ? '<span style="color:#9a8f7a;font-weight:400;font-size:0.85em;">（' + esc(t.assigneeName) + 'さんの担当）</span>' : '') + '</div>' +
       '<div class="km-btns" style="display:flex;gap:6px;margin-top:7px;">' +
         '<button type="button" data-km="done" style="' + btn + 'border:none;background:#4f7a3a;color:#fff;">できた</button>' +
-        '<button type="button" data-km="fail" style="' + btn + 'border:1px dashed #c0562e;background:#fff8f4;color:#a3462a;">できなかった</button>' +
-        '<button type="button" data-km="move" style="' + btn + 'border:1px solid #d9cdb4;background:#fff;color:#6b5f4a;">今日に回す</button>' +
+        // v0.99.120【権威】2026-11-27「できたはできたでいい、まだできていないとかそういう風な感じでいい」「検索窓の業、バニッシュのところも、今回の変更によって変えるべきとこあるか見て、変えるべきだったら変えていい」「チェックボックス外して、もう一回窓出てくるかなと思ったら出てこなかった」
+        '<button type="button" data-km="fail" style="' + btn + 'border:1px dashed #c0562e;background:#fff8f4;color:#a3462a;">まだできていない</button>' +
+        '<button type="button" data-km="move" style="' + btn + 'border:1px solid #d9cdb4;background:#fff;color:#6b5f4a;">今日に移す</button>' +   // 業のバニッシュと同じ言葉
       '</div><div class="km-res" style="display:none;font-size:0.85em;color:#6b7d5e;margin-top:4px;"></div></div>';
   }).join('');
   ov.innerHTML = '<div role="dialog" style="background:#fffdf8;border-radius:18px;width:100%;max-width:440px;max-height:calc(100dvh - 28px);overflow-y:auto;padding:18px;box-sizing:border-box;color:#3d3326;">' +
@@ -61162,7 +61182,7 @@ function openKoyomiMorningCheck(ids, today) {
       redraw(); settle(row, '✅ 済みにしました');
     } else if (k === 'move') {
       if (typeof updateTask === 'function') updateTask(id, { date: today });
-      redraw(); settle(row, '➡️ 今日に回しました');
+      redraw(); settle(row, '➡️ 今日に移しました');
     } else if (k === 'fail') {
       koyomiMarkFailed(id, true);
       settle(row, '🌱 波線にしました');
@@ -62285,6 +62305,14 @@ var _VER_CHECK_MIN_INTERVAL = 5 * 60 * 1000;
 // 新しい順の並び・先頭だけNEW・古いものを畳む、が自動で決まる。
 // items は「使う人にできるようになったこと」だけを書く（第78条④）。
 var _NEWS_DATA = [
+  {
+    ver: 'v0.99.120', date: '2026-11-27',
+    items: [
+      { icon:'☀️', t:'朝の確認の言葉をやわらかくし、業の一覧とつなげました',
+        before:'朝の確認のボタンが［できなかった］［今日に回す］で、一度閉じるとその日はもう開けませんでした。波線にした予定も業に数えていました',
+        after:'ボタンは［できた］［まだできていない］［今日に移す］です。検索の「👹 業」の一番上から、朝の確認をもう一度ひらけます。波線にした予定は業に数えず、バニッシュに「🌱 できなかった（次につなげる）」を足しました' }
+    ]
+  },
   {
     ver: 'v0.99.119', date: '2026-11-27',
     items: [
@@ -101296,6 +101324,43 @@ if (typeof localStorage.getItem('s3Custom') === 'string' || localStorage.getItem
      } catch(e) {
        ng('ST-697: 例外', e.message);
      }
+
+     // ===== ST-723: 朝の確認の言葉・業とのつながり（v0.99.120） =====
+     // 【権威】2026-11-27「できたはできたでいい、まだできていないとか」「業、バニッシュも変えるべきとこあれば変えていい」「もう一回窓出てくるかなと思ったら出てこなかった」
+     try {
+       var _x723 = [], _d723 = new Date(); _d723.setDate(_d723.getDate() - 1); var _y723 = getLocalDateStr(_d723);
+       allTasks.push({ id: 'st723_a', kind: 'task', date: _y723, text: 'ST723a', section: 4, completed: false },
+                     { id: 'st723_f', kind: 'task', date: _y723, text: 'ST723f', section: 4, completed: false, failed: true });
+       try {
+         openKoyomiMorningCheck(['st723_a']);
+         var _ov723 = document.getElementById('koyomiMorningOverlay');
+         var _bt = _ov723 ? _ov723.textContent : '';
+         if (!/まだできていない/.test(_bt) || !/今日に移す/.test(_bt) || /今日に回す/.test(_bt)) _x723.push('wording');
+         if (_ov723) _ov723.remove();
+         renderGouTaskList();
+         var _gr = document.getElementById('gouTaskResults');
+         if (!_gr || !document.getElementById('_gouRow_st723_a')) _x723.push('gou-row');
+         if (document.getElementById('_gouRow_st723_f')) _x723.push('failed-in-gou');
+         var _again = document.getElementById('gouMorningAgainBtn');
+         if (!_again) _x723.push('again-btn');
+         else { _again.click(); if (!document.getElementById('koyomiMorningOverlay')) _x723.push('again-open'); }
+         var _o2 = document.getElementById('koyomiMorningOverlay'); if (_o2) _o2.remove();
+         renderGouTaskList();
+         openGouVanishOptions('st723_a');
+         var _pn = document.getElementById('_gouVanishPanel');
+         if (!_pn || !/できなかった/.test(_pn.textContent)) _x723.push('vanish-fail-btn');
+         executeGouVanish('st723_a', 'fail');
+         var _ta = allTasks.find(function(x) { return x.id === 'st723_a'; });
+         if (!_ta.failed || !document.getElementById('koyomiReflectOverlay')) _x723.push('vanish-fail');
+       } finally {
+         for (var _i723 = allTasks.length - 1; _i723 >= 0; _i723--) if (allTasks[_i723] && /^st723_/.test(allTasks[_i723].id)) allTasks.splice(_i723, 1);
+         ['koyomiMorningOverlay', 'koyomiReflectOverlay', '_gouVanishPanel'].forEach(function(i) { var e = document.getElementById(i); if (e) e.remove(); });
+         try { renderGouTaskList(); } catch (e) {}
+       }
+       _x723.length === 0
+         ? ok('ST-723: 朝の確認は［まだできていない］［今日に移す］。波線の予定は業に数えない。業から朝の確認をもう一度ひらける。バニッシュに「できなかった」')
+         : ng('ST-723: 違う', _x723.join(','));
+     } catch(e) { ng('ST-723: 例外', e.message); }
 
      // ===== ST-722: 朝の確認（v0.99.118） =====
      // 【権威】2026-11-27 翌朝の確認：1日1回。自分が作った／自分が担当の、きのうの、まだの予定だけ。［できた］［できなかった］［今日に回す］
